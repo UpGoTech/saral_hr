@@ -37,10 +37,6 @@ def get_active_employees():
 
 @frappe.whitelist()
 def search_employees(query):
-    """
-    Search employees by name, employee ID (HR-EMP-XXXXX), or Aadhaar
-    Returns matching active employees only
-    """
     if not query or len(query.strip()) < 1:
         return []
 
@@ -101,13 +97,13 @@ def search_employees(query):
         if row.aadhar_number:
             display_name += f" ({row.aadhar_number})"
         formatted.append({
-            "name": row.name,           # CL id or HR-EMP id
-            "employee": row.employee,   # HR-EMP-XXXXX
+            "name": row.name,
+            "employee": row.employee,
             "full_name": display_name,
             "company": row.company,
             "weekly_off": row.weekly_off or "",
             "aadhaar_number": row.aadhar_number or "",
-            "emp_id": row.employee      # HR-EMP-XXXXX for display
+            "emp_id": row.employee
         })
 
     return formatted
@@ -136,61 +132,7 @@ def get_attendance_between_dates(employee, start_date, end_date):
 
 
 @frappe.whitelist()
-def save_attendance(employee, attendance_date, status):
-    user = frappe.session.user
-    attendance_date = getdate(attendance_date)
-
-    companies = frappe.get_all(
-        "User Permission",
-        filters={
-            "user": user,
-            "allow": "Company"
-        },
-        pluck="for_value"
-    )
-
-    if companies:
-        allowed = frappe.db.exists(
-            "Company Link",
-            {
-                "employee": employee,
-                "company": ["in", companies]
-            }
-        )
-
-        if not allowed:
-            frappe.throw("Not permitted to mark attendance for this employee")
-
-    existing_attendance = frappe.db.get_value(
-        "Attendance",
-        {"employee": employee, "attendance_date": attendance_date},
-        "name"
-    )
-
-    if existing_attendance:
-        doc = frappe.get_doc("Attendance", existing_attendance)
-        doc.status = status
-        doc.flags.ignore_validate = True
-        doc.save(ignore_permissions=True)
-    else:
-        doc = frappe.get_doc({
-            "doctype": "Attendance",
-            "employee": employee,
-            "attendance_date": attendance_date,
-            "status": status
-        })
-        doc.flags.ignore_validate = True
-        doc.insert(ignore_permissions=True)
-
-    frappe.db.commit()
-    return "success"
-
-
-@frappe.whitelist()
 def save_attendance_batch(attendance_data):
-    """
-    Batch save attendance records for better performance.
-    """
     user = frappe.session.user
 
     if isinstance(attendance_data, str):
@@ -294,25 +236,3 @@ def get_holidays_between_dates(company, start_date, end_date):
     )
 
     return [str(h) for h in holidays]
-
-
-@frappe.whitelist()
-def get_employee_attendance_for_year(employee, year):
-    if not employee or not year:
-        return {}
-
-    records = frappe.db.get_all(
-        "Attendance",
-        filters={
-            "employee": employee,
-            "attendance_date": ["between", [f"{year}-01-01", f"{year}-12-31"]],
-            "status": ["in", ["Present", "Absent", "Half Day", "Holiday", "LWP"]]
-        },
-        fields=["attendance_date", "status"]
-    )
-
-    attendance_map = {}
-    for r in records:
-        attendance_map[str(r.attendance_date)] = r.status
-
-    return attendance_map
