@@ -14,6 +14,29 @@ frappe.ui.form.on('Salary Component', {
             frm.clear_table('enter_amount_according_to_months');
             frm.refresh_field('enter_amount_according_to_months');
         }
+    },
+
+    is_daily_rate(frm) {
+        // Mutually exclusive: daily rate and depends_on_payment_days
+        // cannot both be checked at the same time
+        if (frm.doc.is_daily_rate && frm.doc.depends_on_payment_days) {
+            frm.set_value('depends_on_payment_days', 0);
+            frappe.show_alert({
+                message: __('Depends on Payment Days has been unchecked. A component cannot be both monthly prorated and a daily rate.'),
+                indicator: 'orange'
+            });
+        }
+    },
+
+    depends_on_payment_days(frm) {
+        // Mutually exclusive: same guard from the other side
+        if (frm.doc.depends_on_payment_days && frm.doc.is_daily_rate) {
+            frm.set_value('is_daily_rate', 0);
+            frappe.show_alert({
+                message: __('Is Daily Rate Component has been unchecked. A component cannot be both monthly prorated and a daily rate.'),
+                indicator: 'orange'
+            });
+        }
     }
 });
 
