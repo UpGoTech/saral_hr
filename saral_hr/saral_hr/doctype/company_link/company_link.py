@@ -68,48 +68,56 @@ class CompanyLink(Document):
             - datetime.timedelta(days=1)
         )
 
-        if old_name == self.employee:
-            suffix = self.get_next_archive_suffix(self.employee)
-            new_archive_name = "{0}-{1}".format(self.employee, suffix)
+        # Step 1: Get the archive name BEFORE renaming
+        suffix = self.get_next_archive_suffix(self.employee)
+        new_archive_name = "{0}-{1}".format(self.employee, suffix)
 
-            frappe.rename_doc(
-                "Company Link",
-                old_name,
-                new_archive_name,
-                force=True
-            )
-            frappe.db.commit()
-            archive_name = new_archive_name
-        else:
-            archive_name = old_name
-
-        frappe.db.set_value(
+        # Step 2: Rename the old record to archived name
+        # NOTE: rename_doc cascades and will set employee field = new_archive_name
+        # We fix this in Step 3 with direct SQL
+        frappe.rename_doc(
             "Company Link",
-            archive_name,
-            {
-                "is_active": 0,
-                "left_date": left_date,
-                "employee": self.employee
-            }
+            old_name,
+            new_archive_name,
+            force=True,
+            merge=False
         )
+        frappe.db.commit()
+
+        # Step 3: Direct SQL to correctly set employee back to real ID,
+        # deactivate, and set left_date — bypassing cascade side effects
+        frappe.db.sql("""
+            UPDATE `tabCompany Link`
+            SET employee = %(employee)s,
+                is_active = 0,
+                left_date = %(left_date)s,
+                modified = NOW()
+            WHERE name = %(archive_name)s
+        """, {
+            "employee": self.employee,
+            "left_date": left_date,
+            "archive_name": new_archive_name
+        })
         frappe.db.commit()
 
         frappe.msgprint(
             _("Employee {0} has been transferred from {1} to {2}. "
-              "Previous record has been archived as {3} with leaving date {4}.").format(
+              "Previous record archived as {3} with leaving date {4}.").format(
                 self.employee,
                 old_record["company"],
                 self.company,
-                archive_name,
+                new_archive_name,
                 str(left_date)
             ),
             title=_("Transfer Complete"),
             indicator="green"
         )
 
+        # New record takes the plain employee ID via autoname
         self.is_active = 1
 
     def get_next_archive_suffix(self, employee):
+        """Return the next integer suffix for archived records like HR-EMP-001-1, HR-EMP-001-2 ..."""
         existing_archives = frappe.db.sql("""
             SELECT name FROM `tabCompany Link`
             WHERE name LIKE %(pattern)s
@@ -120,11 +128,13 @@ class CompanyLink(Document):
 
         suffixes = []
         for rec in existing_archives:
-            parts = rec["name"].split("-")
-            try:
-                suffixes.append(int(parts[-1]))
-            except ValueError:
-                pass
+            # rsplit on last '-' only, so HR-EMP-00069-2 -> ['HR-EMP-00069', '2']
+            parts = rec["name"].rsplit("-", 1)
+            if len(parts) == 2:
+                try:
+                    suffixes.append(int(parts[-1]))
+                except ValueError:
+                    pass
 
         return max(suffixes) + 1 if suffixes else 1
 

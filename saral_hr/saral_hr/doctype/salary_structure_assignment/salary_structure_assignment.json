@@ -51,6 +51,7 @@
    "fetch_from": "employee.full_name",
    "fieldname": "employee_name",
    "fieldtype": "Data",
+   "in_list_view": 1,
    "label": "Employee Name",
    "read_only": 1
   },
@@ -65,6 +66,7 @@
   {
    "fieldname": "salary_structure",
    "fieldtype": "Link",
+   "in_list_view": 1,
    "label": "Salary Structure",
    "options": "Salary Structure",
    "reqd": 1,
@@ -73,12 +75,14 @@
   {
    "fieldname": "from_date",
    "fieldtype": "Date",
+   "in_list_view": 1,
    "label": "From Date",
    "reqd": 1
   },
   {
    "fieldname": "to_date",
    "fieldtype": "Date",
+   "in_list_view": 1,
    "label": "To Date",
    "reqd": 1
   },
@@ -220,7 +224,7 @@
  "index_web_pages_for_search": 1,
  "is_submittable": 1,
  "links": [],
- "modified": "2026-02-23 13:00:23.925181",
+ "modified": "2026-03-04 00:00:00.000000",
  "modified_by": "Administrator",
  "module": "Saral Hr",
  "name": "Salary Structure Assignment",
@@ -256,6 +260,19 @@
  ],
  "sort_field": "modified",
  "sort_order": "DESC",
- "states": [],
+ "states": [
+  {
+   "color": "Red",
+   "title": "Draft"
+  },
+  {
+   "color": "Blue",
+   "title": "Submitted"
+  },
+  {
+   "color": "Grey",
+   "title": "Cancelled"
+  }
+ ],
  "title_field": "employee_name"
 }

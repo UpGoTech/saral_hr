@@ -16,6 +16,9 @@ class SalaryStructureAssignment(Document):
             throw_if_overlap=True,
         )
 
+    def on_cancel(self):
+        pass
+
 
 @frappe.whitelist()
 def check_overlap(employee, from_date, to_date=None, employee_name=None, current_name=None, throw_if_overlap=False):

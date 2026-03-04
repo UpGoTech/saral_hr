@@ -108,22 +108,6 @@ function get_checked_ids(dialog, html_field, card_class) {
     return ids;
 }
 
-// ─── Dialog Field Definitions ─────────────────────────────────────────────────
-
-function base_fields(fetch_label, fetch_fn, html_field) {
-    return [
-        { fieldname: 'company', fieldtype: 'Link', label: 'Company', options: 'Company', reqd: 1 },
-        { fieldname: 'cb1', fieldtype: 'Column Break' },
-        { fieldname: 'year', fieldtype: 'Select', label: 'Year', options: get_year_options(), reqd: 1, default: new Date().getFullYear().toString() },
-        { fieldname: 'cb2', fieldtype: 'Column Break' },
-        { fieldname: 'month', fieldtype: 'Select', label: 'Month', options: MONTHS, reqd: 1, default: get_current_month() },
-        { fieldname: 'sb1', fieldtype: 'Section Break' },
-        { fieldname: 'fetch_btn', fieldtype: 'Button', label: fetch_label, click: function() { fetch_fn(this._dialog); } },
-        { fieldname: 'sb2', fieldtype: 'Section Break' },
-        { fieldname: html_field, fieldtype: 'HTML' }
-    ];
-}
-
 // ─── Bulk Generate ────────────────────────────────────────────────────────────
 
 function show_bulk_salary_slip_dialog() {
@@ -135,6 +119,15 @@ function show_bulk_salary_slip_dialog() {
             { fieldname: 'year', fieldtype: 'Select', label: 'Year', options: get_year_options(), reqd: 1, default: new Date().getFullYear().toString() },
             { fieldname: 'cb2', fieldtype: 'Column Break' },
             { fieldname: 'month', fieldtype: 'Select', label: 'Month', options: MONTHS, reqd: 1, default: get_current_month() },
+            { fieldname: 'sb_category', fieldtype: 'Section Break', label: 'Filter by Category' },
+            {
+                fieldname: 'category',
+                fieldtype: 'Link',
+                label: 'Category',
+                options: 'Category',
+                reqd: 1,
+                description: 'Salary slips will only be generated for employees belonging to this category.'
+            },
             { fieldname: 'sb1', fieldtype: 'Section Break' },
             { fieldname: 'fetch_employees', fieldtype: 'Button', label: 'Fetch Eligible Employees', click: function() { fetch_eligible_employees(d); } },
             { fieldname: 'sb2', fieldtype: 'Section Break' },
@@ -147,12 +140,14 @@ function show_bulk_salary_slip_dialog() {
 }
 
 function fetch_eligible_employees(dialog) {
-    const company = dialog.get_value('company');
-    const year    = dialog.get_value('year');
-    const month   = dialog.get_value('month');
+    const company  = dialog.get_value('company');
+    const year     = dialog.get_value('year');
+    const month    = dialog.get_value('month');
+    const category = dialog.get_value('category');
 
     if (!company)        { frappe.msgprint(__('Please select Company')); return; }
     if (!year || !month) { frappe.msgprint(__('Please select Year and Month')); return; }
+    if (!category)       { frappe.msgprint(__('Please select a Category')); return; }
 
     const wrapper = dialog.fields_dict.employees_html.$wrapper;
     wrapper.html(`<div class="text-muted" style="padding:16px 0;text-align:center;font-size:12px;">
@@ -161,14 +156,22 @@ function fetch_eligible_employees(dialog) {
 
     frappe.call({
         method: 'saral_hr.saral_hr.doctype.salary_slip.salary_slip.get_eligible_employees_for_salary_slip',
-        args: { company, year, month },
+        args: { company, year, month, category },
         callback: function(r) {
             if (!r.message) {
                 wrapper.html('<div class="text-muted" style="padding:16px 0;text-align:center;">Unable to retrieve employee data. Please try again.</div>');
                 return;
             }
 
-            const { eligible, skipped, total_active, total_eligible } = r.message;
+            // ── NEW: pull category_requires_variable_pay from response
+            const {
+                eligible,
+                skipped,
+                total_active,
+                total_eligible,
+                category_requires_variable_pay
+            } = r.message;
+
             const ineligible_list = skipped || [];
 
             dialog._card_items = dialog._card_items || {};
@@ -190,7 +193,8 @@ function fetch_eligible_employees(dialog) {
                     padding:8px 0;margin-bottom:12px;font-size:12px;
                     border-bottom:1px solid var(--border-color);">
                     <span style="color:var(--text-muted);">
-                        Active Employees: <strong style="color:var(--text-color);">${total_active}</strong>
+                        Active Employees <em style="font-size:10px;">(${frappe.utils.escape_html(category)})</em>:
+                        <strong style="color:var(--text-color);">${total_active}</strong>
                     </span>
                     <span style="color:var(--border-color);">|</span>
                     <span style="color:var(--text-muted);">
@@ -227,7 +231,8 @@ function fetch_eligible_employees(dialog) {
 
             if (ineligible_list.length > 0) {
                 wrapper.find('#btn_view_ineligible').on('click', () =>
-                    show_ineligible_employees_dialog(dialog._ineligible_employees, month, year));
+                    // ── NEW: pass flag so dialog hides the Variable Pay column when not applicable
+                    show_ineligible_employees_dialog(dialog._ineligible_employees, month, year, category_requires_variable_pay));
             }
 
             if (eligible && eligible.length > 0) {
@@ -255,9 +260,11 @@ function fetch_eligible_employees(dialog) {
     });
 }
 
-// ─── Ineligible Employees Dialog (Bulk Generate) ──────────────────────────────
+// ─── Ineligible Employees Dialog ──────────────────────────────────────────────
 
-function show_ineligible_employees_dialog(ineligible_list, month, year) {
+// ── NEW: show_variable_pay controls whether the Variable Pay column is rendered
+function show_ineligible_employees_dialog(ineligible_list, month, year, show_variable_pay) {
+
     function parse_reasons(reasons) {
         const f = { no_salary_structure: false, no_variable_pay: false, no_attendance: false };
         (reasons || []).forEach(r => {
@@ -279,19 +286,26 @@ function show_ineligible_employees_dialog(ineligible_list, month, year) {
         background:var(--green-100,#ebfbee);color:var(--green-600,#2f9e44);
         font-size:13px;font-weight:700;">✓</span>`;
 
-    const rows = ineligible_list.map((s, idx) => {
-        const f  = parse_reasons(s.reasons || []);
-        const bg = idx % 2 !== 0 ? 'background:var(--subtle-accent-bg,#f9fafb);' : '';
-        return `<tr style="${bg}">
-            <td style="padding:8px 10px;border-bottom:1px solid var(--border-color);border-right:1px solid var(--border-color);vertical-align:middle;white-space:nowrap;">
-                <div style="font-size:12px;font-weight:600;color:var(--text-color);">${frappe.utils.escape_html(s.name)}</div>
-                <div style="font-size:11px;color:var(--text-muted);margin-top:1px;">${frappe.utils.escape_html(s.id)}</div>
-            </td>
-            <td style="padding:8px 10px;border-bottom:1px solid var(--border-color);border-right:1px solid var(--border-color);text-align:center;vertical-align:middle;">${f.no_salary_structure ? ICON_FAIL : ICON_OK}</td>
-            <td style="padding:8px 10px;border-bottom:1px solid var(--border-color);border-right:1px solid var(--border-color);text-align:center;vertical-align:middle;">${f.no_variable_pay     ? ICON_FAIL : ICON_OK}</td>
-            <td style="padding:8px 10px;border-bottom:1px solid var(--border-color);text-align:center;vertical-align:middle;">${f.no_attendance       ? ICON_FAIL : ICON_OK}</td>
-        </tr>`;
-    }).join('');
+    const total_cols = show_variable_pay ? 4 : 3;
+
+    function build_rows(source) {
+        if (!source || !source.length) {
+            return `<tr><td colspan="${total_cols}" class="text-muted" style="padding:20px;text-align:center;">No matching employees found.</td></tr>`;
+        }
+        return source.map((s, idx) => {
+            const f  = parse_reasons(s.reasons || []);
+            const bg = idx % 2 !== 0 ? 'background:var(--subtle-accent-bg,#f9fafb);' : '';
+            return `<tr style="${bg}">
+                <td style="padding:8px 10px;border-bottom:1px solid var(--border-color);border-right:1px solid var(--border-color);vertical-align:middle;white-space:nowrap;">
+                    <div style="font-size:12px;font-weight:600;color:var(--text-color);">${frappe.utils.escape_html(s.name)}</div>
+                    <div style="font-size:11px;color:var(--text-muted);margin-top:1px;">${frappe.utils.escape_html(s.id)}</div>
+                </td>
+                <td style="padding:8px 10px;border-bottom:1px solid var(--border-color);border-right:1px solid var(--border-color);text-align:center;vertical-align:middle;">${f.no_salary_structure ? ICON_FAIL : ICON_OK}</td>
+                ${show_variable_pay ? `<td style="padding:8px 10px;border-bottom:1px solid var(--border-color);border-right:1px solid var(--border-color);text-align:center;vertical-align:middle;">${f.no_variable_pay ? ICON_FAIL : ICON_OK}</td>` : ''}
+                <td style="padding:8px 10px;border-bottom:1px solid var(--border-color);text-align:center;vertical-align:middle;">${f.no_attendance ? ICON_FAIL : ICON_OK}</td>
+            </tr>`;
+        }).join('');
+    }
 
     const th = (label, last) => `<th style="
         position:sticky;top:0;z-index:1;
@@ -329,7 +343,7 @@ function show_ineligible_employees_dialog(ineligible_list, month, year) {
         </div>
         <div style="border:1px solid var(--border-color);border-radius:var(--border-radius);overflow:hidden;">
             <div style="overflow-x:auto;max-height:400px;overflow-y:auto;">
-                <table id="ineligible_table" style="width:100%;border-collapse:collapse;min-width:460px;">
+                <table id="ineligible_table" style="width:100%;border-collapse:collapse;min-width:${show_variable_pay ? '460px' : '360px'};">
                     <thead>
                         <tr>
                             <th style="position:sticky;top:0;z-index:1;padding:8px 10px;text-align:left;
@@ -337,12 +351,12 @@ function show_ineligible_employees_dialog(ineligible_list, month, year) {
                                 color:var(--text-muted);background:var(--subtle-accent-bg,#f5f6f7);
                                 border-bottom:2px solid var(--border-color);border-right:1px solid var(--border-color);
                                 width:32%;">Employee</th>
-                            ${th('Salary Structure<br>Assigned', false)}
-                            ${th('Variable Pay<br>Configured', false)}
+                            ${th('Salary Structure<br>Assigned', !show_variable_pay)}
+                            ${show_variable_pay ? th('Variable Pay<br>Configured', false) : ''}
                             ${th('Attendance<br>Recorded', true)}
                         </tr>
                     </thead>
-                    <tbody id="ineligible_tbody">${rows}</tbody>
+                    <tbody id="ineligible_tbody">${build_rows(ineligible_list)}</tbody>
                 </table>
             </div>
         </div>`;
@@ -361,21 +375,10 @@ function show_ineligible_employees_dialog(ineligible_list, month, year) {
     ineligible_dialog.fields_dict.ineligible_html.$wrapper.find('#ineligible_search').on('input', function() {
         const q      = $(this).val().toLowerCase().trim();
         const tbody  = ineligible_dialog.fields_dict.ineligible_html.$wrapper.find('#ineligible_tbody');
-        const source = q ? ineligible_list.filter(s => s.id.toLowerCase().includes(q) || s.name.toLowerCase().includes(q)) : ineligible_list;
-
-        tbody.html(source.map((s, idx) => {
-            const f  = parse_reasons(s.reasons || []);
-            const bg = idx % 2 !== 0 ? 'background:var(--subtle-accent-bg,#f9fafb);' : '';
-            return `<tr style="${bg}">
-                <td style="padding:8px 10px;border-bottom:1px solid var(--border-color);border-right:1px solid var(--border-color);vertical-align:middle;white-space:nowrap;">
-                    <div style="font-size:12px;font-weight:600;color:var(--text-color);">${frappe.utils.escape_html(s.name)}</div>
-                    <div style="font-size:11px;color:var(--text-muted);margin-top:1px;">${frappe.utils.escape_html(s.id)}</div>
-                </td>
-                <td style="padding:8px 10px;border-bottom:1px solid var(--border-color);border-right:1px solid var(--border-color);text-align:center;vertical-align:middle;">${f.no_salary_structure ? ICON_FAIL : ICON_OK}</td>
-                <td style="padding:8px 10px;border-bottom:1px solid var(--border-color);border-right:1px solid var(--border-color);text-align:center;vertical-align:middle;">${f.no_variable_pay     ? ICON_FAIL : ICON_OK}</td>
-                <td style="padding:8px 10px;border-bottom:1px solid var(--border-color);text-align:center;vertical-align:middle;">${f.no_attendance       ? ICON_FAIL : ICON_OK}</td>
-            </tr>`;
-        }).join('') || `<tr><td colspan="4" class="text-muted" style="padding:20px;text-align:center;">No matching employees found.</td></tr>`);
+        const source = q
+            ? ineligible_list.filter(s => s.id.toLowerCase().includes(q) || s.name.toLowerCase().includes(q))
+            : ineligible_list;
+        tbody.html(build_rows(source));
     });
 }
 
@@ -383,8 +386,10 @@ function generate_bulk_salary_slips(dialog) {
     const company  = dialog.get_value('company');
     const year     = dialog.get_value('year');
     const month    = dialog.get_value('month');
+    const category = dialog.get_value('category');
     const selected = get_checked_ids(dialog, 'employees_html', 'emp-card-check');
 
+    if (!category)        { frappe.msgprint(__('Please select a Category')); return; }
     if (!selected.length) { frappe.msgprint(__('Please select at least one employee to proceed')); return; }
 
     frappe.confirm(`Are you sure you want to generate salary slips for <b>${selected.length}</b> employee(s)?`, function() {
@@ -417,6 +422,15 @@ function show_bulk_print_dialog() {
             { fieldname: 'year', fieldtype: 'Select', label: 'Year', options: get_year_options(), reqd: 1, default: new Date().getFullYear().toString() },
             { fieldname: 'cb2', fieldtype: 'Column Break' },
             { fieldname: 'month', fieldtype: 'Select', label: 'Month', options: MONTHS, reqd: 1, default: get_current_month() },
+            { fieldname: 'sb_category', fieldtype: 'Section Break', label: 'Filter by Category' },
+            {
+                fieldname: 'category',
+                fieldtype: 'Link',
+                label: 'Category',
+                options: 'Category',
+                reqd: 1,
+                description: 'Only salary slips for employees belonging to this category will be shown.'
+            },
             { fieldname: 'sb1', fieldtype: 'Section Break' },
             { fieldname: 'fetch_slips', fieldtype: 'Button', label: 'Fetch Submitted Salary Slips', click: function() { fetch_submitted_salary_slips(d); } },
             { fieldname: 'sb2', fieldtype: 'Section Break' },
@@ -429,12 +443,14 @@ function show_bulk_print_dialog() {
 }
 
 function fetch_submitted_salary_slips(dialog) {
-    const company = dialog.get_value('company');
-    const year    = dialog.get_value('year');
-    const month   = dialog.get_value('month');
+    const company  = dialog.get_value('company');
+    const year     = dialog.get_value('year');
+    const month    = dialog.get_value('month');
+    const category = dialog.get_value('category');
 
     if (!company)        { frappe.msgprint(__('Please select Company')); return; }
     if (!year || !month) { frappe.msgprint(__('Please select Year and Month')); return; }
+    if (!category)       { frappe.msgprint(__('Please select a Category')); return; }
 
     const wrapper = dialog.fields_dict.slips_html.$wrapper;
     wrapper.html(`<div class="text-muted" style="padding:16px 0;text-align:center;font-size:12px;">
@@ -443,7 +459,7 @@ function fetch_submitted_salary_slips(dialog) {
 
     frappe.call({
         method: 'saral_hr.saral_hr.doctype.salary_slip.salary_slip.get_salary_slips_print_summary',
-        args: { company, year, month },
+        args: { company, year, month, category },
         callback: function(r) {
             if (!r.message) {
                 wrapper.html('<div class="text-muted" style="padding:16px 0;text-align:center;">Unable to retrieve data. Please try again.</div>');
@@ -451,7 +467,7 @@ function fetch_submitted_salary_slips(dialog) {
             }
 
             const {
-                submitted    = [],
+                submitted     = [],
                 not_printable = [],
                 total_active,
                 total_submitted
@@ -471,7 +487,8 @@ function fetch_submitted_salary_slips(dialog) {
                     padding:8px 0;margin-bottom:12px;font-size:12px;
                     border-bottom:1px solid var(--border-color);">
                     <span style="color:var(--text-muted);">
-                        Active Employees: <strong style="color:var(--text-color);">${total_active}</strong>
+                        Active Employees <em style="font-size:10px;">(${frappe.utils.escape_html(category)})</em>:
+                        <strong style="color:var(--text-color);">${total_active}</strong>
                     </span>
                     <span style="color:var(--border-color);">|</span>
                     <span style="color:var(--text-muted);">
@@ -539,9 +556,9 @@ function show_print_exclusions_dialog(not_printable_list, month, year) {
 
     function slip_status_badge(status) {
         const cfg = {
-            'Draft':       { bg: '#fff3cd', color: '#856404', label: 'Draft'        },
-            'No Slip':     { bg: '#fde8e8', color: '#e03131', label: 'No Slip'      },
-            'Cancelled':   { bg: '#f0f0f0', color: '#6c757d', label: 'Cancelled'    },
+            'Draft':     { bg: '#fff3cd', color: '#856404', label: 'Draft'     },
+            'No Slip':   { bg: '#fde8e8', color: '#e03131', label: 'No Slip'   },
+            'Cancelled': { bg: '#f0f0f0', color: '#6c757d', label: 'Cancelled' },
         };
         const s = cfg[status] || { bg: '#f0f0f0', color: '#495057', label: status };
         return `<span style="
@@ -606,23 +623,24 @@ function show_print_exclusions_dialog(not_printable_list, month, year) {
         ${last ? '' : 'border-right:1px solid var(--border-color);'}
         white-space:normal;line-height:1.4;">${label}</th>`;
 
-    function legend_item(pill_bg, pill_color, pill_text, desc) {
-        return `<span style="display:inline-flex;align-items:center;gap:6px;white-space:nowrap;">
-            <span style="display:inline-block;padding:2px 10px;border-radius:20px;font-size:10px;
-                font-weight:700;letter-spacing:0.04em;text-transform:uppercase;
-                background:${pill_bg};color:${pill_color};border:1px solid ${pill_color}55;">
-                ${pill_text}
-            </span>
-            <span style="font-size:11px;color:var(--text-muted,#8d99a6);">${desc}</span>
-        </span>`;
-    }
-
     const legend = `
         <div style="display:flex;align-items:center;gap:16px;margin-bottom:12px;flex-wrap:wrap;">
             <strong style="color:var(--text-color);font-size:12px;white-space:nowrap;">Status Key:</strong>
-            ${legend_item('#fff3cd','#856404','Draft','— Slip exists but not yet submitted')}
-            ${legend_item('#fde8e8','#e03131','No Slip','— Salary slip not created yet')}
-            ${legend_item('#f0f0f0','#6c757d','Cancelled','— Slip was cancelled')}
+            <span style="display:inline-flex;align-items:center;gap:6px;">
+                <span style="display:inline-block;padding:2px 10px;border-radius:20px;font-size:10px;font-weight:700;
+                    background:#fff3cd;color:#856404;border:1px solid #856404;">Draft</span>
+                <span style="font-size:11px;color:var(--text-muted);">Slip exists but not yet submitted</span>
+            </span>
+            <span style="display:inline-flex;align-items:center;gap:6px;">
+                <span style="display:inline-block;padding:2px 10px;border-radius:20px;font-size:10px;font-weight:700;
+                    background:#fde8e8;color:#e03131;border:1px solid #e03131;">No Slip</span>
+                <span style="font-size:11px;color:var(--text-muted);">Salary slip not created yet</span>
+            </span>
+            <span style="display:inline-flex;align-items:center;gap:6px;">
+                <span style="display:inline-block;padding:2px 10px;border-radius:20px;font-size:10px;font-weight:700;
+                    background:#f0f0f0;color:#6c757d;border:1px solid #6c757d;">Cancelled</span>
+                <span style="font-size:11px;color:var(--text-muted);">Slip was cancelled</span>
+            </span>
         </div>`;
 
     const content = `

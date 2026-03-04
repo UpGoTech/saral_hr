@@ -11,6 +11,7 @@
   "column_break_snib",
   "amount",
   "depends_on_payment_days",
+  "is_daily_rate",
   "employer_contribution"
  ],
  "fields": [
@@ -51,6 +52,14 @@
    "fieldtype": "Check",
    "in_list_view": 1,
    "label": "Depends on Payment Days"
+  },
+  {
+   "default": "0",
+   "fetch_from": "salary_component.is_daily_rate",
+   "fieldname": "is_daily_rate",
+   "fieldtype": "Check",
+   "in_list_view": 1,
+   "label": "Is Daily Rate"
   },
   {
    "default": "0",

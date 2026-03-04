@@ -39,13 +39,18 @@ DEDUCTION_COMPONENTS = [
 ]
 
 REPORTS = [
-    "bank_advice","educational_allowance","esi_register","labour_welfare_fund",
+    "bank_advice",
+    "home_bank_advice",
+    "other_bank_advice",
+    "educational_allowance","esi_register","labour_welfare_fund",
     "professional_tax","provident_fund","retention_deposit","salary_summary",
     "salary_summary_individual","transaction_checklist","variable_pay","monthly_attendance",
 ]
 
 REPORT_LABELS = {
     "bank_advice":               "Bank Advice",
+    "home_bank_advice":          "Home Bank Advice",
+    "other_bank_advice":         "Other Bank Advice",
     "educational_allowance":     "Educational Allowance Register",
     "esi_register":              "ESI Register",
     "labour_welfare_fund":       "Labour Welfare Fund Register",
@@ -151,6 +156,19 @@ def _pt_slab(gross):
 
 def _col(label, fieldname, fieldtype="Data", width=130, **kw):
     return {"label":_(label),"fieldname":fieldname,"fieldtype":fieldtype,"width":width,**kw}
+
+def _get_company_bank_map(companies):
+    """Returns {company_name: bank_name_lower} for given companies."""
+    if not companies:
+        return {}
+    return {
+        r.name: (r.bank_name or "").strip().lower()
+        for r in frappe.db.get_all(
+            "Company",
+            filters={"name": ["in", list(companies)]},
+            fields=["name", "bank_name"]
+        )
+    }
 
 
 # ============================================================
@@ -280,7 +298,7 @@ body{font-family:Arial,sans-serif;font-size:8px;color:#000}
 .sig-label{font-size:13px;color:#555}
 </style>"""
 
-_SELF_HEADER_MODES = {"monthly_attendance", "bank_advice"}
+_SELF_HEADER_MODES = {"monthly_attendance", "bank_advice", "home_bank_advice", "other_bank_advice"}
 
 
 def _build_print_html(sections, company, month, year):
@@ -310,19 +328,20 @@ def _build_print_html(sections, company, month, year):
 
 def _render_section(mode, columns, data, company="", month="", year=""):
     return {
-        "professional_tax":        lambda c, d: _render_large_table(c, d, skip_total_cols={"pt_rate"}),
-        # ✅ CHANGED: provident_fund now uses dedicated _render_pf renderer
-        "provident_fund":          lambda c, d: _render_pf(c, d),
-        "salary_summary":          _render_salary_summary,
+        "professional_tax":          lambda c, d: _render_large_table(c, d, skip_total_cols={"pt_rate"}),
+        "provident_fund":            lambda c, d: _render_pf(c, d),
+        "salary_summary":            _render_salary_summary,
         "salary_summary_individual": lambda c, d: _render_salary_summary_individual(c, d),
-        "transaction_checklist":   lambda c, d: _render_transaction_checklist(c, d),
-        "bank_advice":             lambda c, d: _render_bank_advice(c, d, company, month, year),
-        "monthly_attendance":      lambda c, d: _render_attendance(c, d, company, month, year),
-        "educational_allowance":   lambda c, d: _render_large_table(c, d),
-        "esi_register":            lambda c, d: _render_large_table(c, d),
-        "labour_welfare_fund":     lambda c, d: _render_large_table(c, d),
-        "retention_deposit":       lambda c, d: _render_large_table(c, d),
-        "variable_pay":            lambda c, d: _render_large_table(c, d),
+        "transaction_checklist":     lambda c, d: _render_transaction_checklist(c, d),
+        "bank_advice":               lambda c, d: _render_bank_advice(c, d, company, month, year, "Bank Advice"),
+        "home_bank_advice":          lambda c, d: _render_bank_advice(c, d, company, month, year, "Home Bank Advice"),
+        "other_bank_advice":         lambda c, d: _render_bank_advice(c, d, company, month, year, "Other Bank Advice"),
+        "monthly_attendance":        lambda c, d: _render_attendance(c, d, company, month, year),
+        "educational_allowance":     lambda c, d: _render_large_table(c, d),
+        "esi_register":              lambda c, d: _render_large_table(c, d),
+        "labour_welfare_fund":       lambda c, d: _render_large_table(c, d),
+        "retention_deposit":         lambda c, d: _render_large_table(c, d),
+        "variable_pay":              lambda c, d: _render_large_table(c, d),
     }.get(mode, _render_generic)(columns, data)
 
 
@@ -359,33 +378,12 @@ def _render_generic(columns, data):
 # SPECIFIC RENDERERS
 # ============================================================
 
-def _render_pt(columns, data):
-    if not data: return ""
-    rows = []
-    for row in data:
-        is_tot = row.get("_row_type") == "total"
-        cls    = ' class="tot"' if is_tot else ""
-        cells  = "".join(_td_val(c, row.get(c["fieldname"]), skip=(is_tot and c["fieldname"]=="pt_rate")) for c in columns)
-        rows.append(f"<tr{cls}>{cells}</tr>")
-    return _tbl(_thead(columns), rows)
-
-
-# ============================================================
-# ✅ UPDATED _render_pf — merges Employee Name + Employee ID
-#    into a single cell (name bold on top, ID smaller below),
-#    exactly like Image 2. DOJ and DOB columns also render properly.
-# ============================================================
 def _render_pf(columns, data):
     if not data:
         return '<p style="color:#888;padding:10px;font-size:8px;text-align:center;">No data</p>'
 
-    # Columns to skip in total row
     SKIP_TOTAL = {"pf_no", "uan_no", "days", "absent", "date_of_joining", "date_of_birth"}
-
-    # We merge employee_name + employee_id into one column in rendering.
-    # Filter out employee_id from the column list for the header — we'll merge it with employee_name.
     display_cols = [c for c in columns if c["fieldname"] != "employee_id"]
-
     NUMERIC_TYPES = ("Float", "Currency", "Int", "Percent")
 
     th_l = ("border:1px solid #999;padding:6px 8px;font-size:13px;font-weight:700;"
@@ -401,15 +399,12 @@ def _render_pf(columns, data):
     ts_r = ("border:1px solid #888;padding:12px 8px;font-size:14px;font-weight:700;"
             "background:#ffffff;color:#000;text-align:right;")
 
-    # ── HEADER ROW ───────────────────────────────────────────
     thead = '<tr style="background:#fff;">'
     for c in display_cols:
         fn     = c.get("fieldname", "")
         label  = c.get("label", "")
         is_num = c.get("fieldtype") in NUMERIC_TYPES
-
         if fn == "employee_name":
-            # Combined header: "Employee Name / Employee ID"
             thead += (
                 f'<th style="{th_l}min-width:160px;">'
                 f'Employee Name'
@@ -422,26 +417,21 @@ def _render_pf(columns, data):
             thead += f'<th style="{th_r if is_num else th_l}">{label}</th>'
     thead += '</tr>'
 
-    # ── DATA ROWS ────────────────────────────────────────────
     rows_html = ""
     for row in data:
         is_tot = row.get("bold") or row.get("_row_type") in ("total", "grand_total")
         bg     = "#ffffff"
         tr     = ""
-
         for c in display_cols:
             fn     = c.get("fieldname", "")
             val    = row.get(fn, "")
             is_num = c.get("fieldtype") in NUMERIC_TYPES
             tl     = ts_l if is_tot else td_l
             tr_s   = ts_r if is_tot else td_r
-
             if fn == "employee_name":
-                # ✅ Merged cell: bold name on top, smaller ID below
                 emp_id   = row.get("employee_id", "")
                 name_str = val or ""
                 if is_tot:
-                    # Total row — just show "Total", no ID
                     tr += f'<td style="{ts_l}background:{bg};font-weight:700;">{name_str}</td>'
                 else:
                     tr += (
@@ -450,20 +440,14 @@ def _render_pf(columns, data):
                         f'<div style="font-size:13px;font-weight:500;color:#444;margin-top:3px;">'
                         f'{emp_id}</div></td>'
                     )
-
             elif is_tot and fn in SKIP_TOTAL:
                 tr += f'<td style="{tr_s}background:{bg};"></td>'
-
             elif fn in ("date_of_joining", "date_of_birth"):
-                # Date columns — single line, no wrap
                 tr += f'<td style="{tl}background:{bg};min-width:100px;white-space:nowrap;">{val or ""}</td>'
-
             elif is_num:
                 tr += f'<td style="{tr_s}background:{bg};">{_fmt(val) if val not in ("", None) else ""}</td>'
-
             else:
                 tr += f'<td style="{tl}background:{bg};">{val or ""}</td>'
-
         rows_html += f'<tr>{tr}</tr>'
 
     return (
@@ -620,24 +604,16 @@ def _render_salary_summary_individual(columns, data):
     max_pairs = max(len(earn_cols), len(ded_cols))
 
     LABEL_SHORT = {
-        "Basic": "Basic",
-        "Dearness Allowance": "DA",
-        "House Rent Allowance": "HRA",
-        "Conveyance Allowance": "Conv.",
-        "Medical Allowance": "Medical",
-        "Education Allowance": "Edu. Allow.",
-        "Other Allowance": "Other Allow.",
-        "Variable Pay": "Var. Pay",
-        "Arrears": "Arrears",
-        "Employee -  PF": "Emp. PF",
-        "Employer -  PF": "Empr. PF",
-        "Employee - ESIC": "Emp. ESIC",
-        "Employer -  ESIC": "Empr. ESIC",
+        "Basic": "Basic", "Dearness Allowance": "DA", "House Rent Allowance": "HRA",
+        "Conveyance Allowance": "Conv.", "Medical Allowance": "Medical",
+        "Education Allowance": "Edu. Allow.", "Other Allowance": "Other Allow.",
+        "Variable Pay": "Var. Pay", "Arrears": "Arrears",
+        "Employee -  PF": "Emp. PF", "Employer -  PF": "Empr. PF",
+        "Employee - ESIC": "Emp. ESIC", "Employer -  ESIC": "Empr. ESIC",
         "Professional Tax": "Prof. Tax",
         "Employee -Labour Welfare Fund": "Emp. LWF",
         "Employer - Labour Welfare Fund": "Empr. LWF",
-        "Employee -Bonus": "Emp. Bonus",
-        "Employer - Bonus": "Empr. Bonus",
+        "Employee -Bonus": "Emp. Bonus", "Employer - Bonus": "Empr. Bonus",
     }
 
     STYLE_TH   = "border:1px solid #000; padding:8px 2px; font-size:13px; font-weight:700; text-align:center; background:#fff; line-height:1.4;"
@@ -647,7 +623,6 @@ def _render_salary_summary_individual(columns, data):
 
     html = '<table style="width:100%; border-collapse:collapse; border:1px solid #000; table-layout:fixed;">'
     html += '<thead><tr>'
-
     html += f'<th style="{STYLE_TH} width:230px;">Employee Name<div style="{DIV_SUB_TH}">Employee ID</div></th>'
     html += f'<th style="{STYLE_TH} width:70px;">Days</th>'
     html += f'<th style="{STYLE_TH} width:70px;">Absent<div style="{DIV_SUB_TH}">LWP</div></th>'
@@ -663,29 +638,23 @@ def _render_salary_summary_individual(columns, data):
     html += f'<th style="{STYLE_TH} width:95px;">Advance<div style="{DIV_SUB_TH}">Retention</div></th>'
     html += f'<th style="{STYLE_TH} width:110px;">Other Ded. - 1<div style="{DIV_SUB_TH}">Net Salary</div></th>'
     html += f'<th style="{STYLE_TH} width:150px;">Total Earnings<div style="{DIV_SUB_TH}">Total Deductions</div></th>'
-
     html += '</tr></thead><tbody>'
 
     for row in data:
         is_tot = row.get("bold") == 1
         fw = "font-weight:bold;" if is_tot else ""
-
         html += f'<tr style="{fw}">'
-
         html += (
             f'<td style="{STYLE_TD}">'
             f'<span style="font-weight:700;">{row.get("employee_name","")}</span>'
             f'<div style="{DIV_SUB}">{row.get("employee","")}</div></td>'
         )
-        # Days (single)
         html += f'<td style="{STYLE_TD} text-align:center;">{row.get("payment_days","")}</td>'
-        # Absent / LWP
         html += (
             f'<td style="{STYLE_TD} text-align:center;">'
             f'{row.get("absent_days") or "0"}'
             f'<div style="{DIV_SUB}">{_fmt(row.get("total_lwp")) or "0"}</div></td>'
         )
-
         for i in range(max_pairs):
             e_val = _fmt(row.get(earn_cols[i]["fieldname"])) if i < len(earn_cols) else ""
             d_val = _fmt(row.get(ded_cols[i]["fieldname"])) if i < len(ded_cols) else ""
@@ -694,7 +663,6 @@ def _render_salary_summary_individual(columns, data):
                 f'{e_val or "&nbsp;"}'
                 f'<div style="{DIV_SUB}">{d_val or "&nbsp;"}</div></td>'
             )
-
         html += (
             f'<td style="{STYLE_TD} text-align:right;">'
             f'{_fmt(row.get("earn_grat")) or "&nbsp;"}'
@@ -705,43 +673,33 @@ def _render_salary_summary_individual(columns, data):
             f'{_fmt(row.get("ded_adv")) or "&nbsp;"}'
             f'<div style="{DIV_SUB}">{_fmt(row.get("ded_ret")) or "&nbsp;"}</div></td>'
         )
-
         od1_val = _fmt(row.get(od1_fieldname)) if od1_fieldname else ""
         html += (
             f'<td style="{STYLE_TD} text-align:right;">'
             f'{od1_val or "&nbsp;"}'
             f'<div style="{DIV_SUB}">{_fmt(row.get("net_salary"))}</div></td>'
         )
-
         html += (
             f'<td style="{STYLE_TD} text-align:right;">'
             f'{_fmt(row.get("total_earnings"))}'
             f'<div style="{DIV_SUB}">{_fmt(row.get("total_deductions"))}</div></td>'
         )
-
         html += '</tr>'
 
     html += "</tbody></table>"
     return html
 
 
-# ============================================================
-# _render_transaction_checklist — SSI format exactly
-# Last columns paired like SSI:
-#   Empr.Gratuity/Loan | Advance/Retention | OtherDed-1/NetSalary | TotalEarn/TotalDed
-# ============================================================
 def _render_transaction_checklist(columns, data):
     if not data:
         return ""
 
-    # Find OD-1 fieldname
     od1_fn = None
     for c in columns:
         if c["fieldname"].startswith("ded_") and "od" in c["fieldname"]:
             od1_fn = c["fieldname"]
             break
 
-    # These go into dedicated last columns — exclude from paired cols
     LAST_COL_FIELDS = {
         "earn_grat",
         "ded_grat", "ded_loan", "ded_adv", "ded_ret",
@@ -777,21 +735,20 @@ def _render_transaction_checklist(columns, data):
     DIV_SUB_TH = "margin-top:8px;font-size:13px;"
 
     colgroup  = '<colgroup>'
-    colgroup += '<col style="width:230px"/>'   # Employee
-    colgroup += '<col style="width:70px"/>'    # Days/Absent
-    colgroup += '<col style="width:55px"/>'    # LWP
+    colgroup += '<col style="width:230px"/>'
+    colgroup += '<col style="width:70px"/>'
+    colgroup += '<col style="width:55px"/>'
     for _ in range(max_pairs):
-        colgroup += '<col/>'                   # paired cols auto
-    colgroup += '<col style="width:130px"/>'   # Empr.Grat/Loan
-    colgroup += '<col style="width:95px"/>'    # Advance/Retention
-    colgroup += '<col style="width:110px"/>'   # OtherDed-1/NetSalary
-    colgroup += '<col style="width:150px"/>'   # TotalEarn/TotalDed
+        colgroup += '<col/>'
+    colgroup += '<col style="width:130px"/>'
+    colgroup += '<col style="width:95px"/>'
+    colgroup += '<col style="width:110px"/>'
+    colgroup += '<col style="width:150px"/>'
     colgroup += '</colgroup>'
 
     html  = '<table style="width:100%;border-collapse:collapse;border:1px solid #000;table-layout:fixed;">'
     html += colgroup
     html += '<thead><tr>'
-
     html += f'<th style="{STYLE_TH}">Employee Name<div style="{DIV_SUB_TH}">Employee ID</div></th>'
     html += f'<th style="{STYLE_TH}">Days</th>'
     html += f'<th style="{STYLE_TH}">Absent<div style="{DIV_SUB_TH}">LWP</div></th>'
@@ -805,30 +762,23 @@ def _render_transaction_checklist(columns, data):
     html += f'<th style="{STYLE_TH}">Advance<div style="{DIV_SUB_TH}">Retention</div></th>'
     html += f'<th style="{STYLE_TH}">Other Ded. - 1<div style="{DIV_SUB_TH}">Net Salary</div></th>'
     html += f'<th style="{STYLE_TH}">Total Earnings<div style="{DIV_SUB_TH}">Total Deductions</div></th>'
-
     html += '</tr></thead><tbody>'
 
     for row in data:
         is_tot = row.get("bold") == 1
         fw = "font-weight:bold;" if is_tot else ""
         html += f'<tr style="{fw}">'
-
-        # Employee Name + ID
         html += (
             f'<td style="{STYLE_TD}">'
             f'<span style="font-weight:700;">{row.get("employee_name","")}</span>'
             f'<div style="{DIV_SUB}">{row.get("employee","")}</div></td>'
         )
-        # Days (single)
         html += f'<td style="{STYLE_TD} text-align:center;">{row.get("payment_days","")}</td>'
-        # Absent / LWP
         html += (
             f'<td style="{STYLE_TD} text-align:center;">'
             f'{row.get("absent_days") or "0"}'
             f'<div style="{DIV_SUB}">{_fmt(row.get("total_lwp")) or "0"}</div></td>'
         )
-
-        # Paired columns
         for i in range(max_pairs):
             e_fn  = earn_cols[i]["fieldname"] if i < len(earn_cols) else None
             d_fn  = ded_cols[i]["fieldname"]  if i < len(ded_cols)  else None
@@ -839,47 +789,41 @@ def _render_transaction_checklist(columns, data):
                 f'{e_val or "&nbsp;"}'
                 f'<div style="{DIV_SUB}">{d_val or "&nbsp;"}</div></td>'
             )
-
-        # Empr. Gratuity / Loan
         html += (
             f'<td style="{STYLE_TD} text-align:right;">'
             f'{_fmt(row.get("earn_grat")) or "&nbsp;"}'
             f'<div style="{DIV_SUB}">{_fmt(row.get("ded_loan")) or "&nbsp;"}</div></td>'
         )
-        # Advance / Retention
         html += (
             f'<td style="{STYLE_TD} text-align:right;">'
             f'{_fmt(row.get("ded_adv")) or "&nbsp;"}'
             f'<div style="{DIV_SUB}">{_fmt(row.get("ded_ret")) or "&nbsp;"}</div></td>'
         )
-        # Other Ded-1 / Net Salary
         od1_val = _fmt(row.get(od1_fn)) if od1_fn else ""
         html += (
             f'<td style="{STYLE_TD} text-align:right;">'
             f'{od1_val or "&nbsp;"}'
             f'<div style="{DIV_SUB}">{_fmt(row.get("net_salary"))}</div></td>'
         )
-        # Total Earnings / Total Deductions
         html += (
             f'<td style="{STYLE_TD} text-align:right;">'
             f'{_fmt(row.get("total_earnings"))}'
             f'<div style="{DIV_SUB}">{_fmt(row.get("total_deductions"))}</div></td>'
         )
-
         html += '</tr>'
 
     html += "</tbody></table>"
     return html
 
 
-def _render_bank_advice(columns, data, company="", month="", year=""):
+def _render_bank_advice(columns, data, company="", month="", year="", report_title="Bank Advice"):
     if not data:
         return '<p style="color:#888;padding:10px;font-size:8px;text-align:center;">No data</p>'
 
     rows      = [r for r in data if not r.get("bold")]
     total_row = next((r for r in data if r.get("bold")), {})
 
-    NUMERIC = {"net_salary"}
+    NUMERIC = set()  # net_salary handled manually now
 
     COL_WIDTHS = {
         "employee_id":     90,
@@ -910,7 +854,7 @@ def _render_bank_advice(columns, data, company="", month="", year=""):
             f'<div style="font-size:26px;font-weight:900;letter-spacing:1px;'
             f'text-transform:uppercase;color:#000;">{company}</div>'
             f'<div style="font-size:16px;font-weight:700;margin-top:4px;color:#000;">'
-            f'Bank Advice</div>'
+            f'{report_title}</div>'
             f'<div style="font-size:13px;color:#000;margin-top:3px;">'
             f'For the Month of {month} {year}</div>'
             f'</div>'
@@ -921,7 +865,7 @@ def _render_bank_advice(columns, data, company="", month="", year=""):
         for c in columns:
             fn  = c.get("fieldname","")
             lbl = c.get("label","")
-            tr += f'<th style="{th_r if fn in NUMERIC else th_l}">{lbl}</th>'
+            tr += f'<th style="{th_r if fn == "net_salary" else th_l}">{lbl}</th>'
         return tr + '</tr>'
 
     def _data_row(row, bg):
@@ -929,8 +873,11 @@ def _render_bank_advice(columns, data, company="", month="", year=""):
         for c in columns:
             fn  = c.get("fieldname","")
             val = row.get(fn, "")
-            if fn in NUMERIC:
-                tr += f'<td style="{td_r}background:{bg};">{_fmt(val)}</td>'
+            if fn == "net_salary":
+                if val == "On Hold":
+                    tr += f'<td style="{td_r}background:{bg};color:#c0392b;font-style:italic;">On Hold</td>'
+                else:
+                    tr += f'<td style="{td_r}background:{bg};">{_fmt(val)}</td>'
             else:
                 tr += f'<td style="{td_l}background:{bg};">{val or ""}</td>'
         return f'<tr>{tr}</tr>'
@@ -940,7 +887,7 @@ def _render_bank_advice(columns, data, company="", month="", year=""):
         for c in columns:
             fn  = c.get("fieldname","")
             val = total_row.get(fn,"")
-            if fn in NUMERIC:
+            if fn == "net_salary":
                 tr += f'<td style="{ts_r}">{_fmt(val)}</td>'
             elif fn == "employee_name":
                 tr += f'<td style="{ts_l}">Total</td>'
@@ -987,8 +934,6 @@ def _render_bank_advice(columns, data, company="", month="", year=""):
         html += '</tbody></table>'
 
     return html
-
-
 def _render_attendance(columns, data, company="", month="", year=""):
     if not data:
         return '<p style="color:#888;padding:10px;font-size:8px;text-align:center;">No data</p>'
@@ -1163,52 +1108,127 @@ def _render_attendance(columns, data, company="", month="", year=""):
 # REPORT DATA FUNCTIONS
 # ============================================================
 
-def _bank_advice(filters):
+def _build_bank_advice_data(filters, mode="all"):
     cols = [
         _col("Employee ID","employee_id"),
         _col("Employee Name","employee_name",width=180),
         _col("IFSC Code","ifsc_code"),
         _col("Account Number","account_number",width=160),
-        _col("Net Salary","net_salary","Float",130,precision=2),
+        _col("Net Salary","net_salary","Data",130),
         _col("Bank Name","bank_name",width=150),
     ]
     params = {}
     start, end = _date_range(filters)
     if not start: return cols, []
+
     params.update(start_date2=start, end_date2=end)
-    cond = "ss.docstatus=1 AND ss.start_date>=%(start_date2)s AND ss.end_date<=%(end_date2)s"
+    cond = (
+        "ss.docstatus=1 "
+        "AND ss.start_date>=%(start_date2)s AND ss.end_date<=%(end_date2)s"
+    )
     companies = _parse_list(filters.get("company"))
-    if companies: params["companies"]=tuple(companies); cond+=" AND ss.company IN %(companies)s"
+    if companies:
+        params["companies"] = tuple(companies)
+        cond += " AND ss.company IN %(companies)s"
     employees = _parse_list(filters.get("employee"))
-    if employees: params["employees"]=tuple(employees); cond+=" AND ss.employee IN %(employees)s"
+    if employees:
+        params["employees"] = tuple(employees)
+        cond += " AND ss.employee IN %(employees)s"
+
     catj = _category_join(filters, params)
     divc = _division_condition(filters, params)
+
     slips = frappe.db.sql(f"""
         SELECT ss.employee, ss.employee_name, ss.company, ss.net_salary,
                emp.bank_name, emp.account_number, emp.ifsc_code
         FROM `tabSalary Slip` ss
-        LEFT JOIN `tabCompany Link` cl ON cl.name=ss.employee
-        LEFT JOIN `tabEmployee` emp ON emp.name=cl.employee
-        {catj} WHERE {cond}{divc} ORDER BY ss.employee_name
+        INNER JOIN `tabCompany Link` cl_active
+            ON cl_active.name = ss.employee AND cl_active.is_active = 1
+        LEFT JOIN `tabEmployee` emp ON emp.name = ss.employee
+        {catj}
+        WHERE {cond}{divc}
+        ORDER BY ss.employee_name
     """, params, as_dict=1)
+
     if not slips: return cols, []
-    bank_type = filters.get("bank_type")
-    co_list   = list({s.company for s in slips if s.company})
-    home_map  = {r.name:(r.bank_name or "").strip().lower()
-                 for r in frappe.db.get_all("Company",filters={"name":["in",co_list]},fields=["name","bank_name"])} if co_list else {}
+
+    report_month = filters.get("month", "")
+    report_year  = filters.get("year", "")
+
+    on_hold_employees = set()
+    if report_month and report_year:
+        hold_records = frappe.db.sql("""
+            SELECT employee
+            FROM `tabEmployee Salary Hold`
+            WHERE status = 'On Hold'
+              AND docstatus = 1
+              AND month = %(month)s
+              AND year = %(year)s
+        """, {"month": report_month, "year": report_year}, as_dict=1)
+        on_hold_employees = {r.employee for r in hold_records}
+
+    co_list  = list({s.company for s in slips if s.company})
+    home_map = _get_company_bank_map(co_list)
+
     data, total = [], 0.0
     for s in slips:
-        eb, hb = (s.bank_name or "").strip().lower(), home_map.get(s.company,"")
-        if bank_type=="Home" and (not hb or eb!=hb): continue
-        if bank_type=="Different" and hb and eb==hb: continue
-        net=flt(s.net_salary,2); total+=net
-        data.append({"employee_id":s.employee,"employee_name":s.employee_name,
-                     "ifsc_code":s.ifsc_code or "-","account_number":s.account_number or "-",
-                     "net_salary":net,"bank_name":s.bank_name or "-"})
+        emp_bank  = (s.bank_name or "").strip().lower()
+        home_bank = home_map.get(s.company, "")
+
+        if mode == "home":
+            if not home_bank or emp_bank != home_bank:
+                continue
+        elif mode == "other":
+            if home_bank and emp_bank == home_bank:
+                continue
+
+        is_on_hold = s.employee in on_hold_employees
+
+        if is_on_hold:
+            data.append({
+                "employee_id":    s.employee,
+                "employee_name":  s.employee_name,
+                "ifsc_code":      "On Hold",
+                "account_number": "On Hold",
+                "net_salary":     "On Hold",
+                "bank_name":      s.bank_name or "-",
+            })
+        else:
+            net = flt(s.net_salary, 2)
+            total += net
+            data.append({
+                "employee_id":    s.employee,
+                "employee_name":  s.employee_name,
+                "ifsc_code":      s.ifsc_code or "-",
+                "account_number": s.account_number or "-",
+                "net_salary":     f"{net:,.2f}",
+                "bank_name":      s.bank_name or "-",
+            })
+
     if data:
-        data.append({"employee_id":"","employee_name":"Total","ifsc_code":"","account_number":"",
-                     "net_salary":flt(total,2),"bank_name":"","bold":1})
+        data.append({
+            "employee_id":    "",
+            "employee_name":  "Total",
+            "ifsc_code":      "",
+            "account_number": "",
+            "net_salary":     f"{flt(total, 2):,.2f}",
+            "bank_name":      "",
+            "bold":           1,
+        })
     return cols, data
+def _bank_advice(filters):
+    """Original Bank Advice — all active employees, no bank filter."""
+    return _build_bank_advice_data(filters, mode="all")
+
+
+def _home_bank_advice(filters):
+    """Home Bank Advice — only employees banking with the company's home bank."""
+    return _build_bank_advice_data(filters, mode="home")
+
+
+def _other_bank_advice(filters):
+    """Other Bank Advice — employees NOT banking with the company's home bank."""
+    return _build_bank_advice_data(filters, mode="other")
 
 
 def _educational_allowance(filters):
@@ -1375,7 +1395,6 @@ def _professional_tax(filters):
 def _provident_fund(filters):
     cols = [
         _col("PF No.","pf_no",width=110),_col("UAN No.","uan_no",width=110),
-        # ✅ employee_id kept in cols (data still has it), but renderer merges it with employee_name visually
         _col("Employee ID","employee_id",width=120),_col("Employee Name","employee_name",width=180),
         _col("Days (LWP+ABS)","days","Float",60,precision=1),_col("Absent","absent","Float",55,precision=1),
         _col("Gross Salary","gross","Float",110,precision=2),_col("BS+DA","basic_da","Float",110,precision=2),
@@ -1894,6 +1913,8 @@ def _monthly_attendance(filters):
 
 ROUTER = {
     "bank_advice":               _bank_advice,
+    "home_bank_advice":          _home_bank_advice,
+    "other_bank_advice":         _other_bank_advice,
     "educational_allowance":     _educational_allowance,
     "esi_register":              _esi_register,
     "labour_welfare_fund":       _labour_welfare_fund,

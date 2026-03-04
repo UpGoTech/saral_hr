@@ -14,7 +14,6 @@ frappe.ui.form.on("Salary Slip", {
         if (!frm.doc.employee) return;
         reset_form(frm);
 
-        // Fetch working_days_calculation_method from employee's Category
         frappe.db.get_value("Company Link", frm.doc.employee, "category", (r) => {
             if (r && r.category) {
                 frappe.db.get_value("Category", r.category, "salary_calculation_based_on", (cat) => {
@@ -53,7 +52,6 @@ frappe.ui.form.on("Salary Slip", {
             callback(r) {
                 if (!r.message) return;
                 apply_attendance(frm, r.message);
-                // recalculate is called inside apply_attendance with correct wd/pd
             }
         });
     }
@@ -144,8 +142,6 @@ function fetch_and_validate_all(frm) {
         }
 
         apply_salary_structure(frm, salary_data);
-        // Pass attendance_data and vpa_percentage directly so
-        // recalculate_salary gets correct wd/pd without relying on frm.doc
         apply_attendance(frm, attendance_data, flt(vpa_percentage) / 100);
         frm.page.btn_primary.prop("disabled", false);
     }
@@ -210,8 +206,6 @@ function apply_salary_structure(frm, data) {
     frm.refresh_fields(["earnings", "deductions"]);
 }
 
-// KEY FIX: accept wd, pd, variable_pay_pct directly so recalculate doesn't
-// have to read frm.doc (which may not be updated yet after set_value).
 function apply_attendance(frm, d, variable_pay_pct) {
     frm.set_value({
         total_working_days: d.working_days,
@@ -224,19 +218,15 @@ function apply_attendance(frm, d, variable_pay_pct) {
         total_holidays:     d.total_holidays || 0
     });
 
-    // Store variable pay percentage on frm for manual edits later
     if (variable_pay_pct !== undefined) {
         frm.variable_pay_percentage = variable_pay_pct;
     }
 
-    // Pass wd/pd directly — do NOT read from frm.doc here
     recalculate_salary(frm, d.working_days, d.payment_days);
 }
 
 // ─── Salary Calculation ───────────────────────────────────────────────────────
 
-// wd and pd are optional overrides — used when frm.doc may not yet reflect
-// the latest set_value calls (async Frappe behaviour).
 function recalculate_salary(frm, wd_override, pd_override) {
     let total_earnings = 0;
     let total_deductions = 0;
@@ -244,37 +234,48 @@ function recalculate_salary(frm, wd_override, pd_override) {
     let total_employer_contribution = 0;
     let retention = 0;
 
-    // Use passed-in values if available, otherwise fall back to frm.doc
     const wd = flt(wd_override !== undefined ? wd_override : frm.doc.total_working_days);
     const pd = flt(pd_override !== undefined ? pd_override : frm.doc.payment_days);
     const variable_pct = flt(frm.variable_pay_percentage || 0);
 
+    const is_worker = (frm.doc.category || "").toLowerCase() === "worker";
+
+    const PF_WAGE_CEILING = 15000; // EPFO statutory wage ceiling
+
     let basic_amount      = 0;
     let da_amount         = 0;
     let conveyance_amount = 0;
+    let special_allowance = 0;
 
     (frm.doc.earnings || []).forEach(row => {
         const base = flt(row.base_amount || row.amount || 0);
         row.base_amount = base;
 
         let amount = 0;
-        if (row.salary_component && row.salary_component.toLowerCase().includes("variable")) {
+        const comp = (row.salary_component || "").toLowerCase();
+
+        if (comp.includes("variable")) {
             amount = (wd > 0 && row.depends_on_payment_days)
                 ? (base / wd) * pd * variable_pct
                 : base * variable_pct;
+
+        } else if (row.is_daily_rate) {
+            amount = base * pd;
+
+        } else if (row.depends_on_payment_days && wd > 0) {
+            amount = (base / wd) * pd;
+
         } else {
-            amount = (row.depends_on_payment_days && wd > 0)
-                ? (base / wd) * pd
-                : base;
+            amount = base;
         }
 
         row.amount = flt(amount, 2);
         total_earnings += row.amount;
 
-        const comp = (row.salary_component || "").toLowerCase();
         if (comp.includes("basic"))                            basic_amount      = row.amount;
         if (comp.includes("da") || comp.includes("dearness")) da_amount         = row.amount;
         if (comp.includes("conveyance"))                       conveyance_amount = row.amount;
+        if (comp.includes("special"))                          special_allowance = row.amount;
     });
 
     total_basic_da = basic_amount + da_amount;
@@ -287,35 +288,30 @@ function recalculate_salary(frm, wd_override, pd_override) {
         const comp = (row.salary_component || "").toLowerCase();
 
         if (comp.includes("esic") && !comp.includes("employer")) {
-            if (base > 0) {
-                amount = total_earnings < 21000
-                    ? flt((total_earnings - conveyance_amount) * 0.0075, 2)
-                    : 0;
-            } else {
-                amount = 0;
-            }
+            amount = (base > 0 && total_earnings < 21000)
+                ? flt((total_earnings - conveyance_amount) * 0.0075, 2)
+                : 0;
 
         } else if (comp.includes("esic") && comp.includes("employer")) {
-            if (base > 0) {
-                amount = total_earnings < 21000
-                    ? flt((total_earnings - conveyance_amount) * 0.0325, 2)
-                    : 0;
-            } else {
-                amount = 0;
-            }
+            amount = (base > 0 && total_earnings < 21000)
+                ? flt((total_earnings - conveyance_amount) * 0.0325, 2)
+                : 0;
 
         } else if (comp.includes("pf") || comp.includes("provident")) {
-            if (base > 0) {
-                const basic_da_total = basic_amount + da_amount;
-                amount = flt(basic_da_total * 0.12, 2);
-            } else {
-                amount = 0;
-            }
+            const pf_base = is_worker
+                ? (basic_amount + special_allowance)
+                : (basic_amount + da_amount);
+            const capped_pf_base = Math.min(pf_base, PF_WAGE_CEILING); // ← ₹15,000 cap
+            amount = base > 0 ? flt(capped_pf_base * 0.12, 2) : 0;
+
+        } else if (row.is_daily_rate) {
+            amount = base * pd;
+
+        } else if (row.depends_on_payment_days && wd > 0 && base > 0) {
+            amount = (base / wd) * pd;
 
         } else {
-            amount = (row.depends_on_payment_days && wd > 0 && base > 0)
-                ? (base / wd) * pd
-                : base;
+            amount = base;
         }
 
         row.amount = flt(amount, 2);

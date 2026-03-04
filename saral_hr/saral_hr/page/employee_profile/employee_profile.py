@@ -176,6 +176,86 @@ def get_employee_profile_data(employee):
                     "Employee", reporting["final_reporting"], "employee"
                 ) or reporting["final_reporting"]
 
+    # ── Salary Structure Assignment History ──
+    # Fetch the latest submitted SSA with full earnings/deductions details
+    latest_ssa_name = frappe.db.get_value(
+        "Salary Structure Assignment",
+        filters={"employee": employee, "docstatus": 1},
+        fieldname="name",
+        order_by="from_date desc",
+    )
+
+    latest_ssa = None
+    if latest_ssa_name:
+        ssa_doc = frappe.get_doc("Salary Structure Assignment", latest_ssa_name)
+        latest_ssa = {
+            "name":                       ssa_doc.name,
+            "salary_structure":           ssa_doc.salary_structure,
+            "from_date":                  str(ssa_doc.from_date) if ssa_doc.from_date else None,
+            "to_date":                    str(ssa_doc.to_date) if ssa_doc.to_date else None,
+            "monthly_ctc":                ssa_doc.monthly_ctc,
+            "gross_salary":               ssa_doc.gross_salary,
+            "total_deductions":           ssa_doc.total_deductions,
+            "total_employer_contribution":ssa_doc.total_employer_contribution,
+            "net_salary":                 ssa_doc.net_salary,
+            "annual_ctc":                 ssa_doc.annual_ctc,
+            "designation":                ssa_doc.designation,
+            "department":                 ssa_doc.department,
+            "branch":                     ssa_doc.branch,
+            "earnings": [
+                {
+                    "salary_component": row.salary_component,
+                    "amount":           row.amount,
+                }
+                for row in (ssa_doc.earnings or [])
+            ],
+            "deductions": [
+                {
+                    "salary_component": row.salary_component,
+                    "amount":           row.amount,
+                }
+                for row in (ssa_doc.deductions or [])
+            ],
+        }
+
+    # Fetch all cancelled SSA records (docstatus=2), most recent first
+    cancelled_ssas_names = frappe.db.get_all(
+        "Salary Structure Assignment",
+        filters={"employee": employee, "docstatus": 2},
+        fields=["name"],
+        order_by="from_date desc",
+    )
+
+    cancelled_ssas = []
+    for rec in cancelled_ssas_names:
+        try:
+            cdoc = frappe.get_doc("Salary Structure Assignment", rec.name)
+            cancelled_ssas.append({
+                "name":                       cdoc.name,
+                "salary_structure":           cdoc.salary_structure,
+                "from_date":                  str(cdoc.from_date) if cdoc.from_date else None,
+                "to_date":                    str(cdoc.to_date) if cdoc.to_date else None,
+                "monthly_ctc":                cdoc.monthly_ctc,
+                "gross_salary":               cdoc.gross_salary,
+                "total_deductions":           cdoc.total_deductions,
+                "total_employer_contribution":cdoc.total_employer_contribution,
+                "net_salary":                 cdoc.net_salary,
+                "annual_ctc":                 cdoc.annual_ctc,
+                "designation":                cdoc.designation or "",
+                "department":                 cdoc.department or "",
+                "branch":                     cdoc.branch or "",
+                "earnings": [
+                    {"salary_component": row.salary_component, "amount": row.amount}
+                    for row in (cdoc.earnings or [])
+                ],
+                "deductions": [
+                    {"salary_component": row.salary_component, "amount": row.amount}
+                    for row in (cdoc.deductions or [])
+                ],
+            })
+        except Exception:
+            pass
+
     return {
         "employee":                emp.employee,
         "first_name":              emp.first_name,
@@ -191,4 +271,6 @@ def get_employee_profile_data(employee):
         "timeline":                timeline,
         "immediate_reporting_name": immediate_reporting_name,
         "final_reporting_name":     final_reporting_name,
+        "latest_ssa":              latest_ssa,
+        "cancelled_ssas":          cancelled_ssas,
     }

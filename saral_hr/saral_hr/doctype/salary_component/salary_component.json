@@ -13,6 +13,8 @@
   "column_break_phkq",
   "type",
   "depends_on_payment_days",
+  "is_daily_rate",
+  "depends_on_physical_working_days",
   "employer_contribution",
   "is_special_component",
   "enter_amount_according_to_months"
@@ -49,6 +51,38 @@
    "label": "Description"
   },
   {
+   "fieldname": "column_break_phkq",
+   "fieldtype": "Column Break"
+  },
+  {
+   "default": "0",
+   "description": "The amount entered in Salary Structure Assignment is a monthly figure. It will be prorated as: Amount \u00f7 Working Days \u00d7 Payment Days.",
+   "fieldname": "depends_on_payment_days",
+   "fieldtype": "Check",
+   "label": "Depends on Payment Days"
+  },
+  {
+   "default": "0",
+   "description": "The amount entered in Salary Structure Assignment is a per-day rate. It will be calculated as: Daily Rate \u00d7 Payment Days.",
+   "fieldname": "is_daily_rate",
+   "fieldtype": "Check",
+   "label": "Is Daily Rate Component"
+  },
+  {
+   "default": "0",
+   "description": "Calculated as: Amount \u00f7 Working Days \u00d7 (Payment Days \u2212 EL \u2212 CL). Excludes Earned Leave and Casual Leave from the paid days.",
+   "fieldname": "depends_on_physical_working_days",
+   "fieldtype": "Check",
+   "label": "Depends on Physical Working Days"
+  },
+  {
+   "default": "0",
+   "depends_on": "eval:doc.type == 'Deduction'",
+   "fieldname": "employer_contribution",
+   "fieldtype": "Check",
+   "label": "Employer Contribution"
+  },
+  {
    "default": "0",
    "fieldname": "is_special_component",
    "fieldtype": "Check",
@@ -60,23 +94,6 @@
    "fieldtype": "Table",
    "label": "Enter Amount according to months",
    "options": "Special Salary Component"
-  },
-  {
-   "default": "0",
-   "depends_on": "eval:doc.type == 'Deduction'",
-   "fieldname": "employer_contribution",
-   "fieldtype": "Check",
-   "label": "Employer Contribution"
-  },
-  {
-   "fieldname": "column_break_phkq",
-   "fieldtype": "Column Break"
-  },
-  {
-   "default": "0",
-   "fieldname": "depends_on_payment_days",
-   "fieldtype": "Check",
-   "label": "Depends on Payment Days"
   }
  ],
  "index_web_pages_for_search": 1,

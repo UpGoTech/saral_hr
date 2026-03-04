@@ -29,27 +29,27 @@
   {
    "fieldname": "employee",
    "fieldtype": "Link",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
    "label": "Employee",
    "options": "Company Link",
-   "reqd": 1,
-   "in_list_view": 1,
-   "in_standard_filter": 1
+   "reqd": 1
   },
   {
-   "fetch_from": "employee.full_name",
+   "bold": 1,
    "fieldname": "employee_name",
    "fieldtype": "Data",
+   "in_list_view": 1,
    "label": "Employee Name",
-   "read_only": 1,
-   "in_list_view": 1
+   "read_only": 1
   },
   {
    "fieldname": "company",
    "fieldtype": "Data",
-   "label": "Company",
-   "read_only": 1,
    "in_list_view": 1,
-   "in_standard_filter": 1
+   "in_standard_filter": 1,
+   "label": "Company",
+   "read_only": 1
   },
   {
    "fieldname": "column_break_1",
@@ -58,37 +58,37 @@
   {
    "fieldname": "year",
    "fieldtype": "Select",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
    "label": "Year",
    "options": "2023\n2024\n2025\n2026\n2027",
-   "reqd": 1,
-   "in_list_view": 1,
-   "in_standard_filter": 1
+   "reqd": 1
   },
   {
    "fieldname": "month",
    "fieldtype": "Select",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
    "label": "Month",
    "options": "January\nFebruary\nMarch\nApril\nMay\nJune\nJuly\nAugust\nSeptember\nOctober\nNovember\nDecember",
-   "reqd": 1,
-   "in_list_view": 1,
-   "in_standard_filter": 1
-  },
-  {
-   "fieldname": "hold_date",
-   "fieldtype": "Date",
-   "label": "Hold Date",
-   "default": "Today",
    "reqd": 1
   },
   {
+   "default": "Today",
+   "fieldname": "hold_date",
+   "fieldtype": "Date",
+   "label": "Hold Date",
+   "reqd": 1
+  },
+  {
+   "default": "On Hold",
    "fieldname": "status",
    "fieldtype": "Select",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
    "label": "Status",
    "options": "On Hold\nReleased\nWas On Hold",
-   "default": "On Hold",
-   "reqd": 1,
-   "in_list_view": 1,
-   "in_standard_filter": 1
+   "reqd": 1
   },
   {
    "fieldname": "details_section",
@@ -124,23 +124,23 @@
    "reqd": 1
   },
   {
+   "collapsible": 1,
+   "depends_on": "eval:doc.status == 'Released'",
    "fieldname": "release_section",
    "fieldtype": "Section Break",
-   "label": "Release Details",
-   "collapsible": 1,
-   "depends_on": "eval:doc.status == 'Released'"
+   "label": "Release Details"
   },
   {
+   "depends_on": "eval:doc.status == 'Released'",
    "fieldname": "release_date",
    "fieldtype": "Date",
-   "label": "Release Date",
-   "depends_on": "eval:doc.status == 'Released'"
+   "label": "Release Date"
   },
   {
+   "depends_on": "eval:doc.status == 'Released'",
    "fieldname": "release_reason",
    "fieldtype": "Small Text",
-   "label": "Release Reason",
-   "depends_on": "eval:doc.status == 'Released'"
+   "label": "Release Reason"
   },
   {
    "fieldname": "amended_from",
@@ -156,7 +156,7 @@
  "index_web_pages_for_search": 1,
  "is_submittable": 1,
  "links": [],
- "modified": "2026-02-26 12:00:00.000000",
+ "modified": "2026-03-04 13:01:16.165580",
  "modified_by": "Administrator",
  "module": "Saral Hr",
  "name": "Employee Salary Hold",

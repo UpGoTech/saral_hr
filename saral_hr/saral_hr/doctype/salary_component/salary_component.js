@@ -14,6 +14,51 @@ frappe.ui.form.on('Salary Component', {
             frm.clear_table('enter_amount_according_to_months');
             frm.refresh_field('enter_amount_according_to_months');
         }
+    },
+
+    is_daily_rate(frm) {
+        if (frm.doc.is_daily_rate) {
+            if (frm.doc.depends_on_payment_days) {
+                frm.set_value('depends_on_payment_days', 0);
+            }
+            if (frm.doc.depends_on_physical_working_days) {
+                frm.set_value('depends_on_physical_working_days', 0);
+            }
+            frappe.show_alert({
+                message: __('Other payment day flags have been unchecked. A component can only have one calculation mode.'),
+                indicator: 'orange'
+            });
+        }
+    },
+
+    depends_on_payment_days(frm) {
+        if (frm.doc.depends_on_payment_days) {
+            if (frm.doc.is_daily_rate) {
+                frm.set_value('is_daily_rate', 0);
+            }
+            if (frm.doc.depends_on_physical_working_days) {
+                frm.set_value('depends_on_physical_working_days', 0);
+            }
+            frappe.show_alert({
+                message: __('Other payment day flags have been unchecked. A component can only have one calculation mode.'),
+                indicator: 'orange'
+            });
+        }
+    },
+
+    depends_on_physical_working_days(frm) {
+        if (frm.doc.depends_on_physical_working_days) {
+            if (frm.doc.is_daily_rate) {
+                frm.set_value('is_daily_rate', 0);
+            }
+            if (frm.doc.depends_on_payment_days) {
+                frm.set_value('depends_on_payment_days', 0);
+            }
+            frappe.show_alert({
+                message: __('Other payment day flags have been unchecked. A component can only have one calculation mode.'),
+                indicator: 'orange'
+            });
+        }
     }
 });
 
