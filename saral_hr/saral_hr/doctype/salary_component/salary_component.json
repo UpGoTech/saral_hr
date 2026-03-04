@@ -14,6 +14,7 @@
   "type",
   "depends_on_payment_days",
   "is_daily_rate",
+  "depends_on_physical_working_days",
   "employer_contribution",
   "is_special_component",
   "enter_amount_according_to_months"
@@ -66,6 +67,13 @@
    "fieldname": "is_daily_rate",
    "fieldtype": "Check",
    "label": "Is Daily Rate Component"
+  },
+  {
+   "default": "0",
+   "description": "Calculated as: Amount \u00f7 Working Days \u00d7 (Payment Days \u2212 EL \u2212 CL). Excludes Earned Leave and Casual Leave from the paid days.",
+   "fieldname": "depends_on_physical_working_days",
+   "fieldtype": "Check",
+   "label": "Depends on Physical Working Days"
   },
   {
    "default": "0",

@@ -18,11 +18,6 @@ frappe.ui.form.on("Company Link", {
         if (!frm.is_new()) {
             refresh_company_fields(frm);
         }
-
-        if (frm.is_new() && frm.doc.employee && !frm._transfer_warned) {
-            frm._transfer_warned = true;
-            check_and_warn_transfer(frm, frm.doc.employee);
-        }
     },
 
     company(frm) {
@@ -34,8 +29,12 @@ frappe.ui.form.on("Company Link", {
     employee(frm) {
         const selected_employee = frm.doc.employee;
         if (!selected_employee || !frm.is_new()) return;
-        if (frm._transfer_warned) return;
-        frm._transfer_warned = true;
+
+        // Frappe fires the trigger twice on Link field select (value + fetch).
+        // Guard so we only warn once per unique employee selection.
+        if (frm._last_warned_employee === selected_employee) return;
+        frm._last_warned_employee = selected_employee;
+
         check_and_warn_transfer(frm, selected_employee);
     },
 
@@ -97,14 +96,14 @@ function check_and_warn_transfer(frm, employee) {
     find_active_record(employee).then(record => {
         if (record) {
             frappe.msgprint({
-                title: __("Transfer Notice"),
+                title: __("Employee Currently Active"),
                 indicator: "orange",
                 message: __(
-                    "This employee is currently active at {0} under record {1}. "
+                    "<b>{0}</b> is currently active at <b>{1}</b> (Record: {2}).<br><br>"
                     + "Saving this record will archive that record and set its leaving date "
-                    + "to one day before the new joining date. "
-                    + "Please make sure the Date of Joining is correct before saving.",
-                    [record.company, record.name]
+                    + "to one day before the new joining date.<br><br>"
+                    + "Please make sure the <b>Date of Joining</b> is correct before saving.",
+                    [employee, record.company, record.name]
                 )
             });
         }

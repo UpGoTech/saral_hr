@@ -9,7 +9,6 @@ frappe.query_reports["Payroll Report"] = {
         { fieldname:"category", label:__("Category"), fieldtype:"Link", options:"Category", default:"" },
         { fieldname:"division", label:__("Division"), fieldtype:"MultiSelectList",
           get_data: txt => frappe.db.get_link_options("Department", txt) },
-        { fieldname:"bank_type", label:__("Bank Type"), fieldtype:"Select", options:"\nHome\nDifferent", hidden:1 }
     ],
 
     onload(report) {
@@ -52,19 +51,23 @@ frappe.query_reports["Payroll Report"] = {
     }
 };
 
+// ── REPORT DEFINITIONS ──────────────────────────────────────────────────────
+// bank_type field is no longer needed — Home/Other are separate report tabs.
 const REPORTS = [
-    { key:"bank_advice",               label:"Bank Advice",                    bank_type:true  },
-    { key:"educational_allowance",     label:"Educational Allowance Register", bank_type:false },
-    { key:"esi_register",              label:"ESI Register",                   bank_type:false },
-    { key:"labour_welfare_fund",       label:"Labour Welfare Fund Register",   bank_type:false },
-    { key:"professional_tax",          label:"Professional Tax Register",      bank_type:false },
-    { key:"provident_fund",            label:"Provident Fund Register",        bank_type:false },
-    { key:"retention_deposit",         label:"Retention Deposit Register",     bank_type:false },
-    { key:"salary_summary",            label:"Salary Summary",                 bank_type:false },
-    { key:"salary_summary_individual", label:"Salary Summary Individual",      bank_type:false },
-    { key:"transaction_checklist",     label:"Transaction Checklist",          bank_type:false },
-    { key:"variable_pay",              label:"Variable Pay Register",          bank_type:false },
-    { key:"monthly_attendance",        label:"Monthly Attendance Report",      bank_type:false },
+    { key:"bank_advice",               label:"Bank Advice"                    },
+    { key:"home_bank_advice",          label:"Home Bank Advice"               },
+    { key:"other_bank_advice",         label:"Other Bank Advice"              },
+    { key:"educational_allowance",     label:"Educational Allowance Register" },
+    { key:"esi_register",              label:"ESI Register"                   },
+    { key:"labour_welfare_fund",       label:"Labour Welfare Fund Register"   },
+    { key:"professional_tax",          label:"Professional Tax Register"      },
+    { key:"provident_fund",            label:"Provident Fund Register"        },
+    { key:"retention_deposit",         label:"Retention Deposit Register"     },
+    { key:"salary_summary",            label:"Salary Summary"                 },
+    { key:"salary_summary_individual", label:"Salary Summary Individual"      },
+    { key:"transaction_checklist",     label:"Transaction Checklist"          },
+    { key:"variable_pay",              label:"Variable Pay Register"          },
+    { key:"monthly_attendance",        label:"Monthly Attendance Report"      },
 ];
 
 let _idx            = 0;
@@ -106,6 +109,7 @@ function _ensure_styles() {
             white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
         .pr-item:hover,.pr-item:focus{background:#f0f4ff;outline:none;}
         .pr-item.active{background:#e8eeff;font-weight:600;color:#3b5bdb;}
+        .pr-item.pr-bank-sub{padding-left:24px;color:#555;font-style:italic;}
         .pr-item.hide{display:none;}
         .pr-empty{padding:8px 12px;font-size:12px;color:#aaa;text-align:center;display:none;}
         .pr-status{font-size:10px;color:#16a34a;margin-left:4px;white-space:nowrap;}
@@ -117,9 +121,12 @@ function _inject_nav(report) {
     if (report.page.wrapper.find(".pr-bar").length) return;
     _ensure_styles();
 
-    const items = REPORTS.map((r,i) =>
-        `<div class="pr-item${i===0?" active":""}" data-i="${i}" tabindex="0">${r.label}</div>`
-    ).join("");
+    const items = REPORTS.map((r,i) => {
+        // Visually indent the two bank sub-reports
+        const sub = (r.key === "home_bank_advice" || r.key === "other_bank_advice")
+            ? " pr-bank-sub" : "";
+        return `<div class="pr-item${i===0?" active":""}${sub}" data-i="${i}" tabindex="0">${r.label}</div>`;
+    }).join("");
 
     const bar = $(`
         <div class="pr-bar">
@@ -199,18 +206,17 @@ function _inject_nav(report) {
 }
 
 function _prefetch_all(bar) {
-    const fk = _filter_key();
-    const f  = frappe.query_report.get_values() || {};
+    const fk  = _filter_key();
+    const f   = frappe.query_report.get_values() || {};
 
     _prefetch_xhr = frappe.call({
         method: "saral_hr.saral_hr.report.payroll_report.payroll_report.get_all_reports_data",
         args: { filters: JSON.stringify({
-            year:      f.year      || "",
-            month:     f.month     || "",
-            company:   JSON.stringify(f.company  || []),
-            category:  f.category  || "",
-            division:  JSON.stringify(f.division || []),
-            bank_type: f.bank_type || "",
+            year:     f.year     || "",
+            month:    f.month    || "",
+            company:  JSON.stringify(f.company  || []),
+            category: f.category || "",
+            division: JSON.stringify(f.division || []),
         })},
         callback(res) {
             _prefetch_xhr = null;
@@ -239,8 +245,6 @@ function _sync(report) {
     const r = REPORTS[_idx], bar = report.page.wrapper.find(".pr-bar");
     bar.find(".pr-input").val(r.label);
     bar.find(".pr-item").removeClass("active").filter(`[data-i="${_idx}"]`).addClass("active");
-    const bt = report.page.wrapper.find('[data-fieldname="bank_type"]').closest(".frappe-control");
-    r.bank_type ? bt.show() : bt.hide();
 }
 
 function _go(report, idx) {
@@ -295,7 +299,6 @@ function _server_filters() {
         company:     JSON.stringify(f.company   || []),
         category:    f.category  || "",
         division:    JSON.stringify(f.division  || []),
-        bank_type:   f.bank_type || "",
         report_mode: frappe.query_report.get_filter_value("report_mode") || "bank_advice",
     };
 }

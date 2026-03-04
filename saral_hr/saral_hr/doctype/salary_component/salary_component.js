@@ -17,23 +17,45 @@ frappe.ui.form.on('Salary Component', {
     },
 
     is_daily_rate(frm) {
-        // Mutually exclusive: daily rate and depends_on_payment_days
-        // cannot both be checked at the same time
-        if (frm.doc.is_daily_rate && frm.doc.depends_on_payment_days) {
-            frm.set_value('depends_on_payment_days', 0);
+        if (frm.doc.is_daily_rate) {
+            if (frm.doc.depends_on_payment_days) {
+                frm.set_value('depends_on_payment_days', 0);
+            }
+            if (frm.doc.depends_on_physical_working_days) {
+                frm.set_value('depends_on_physical_working_days', 0);
+            }
             frappe.show_alert({
-                message: __('Depends on Payment Days has been unchecked. A component cannot be both monthly prorated and a daily rate.'),
+                message: __('Other payment day flags have been unchecked. A component can only have one calculation mode.'),
                 indicator: 'orange'
             });
         }
     },
 
     depends_on_payment_days(frm) {
-        // Mutually exclusive: same guard from the other side
-        if (frm.doc.depends_on_payment_days && frm.doc.is_daily_rate) {
-            frm.set_value('is_daily_rate', 0);
+        if (frm.doc.depends_on_payment_days) {
+            if (frm.doc.is_daily_rate) {
+                frm.set_value('is_daily_rate', 0);
+            }
+            if (frm.doc.depends_on_physical_working_days) {
+                frm.set_value('depends_on_physical_working_days', 0);
+            }
             frappe.show_alert({
-                message: __('Is Daily Rate Component has been unchecked. A component cannot be both monthly prorated and a daily rate.'),
+                message: __('Other payment day flags have been unchecked. A component can only have one calculation mode.'),
+                indicator: 'orange'
+            });
+        }
+    },
+
+    depends_on_physical_working_days(frm) {
+        if (frm.doc.depends_on_physical_working_days) {
+            if (frm.doc.is_daily_rate) {
+                frm.set_value('is_daily_rate', 0);
+            }
+            if (frm.doc.depends_on_payment_days) {
+                frm.set_value('depends_on_payment_days', 0);
+            }
+            frappe.show_alert({
+                message: __('Other payment day flags have been unchecked. A component can only have one calculation mode.'),
                 indicator: 'orange'
             });
         }

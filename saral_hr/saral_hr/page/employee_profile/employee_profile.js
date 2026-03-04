@@ -26,9 +26,6 @@ frappe.pages["employee-profile"].on_page_show = function(wrapper) {
 };
 
 function ep_fix_breadcrumbs(emp_name) {
-    // #navbar-breadcrumbs is the native Frappe top-left <ul>
-    // Frappe's own CSS already adds the ">" separator via li::before
-    // We just set the <li> items — NO custom separator needed
     var $nb = $("#navbar-breadcrumbs");
     if (!$nb.length) { return; }
 
@@ -137,6 +134,17 @@ function inject_ep_styles() {
         .ep-att-val     { font-size: 18px; font-weight: 700; }
         .ep-att-label   { font-size: 10px; color: var(--text-muted); margin-top: 2px; }
 
+        /* ── Timeline + SSA two-column layout ── */
+        .ep-timeline-ssa-wrap {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+            align-items: start;
+        }
+        @media (max-width: 900px) {
+            .ep-timeline-ssa-wrap { grid-template-columns: 1fr; }
+        }
+
         /* ── Timeline ── */
         .ep-timeline {
             position: relative; padding-left: 40px;
@@ -173,6 +181,165 @@ function inject_ep_styles() {
         .ep-tl-badge.active   { background: var(--green-highlight-color, #d4edda); color: var(--green-avatar-color, #155724); }
         .ep-tl-badge.inactive { background: var(--gray-100, #f1f3f4); color: var(--gray-600, #666); }
         .ep-timeline-empty { font-size: 13px; color: var(--text-muted); text-align: center; padding: 20px; }
+
+        /* ── SSA History Panel ── */
+        .ep-ssa-panel { display: flex; flex-direction: column; gap: 12px; }
+
+        .ep-ssa-current {
+            background: var(--card-bg, #fff);
+            border: 1.5px solid var(--green-500, #22c55e);
+            border-radius: 8px;
+            overflow: hidden;
+        }
+        .ep-ssa-current-header {
+            background: linear-gradient(135deg, #dcfce7, #bbf7d0);
+            padding: 10px 14px;
+            display: flex; justify-content: space-between; align-items: center;
+        }
+        .ep-ssa-current-title {
+            font-size: 12px; font-weight: 700; color: #14532d;
+            text-transform: uppercase; letter-spacing: 0.05em;
+        }
+        .ep-ssa-current-link {
+            font-size: 11px; font-weight: 600; color: #15803d;
+            text-decoration: none; background: rgba(255,255,255,0.7);
+            padding: 2px 8px; border-radius: 10px;
+            transition: background 0.15s;
+        }
+        .ep-ssa-current-link:hover { background: rgba(255,255,255,1); text-decoration: none; }
+
+        .ep-ssa-current-body { padding: 12px 14px; }
+
+        .ep-ssa-designation {
+            font-size: 13px; font-weight: 600; color: var(--text-color);
+            margin-bottom: 10px; padding-bottom: 8px;
+            border-bottom: 1px solid var(--border-color, #f3f4f6);
+        }
+        .ep-ssa-designation span { color: var(--text-muted); font-weight: 400; font-size: 11px; }
+
+        .ep-ssa-ctc-row {
+            display: flex; align-items: baseline; gap: 6px;
+            margin-bottom: 10px;
+        }
+        .ep-ssa-ctc-val {
+            font-size: 20px; font-weight: 700;
+            color: var(--text-color);
+        }
+        .ep-ssa-ctc-label { font-size: 11px; color: var(--text-muted); }
+
+        .ep-ssa-breakdown {
+            display: grid; grid-template-columns: 1fr 1fr;
+            gap: 6px; margin-bottom: 10px;
+        }
+        .ep-ssa-breakdown-item {
+            background: var(--control-bg, #f9fafb);
+            border-radius: 6px; padding: 7px 10px;
+        }
+        .ep-ssa-breakdown-label { font-size: 10px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.04em; margin-bottom: 2px; }
+        .ep-ssa-breakdown-val   { font-size: 13px; font-weight: 600; color: var(--text-color); }
+
+        /* ── Component toggle accordion ── */
+        .ep-comp-toggle-wrap { margin-top: 10px; }
+        .ep-comp-cols { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+
+        .ep-comp-section {}
+        .ep-comp-toggle-btn {
+            width: 100%; display: flex; justify-content: space-between; align-items: center;
+            padding: 6px 10px; border-radius: 6px; border: 1px solid var(--border-color, #e5e7eb);
+            background: var(--control-bg, #f9fafb); cursor: pointer;
+            font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em;
+            color: var(--text-color); transition: background 0.15s;
+        }
+        .ep-comp-toggle-btn:hover { background: var(--gray-100, #f3f4f6); }
+        .ep-comp-toggle-btn.earnings-btn { color: var(--green-700, #15803d); border-color: var(--green-300, #86efac); background: #f0fdf4; }
+        .ep-comp-toggle-btn.earnings-btn:hover { background: #dcfce7; }
+        .ep-comp-toggle-btn.deductions-btn { color: var(--red-700, #b91c1c); border-color: var(--red-300, #fca5a5); background: #fff5f5; }
+        .ep-comp-toggle-btn.deductions-btn:hover { background: #fee2e2; }
+        .ep-comp-btn-left { display: flex; align-items: center; gap: 6px; }
+        .ep-comp-btn-count {
+            font-size: 10px; font-weight: 700; padding: 1px 6px; border-radius: 8px;
+        }
+        .ep-comp-toggle-btn.earnings-btn   .ep-comp-btn-count { background: #bbf7d0; color: #14532d; }
+        .ep-comp-toggle-btn.deductions-btn .ep-comp-btn-count { background: #fecaca; color: #7f1d1d; }
+        .ep-comp-chevron { font-size: 9px; transition: transform 0.2s; }
+        .ep-comp-chevron.open { transform: rotate(180deg); }
+
+        .ep-comp-list { display: none; border: 1px solid var(--border-color, #e5e7eb); border-top: none; border-radius: 0 0 6px 6px; overflow: hidden; }
+        .ep-comp-list.open { display: block; }
+        .ep-comp-row {
+            display: flex; justify-content: space-between; align-items: center;
+            font-size: 12px; padding: 5px 10px;
+            border-bottom: 1px solid var(--border-color, #f3f4f6);
+        }
+        .ep-comp-row:last-child { border-bottom: none; }
+        .ep-comp-row:nth-child(even) { background: var(--control-bg, #f9fafb); }
+        .ep-comp-name { color: var(--text-color); }
+        .ep-comp-amt  { font-weight: 600; }
+        .ep-comp-amt.earn { color: var(--green-600, #16a34a); }
+        .ep-comp-amt.deduct { color: var(--red-500, #ef4444); }
+
+        .ep-ssa-daterange {
+            font-size: 11px; color: var(--text-muted); margin-top: 8px;
+            padding-top: 8px; border-top: 1px solid var(--border-color, #f3f4f6);
+        }
+
+        /* ── Cancelled SSA History ── */
+        .ep-ssa-cancelled-wrap {
+            border: 1px solid var(--border-color, #e5e7eb);
+            border-radius: 8px;
+            overflow: hidden;
+        }
+        .ep-ssa-cancelled-header {
+            background: var(--control-bg, #f9fafb);
+            padding: 8px 14px;
+            display: flex; justify-content: space-between; align-items: center;
+            cursor: pointer; user-select: none;
+        }
+        .ep-ssa-cancelled-title {
+            font-size: 12px; font-weight: 600; color: var(--text-muted);
+            text-transform: uppercase; letter-spacing: 0.05em;
+            display: flex; align-items: center; gap: 6px;
+        }
+        .ep-ssa-cancelled-count {
+            background: var(--gray-200, #e5e7eb); color: var(--text-muted);
+            font-size: 10px; font-weight: 700; padding: 1px 7px;
+            border-radius: 10px;
+        }
+        .ep-ssa-toggle-icon { font-size: 10px; color: var(--text-muted); transition: transform 0.2s; }
+        .ep-ssa-toggle-icon.open { transform: rotate(180deg); }
+
+        .ep-ssa-cancelled-list { display: none; }
+        .ep-ssa-cancelled-list.open { display: block; }
+
+        .ep-ssa-cancelled-item {
+            padding: 10px 14px;
+            border-top: 1px solid var(--border-color, #f3f4f6);
+            display: flex; flex-direction: column; gap: 3px;
+        }
+        .ep-ssa-cancelled-item:hover { background: var(--control-bg, #f9fafb); }
+        .ep-ssa-cancelled-name {
+            font-size: 12px; font-weight: 600; color: var(--blue-500, #1d4ed8);
+            text-decoration: none;
+        }
+        .ep-ssa-cancelled-name:hover { text-decoration: underline; }
+        .ep-ssa-cancelled-meta {
+            font-size: 11px; color: var(--text-muted);
+            display: flex; gap: 10px; flex-wrap: wrap;
+        }
+        .ep-ssa-cancelled-ctc {
+            font-size: 12px; font-weight: 600; color: var(--text-color);
+        }
+        .ep-ssa-cancelled-badge {
+            display: inline-block; padding: 1px 7px;
+            font-size: 10px; font-weight: 600; border-radius: 10px;
+            background: var(--red-highlight-color, #fee2e2);
+            color: var(--red-avatar-color, #991b1b);
+        }
+
+        .ep-ssa-empty {
+            font-size: 13px; color: var(--text-muted);
+            text-align: center; padding: 24px 16px;
+        }
     `;
     document.head.appendChild(style);
 }
@@ -199,6 +366,8 @@ function render_profile($sidebar, $main, d, emp) {
     var att_map = d.attendance_map || {};
     var years = d.years || [];
     var timeline = d.timeline || [];
+    var latest_ssa = d.latest_ssa || null;
+    var cancelled_ssas = d.cancelled_ssas || [];
 
     var avatar_html = d.employee_image
         ? "<img src='" + d.employee_image + "' />"
@@ -255,9 +424,13 @@ function render_profile($sidebar, $main, d, emp) {
     main += "<div id='ep-heatmap-wrap'></div>";
     main += "</div>";
 
+    // ── Timeline + SSA side by side ──
     main += "<div class='ep-card'>";
     main += "<div class='ep-title-area'><h4 class='ep-card-title'>Employee Timeline</h4></div>";
-    main += render_timeline_html(timeline);
+    main += "<div class='ep-timeline-ssa-wrap'>";
+    main += "<div>" + render_timeline_html(timeline) + "</div>";
+    main += "<div class='ep-ssa-panel'>" + render_ssa_panel_html(latest_ssa, cancelled_ssas, c) + "</div>";
+    main += "</div>";
     main += "</div>";
 
     $main.html(main);
@@ -277,6 +450,189 @@ function render_profile($sidebar, $main, d, emp) {
         var is_currently_active = $(this).hasClass("active");
         render_heatmap($main, att_map, yr, is_currently_active ? "all" : clicked_month);
     });
+
+    // Toggle cancelled SSA list
+    $main.on("click", ".ep-ssa-cancelled-header", function() {
+        var $list = $(this).next(".ep-ssa-cancelled-list");
+        var $icon = $(this).find(".ep-ssa-toggle-icon");
+        $list.toggleClass("open");
+        $icon.toggleClass("open");
+    });
+
+    // Toggle earnings/deductions — clicking either button opens/closes BOTH in the same group
+    $main.on("click", ".ep-comp-toggle-btn", function() {
+        var $wrap  = $(this).closest(".ep-comp-toggle-wrap");
+        var $lists = $wrap.find(".ep-comp-list");
+        var $chevs = $wrap.find(".ep-comp-chevron");
+        var is_open = $lists.first().hasClass("open");
+        if (is_open) {
+            $lists.removeClass("open");
+            $chevs.removeClass("open");
+        } else {
+            $lists.addClass("open");
+            $chevs.addClass("open");
+        }
+    });
+}
+
+function render_ssa_panel_html(latest_ssa, cancelled_ssas, company_link) {
+    var html = "";
+
+    // ── Current / Latest Submitted SSA ──
+    if (latest_ssa) {
+        var designation = latest_ssa.designation || (company_link && company_link.designation) || "";
+        var department  = latest_ssa.department  || (company_link && company_link.department)  || "";
+
+        html += "<div class='ep-ssa-current'>";
+        html += "<div class='ep-ssa-current-header'>";
+        html += "<span class='ep-ssa-current-title'>&#9646; Active Salary Assignment</span>";
+        html += "<a href='/app/salary-structure-assignment/" + encodeURIComponent(latest_ssa.name) + "' class='ep-ssa-current-link' target='_blank'>" + latest_ssa.name + " &rarr;</a>";
+        html += "</div>";
+        html += "<div class='ep-ssa-current-body'>";
+
+        // Designation + department
+        if (designation || department) {
+            var meta_parts = [];
+            if (designation) meta_parts.push(designation);
+            if (department)  meta_parts.push(department);
+            html += "<div class='ep-ssa-designation'>" + meta_parts.join(" &middot; ") + "</div>";
+        }
+
+        // Monthly CTC highlight
+        html += "<div class='ep-ssa-ctc-row'>";
+        html += "<span class='ep-ssa-ctc-val'>&#8377;" + fmt_currency(latest_ssa.monthly_ctc) + "</span>";
+        html += "<span class='ep-ssa-ctc-label'>/ month (CTC)</span>";
+        html += "</div>";
+
+        // Breakdown grid
+        html += "<div class='ep-ssa-breakdown'>";
+        html += ssa_breakdown_item("Gross Salary",     latest_ssa.gross_salary);
+        html += ssa_breakdown_item("Net Salary",       latest_ssa.net_salary);
+        html += ssa_breakdown_item("Total Deductions", latest_ssa.total_deductions);
+        html += ssa_breakdown_item("Employer Contrib", latest_ssa.total_employer_contribution);
+        html += "</div>";
+
+        // Earnings + Deductions side-by-side toggles
+        var earnings   = latest_ssa.earnings   || [];
+        var deductions = latest_ssa.deductions || [];
+        var uid = "ssa-" + (latest_ssa.name || "main").replace(/[^a-z0-9]/gi, "");
+
+        html += render_comp_toggles(earnings, deductions, uid);
+
+        // Date range
+        var date_parts = [];
+        if (latest_ssa.from_date) date_parts.push("From: " + latest_ssa.from_date);
+        if (latest_ssa.to_date)   date_parts.push("To: " + latest_ssa.to_date);
+        else                      date_parts.push("Ongoing");
+        html += "<div class='ep-ssa-daterange'>" + date_parts.join("&nbsp;&nbsp;&middot;&nbsp;&nbsp;") + "</div>";
+
+        html += "</div></div>"; // body + card
+    } else {
+        html += "<div class='ep-ssa-empty' style='border:1px dashed var(--border-color,#e5e7eb);border-radius:8px;'>";
+        html += "No active salary structure assignment found.";
+        html += "</div>";
+    }
+
+    // ── Cancelled SSA History ──
+    if (cancelled_ssas && cancelled_ssas.length) {
+        html += "<div class='ep-ssa-cancelled-wrap'>";
+        html += "<div class='ep-ssa-cancelled-header'>";
+        html += "<span class='ep-ssa-cancelled-title'>Previous Assignments <span class='ep-ssa-cancelled-count'>" + cancelled_ssas.length + "</span></span>";
+        html += "<span class='ep-ssa-toggle-icon'>&#9660;</span>";
+        html += "</div>";
+        html += "<div class='ep-ssa-cancelled-list'>";
+        cancelled_ssas.forEach(function(rec, idx) {
+            var date_parts = [];
+            if (rec.from_date) date_parts.push(rec.from_date);
+            date_parts.push(rec.to_date ? rec.to_date : "—");
+            var meta_parts = [];
+            if (rec.designation) meta_parts.push(rec.designation);
+            if (rec.department)  meta_parts.push(rec.department);
+            var uid = "cancelled-" + idx;
+
+            html += "<div class='ep-ssa-cancelled-item'>";
+            html += "<div style='display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;'>";
+            html += "<a href='/app/salary-structure-assignment/" + encodeURIComponent(rec.name) + "' class='ep-ssa-cancelled-name' target='_blank'>" + rec.name + "</a>";
+            html += "<span class='ep-ssa-cancelled-badge'>Cancelled</span>";
+            html += "</div>";
+            html += "<div class='ep-ssa-cancelled-meta'>";
+            html += "<span>" + date_parts.join(" &rarr; ") + "</span>";
+            if (meta_parts.length) html += "<span>" + meta_parts.join(" &middot; ") + "</span>";
+            html += "</div>";
+            html += "<div class='ep-ssa-cancelled-ctc' style='margin:4px 0 6px;'>&#8377;" + fmt_currency(rec.monthly_ctc) + " <span style='font-size:10px;font-weight:400;color:var(--text-muted);'>/ mo CTC</span></div>";
+
+            // Breakdown mini
+            html += "<div style='display:grid;grid-template-columns:1fr 1fr;gap:4px;margin-bottom:8px;'>";
+            html += "<div style='font-size:11px;color:var(--text-muted);'>Gross: <strong>&#8377;" + fmt_currency(rec.gross_salary) + "</strong></div>";
+            html += "<div style='font-size:11px;color:var(--text-muted);'>Net: <strong>&#8377;" + fmt_currency(rec.net_salary) + "</strong></div>";
+            html += "<div style='font-size:11px;color:var(--text-muted);'>Deductions: <strong>&#8377;" + fmt_currency(rec.total_deductions) + "</strong></div>";
+            html += "<div style='font-size:11px;color:var(--text-muted);'>Employer: <strong>&#8377;" + fmt_currency(rec.total_employer_contribution) + "</strong></div>";
+            html += "</div>";
+
+            // Earnings + Deductions toggles (earnings first, then deductions)
+            var c_earnings   = rec.earnings   || [];
+            var c_deductions = rec.deductions || [];
+            html += render_comp_toggles(c_earnings, c_deductions, uid);
+
+            html += "</div>"; // ep-ssa-cancelled-item
+        });
+        html += "</div></div>";
+    }
+
+    return html;
+}
+
+function render_comp_toggles(earnings, deductions, uid) {
+    if (!earnings.length && !deductions.length) return "";
+    var html = "<div class='ep-comp-toggle-wrap'><div class='ep-comp-cols'>";
+
+    // Earnings column (right side as per request: earnings right, deductions left)
+    // Left = Earnings, Right = Deductions
+    // Earnings
+    html += "<div class='ep-comp-section'>";
+    if (earnings.length) {
+        html += "<button class='ep-comp-toggle-btn earnings-btn' data-target='earn-" + uid + "'>";
+        html += "<span class='ep-comp-btn-left'>Earnings <span class='ep-comp-btn-count'>" + earnings.length + "</span></span>";
+        html += "<span class='ep-comp-chevron' id='chev-earn-" + uid + "'>&#9660;</span>";
+        html += "</button>";
+        html += "<div class='ep-comp-list' id='earn-" + uid + "'>";
+        earnings.forEach(function(row) {
+            html += "<div class='ep-comp-row'>";
+            html += "<span class='ep-comp-name'>" + (row.salary_component || "") + "</span>";
+            html += "<span class='ep-comp-amt earn'>&#8377;" + fmt_currency(row.amount) + "</span>";
+            html += "</div>";
+        });
+        html += "</div>";
+    }
+    html += "</div>";
+
+    // Deductions
+    html += "<div class='ep-comp-section'>";
+    if (deductions.length) {
+        html += "<button class='ep-comp-toggle-btn deductions-btn' data-target='deduct-" + uid + "'>";
+        html += "<span class='ep-comp-btn-left'>Deductions <span class='ep-comp-btn-count'>" + deductions.length + "</span></span>";
+        html += "<span class='ep-comp-chevron' id='chev-deduct-" + uid + "'>&#9660;</span>";
+        html += "</button>";
+        html += "<div class='ep-comp-list' id='deduct-" + uid + "'>";
+        deductions.forEach(function(row) {
+            html += "<div class='ep-comp-row'>";
+            html += "<span class='ep-comp-name'>" + (row.salary_component || "") + "</span>";
+            html += "<span class='ep-comp-amt deduct'>&#8377;" + fmt_currency(row.amount) + "</span>";
+            html += "</div>";
+        });
+        html += "</div>";
+    }
+    html += "</div>";
+
+    html += "</div></div>"; // cols + wrap
+    return html;
+}
+
+function ssa_breakdown_item(label, val) {
+    return "<div class='ep-ssa-breakdown-item'>" +
+        "<div class='ep-ssa-breakdown-label'>" + label + "</div>" +
+        "<div class='ep-ssa-breakdown-val'>&#8377;" + fmt_currency(val) + "</div>" +
+        "</div>";
 }
 
 function info_row(label, val) {

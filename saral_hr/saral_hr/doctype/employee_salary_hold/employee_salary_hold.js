@@ -13,31 +13,30 @@ frappe.ui.form.on("Employee Salary Hold", {
     },
 
     employee(frm) {
-        if (!frm.doc.employee) return;
+        if (!frm.doc.employee) {
+            frm.set_value("employee_name", "");
+            frm.set_value("company",       "");
+            frm.set_value("department",    "");
+            frm.set_value("designation",   "");
+            frm.set_value("branch",        "");
+            return;
+        }
 
-        frappe.call({
-            method: "saral_hr.saral_hr.doctype.employee_salary_hold.employee_salary_hold.get_hold_status",
-            args: { employee: frm.doc.employee },
-            callback(r) {
-                if (r.message && r.message.name) {
-                    frappe.msgprint({
-                        title: __("Warning"),
-                        indicator: "orange",
-                        message: __(
-                            "Employee <b>{0}</b> already has an active Salary Hold: "
-                            + "<a href='/app/employee-salary-hold/{1}'>{1}</a>",
-                            [frm.doc.employee_name || frm.doc.employee, r.message.name]
-                        )
-                    });
+        // Company Link is named by employee field value, so name = employee ID
+        frappe.db.get_value(
+            "Company Link",
+            frm.doc.employee,
+            ["full_name", "company", "department", "designation", "branch"],
+            (r) => {
+                if (r) {
+                    frm.set_value("employee_name", r.full_name    || "");
+                    frm.set_value("company",       r.company      || "");
+                    frm.set_value("department",    r.department   || "");
+                    frm.set_value("designation",   r.designation  || "");
+                    frm.set_value("branch",        r.branch       || "");
                 }
             }
-        });
-
-        frappe.db.get_value("Company Link", { employee: frm.doc.employee, is_active: 1 }, "company", (r) => {
-            if (r && r.company) {
-                frm.set_value("company", r.company);
-            }
-        });
+        );
 
         const now = new Date();
         const months = ["January","February","March","April","May","June",

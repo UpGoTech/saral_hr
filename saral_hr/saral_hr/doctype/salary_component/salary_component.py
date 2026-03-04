@@ -21,19 +21,39 @@ class SalaryComponent(Document):
     def on_update(self):
         self._sync_flags_to_salary_details()
 
+    # ------------------------------------------------------------------
+    # Validation
+    # ------------------------------------------------------------------
+
     def _validate_calculation_flags(self):
-        if self.is_daily_rate and self.depends_on_payment_days:
+        """
+        Only one of the three calculation modes may be active at a time:
+          - depends_on_payment_days
+          - is_daily_rate
+          - depends_on_physical_working_days
+        """
+        active_flags = [
+            bool(self.is_daily_rate),
+            bool(self.depends_on_payment_days),
+            bool(self.depends_on_physical_working_days),
+        ]
+        if sum(active_flags) > 1:
             frappe.throw(
-                "A component cannot have both <b>Is Daily Rate Component</b> and "
-                "<b>Depends on Payment Days</b> checked at the same time. "
-                "Please enable only one."
+                "Only one calculation mode can be enabled at a time. "
+                "Please check only one of: <b>Is Daily Rate Component</b>, "
+                "<b>Depends on Payment Days</b>, or "
+                "<b>Depends on Physical Working Days</b>."
             )
+
+    # ------------------------------------------------------------------
+    # Sync to child tables
+    # ------------------------------------------------------------------
 
     def _sync_flags_to_salary_details(self):
         """
-        Push updated depends_on_payment_days and is_daily_rate to every
-        Salary Details row (in Salary Structure, Salary Structure Assignment,
-        and Salary Slip) that references this component.
+        Push updated calculation flags to every Salary Details row
+        (in Salary Structure, Salary Structure Assignment, and Salary Slip)
+        that references this component.
 
         Skips gracefully during migrate if the columns don't exist yet on
         the Salary Details table (prevents IntegrityError: Column cannot be null).
@@ -43,20 +63,30 @@ class SalaryComponent(Document):
         except Exception:
             return
 
-        if "is_daily_rate" not in existing_columns or "depends_on_payment_days" not in existing_columns:
+        required_columns = {
+            "is_daily_rate",
+            "depends_on_payment_days",
+            "depends_on_physical_working_days",
+        }
+        if not required_columns.issubset(set(existing_columns)):
             return
 
         frappe.db.set_value(
             "Salary Details",
             {"salary_component": self.salary_component},
             {
-                "depends_on_payment_days": self.depends_on_payment_days or 0,
-                "is_daily_rate":           self.is_daily_rate or 0,
+                "depends_on_payment_days":          self.depends_on_payment_days or 0,
+                "is_daily_rate":                    self.is_daily_rate or 0,
+                "depends_on_physical_working_days": self.depends_on_physical_working_days or 0,
             }
         )
 
+    # ------------------------------------------------------------------
+    # Special Component — month table
+    # ------------------------------------------------------------------
+
     def _rebuild_month_table(self):
-        # Step 1: preserve any amounts the user typed
+        # Step 1: preserve any amounts the user already typed
         existing = {}
         for row in (self.enter_amount_according_to_months or []):
             if row.month and row.month not in existing:
@@ -73,7 +103,7 @@ class SalaryComponent(Document):
         self.enter_amount_according_to_months = []
         for idx, month in enumerate(MONTHS, start=1):
             child_name = f"{self.name}-{month}-{generate_hash(length=6)}"
-            row = self.append("enter_amount_according_to_months", {
+            self.append("enter_amount_according_to_months", {
                 "name":   child_name,
                 "month":  month,
                 "amount": existing.get(month, 0.0),

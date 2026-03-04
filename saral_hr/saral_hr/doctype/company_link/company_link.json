@@ -58,8 +58,7 @@
    "in_standard_filter": 1,
    "label": "Employee",
    "options": "Employee",
-   "reqd": 1,
-   "unique": 1
+   "reqd": 1
   },
   {
    "fetch_from": "employee.employee",
