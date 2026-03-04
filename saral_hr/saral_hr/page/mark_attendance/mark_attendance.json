@@ -1,0 +1,13 @@
+{
+ "doctype": "Page",
+ "module": "Saral Hr",
+ "name": "mark-attendance",
+ "page_name": "Mark Attendance",
+ "roles": [
+  {"role": "Saral HR Manager"},
+  {"role": "Saral HR User"}
+ ],
+ "standard": "No",
+ "title": "Mark Attendance",
+ "is_searchable": 1
+}

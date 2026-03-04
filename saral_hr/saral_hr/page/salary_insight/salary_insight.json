@@ -1,0 +1,12 @@
+{
+ "doctype": "Page",
+ "module": "Saral Hr",
+ "name": "salary-insight",
+ "page_name": "Salary Insight",
+ "roles": [
+  { "role": "Saral HR Manager" },
+  { "role": "Saral HR User" }
+ ],
+ "standard": "No",
+ "title": "Salary Insight"
+}
