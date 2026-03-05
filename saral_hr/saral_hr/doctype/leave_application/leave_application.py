@@ -3,9 +3,8 @@
 
 import frappe
 from frappe.model.document import Document
+from frappe.utils import date_diff
 
-class LeaveAllocation(Document):
+class LeaveApplication(Document):
     def validate(self):
-        if not self.used_leaves:
-            self.used_leaves = 0
-        self.remaining_leaves = self.total_allocated - self.used_leaves
+        self.total_days = date_diff(self.to_date, self.from_date) + 1
