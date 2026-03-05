@@ -111,13 +111,17 @@ def search_employees(query):
 
 @frappe.whitelist()
 def get_attendance_between_dates(employee, start_date, end_date):
+    """
+    Fetch attendance records from the Attendance doctype for the given
+    Company Link employee (name) between the two dates.
+    """
     start_date = getdate(start_date)
-    end_date = getdate(end_date)
+    end_date   = getdate(end_date)
 
     attendance_records = frappe.db.get_all(
         "Attendance",
         filters={
-            "employee": employee,
+            "employee":        employee,
             "attendance_date": ["between", [start_date, end_date]]
         },
         fields=["attendance_date", "status"]
@@ -125,10 +129,34 @@ def get_attendance_between_dates(employee, start_date, end_date):
 
     result = {}
     for row in attendance_records:
-        date_str = str(row.attendance_date)
+        date_str         = str(row.attendance_date)
         result[date_str] = row.status
 
     return result
+
+
+# ---------------------------------------------------------------------------
+# Status mapping helper
+# ---------------------------------------------------------------------------
+# The mark-attendance page stores the *resolved* status directly in
+# attendanceTableData, so the values arriving here are already one of:
+#   Present | Half Day | Absent | LWP | Earned Leave | Casual Leave |
+#   Holiday | Weekly Off
+#
+# These map 1-to-1 with the Attendance doctype "status" field options,
+# so no extra translation is needed – we just write through.
+# ---------------------------------------------------------------------------
+
+VALID_STATUSES = {
+    "Present",
+    "Absent",
+    "Half Day",
+    "Holiday",
+    "Weekly Off",
+    "LWP",
+    "Earned Leave",
+    "Casual Leave",
+}
 
 
 @frappe.whitelist()
@@ -148,72 +176,87 @@ def save_attendance_batch(attendance_data):
     )
 
     saved_count = 0
-    errors = []
+    errors      = []
 
     try:
         for record in attendance_data:
             try:
-                employee = record.get('employee')
-                attendance_date = getdate(record.get('attendance_date'))
-                status = record.get('status')
+                employee        = record.get("employee")
+                attendance_date = getdate(record.get("attendance_date"))
+                status          = record.get("status", "").strip()
 
+                # ── Skip blank or unknown statuses ──────────────────────
+                if not status or status not in VALID_STATUSES:
+                    continue
+
+                # ── Permission check ────────────────────────────────────
                 if companies:
                     allowed = frappe.db.exists(
                         "Company Link",
                         {
-                            "employee": employee,
-                            "company": ["in", companies]
+                            "name":      employee,
+                            "company":   ["in", companies],
+                            "is_active": 1,
                         }
                     )
-
                     if not allowed:
-                        errors.append(f"Not permitted for employee {employee} on {attendance_date}")
+                        errors.append(
+                            f"Not permitted for employee {employee} on {attendance_date}"
+                        )
                         continue
 
-                existing_attendance = frappe.db.get_value(
+                # ── Upsert ──────────────────────────────────────────────
+                existing = frappe.db.get_value(
                     "Attendance",
-                    {"employee": employee, "attendance_date": attendance_date},
+                    {
+                        "employee":        employee,
+                        "attendance_date": attendance_date,
+                    },
                     "name"
                 )
 
-                if existing_attendance:
+                if existing:
                     frappe.db.set_value(
                         "Attendance",
-                        existing_attendance,
+                        existing,
                         "status",
                         status,
-                        update_modified=False
+                        update_modified=True
                     )
                 else:
                     doc = frappe.get_doc({
-                        "doctype": "Attendance",
-                        "employee": employee,
+                        "doctype":         "Attendance",
+                        "employee":        employee,
                         "attendance_date": attendance_date,
-                        "status": status
+                        "status":          status,
                     })
-                    doc.flags.ignore_validate = True
+                    doc.flags.ignore_validate  = True
                     doc.flags.ignore_mandatory = True
                     doc.insert(ignore_permissions=True)
 
                 saved_count += 1
 
             except Exception as e:
-                error_msg = f"Error for {record.get('employee')} on {record.get('attendance_date')}: {str(e)}"
+                error_msg = (
+                    f"Error for {record.get('employee')} "
+                    f"on {record.get('attendance_date')}: {str(e)}"
+                )
                 errors.append(error_msg)
+                frappe.log_error(error_msg, "Mark Attendance Save Error")
 
         frappe.db.commit()
 
         return {
-            "success": True,
+            "success":     True,
             "saved_count": saved_count,
-            "errors": errors if errors else None
+            "errors":      errors if errors else None,
         }
 
     except Exception as e:
         frappe.db.rollback()
         return {
             "success": False,
-            "error": str(e)
+            "error":   str(e),
         }
 
 
@@ -229,8 +272,8 @@ def get_holidays_between_dates(company, start_date, end_date):
     holidays = frappe.db.get_all(
         "Holiday",
         filters={
-            "parent": holiday_list,
-            "holiday_date": ["between", [start_date, end_date]]
+            "parent":       holiday_list,
+            "holiday_date": ["between", [start_date, end_date]],
         },
         pluck="holiday_date"
     )

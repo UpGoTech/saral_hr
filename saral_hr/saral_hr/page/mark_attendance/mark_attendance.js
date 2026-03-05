@@ -29,8 +29,19 @@ function get_ma_html() {
 
         <div class="ma-sticky">
 
-            <div class="ma-filters">
-                <div class="ma-filter-col">
+            <!--
+                Layout:
+                [Left block                                    ] [Leave table (full height)]
+                  Row1: [Employee──] [Company──] [Weekly Off──]   Leave Type | Earned | Casual
+                  Row2: [Year][Month] [Present][Absent][HalfDay][LWP]  Taken  |   0    |   0
+                                                                       Balance |   0    |   0
+            -->
+            <div class="ma-top-wrap">
+            <div class="ma-left-block">
+
+            <!-- Row 1 -->
+            <div class="ma-row1">
+                <div class="ma-r1-employee">
                     <label class="ma-label">Employee</label>
                     <div class="ma-search-wrapper">
                         <input type="text" id="ma_employee_search" class="ma-input ma-search-input"
@@ -42,18 +53,19 @@ function get_ma_html() {
                         <option value="">Select Employee</option>
                     </select>
                 </div>
-                <div class="ma-filter-col">
+                <div class="ma-r1-company">
                     <label class="ma-label">Company</label>
                     <input type="text" id="ma_company" class="ma-input" readonly>
                 </div>
-                <div class="ma-filter-col">
+                <div class="ma-r1-weeklyoff">
                     <label class="ma-label">Weekly Off</label>
                     <input type="text" id="ma_weekly_off" class="ma-input" readonly>
                 </div>
             </div>
 
-            <div class="ma-filters" style="margin-top:12px;">
-                <div class="ma-filter-col ma-filter-col-sm">
+            <!-- Row 2 -->
+            <div class="ma-row2">
+                <div class="ma-r2-year">
                     <label class="ma-label">Year</label>
                     <select id="ma_year" class="ma-input">
                         <option value="">Select Year</option>
@@ -61,7 +73,7 @@ function get_ma_html() {
                         <option value="2026">2026</option>
                     </select>
                 </div>
-                <div class="ma-filter-col ma-filter-col-sm">
+                <div class="ma-r2-month">
                     <label class="ma-label">Month</label>
                     <select id="ma_month" class="ma-input">
                         <option value="">Select Month</option>
@@ -79,20 +91,48 @@ function get_ma_html() {
                         <option value="11">December</option>
                     </select>
                 </div>
+                <div class="ma-r2-buttons">
+                    <label class="ma-label">Mark remaining days as:</label>
+                    <div class="ma-bulk-btns">
+                        <button id="ma_mark_present"  class="ma-btn">Present</button>
+                        <button id="ma_mark_absent"   class="ma-btn">Absent</button>
+                        <button id="ma_mark_halfday"  class="ma-btn">Half Day</button>
+                        <button id="ma_mark_lwp"      class="ma-btn">LWP</button>
+                    </div>
+                </div>
+            </div><!-- end ma-row2 -->
+
+            </div><!-- end ma-left-block -->
+
+            <!-- Leave table: right side, spans full height of left-block -->
+            <div class="ma-r1-leave">
+                    <table class="ma-leave-table">
+                        <thead>
+                            <tr>
+                                <th class="ma-leave-th ma-leave-type-hdr">Leave Type</th>
+                                <th class="ma-leave-th">Earned</th>
+                                <th class="ma-leave-th">Casual</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td class="ma-leave-row-label">Taken</td>
+                                <td class="ma-leave-val" id="ma_el_taken">0</td>
+                                <td class="ma-leave-val" id="ma_cl_taken">0</td>
+                            </tr>
+                            <tr>
+                                <td class="ma-leave-row-label">Balance</td>
+                                <td class="ma-leave-val ma-leave-bal">0</td>
+                                <td class="ma-leave-val ma-leave-bal">0</td>
+                            </tr>
+                        </tbody>
+                    </table>
             </div>
+
+            </div><!-- end ma-top-wrap -->
 
             <input type="hidden" id="ma_start_date">
             <input type="hidden" id="ma_end_date">
-
-            <div class="ma-bulk-bar">
-                <div class="ma-bulk-left">
-                    <span class="ma-bulk-label">Mark remaining days as:</span>
-                    <button id="ma_mark_present"  class="ma-btn">Present</button>
-                    <button id="ma_mark_absent"   class="ma-btn">Absent</button>
-                    <button id="ma_mark_halfday"  class="ma-btn">Half Day</button>
-                    <button id="ma_mark_lwp"      class="ma-btn">LWP</button>
-                </div>
-            </div>
 
         </div>
 
@@ -140,7 +180,7 @@ function get_ma_html() {
                     <button class="ma-year-nav" id="ma_year_prev">&#8249;</button>
                     <div class="ma-year-center">
                         <span id="ma_cal_year" class="ma-year-num">2025</span>
-                        <span class="ma-year-sub">calendar info</span>
+                        <span class="ma-year-sub">Employee Attendance Info</span>
                     </div>
                     <button class="ma-year-nav" id="ma_year_next">&#8250;</button>
                 </div>
@@ -167,17 +207,18 @@ function init_mark_attendance($main) {
     var filteredEmployees      = [];
     var selectedIndex          = -1;
     var searchDebounceTimer    = null;
-    var attendanceTableData    = {};
-    var originalAttendanceData = {};
+    var attendanceTableData    = {};   // date -> resolved status string
+    var originalAttendanceData = {};   // date -> status already saved in DB
     var holidayDates           = {};
     var isSaving               = false;
     var currentCalendarYear    = new Date().getFullYear();
     var yearAttendanceData     = {};
     var yearHolidayData        = {};
     var employeeCompanyMap     = {};
-    var employeeCLMap          = {};
     var employeeWeeklyOffMap   = {};
 
+    // These are both standalone statuses saved to Attendance AND sub-types
+    // that replace "Absent" when a sub-type radio is selected.
     var ABSENT_SUBTYPES = ["LWP", "Earned Leave", "Casual Leave"];
 
     var searchInput    = document.getElementById("ma_employee_search");
@@ -189,19 +230,23 @@ function init_mark_attendance($main) {
     var startDateInput = document.getElementById("ma_start_date");
     var endDateInput   = document.getElementById("ma_end_date");
 
+    // ── Load all active employees ──────────────────────────────────────────
     frappe.call({
         method: "saral_hr.saral_hr.page.mark_attendance.mark_attendance.get_active_employees",
         callback: function (r) {
             if (!r.message) return;
             r.message.forEach(function (row) {
                 var opt   = document.createElement("option");
-                opt.value = row.employee;
+                // Company Link autoname = field:employee, so row.name = row.employee = HR-EMP-001
+                // Attendance.employee is a Link to Company Link → use row.name
+                opt.value = row.name;
                 opt.text  = row.full_name + (row.aadhaar_number ? " (" + row.aadhaar_number + ")" : "");
                 employeeSel.appendChild(opt);
-                employeeCompanyMap[row.employee]   = row.company;
-                employeeCLMap[row.employee]        = row.name;
-                employeeWeeklyOffMap[row.employee] = row.weekly_off
-                    ? row.weekly_off.split(",").map(function (d) { return d.trim().toLowerCase(); })
+                // Key everything by Company Link name (= employee ID)
+                employeeCompanyMap[row.name]   = row.company;
+                // weekly_off is a single Select field, not comma-separated
+                employeeWeeklyOffMap[row.name] = row.weekly_off
+                    ? [row.weekly_off.trim().toLowerCase()]
                     : [];
             });
             employees = Array.from(employeeSel.options)
@@ -210,6 +255,7 @@ function init_mark_attendance($main) {
         }
     });
 
+    // ── Employee search helpers ────────────────────────────────────────────
     function localSearch(term) {
         if (!term) return employees;
         var lower = term.toLowerCase();
@@ -227,9 +273,9 @@ function init_mark_attendance($main) {
                 if (r.message) {
                     callback(r.message.map(function (row) {
                         return {
-                            value:          row.employee,
+                            value:          row.name,       // Company Link name = employee ID
                             name:           row.full_name,
-                            emp_id:         row.employee,
+                            emp_id:         row.name,
                             company:        row.company,
                             weekly_off:     row.weekly_off,
                             aadhaar_number: row.aadhaar_number
@@ -313,15 +359,16 @@ function init_mark_attendance($main) {
 
     function selectEmployee(emp) {
         searchInput.value = emp.name;
-        employeeSel.value = emp.value;
+        employeeSel.value = emp.value;  // emp.value = Company Link name = employee ID
         searchResults.classList.remove("show");
         selectedIndex = -1;
         clearBtn.classList.add("show");
         clearTimeout(searchDebounceTimer);
 
-        if (emp.company !== undefined)    employeeCompanyMap[emp.value]   = emp.company;
+        // Update maps if fresh data came from API search
+        if (emp.company    !== undefined) employeeCompanyMap[emp.value]   = emp.company;
         if (emp.weekly_off !== undefined) employeeWeeklyOffMap[emp.value] = emp.weekly_off
-            ? emp.weekly_off.split(",").map(function (d) { return d.trim().toLowerCase(); })
+            ? [emp.weekly_off.trim().toLowerCase()]
             : [];
 
         document.getElementById("ma_company").value    = employeeCompanyMap[emp.value] || "";
@@ -393,6 +440,7 @@ function init_mark_attendance($main) {
         }
     });
 
+    // ── Date helpers ───────────────────────────────────────────────────────
     function updateDatesFromMonthYear() {
         if (!yearSel.value || monthSel.value === "") return;
         var year    = yearSel.value;
@@ -410,6 +458,7 @@ function init_mark_attendance($main) {
         return (n % 1 === 0) ? String(n) : n.toFixed(1);
     }
 
+    // ── Count update ───────────────────────────────────────────────────────
     function updateCounts() {
         var p = 0, a = 0, h = 0, l = 0, el = 0, cl = 0;
 
@@ -433,12 +482,42 @@ function init_mark_attendance($main) {
 
         document.getElementById("ma_hd_col_eq").textContent =
             h > 0 ? h + " \u00d7 0.5 = " + formatHalf(halfEq) + " day" : "";
+
+        // Update leave summary taken counts
+        var elTaken = document.getElementById("ma_el_taken");
+        var clTaken = document.getElementById("ma_cl_taken");
+        if (elTaken) elTaken.textContent = el;
+        if (clTaken) clTaken.textContent = cl;
     }
 
     function isAbsentSubtype(status) {
         return ABSENT_SUBTYPES.includes(status);
     }
 
+    // ── resolveStatus ──────────────────────────────────────────────────────
+    // Given the raw status value from the Attendance doctype, returns the
+    // canonical value to pre-populate in the table UI.
+    //
+    // Mapping:
+    //   Present       → "Present"
+    //   Half Day      → "Half Day"
+    //   Holiday       → "Holiday"   (handled by holiday flag too)
+    //   Weekly Off    → "Weekly Off" (handled by toggle)
+    //   Absent        → "Absent"    (Absent radio checked, no sub-type)
+    //   LWP           → "LWP"       (Absent + LWP sub-type)
+    //   Earned Leave  → "Earned Leave"
+    //   Casual Leave  → "Casual Leave"
+    function resolveStatus(rawStatus, isHoliday, isDefaultWeeklyOff) {
+        if (!rawStatus) {
+            if (isHoliday)               return "Holiday";
+            if (isDefaultWeeklyOff)      return "Weekly Off";
+            return "";
+        }
+        // All values from Attendance doctype map directly
+        return rawStatus;
+    }
+
+    // ── buildRow ───────────────────────────────────────────────────────────
     function buildRow(dateKey, dayName, currentDate, savedStatus, isHoliday, isDefaultWeeklyOff, isFuture) {
         var row = document.createElement("tr");
 
@@ -446,17 +525,21 @@ function init_mark_attendance($main) {
         else if (savedStatus === "Weekly Off" || (isDefaultWeeklyOff && savedStatus === "")) row.classList.add("ma-weekly-off-row");
         if (isFuture) row.classList.add("ma-future-row");
 
+        // Toggle is checked for Holiday, Weekly Off, or default weekly off with no override
         var toggleChecked = savedStatus === "Weekly Off" || savedStatus === "Holiday" ||
             (isDefaultWeeklyOff && savedStatus === "") || isHoliday;
         var disableAll = toggleChecked || isFuture;
 
+        // For radio pre-population:
+        // "Absent", "LWP", "Earned Leave", "Casual Leave" all check the Absent radio
+        var isAbsent      = savedStatus === "Absent" || isAbsentSubtype(savedStatus);
+        // If it's a sub-type, pre-select it; otherwise blank
+        var absentSubtype = isAbsentSubtype(savedStatus) ? savedStatus : "";
+        var subtypeDisabled = disableAll || !isAbsent;
+
         var toggleCell = !isFuture
             ? '<td class="text-center" style="padding:8px;"><label class="ma-toggle"><input type="checkbox" class="ma-weekly-off-toggle" data-date="' + dateKey + '"' + (toggleChecked ? " checked" : "") + '><span class="ma-toggle-slider"></span></label></td>'
             : '<td class="text-center">&#8212;</td>';
-
-        var isAbsent        = savedStatus === "Absent" || isAbsentSubtype(savedStatus);
-        var absentSubtype   = isAbsentSubtype(savedStatus) ? savedStatus : "";
-        var subtypeDisabled = disableAll || !isAbsent;
 
         row.innerHTML =
             '<td>' + dayName + '</td>' +
@@ -464,14 +547,15 @@ function init_mark_attendance($main) {
                 currentDate.toLocaleDateString("en-US", { month: "long" }) + ' ' +
                 currentDate.getFullYear() + '</td>' +
             toggleCell +
-            '<td class="text-center"><input type="radio" name="status_' + dateKey + '" value="Half Day"'  + (savedStatus === "Half Day" ? " checked" : "") + (disableAll ? " disabled" : "") + '></td>' +
-            '<td class="text-center"><input type="radio" name="status_' + dateKey + '" value="Present"'   + (savedStatus === "Present"  ? " checked" : "") + (disableAll ? " disabled" : "") + '></td>' +
-            '<td class="text-center"><input type="radio" name="status_' + dateKey + '" value="Absent"'    + (isAbsent ? " checked" : "")                   + (disableAll ? " disabled" : "") + '></td>' +
+            '<td class="text-center"><input type="radio" name="status_' + dateKey + '" value="Half Day"'  + (savedStatus === "Half Day"  ? " checked" : "") + (disableAll ? " disabled" : "") + '></td>' +
+            '<td class="text-center"><input type="radio" name="status_' + dateKey + '" value="Present"'   + (savedStatus === "Present"   ? " checked" : "") + (disableAll ? " disabled" : "") + '></td>' +
+            '<td class="text-center"><input type="radio" name="status_' + dateKey + '" value="Absent"'    + (isAbsent                    ? " checked" : "") + (disableAll ? " disabled" : "") + '></td>' +
             '<td class="text-center ma-subtype-cell"><input type="radio" name="subtype_' + dateKey + '" value="LWP"'          + (absentSubtype === "LWP"          ? " checked" : "") + (subtypeDisabled ? " disabled" : "") + ' class="ma-subtype-radio"></td>' +
             '<td class="text-center ma-subtype-cell"><input type="radio" name="subtype_' + dateKey + '" value="Earned Leave"' + (absentSubtype === "Earned Leave"  ? " checked" : "") + (subtypeDisabled ? " disabled" : "") + ' class="ma-subtype-radio"></td>' +
             '<td class="text-center ma-subtype-cell"><input type="radio" name="subtype_' + dateKey + '" value="Casual Leave"' + (absentSubtype === "Casual Leave"  ? " checked" : "") + (subtypeDisabled ? " disabled" : "") + ' class="ma-subtype-radio"></td>';
 
         if (!disableAll) {
+            // Toggle (Override Weekly Off / Holiday)
             var toggleInput = row.querySelector(".ma-weekly-off-toggle");
             if (toggleInput) {
                 toggleInput.addEventListener("change", function () {
@@ -501,15 +585,19 @@ function init_mark_attendance($main) {
                 });
             }
 
+            // Main status radio change
             row.querySelectorAll('input[name="status_' + dateKey + '"]').forEach(function (inp) {
                 inp.addEventListener("change", function () {
                     var val           = this.value;
                     var subtypeRadios = row.querySelectorAll('input[name="subtype_' + dateKey + '"]');
                     if (val === "Absent") {
+                        // Enable sub-type radios
                         subtypeRadios.forEach(function (r) { r.disabled = false; });
+                        // If a sub-type is already checked, use it; otherwise "Absent"
                         var checkedSub = row.querySelector('input[name="subtype_' + dateKey + '"]:checked');
                         attendanceTableData[dateKey] = checkedSub ? checkedSub.value : "Absent";
                     } else {
+                        // Not absent — disable & clear sub-types, store direct value
                         subtypeRadios.forEach(function (r) { r.disabled = true; r.checked = false; });
                         attendanceTableData[dateKey] = val;
                     }
@@ -517,8 +605,12 @@ function init_mark_attendance($main) {
                 });
             });
 
+            // Sub-type radio change (LWP / Earned Leave / Casual Leave)
+            // When a sub-type is selected, the stored value becomes the sub-type
+            // (which is what Attendance.status will be set to instead of "Absent")
             row.querySelectorAll('input[name="subtype_' + dateKey + '"]').forEach(function (inp) {
                 inp.addEventListener("change", function () {
+                    // Sub-type selected → store sub-type name directly
                     attendanceTableData[dateKey] = this.value;
                     updateCounts();
                 });
@@ -528,6 +620,9 @@ function init_mark_attendance($main) {
         return row;
     }
 
+    // ── generateTable ──────────────────────────────────────────────────────
+    // Reads existing attendance from the Attendance doctype via the Python API.
+    // Data source is the mark-attendance page only — no web-page data used.
     function generateTable() {
         var employee  = employeeSel.value;
         var startDate = startDateInput.value;
@@ -535,7 +630,6 @@ function init_mark_attendance($main) {
         if (!employee || !startDate || !endDate) return;
 
         var weeklyOffDays = employeeWeeklyOffMap[employee] || [];
-        var clId          = employeeCLMap[employee];
         var company       = employeeCompanyMap[employee];
 
         var tbody = document.getElementById("ma_table_body");
@@ -550,9 +644,10 @@ function init_mark_attendance($main) {
                 holidayDates = {};
                 (holidayRes.message || []).forEach(function (h) { holidayDates[h] = true; });
 
+                // Fetch attendance from Attendance doctype (mark-attendance page data)
                 frappe.call({
                     method: "saral_hr.saral_hr.page.mark_attendance.mark_attendance.get_attendance_between_dates",
-                    args: { employee: clId, start_date: startDate, end_date: endDate },
+                    args: { employee: employee, start_date: startDate, end_date: endDate },
                     callback: function (res) {
                         var attendanceMap  = res.message || {};
                         attendanceTableData    = {};
@@ -577,14 +672,14 @@ function init_mark_attendance($main) {
                             var isHoliday          = holidayDates[dateKey] === true;
                             var isFuture           = currentDate > today;
 
-                            var savedStatus = attendanceMap[dateKey] || "";
-                            if (!savedStatus) {
-                                if (isHoliday)               savedStatus = "Holiday";
-                                else if (isDefaultWeeklyOff) savedStatus = "Weekly Off";
-                            }
+                            // Raw status from Attendance doctype
+                            var rawStatus   = attendanceMap[dateKey] || "";
+                            // Resolved status for the UI (includes Holiday/Weekly Off fallback)
+                            var savedStatus = resolveStatus(rawStatus, isHoliday, isDefaultWeeklyOff);
 
                             attendanceTableData[dateKey] = savedStatus;
-                            if (savedStatus) originalAttendanceData[dateKey] = savedStatus;
+                            // Track what was already in DB so bulk-mark won't overwrite it
+                            if (rawStatus) originalAttendanceData[dateKey] = savedStatus;
 
                             var row = buildRow(dateKey, dayName, currentDate, savedStatus, isHoliday, isDefaultWeeklyOff, isFuture);
                             tbody.appendChild(row);
@@ -599,6 +694,9 @@ function init_mark_attendance($main) {
         });
     }
 
+    // ── bulkMark ───────────────────────────────────────────────────────────
+    // Only marks days that are NOT already saved in the DB (originalAttendanceData)
+    // and are not Weekly Off / Holiday.
     function bulkMark(status) {
         Object.keys(attendanceTableData).forEach(function (date) {
             if (originalAttendanceData[date]) return;
@@ -608,6 +706,7 @@ function init_mark_attendance($main) {
             if (!mainRadios.length || mainRadios[0].disabled) return;
 
             if (isAbsentSubtype(status)) {
+                // Sub-type: check Absent radio + the sub-type radio
                 mainRadios.forEach(function (r) { r.checked = (r.value === "Absent"); });
                 subtypeRadios.forEach(function (r) {
                     r.disabled = false;
@@ -628,6 +727,7 @@ function init_mark_attendance($main) {
     document.getElementById("ma_mark_halfday").onclick  = function () { bulkMark("Half Day"); };
     document.getElementById("ma_mark_lwp").onclick      = function () { bulkMark("LWP"); };
 
+    // ── Audio ──────────────────────────────────────────────────────────────
     function playSaveSound() {
         try {
             var audio = document.getElementById("ma-sound-click");
@@ -635,50 +735,121 @@ function init_mark_attendance($main) {
         } catch (e) {}
     }
 
+    // ── doSave ─────────────────────────────────────────────────────────────
+    // Sends all attendance rows to save_attendance_batch.
+    // The status values stored in attendanceTableData already map 1-to-1 with
+    // the Attendance doctype "status" field options:
+    //
+    //   Present       → Present
+    //   Half Day      → Half Day
+    //   Absent        → Absent        (no sub-type selected)
+    //   LWP           → LWP           (replaces Absent)
+    //   Earned Leave  → Earned Leave  (replaces Absent)
+    //   Casual Leave  → Casual Leave  (replaces Absent)
+    //   Holiday       → Holiday
+    //   Weekly Off    → Weekly Off
+    //
     function doSave() {
         if (isSaving) return;
+
+        // ── Guard: no employee selected ──────────────────────────────────
         var employee = employeeSel.value;
         if (!employee) {
             frappe.show_alert({ message: "Please select an employee first", indicator: "orange" });
             return;
         }
-        var clId           = employeeCLMap[employee];
-        var attendanceData = [];
-        Object.entries(attendanceTableData).forEach(function (entry) {
-            var date = entry[0], status = entry[1];
-            if (status && status.trim() !== "") {
-                attendanceData.push({ employee: clId, attendance_date: date, status: status });
-            }
-        });
-        if (!attendanceData.length) {
-            frappe.show_alert({ message: "No attendance to save", indicator: "orange" });
+
+        // ── Guard: no month/year selected ────────────────────────────────
+        if (!startDateInput.value || !endDateInput.value) {
+            frappe.show_alert({ message: "Please select a year and month first", indicator: "orange" });
             return;
         }
 
+        // ── Detect only changed rows ─────────────────────────────────────
+        // ALL statuses (including Weekly Off and Holiday) are saved to the
+        // Attendance doctype. Only truly blank rows are skipped.
+
+        var changedData  = [];   // rows to send to the server
+        var unchangedCnt = 0;   // rows that exist in DB and are unchanged
+
+        Object.entries(attendanceTableData).forEach(function (entry) {
+            var date     = entry[0];
+            var status   = (entry[1] || "").trim();
+            var original = (originalAttendanceData[date] || "").trim();
+
+            // Skip only if there is no status at all (future/unset days)
+            if (!status) return;
+
+            if (status === original) {
+                // Already saved with this exact status — no change
+                unchangedCnt++;
+                return;
+            }
+
+            // Status is new or different from DB → include in save batch
+            // This includes Weekly Off and Holiday — they get their own
+            // Attendance records so the month is fully accounted for.
+            changedData.push({ employee: employee, attendance_date: date, status: status });
+        });
+
+        // ── No changes at all ────────────────────────────────────────────
+        if (!changedData.length) {
+            if (unchangedCnt > 0) {
+                frappe.show_alert({
+                    message: "No changes to save. All attendance is already up to date.",
+                    indicator: "blue"
+                });
+            } else {
+                frappe.show_alert({
+                    message: "Nothing to save. Please mark attendance for at least one day.",
+                    indicator: "orange"
+                });
+            }
+            return;
+        }
+
+        // ── Proceed with save ────────────────────────────────────────────
         isSaving = true;
         playSaveSound();
         var scrollPos = document.querySelector(".ma-table-scroll").scrollTop;
 
         frappe.call({
             method: "saral_hr.saral_hr.page.mark_attendance.mark_attendance.save_attendance_batch",
-            args: { attendance_data: attendanceData },
+            args: { attendance_data: changedData },
             callback: function (r) {
                 isSaving = false;
                 if (r.message && r.message.success) {
-                    frappe.show_alert({ message: "Attendance saved successfully", indicator: "green" });
+                    var saved  = r.message.saved_count || changedData.length;
+                    var errors = r.message.errors;
+
+                    if (errors && errors.length) {
+                        // Partial save
+                        frappe.show_alert({
+                            message: saved + " record(s) saved. " + errors.length + " failed.",
+                            indicator: "yellow"
+                        });
+                    } else {
+                        frappe.show_alert({
+                            message: saved + " attendance record" + (saved === 1 ? "" : "s") + " saved successfully.",
+                            indicator: "green"
+                        });
+                    }
+
                     setTimeout(function () {
                         generateTable();
                         setTimeout(function () {
                             document.querySelector(".ma-table-scroll").scrollTop = scrollPos;
                         }, 100);
                     }, 300);
+
                 } else {
-                    frappe.show_alert({ message: "Error saving attendance", indicator: "red" });
+                    var errMsg = (r.message && r.message.error) ? r.message.error : "Error saving attendance";
+                    frappe.show_alert({ message: errMsg, indicator: "red" });
                 }
             },
             error: function () {
                 isSaving = false;
-                frappe.show_alert({ message: "Error saving attendance", indicator: "red" });
+                frappe.show_alert({ message: "Error saving attendance. Please try again.", indicator: "red" });
             }
         });
     }
@@ -687,9 +858,10 @@ function init_mark_attendance($main) {
 
     document.getElementById("ma_goto_attendance").addEventListener("click", function (e) {
         e.preventDefault();
-        frappe.set_route("List", "Attendance");
+        window.open(frappe.urllib.get_full_url("/app/attendance"), "_blank");
     });
 
+    // ── Calendar modal helpers ─────────────────────────────────────────────
     function normalizeDateKey(dateStr) {
         if (!dateStr) return null;
         if (dateStr instanceof Date) {
@@ -726,9 +898,8 @@ function init_mark_attendance($main) {
 
     function loadYearAttendance() {
         var employee  = employeeSel.value;
-        var clId      = employeeCLMap[employee];
         var company   = employeeCompanyMap[employee];
-        if (!clId) return;
+        if (!employee) return;
         var startDate = currentCalendarYear + "-01-01";
         var endDate   = currentCalendarYear + "-12-31";
 
@@ -743,7 +914,7 @@ function init_mark_attendance($main) {
                 });
                 frappe.call({
                     method: "saral_hr.saral_hr.page.mark_attendance.mark_attendance.get_attendance_between_dates",
-                    args: { employee: clId, start_date: startDate, end_date: endDate },
+                    args: { employee: employee, start_date: startDate, end_date: endDate },
                     callback: function (res) {
                         yearAttendanceData = {};
                         Object.entries(res.message || {}).forEach(function (entry) {
@@ -830,6 +1001,7 @@ function init_mark_attendance($main) {
     });
 }
 
+// ── Audio injection ────────────────────────────────────────────────────────
 function inject_ma_audio() {
     if (document.getElementById("ma-sound-click")) return;
     ["click", "submit", "cancel"].forEach(function (name) {
@@ -842,6 +1014,7 @@ function inject_ma_audio() {
     });
 }
 
+// ── Style injection ────────────────────────────────────────────────────────
 function inject_ma_styles() {
     if (document.getElementById("ma-styles")) return;
     var style  = document.createElement("style");
@@ -883,15 +1056,61 @@ function inject_ma_styles() {
         .ma-btn-primary:hover { background: #1a1a1a; }
         .ma-btn:active        { transform: scale(0.98); }
 
-        .ma-filters       { display: flex; gap: 16px; flex-wrap: wrap; }
-        .ma-filter-col    { flex: 1; min-width: 180px; }
-        .ma-filter-col-sm { flex: 0 0 140px; }
-        .ma-label {
-            display: block; font-size: 12px; font-weight: 500;
-            color: var(--text-muted); margin-bottom: 4px;
+        /* ── Outer wrapper: left block + leave table side by side ── */
+        .ma-top-wrap {
+            display: flex;
+            gap: 14px;
+            align-items: stretch;
+        }
+        /* Left block holds Row1 fields + Row2 year/month/buttons stacked */
+        .ma-left-block {
+            flex: 1;
+            min-width: 0;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+        /* Row 1 inside left block: Employee | Company | Weekly Off */
+        .ma-row1 {
+            display: flex;
+            gap: 14px;
+            align-items: flex-end;
+            flex: 1;
+        }
+        .ma-r1-employee  { flex: 2; min-width: 0; position: relative; }
+        .ma-r1-company   { flex: 2; min-width: 0; }
+        .ma-r1-weeklyoff { flex: 1; min-width: 120px; }
+
+        /* Row 2 inside left block: Year | Month | Buttons */
+        .ma-row2 {
+            display: flex;
+            gap: 14px;
+            align-items: flex-end;
+        }
+        .ma-r2-year    { flex: 0 0 110px; }
+        .ma-r2-month   { flex: 0 0 150px; }
+        .ma-r2-buttons { flex: 0 0 auto; }
+
+        /* Leave table on the right, stretches full height of left block */
+        .ma-r1-leave {
+            flex: 0 0 auto;
+            display: flex;
+            align-items: stretch;
+        }
+        .ma-wrap .ma-label,
+        label.ma-label {
+            display: block !important;
+            font-size: 11px !important;
+            font-weight: 500 !important;
+            color: var(--text-muted) !important;
+            margin-bottom: 4px !important;
+            text-transform: uppercase !important;
+            letter-spacing: 0.04em !important;
+            line-height: 1.4 !important;
         }
         .ma-input {
-            width: 100%; padding: 6px 10px;
+            width: 100%; padding: 0 10px;
+            height: 32px; line-height: 32px;
             border: 1px solid var(--border-color, #d1d8dd);
             border-radius: 4px; font-size: 13px;
             background: var(--card-bg, #fff); color: var(--text-color);
@@ -934,12 +1153,8 @@ function inject_ma_styles() {
         .ma-highlight   { font-weight: 700; color: #2d2d2d; }
         .ma-no-results  { padding: 12px 14px; font-size: 13px; color: var(--text-muted); text-align: center; }
 
-        .ma-bulk-bar {
-            display: flex; align-items: center;
-            margin-top: 14px; flex-wrap: wrap; gap: 8px;
-        }
+        .ma-bulk-btns  { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
         .ma-bulk-left  { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
-        .ma-bulk-label { font-size: 13px; color: var(--text-muted); }
 
         .ma-th-small {
             display: block; font-size: 10px; font-weight: 400;
@@ -1056,7 +1271,7 @@ function inject_ma_styles() {
         }
         .ma-year-nav:hover { background: #2d2d2d; color: #fff; border-color: #2d2d2d; }
 
-        /* ── Legend: dots match cell border colours ── */
+        /* ── Legend ── */
         .ma-cal-legend {
             display: flex; gap: 14px; justify-content: center;
             margin-bottom: 16px; flex-wrap: wrap; font-size: 12px;
@@ -1072,7 +1287,7 @@ function inject_ma_styles() {
         .ma-legend-dot.holiday { background: #ffedd5; border: 2px solid #ea580c; }
         .ma-legend-dot.weekend { background: #eff6ff; border: 2px solid #93c5fd; }
 
-        /* ── Month grid: fixed 4 columns = 4×3 layout ── */
+        /* ── Month grid: 4×3 layout ── */
         .ma-months-grid {
             display: grid;
             grid-template-columns: repeat(4, 1fr);
@@ -1137,9 +1352,72 @@ function inject_ma_styles() {
             font-weight: 600; border: 2px solid #93c5fd !important;
             border-radius: 3px; box-sizing: border-box;
         }
-            .page-head-content {
-    padding: 8px 17px 0px 0px !important;
-}
+        .page-head-content {
+            padding: 8px 17px 0px 0px !important;
+        }
+
+        /* ── Leave Summary ── */
+        .ma-leave-table {
+            border-collapse: collapse;
+            height: 100%;
+        }
+        .ma-leave-th {
+            background: var(--control-bg, #f7f7f7);
+            border: 1px solid var(--border-color, #d1d8dd);
+            padding: 4px 14px;
+            font-size: 11px;
+            font-weight: 600;
+            text-align: center;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 0.03em;
+            white-space: nowrap;
+        }
+        .ma-leave-th.ma-leave-row-hdr {
+            background: transparent;
+            border-color: transparent;
+            padding: 4px 6px;
+        }
+        .ma-leave-th.ma-leave-type-hdr {
+            background: transparent;
+            border: 1px solid var(--border-color, #d1d8dd);
+            border-right: none;
+            font-size: 11px;
+            font-weight: 500;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 0.04em;
+            text-align: left;
+            padding: 4px 10px;
+            white-space: nowrap;
+        }
+        .ma-leave-row-label {
+            font-size: 11px;
+            font-weight: 500;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 0.03em;
+            padding: 4px 10px;
+            border: 1px solid var(--border-color, #d1d8dd);
+            border-right: none;
+            background: var(--control-bg, #f7f7f7);
+            white-space: nowrap;
+        }
+        .ma-leave-val {
+            text-align: center;
+            font-size: 13px;
+            font-weight: 700;
+            color: var(--text-color, #333);
+            border: 1px solid var(--border-color, #d1d8dd);
+            padding: 4px 14px;
+            background: var(--card-bg, #fff);
+            min-width: 52px;
+        }
+        .ma-leave-bal {
+            color: var(--text-muted);
+            font-weight: 500;
+            font-size: 12px;
+        }
     `;
     document.head.appendChild(style);
 }
