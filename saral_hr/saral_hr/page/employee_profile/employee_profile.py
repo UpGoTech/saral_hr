@@ -6,13 +6,10 @@ from frappe.utils import today, getdate, date_diff
 def get_employee_profile_data(employee):
     emp = frappe.get_doc("Employee", employee)
 
-    # Fetch company link name so the frontend can link to the form view
     company_link_name = frappe.db.get_value(
         "Company Link", {"employee": employee}, "name"
     )
 
-    # Always fetch the ACTIVE company link for sidebar display
-    # Fall back to most recent if none is active
     CL_FIELDS = ["name", "company", "designation", "department", "branch",
                  "division", "category", "date_of_joining", "is_active", "left_date",
                  "immediate_reporting", "final_reporting"]
@@ -24,7 +21,6 @@ def get_employee_profile_data(employee):
         as_dict=True
     )
     if not company_link:
-        # fallback: most recent by date_of_joining
         company_link = frappe.db.get_value(
             "Company Link",
             {"employee": employee},
@@ -32,18 +28,14 @@ def get_employee_profile_data(employee):
             order_by="date_of_joining desc",
             as_dict=True
         )
-    # Use the active record's name as company_link_name for the sidebar link
     if company_link and company_link.get("name"):
         company_link_name = company_link.get("name")
     company_link = company_link or {}
 
-    # Resolve reporting employee names for display
-    # Employee doctype uses "employee" as its title field (full name)
     def get_emp_name(emp_id):
         if not emp_id:
             return None
-        val = frappe.db.get_value("Employee", emp_id, "employee")
-        return val or emp_id
+        return frappe.db.get_value("Employee", emp_id, "employee") or emp_id
 
     if company_link:
         company_link["immediate_reporting_name"] = get_emp_name(company_link.get("immediate_reporting"))
@@ -74,8 +66,6 @@ def get_employee_profile_data(employee):
             years_set.add(date_str[:4])
 
     current_year = getdate(today()).year
-
-    # Always include every year from joining year → current year
     joining_year = current_year
     doj = company_link.get("date_of_joining") if company_link else None
     if doj:
@@ -89,17 +79,14 @@ def get_employee_profile_data(employee):
 
     years = sorted(list(years_set), reverse=True)
 
-    # ── Tenure: days from active company's joining date to today ──
+    # Tenure
     tenure = None
     active_doj = None
     if company_link and company_link.get("is_active") and company_link.get("date_of_joining"):
         active_doj = company_link.get("date_of_joining")
     else:
-        # Try to find the active company link directly
         active_cl = frappe.db.get_value(
-            "Company Link",
-            {"employee": employee, "is_active": 1},
-            "date_of_joining"
+            "Company Link", {"employee": employee, "is_active": 1}, "date_of_joining"
         )
         if active_cl:
             active_doj = active_cl
@@ -122,20 +109,13 @@ def get_employee_profile_data(employee):
         except Exception:
             pass
 
-    # ── Build Employee Timeline from Company Link records ──
-    # Active record first, then inactive sorted by date descending (most recent first)
+    # Timeline
     raw_timeline = frappe.db.sql("""
         SELECT
-            name,
-            company,
-            full_name,
-            date_of_joining  AS start_date,
-            left_date        AS end_date,
-            is_active,
-            designation,
-            department,
-            branch,
-            category
+            name, company, full_name,
+            date_of_joining AS start_date,
+            left_date       AS end_date,
+            is_active, designation, department, branch, category
         FROM `tabCompany Link`
         WHERE employee = %(employee)s
            OR name LIKE %(pattern)s
@@ -157,14 +137,13 @@ def get_employee_profile_data(employee):
             "category":    rec.get("category")    or "",
         })
 
-    # ── Fetch reporting employee names from active Company Link ──
+    # Reporting names
     immediate_reporting_name = None
     final_reporting_name = None
     if company_link_name:
         reporting = frappe.db.get_value(
             "Company Link", company_link_name,
-            ["immediate_reporting", "final_reporting"],
-            as_dict=True
+            ["immediate_reporting", "final_reporting"], as_dict=True
         )
         if reporting:
             if reporting.get("immediate_reporting"):
@@ -176,8 +155,7 @@ def get_employee_profile_data(employee):
                     "Employee", reporting["final_reporting"], "employee"
                 ) or reporting["final_reporting"]
 
-    # ── Salary Structure Assignment History ──
-    # Fetch the latest submitted SSA with full earnings/deductions details
+    # Latest submitted SSA
     latest_ssa_name = frappe.db.get_value(
         "Salary Structure Assignment",
         filters={"employee": employee, "docstatus": 1},
@@ -189,36 +167,30 @@ def get_employee_profile_data(employee):
     if latest_ssa_name:
         ssa_doc = frappe.get_doc("Salary Structure Assignment", latest_ssa_name)
         latest_ssa = {
-            "name":                       ssa_doc.name,
-            "salary_structure":           ssa_doc.salary_structure,
-            "from_date":                  str(ssa_doc.from_date) if ssa_doc.from_date else None,
-            "to_date":                    str(ssa_doc.to_date) if ssa_doc.to_date else None,
-            "monthly_ctc":                ssa_doc.monthly_ctc,
-            "gross_salary":               ssa_doc.gross_salary,
-            "total_deductions":           ssa_doc.total_deductions,
-            "total_employer_contribution":ssa_doc.total_employer_contribution,
-            "net_salary":                 ssa_doc.net_salary,
-            "annual_ctc":                 ssa_doc.annual_ctc,
-            "designation":                ssa_doc.designation,
-            "department":                 ssa_doc.department,
-            "branch":                     ssa_doc.branch,
+            "name":                        ssa_doc.name,
+            "salary_structure":            ssa_doc.salary_structure,
+            "from_date":                   str(ssa_doc.from_date) if ssa_doc.from_date else None,
+            "to_date":                     str(ssa_doc.to_date)   if ssa_doc.to_date   else None,
+            "monthly_ctc":                 ssa_doc.monthly_ctc,
+            "gross_salary":                ssa_doc.gross_salary,
+            "total_deductions":            ssa_doc.total_deductions,
+            "total_employer_contribution": ssa_doc.total_employer_contribution,
+            "net_salary":                  ssa_doc.net_salary,
+            "annual_ctc":                  ssa_doc.annual_ctc,
+            "designation":                 ssa_doc.designation,
+            "department":                  ssa_doc.department,
+            "branch":                      ssa_doc.branch,
             "earnings": [
-                {
-                    "salary_component": row.salary_component,
-                    "amount":           row.amount,
-                }
+                {"salary_component": row.salary_component, "amount": row.amount}
                 for row in (ssa_doc.earnings or [])
             ],
             "deductions": [
-                {
-                    "salary_component": row.salary_component,
-                    "amount":           row.amount,
-                }
+                {"salary_component": row.salary_component, "amount": row.amount}
                 for row in (ssa_doc.deductions or [])
             ],
         }
 
-    # Fetch all cancelled SSA records (docstatus=2), most recent first
+    # Cancelled SSAs
     cancelled_ssas_names = frappe.db.get_all(
         "Salary Structure Assignment",
         filters={"employee": employee, "docstatus": 2},
@@ -231,19 +203,19 @@ def get_employee_profile_data(employee):
         try:
             cdoc = frappe.get_doc("Salary Structure Assignment", rec.name)
             cancelled_ssas.append({
-                "name":                       cdoc.name,
-                "salary_structure":           cdoc.salary_structure,
-                "from_date":                  str(cdoc.from_date) if cdoc.from_date else None,
-                "to_date":                    str(cdoc.to_date) if cdoc.to_date else None,
-                "monthly_ctc":                cdoc.monthly_ctc,
-                "gross_salary":               cdoc.gross_salary,
-                "total_deductions":           cdoc.total_deductions,
-                "total_employer_contribution":cdoc.total_employer_contribution,
-                "net_salary":                 cdoc.net_salary,
-                "annual_ctc":                 cdoc.annual_ctc,
-                "designation":                cdoc.designation or "",
-                "department":                 cdoc.department or "",
-                "branch":                     cdoc.branch or "",
+                "name":                        cdoc.name,
+                "salary_structure":            cdoc.salary_structure,
+                "from_date":                   str(cdoc.from_date) if cdoc.from_date else None,
+                "to_date":                     str(cdoc.to_date)   if cdoc.to_date   else None,
+                "monthly_ctc":                 cdoc.monthly_ctc,
+                "gross_salary":                cdoc.gross_salary,
+                "total_deductions":            cdoc.total_deductions,
+                "total_employer_contribution": cdoc.total_employer_contribution,
+                "net_salary":                  cdoc.net_salary,
+                "annual_ctc":                  cdoc.annual_ctc,
+                "designation":                 cdoc.designation or "",
+                "department":                  cdoc.department  or "",
+                "branch":                      cdoc.branch      or "",
                 "earnings": [
                     {"salary_component": row.salary_component, "amount": row.amount}
                     for row in (cdoc.earnings or [])
@@ -257,20 +229,23 @@ def get_employee_profile_data(employee):
             pass
 
     return {
-        "employee":                emp.employee,
-        "first_name":              emp.first_name,
-        "employee_image":          emp.employee_image,
-        "date_of_birth":           str(emp.date_of_birth) if emp.date_of_birth else None,
-        "pan_number":              emp.pan_number,
-        "company_link":            company_link or {},
-        "company_link_name":       company_link_name,
-        "salary":                  salary,
-        "attendance_map":          att_map,
-        "years":                   years,
-        "tenure":                  tenure,
-        "timeline":                timeline,
-        "immediate_reporting_name": immediate_reporting_name,
-        "final_reporting_name":     final_reporting_name,
-        "latest_ssa":              latest_ssa,
-        "cancelled_ssas":          cancelled_ssas,
+        "employee":                  emp.employee,
+        "first_name":                emp.first_name,
+        "employee_image":            emp.employee_image,
+        "date_of_birth":             str(emp.date_of_birth) if emp.date_of_birth else None,
+        "pan_number":                emp.pan_number,
+        "cell_number":               getattr(emp, "cell_number",    None),
+        "personal_email":            getattr(emp, "personal_email", None),
+        "company_email":             getattr(emp, "company_email",  None),
+        "company_link":              company_link or {},
+        "company_link_name":         company_link_name,
+        "salary":                    salary,
+        "attendance_map":            att_map,
+        "years":                     years,
+        "tenure":                    tenure,
+        "timeline":                  timeline,
+        "immediate_reporting_name":  immediate_reporting_name,
+        "final_reporting_name":      final_reporting_name,
+        "latest_ssa":                latest_ssa,
+        "cancelled_ssas":            cancelled_ssas,
     }
