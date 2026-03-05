@@ -21,6 +21,21 @@ function get_current_month() {
 const MONTHS = ['January','February','March','April','May','June',
                 'July','August','September','October','November','December'];
 
+// ── FIX: detect DA component by name OR abbreviation ─────────────────────────
+function is_da_component(comp_name, abbr) {
+    const name = (comp_name || '').toLowerCase();
+    const ab   = (abbr || '').toLowerCase().trim();
+    return (
+        name.includes('dearness')
+        || name === 'da'
+        || ab === 'da'
+        || ab.startsWith('da-')
+        || ab.startsWith('da ')
+        || ab === 'da - dr'
+        || ab.startsWith('da-dr')
+    );
+}
+
 // ─── Card Grid ───────────────────────────────────────────────────────────────
 
 function build_cards(items, card_class) {
@@ -995,6 +1010,7 @@ function apply_salary_structure(frm, data) {
     frm.clear_table("earnings");
     frm.clear_table("deductions");
 
+    // ── FIX: include ALL rows from salary structure, even zero-amount ─────────
     (data.earnings || []).forEach(row => {
         const e = frm.add_child("earnings");
         Object.assign(e, row);
@@ -1046,7 +1062,7 @@ function recalculate_salary(frm, wd_override, pd_override, phd_override) {
     const phd          = flt(phd_override !== undefined ? phd_override : frm.doc.physical_working_days);
     const variable_pct = flt(frm.variable_pay_percentage || 0);
 
-    const PF_MAX = 1800; // Maximum PF deduction cap
+    const PF_MAX = 1800;
 
     let basic_amount      = 0;
     let da_amount         = 0;
@@ -1080,9 +1096,15 @@ function recalculate_salary(frm, wd_override, pd_override, phd_override) {
         row.amount      = flt(amount, 2);
         total_earnings += row.amount;
 
-        if (comp.includes("basic"))                            basic_amount      = row.amount;
-        if (comp.includes("da") || comp.includes("dearness")) da_amount         = row.amount;
-        if (comp.includes("conveyance"))                       conveyance_amount = row.amount;
+        if (comp.includes("basic"))
+            basic_amount = row.amount;
+
+        // ── FIX: detect DA by component name OR abbreviation ─────────────────
+        if (is_da_component(row.salary_component, row.abbr))
+            da_amount = row.amount;
+
+        if (comp.includes("conveyance"))
+            conveyance_amount = row.amount;
     });
 
     total_basic_da = basic_amount + da_amount;
@@ -1105,7 +1127,7 @@ function recalculate_salary(frm, wd_override, pd_override, phd_override) {
                 : 0;
 
         } else if (comp.includes("pf") || comp.includes("provident")) {
-            // PF = 12% of (Basic + DA), capped at ₹1,800 maximum
+            // ── FIX: PF = 12% of prorated (Basic + DA), capped at ₹1,800 ────
             const pf_base = basic_amount + da_amount;
             amount = base > 0 ? Math.min(flt(pf_base * 0.12, 2), PF_MAX) : 0;
 
