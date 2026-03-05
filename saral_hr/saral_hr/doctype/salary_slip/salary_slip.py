@@ -110,14 +110,11 @@ def get_salary_structure_for_employee(employee, start_date=None):
         added_earnings.add(row.salary_component)
 
         if comp.is_special_component and current_month:
-            if base_amount == 0:
-                continue
             special_amount = get_special_component_amount(row.salary_component, current_month)
             amount = special_amount if special_amount is not None else 0
         else:
-            if base_amount == 0:
-                continue
             amount = base_amount
+            # ── FIX: include zero-amount rows so they appear in the salary slip
 
         earnings.append({
             "salary_component":               row.salary_component,
@@ -150,14 +147,11 @@ def get_salary_structure_for_employee(employee, start_date=None):
         added_deductions.add(row.salary_component)
 
         if comp.is_special_component and current_month:
-            if base_amount == 0:
-                continue
             special_amount = get_special_component_amount(row.salary_component, current_month)
             amount = special_amount if special_amount is not None else 0
         else:
-            if base_amount == 0:
-                continue
             amount = base_amount
+            # ── FIX: include zero-amount rows so they appear in the salary slip
 
         deductions.append({
             "salary_component":               row.salary_component,
@@ -235,6 +229,26 @@ def get_special_component_amount(component_name, month):
 def _employee_requires_variable_pay(employee):
     requires = frappe.db.get_value("Company Link", employee, "requires_variable_pay")
     return bool(requires)
+
+
+# ── Helper: identify DA component by name or abbreviation ────────────────────
+def _is_da_component(comp_name, abbr):
+    """
+    Returns True if the salary component is a Dearness Allowance component.
+    Matches on component name containing 'da' or 'dearness', OR abbreviation
+    starting with 'da' (e.g. 'DA - DR', 'DA').
+    """
+    name_lower = (comp_name or "").lower()
+    abbr_lower = (abbr or "").lower()
+    return (
+        "dearness" in name_lower
+        or name_lower == "da"
+        or abbr_lower == "da"
+        or abbr_lower.startswith("da-")
+        or abbr_lower.startswith("da ")
+        or abbr_lower == "da - dr"
+        or abbr_lower.startswith("da-dr")
+    )
 
 
 @frappe.whitelist()
@@ -631,6 +645,7 @@ def bulk_generate_salary_slips(employees, year, month):
             salary_slip.total_earned_leaves  = attendance_data.get('total_earned_leaves', 0)
             salary_slip.total_casual_leaves  = attendance_data.get('total_casual_leaves', 0)
 
+            # ── Include ALL earnings rows (even zero-amount) ──────────────────
             for earning in salary_data.get('earnings', []):
                 row = salary_slip.append('earnings', {})
                 row.salary_component               = earning.get('salary_component')
@@ -642,6 +657,7 @@ def bulk_generate_salary_slips(employees, year, month):
                 row.depends_on_physical_working_days = earning.get('depends_on_physical_working_days')
                 row.is_special_component           = earning.get('is_special_component')
 
+            # ── Include ALL deductions rows (even zero-amount) ────────────────
             for deduction in salary_data.get('deductions', []):
                 row = salary_slip.append('deductions', {})
                 row.salary_component               = deduction.get('salary_component')
@@ -696,8 +712,9 @@ def calculate_salary_slip_amounts_exact(salary_slip, variable_pay_percentage, st
         base = flt(row.base_amount or row.amount or 0)
         row.base_amount = base
 
-        comp   = (row.salary_component or "").lower()
-        amount = 0
+        comp      = (row.salary_component or "").lower()
+        abbr      = (row.abbr or "").lower()
+        amount    = 0
 
         if "variable" in comp:
             if wd > 0 and row.depends_on_payment_days:
@@ -722,8 +739,11 @@ def calculate_salary_slip_amounts_exact(salary_slip, variable_pay_percentage, st
 
         if "basic" in comp:
             basic_amount = row.amount
-        if "da" in comp or "dearness" in comp:
+
+        # ── FIX: detect DA by component name OR abbreviation ─────────────────
+        if _is_da_component(row.salary_component, row.abbr):
             da_amount = row.amount
+
         if "conveyance" in comp:
             conveyance_amount = row.amount
 
@@ -745,7 +765,7 @@ def calculate_salary_slip_amounts_exact(salary_slip, variable_pay_percentage, st
                 if (base > 0 and total_earnings < 21000) else 0
 
         elif "pf" in comp or "provident" in comp:
-            # PF = 12% of (Basic + DA), capped at ₹1,800 maximum
+            # ── FIX: PF = 12% of prorated (Basic + DA), capped at ₹1,800 ────
             pf_base = basic_amount + da_amount
             amount  = min(flt(pf_base * 0.12, 2), PF_MAX) if base > 0 else 0
 
@@ -1027,7 +1047,6 @@ def generate_bulk_print_html(doc):
             WHERE parent = %s
               AND parenttype = 'Salary Structure Assignment'
               AND parentfield = 'earnings'
-              AND amount > 0
             ORDER BY idx ASC
         """, (assignment_name,), as_dict=1)
 
@@ -1037,9 +1056,8 @@ def generate_bulk_print_html(doc):
     computed_earnings_total = 0
     computed_items          = []
     for e in doc.earnings:
-        if e.amount and e.amount > 0:
-            computed_items.append(e)
-            computed_earnings_total += e.amount
+        computed_items.append(e)
+        computed_earnings_total += (e.amount or 0)
 
     deductions_total = 0
     deduction_items  = []
@@ -1049,9 +1067,9 @@ def generate_bulk_print_html(doc):
             result      = frappe.db.get_value("Salary Component", d.salary_component, "employer_contribution")
             is_employer = result or 0
 
-        if d.amount and d.amount > 0 and not is_employer:
+        if not is_employer:
             deduction_items.append(d)
-            deductions_total += d.amount
+            deductions_total += (d.amount or 0)
 
     max_rows = max(len(assignment_earnings), len(computed_items), len(deduction_items), 1)
 
