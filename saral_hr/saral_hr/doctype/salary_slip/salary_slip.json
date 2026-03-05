@@ -25,6 +25,7 @@
   "payment_days_tab",
   "total_working_days",
   "payment_days",
+  "physical_working_days",
   "present_days",
   "total_half_days",
   "column_break_puyt",
@@ -32,6 +33,8 @@
   "weekly_offs_count",
   "total_holidays",
   "total_lwp",
+  "total_earned_leaves",
+  "total_casual_leaves",
   "earnings_and_deductions_tab",
   "earnings_and_deductions_section",
   "earnings",
@@ -63,12 +66,12 @@
    "reqd": 1
   },
   {
-   "bold": 1,
    "fieldname": "salary_structure",
    "fieldtype": "Link",
    "label": "Salary Structure",
    "options": "Salary Structure",
-   "read_only": 1
+   "read_only": 1,
+   "bold": 1
   },
   {
    "fieldname": "payment_days_tab",
@@ -171,6 +174,14 @@
    "fieldtype": "Float",
    "label": "Payment Days",
    "precision": "2"
+  },
+  {
+   "fieldname": "physical_working_days",
+   "fieldtype": "Float",
+   "label": "Physical Working Days",
+   "description": "Payment Days minus Earned Leaves and Casual Leaves. Used for components marked as Depends on Physical Working Days.",
+   "precision": "2",
+   "read_only": 1
   },
   {
    "fieldname": "present_days",
@@ -305,12 +316,24 @@
    "fieldtype": "Float",
    "label": "Total Holidays",
    "precision": "2"
+  },
+  {
+   "fieldname": "total_earned_leaves",
+   "fieldtype": "Float",
+   "label": "Total Earned Leaves",
+   "precision": "2"
+  },
+  {
+   "fieldname": "total_casual_leaves",
+   "fieldtype": "Float",
+   "label": "Total Casual Leaves",
+   "precision": "2"
   }
  ],
  "index_web_pages_for_search": 1,
  "is_submittable": 1,
  "links": [],
- "modified": "2026-02-24 11:36:34.664741",
+ "modified": "2026-03-05 00:00:00.000000",
  "modified_by": "Administrator",
  "module": "Saral Hr",
  "name": "Salary Slip",
@@ -333,8 +356,6 @@
    "write": 1
   },
   {
-   "create": 1,
-   "delete": 1,
    "email": 1,
    "export": 1,
    "print": 1,
@@ -342,9 +363,7 @@
    "report": 1,
    "role": "Saral HR User",
    "select": 1,
-   "share": 1,
-   "submit": 1,
-   "write": 1
+   "share": 1
   }
  ],
  "sort_field": "modified",
