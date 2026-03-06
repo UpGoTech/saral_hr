@@ -797,5 +797,37 @@
   "salary_component": "Dearness Allowance -  DR",
   "salary_component_abbr": "DA - DR",
   "type": "Earning"
+ },
+ {
+  "depends_on_payment_days": 1,
+  "depends_on_physical_working_days": 0,
+  "description": null,
+  "docstatus": 0,
+  "doctype": "Salary Component",
+  "employer_contribution": 0,
+  "enter_amount_according_to_months": [],
+  "is_daily_rate": 0,
+  "is_special_component": 0,
+  "modified": "2026-03-06 16:46:49.874421",
+  "name": "Transport Allowance",
+  "salary_component": "Transport Allowance",
+  "salary_component_abbr": "TA",
+  "type": "Earning"
+ },
+ {
+  "depends_on_payment_days": 0,
+  "depends_on_physical_working_days": 0,
+  "description": null,
+  "docstatus": 0,
+  "doctype": "Salary Component",
+  "employer_contribution": 0,
+  "enter_amount_according_to_months": [],
+  "is_daily_rate": 0,
+  "is_special_component": 0,
+  "modified": "2026-03-06 16:38:14.902931",
+  "name": "Income Tax",
+  "salary_component": "Income Tax",
+  "salary_component_abbr": "IT",
+  "type": "Deduction"
  }
 ]

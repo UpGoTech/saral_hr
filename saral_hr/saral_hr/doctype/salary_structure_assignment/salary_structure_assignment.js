@@ -67,10 +67,8 @@ frappe.ui.form.on("Salary Structure Assignment", {
                 (r.message.earnings   || []).forEach(row => copy_row(frm.add_child("earnings"),   row));
                 (r.message.deductions || []).forEach(row => copy_row(frm.add_child("deductions"), row));
                 frm.set_value("currency", r.message.currency || "INR");
-                // Use refresh_field (singular) on just the tables — avoids full form re-render
                 frm.refresh_field("earnings");
                 frm.refresh_field("deductions");
-                // Calculate AFTER rows are rendered, not during
                 calculate_salary(frm);
             }
         });
@@ -87,7 +85,7 @@ frappe.ui.form.on("Salary Details", {
     }
 });
 
-// ── Field visibility ─────────────────────────────────────────────────────────
+// ── Field visibility ──────────────────────────────────────────────────────────
 
 function toggle_fields(frm) {
     const can_create = !frm._has_existing;
@@ -133,14 +131,14 @@ function check_overlap(frm) {
 
 // ── Salary calculation ────────────────────────────────────────────────────────
 
-// Called on initial load / salary_structure change — safe to use here
+// Called on initial load / salary_structure change — safe to use full refresh here
 function calculate_salary(frm) {
     _do_calculate(frm, false);
 }
 
-// Called when user edits an amount cell — must NOT call frm.refresh_fields()
-// or frm.refresh_field() on the earnings/deductions tables, as that would
-// destroy the active input and move focus away from the cell being edited.
+// Called when user edits an amount cell — must NOT call frm.refresh_field()
+// on the earnings/deductions tables, as that would destroy the active input
+// and move focus away from the cell being edited.
 function calculate_salary_silent(frm) {
     _do_calculate(frm, true);
 }
@@ -188,25 +186,43 @@ function set_salary_totals(frm, gross, employee_deductions, employer, silent) {
     const annual_ctc  = (gross + employer) * 12;
     const monthly_ctc = annual_ctc / 12;
 
-    frm.set_value({
+    const values = {
         gross_salary:                gross,
         total_deductions:            employee_deductions,
         total_employer_contribution: employer,
         net_salary,
         monthly_ctc,
         annual_ctc
-    });
+    };
 
-    // KEY FIX: Only refresh the calculation fields, NEVER the earnings/deductions
-    // tables while a user may be actively editing a cell inside them.
-    if (!silent) {
+    if (silent) {
+        // Write directly to frm.doc — bypasses set_value()'s internal refresh
+        // which would re-render the grid and destroy the active input cell focus
+        Object.assign(frm.doc, values);
+
+        // Manually update only the display of each read-only calculation field
+        // without touching the earnings/deductions tables at all
+        Object.keys(values).forEach(fieldname => {
+            const field = frm.get_field(fieldname);
+            if (!field) return;
+
+            if (field.$input) {
+                field.$input.val(format_number(values[fieldname], null, 2));
+            } else if (field.$wrapper) {
+                // read_only fields are rendered as static text
+                field.$wrapper
+                    .find(".like-disabled-input, .control-value")
+                    .text(format_number(values[fieldname], null, 2));
+            }
+        });
+    } else {
+        // Normal mode (initial load / structure change) — safe to use set_value + refresh
+        frm.set_value(values);
         frm.refresh_fields([
             "gross_salary", "total_deductions", "total_employer_contribution",
             "net_salary", "monthly_ctc", "annual_ctc"
         ]);
     }
-    // In silent mode frm.set_value() already updates the display for scalar fields,
-    // so no explicit refresh is needed and we avoid disrupting the active row.
 }
 
 function clear_salary_tables(frm) {

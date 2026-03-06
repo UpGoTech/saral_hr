@@ -114,7 +114,6 @@ def get_salary_structure_for_employee(employee, start_date=None):
             amount = special_amount if special_amount is not None else 0
         else:
             amount = base_amount
-            # ── FIX: include zero-amount rows so they appear in the salary slip
 
         earnings.append({
             "salary_component":               row.salary_component,
@@ -151,7 +150,6 @@ def get_salary_structure_for_employee(employee, start_date=None):
             amount = special_amount if special_amount is not None else 0
         else:
             amount = base_amount
-            # ── FIX: include zero-amount rows so they appear in the salary slip
 
         deductions.append({
             "salary_component":               row.salary_component,
@@ -233,11 +231,6 @@ def _employee_requires_variable_pay(employee):
 
 # ── Helper: identify DA component by name or abbreviation ────────────────────
 def _is_da_component(comp_name, abbr):
-    """
-    Returns True if the salary component is a Dearness Allowance component.
-    Matches on component name containing 'da' or 'dearness', OR abbreviation
-    starting with 'da' (e.g. 'DA - DR', 'DA').
-    """
     name_lower = (comp_name or "").lower()
     abbr_lower = (abbr or "").lower()
     return (
@@ -389,10 +382,10 @@ def get_attendance_and_days(employee, start_date, working_days_calculation_metho
             present_days += 1
         elif a.status == "Earned Leave":
             earned_leave_days += 1
-            present_days      += 1      # paid leave — counts as present for payment_days
+            present_days      += 1
         elif a.status == "Casual Leave":
             casual_leave_days += 1
-            present_days      += 1      # paid leave — counts as present for payment_days
+            present_days      += 1
         elif a.status == "Half Day":
             half_day_count += 1
             present_days   += 0.5
@@ -414,24 +407,23 @@ def get_attendance_and_days(employee, start_date, working_days_calculation_metho
         working_days = total_days - weekly_off_count
         payment_days = flt(working_days - combined_absent_days, 2)
 
-    # Physical working days = payment days excluding EL and CL
     physical_working_days = flt(payment_days - earned_leave_days - casual_leave_days, 2)
 
     return {
-        "attendance_count":     len(attendance),
-        "total_days":           total_days,
-        "weekly_offs":          weekly_off_count,
-        "working_days":         working_days,
-        "payment_days":         payment_days,
+        "attendance_count":      len(attendance),
+        "total_days":            total_days,
+        "weekly_offs":           weekly_off_count,
+        "working_days":          working_days,
+        "payment_days":          payment_days,
         "physical_working_days": physical_working_days,
-        "present_days":         present_days,
-        "absent_days":          combined_absent_days,
-        "total_half_days":      total_half_days,
-        "total_lwp":            flt(lwp_days, 2),
-        "total_holidays":       flt(holiday_days, 2),
-        "total_earned_leaves":  flt(earned_leave_days, 2),
-        "total_casual_leaves":  flt(casual_leave_days, 2),
-        "calculation_method":   calculation_method
+        "present_days":          present_days,
+        "absent_days":           combined_absent_days,
+        "total_half_days":       total_half_days,
+        "total_lwp":             flt(lwp_days, 2),
+        "total_holidays":        flt(holiday_days, 2),
+        "total_earned_leaves":   flt(earned_leave_days, 2),
+        "total_casual_leaves":   flt(casual_leave_days, 2),
+        "calculation_method":    calculation_method
     }
 
 
@@ -633,19 +625,18 @@ def bulk_generate_salary_slips(employees, year, month):
             salary_slip.salary_structure             = salary_data.get('salary_structure')
             salary_slip.working_days_calculation_method = working_days_calculation_method or ""
 
-            salary_slip.total_working_days   = attendance_data.get('working_days')
-            salary_slip.payment_days         = attendance_data.get('payment_days')
+            salary_slip.total_working_days    = attendance_data.get('working_days')
+            salary_slip.payment_days          = attendance_data.get('payment_days')
             salary_slip.physical_working_days = attendance_data.get('physical_working_days')
-            salary_slip.present_days         = attendance_data.get('present_days')
-            salary_slip.absent_days          = attendance_data.get('absent_days')
-            salary_slip.weekly_offs_count    = attendance_data.get('weekly_offs')
-            salary_slip.total_half_days      = attendance_data.get('total_half_days')
-            salary_slip.total_lwp            = attendance_data.get('total_lwp', 0)
-            salary_slip.total_holidays       = attendance_data.get('total_holidays', 0)
-            salary_slip.total_earned_leaves  = attendance_data.get('total_earned_leaves', 0)
-            salary_slip.total_casual_leaves  = attendance_data.get('total_casual_leaves', 0)
+            salary_slip.present_days          = attendance_data.get('present_days')
+            salary_slip.absent_days           = attendance_data.get('absent_days')
+            salary_slip.weekly_offs_count     = attendance_data.get('weekly_offs')
+            salary_slip.total_half_days       = attendance_data.get('total_half_days')
+            salary_slip.total_lwp             = attendance_data.get('total_lwp', 0)
+            salary_slip.total_holidays        = attendance_data.get('total_holidays', 0)
+            salary_slip.total_earned_leaves   = attendance_data.get('total_earned_leaves', 0)
+            salary_slip.total_casual_leaves   = attendance_data.get('total_casual_leaves', 0)
 
-            # ── Include ALL earnings rows (even zero-amount) ──────────────────
             for earning in salary_data.get('earnings', []):
                 row = salary_slip.append('earnings', {})
                 row.salary_component               = earning.get('salary_component')
@@ -657,7 +648,6 @@ def bulk_generate_salary_slips(employees, year, month):
                 row.depends_on_physical_working_days = earning.get('depends_on_physical_working_days')
                 row.is_special_component           = earning.get('is_special_component')
 
-            # ── Include ALL deductions rows (even zero-amount) ────────────────
             for deduction in salary_data.get('deductions', []):
                 row = salary_slip.append('deductions', {})
                 row.salary_component               = deduction.get('salary_component')
@@ -708,13 +698,14 @@ def calculate_salary_slip_amounts_exact(salary_slip, variable_pay_percentage, st
     da_amount         = 0
     conveyance_amount = 0
 
+    # ── Pass 1: compute all earnings so gross is known for ESIC / PF ─────────
     for row in salary_slip.earnings:
-        base = flt(row.base_amount or row.amount or 0)
+        # Use explicit None check so an intentional 0 base_amount is respected
+        base = flt(row.base_amount if row.base_amount is not None else (row.amount if row.amount is not None else 0))
         row.base_amount = base
 
-        comp      = (row.salary_component or "").lower()
-        abbr      = (row.abbr or "").lower()
-        amount    = 0
+        comp   = (row.salary_component or "").lower()
+        amount = 0
 
         if "variable" in comp:
             if wd > 0 and row.depends_on_payment_days:
@@ -740,7 +731,6 @@ def calculate_salary_slip_amounts_exact(salary_slip, variable_pay_percentage, st
         if "basic" in comp:
             basic_amount = row.amount
 
-        # ── FIX: detect DA by component name OR abbreviation ─────────────────
         if _is_da_component(row.salary_component, row.abbr):
             da_amount = row.amount
 
@@ -749,25 +739,29 @@ def calculate_salary_slip_amounts_exact(salary_slip, variable_pay_percentage, st
 
     total_basic_da = basic_amount + da_amount
 
+    # ── Pass 2: compute deductions using final gross salary ───────────────────
     for row in salary_slip.deductions:
-        base = flt(row.base_amount or row.amount or 0)
+        # Use explicit None check so an intentional 0 base_amount is respected
+        base = flt(row.base_amount if row.base_amount is not None else (row.amount if row.amount is not None else 0))
         row.base_amount = base
 
         comp   = (row.salary_component or "").lower()
         amount = 0
 
         if "esic" in comp and "employer" not in comp:
-            amount = flt((total_earnings - conveyance_amount) * 0.0075, 2) \
-                if (base > 0 and total_earnings < 21000) else 0
+            # ESIC Employee: 0.75% of gross salary, no cap, only if gross < ₹21,000
+            # base == 0 means not applicable in salary structure — show row but keep amount 0
+            amount = 0 if (base == 0 or total_earnings >= 21000) else flt(total_earnings * 0.0075, 2)
 
         elif "esic" in comp and "employer" in comp:
-            amount = flt((total_earnings - conveyance_amount) * 0.0325, 2) \
-                if (base > 0 and total_earnings < 21000) else 0
+            # ESIC Employer: 3.25% of gross salary, no cap, only if gross < ₹21,000
+            # base == 0 means not applicable in salary structure — show row but keep amount 0
+            amount = 0 if (base == 0 or total_earnings >= 21000) else flt(total_earnings * 0.0325, 2)
 
         elif "pf" in comp or "provident" in comp:
-            # ── FIX: PF = 12% of prorated (Basic + DA), capped at ₹1,800 ────
-            pf_base = basic_amount + da_amount
-            amount  = min(flt(pf_base * 0.12, 2), PF_MAX) if base > 0 else 0
+            # PF: 12% of gross salary (total_earnings), capped at ₹1,800
+            # base == 0 means not applicable in salary structure — show row but keep amount 0
+            amount = 0 if base == 0 else min(flt(total_earnings * 0.12, 2), PF_MAX)
 
         elif row.depends_on_physical_working_days and wd > 0 and base > 0:
             amount = (base / wd) * phd

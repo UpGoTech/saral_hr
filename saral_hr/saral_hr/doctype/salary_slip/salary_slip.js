@@ -1010,7 +1010,6 @@ function apply_salary_structure(frm, data) {
     frm.clear_table("earnings");
     frm.clear_table("deductions");
 
-    // ── FIX: include ALL rows from salary structure, even zero-amount ─────────
     (data.earnings || []).forEach(row => {
         const e = frm.add_child("earnings");
         Object.assign(e, row);
@@ -1068,8 +1067,10 @@ function recalculate_salary(frm, wd_override, pd_override, phd_override) {
     let da_amount         = 0;
     let conveyance_amount = 0;
 
+    // ── Pass 1: compute all earnings first so gross is known for ESIC/PF ─────
     (frm.doc.earnings || []).forEach(row => {
-        const base = flt(row.base_amount || row.amount || 0);
+        // Use nullish coalescing so an explicit 0 base_amount is respected
+        const base = flt(row.base_amount != null ? row.base_amount : (row.amount != null ? row.amount : 0));
         row.base_amount = base;
 
         let amount = 0;
@@ -1099,7 +1100,6 @@ function recalculate_salary(frm, wd_override, pd_override, phd_override) {
         if (comp.includes("basic"))
             basic_amount = row.amount;
 
-        // ── FIX: detect DA by component name OR abbreviation ─────────────────
         if (is_da_component(row.salary_component, row.abbr))
             da_amount = row.amount;
 
@@ -1109,27 +1109,33 @@ function recalculate_salary(frm, wd_override, pd_override, phd_override) {
 
     total_basic_da = basic_amount + da_amount;
 
+    // ── Pass 2: compute deductions using final gross salary ───────────────────
     (frm.doc.deductions || []).forEach(row => {
-        const base = flt(row.base_amount || row.amount || 0);
+        // Use nullish coalescing so an explicit 0 base_amount is respected
+        const base = flt(row.base_amount != null ? row.base_amount : (row.amount != null ? row.amount : 0));
         row.base_amount = base;
 
         let amount = 0;
         const comp = (row.salary_component || "").toLowerCase();
 
         if (comp.includes("esic") && !comp.includes("employer")) {
-            amount = (base > 0 && total_earnings < 21000)
-                ? flt((total_earnings - conveyance_amount) * 0.0075, 2)
-                : 0;
+            // ESIC Employee: 0.75% of gross salary, no cap, only if gross < 21,000
+            // base === 0 means not applicable in salary structure — show row but keep amount 0
+            amount = (base === 0 || total_earnings >= 21000)
+                ? 0
+                : flt(total_earnings * 0.0075, 2);
 
         } else if (comp.includes("esic") && comp.includes("employer")) {
-            amount = (base > 0 && total_earnings < 21000)
-                ? flt((total_earnings - conveyance_amount) * 0.0325, 2)
-                : 0;
+            // ESIC Employer: 3.25% of gross salary, no cap, only if gross < 21,000
+            // base === 0 means not applicable in salary structure — show row but keep amount 0
+            amount = (base === 0 || total_earnings >= 21000)
+                ? 0
+                : flt(total_earnings * 0.0325, 2);
 
         } else if (comp.includes("pf") || comp.includes("provident")) {
-            // ── FIX: PF = 12% of prorated (Basic + DA), capped at ₹1,800 ────
-            const pf_base = basic_amount + da_amount;
-            amount = base > 0 ? Math.min(flt(pf_base * 0.12, 2), PF_MAX) : 0;
+            // PF: 12% of gross salary, capped at ₹1,800
+            // base === 0 means not applicable in salary structure — show row but keep amount 0
+            amount = base === 0 ? 0 : Math.min(flt(total_earnings * 0.12, 2), PF_MAX);
 
         } else if (row.depends_on_physical_working_days && wd > 0 && base > 0) {
             amount = base * phd;
