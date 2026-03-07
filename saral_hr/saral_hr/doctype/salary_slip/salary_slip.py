@@ -227,9 +227,17 @@ def get_salary_structure_for_employee(employee, start_date=None):
 # ─── Additional Salary / Deduction Helpers ────────────────────────────────────
 
 def get_additional_components_for_employee(employee, year, month):
+    """
+    Fetch submitted Additional Salary (earnings) and Additional Deductions
+    records for the given employee + year + month.
+
+    Returns (additional_earnings_list, additional_deductions_list) where each
+    item matches the salary component dict shape used throughout this module.
+    """
     additional_earnings   = []
     additional_deductions = []
 
+    # ── Additional Salary (type = Earning) ───────────────────────────────────
     add_sal_records = frappe.db.get_all(
         "Additional Salary",
         filters={
@@ -256,6 +264,7 @@ def get_additional_components_for_employee(employee, year, month):
                 "is_additional_component":          1
             })
 
+    # ── Additional Deductions (type = Deduction) ─────────────────────────────
     add_ded_records = frappe.db.get_all(
         "Additional Deductions",
         filters={
@@ -288,6 +297,10 @@ def get_additional_components_for_employee(employee, year, month):
 
 @frappe.whitelist()
 def get_additional_components_api(employee, start_date):
+    """
+    Whitelisted wrapper so the form JS can fetch additional components
+    independently and inject them into the earnings / deductions tables.
+    """
     if not employee or not start_date:
         return {"earnings": [], "deductions": []}
 
@@ -321,6 +334,7 @@ def _employee_requires_variable_pay(employee):
     return bool(requires)
 
 
+# ── Helper: identify DA component by name or abbreviation ────────────────────
 def _is_da_component(comp_name, abbr):
     name_lower = (comp_name or "").lower()
     abbr_lower = (abbr or "").lower()
@@ -466,50 +480,26 @@ def get_attendance_and_days(employee, start_date, working_days_calculation_metho
     holiday_days      = 0
     earned_leave_days = 0
     casual_leave_days = 0
-    comp_off_days     = 0   # Comp Off — paid absent, reduces physical working days
-    on_tour_days      = 0   # On Tour — counts as present
 
     for a in attendance:
-        if a.status in ("Present", "Regular"):
-            # "Regular" should already be saved as "Present" via UI_TO_DB_STATUS
-            # but handle both defensively
+        if a.status == "Present":
             present_days += 1
-
-        elif a.status == "On Tour":
-            # Counts as present — employee is working away from office
-            on_tour_days += 1
-            present_days += 1
-
         elif a.status == "Earned Leave":
             earned_leave_days += 1
-            present_days      += 1   # paid — counts toward payment days
-
+            present_days      += 1
         elif a.status == "Casual Leave":
             casual_leave_days += 1
-            present_days      += 1   # paid — counts toward payment days
-
-        elif a.status == "Comp Off":
-            # Paid absent day (like Earned/Casual Leave)
-            # Counts toward payment days but reduces physical working days
-            comp_off_days += 1
-            present_days  += 1
-
+            present_days      += 1
         elif a.status == "Half Day":
             half_day_count += 1
             present_days   += 0.5
             absent_days    += 0.5
-
         elif a.status == "Absent":
             absent_days += 1
-
         elif a.status == "LWP":
             lwp_days += 1
-
         elif a.status == "Holiday":
             holiday_days += 1
-
-        # Weekly Off and Holiday statuses in attendance are informational only;
-        # weekly offs are already counted via the calendar loop above.
 
     total_half_days      = flt(half_day_count * 0.5, 2)
     combined_absent_days = flt(absent_days + lwp_days, 2)
@@ -521,11 +511,7 @@ def get_attendance_and_days(employee, start_date, working_days_calculation_metho
         working_days = total_days - weekly_off_count
         payment_days = flt(working_days - combined_absent_days, 2)
 
-    # Physical working days = payment days minus all paid-leave types
-    # (Earned Leave, Casual Leave, Comp Off all reduce physical working days)
-    physical_working_days = flt(
-        payment_days - earned_leave_days - casual_leave_days - comp_off_days, 2
-    )
+    physical_working_days = flt(payment_days - earned_leave_days - casual_leave_days, 2)
 
     return {
         "attendance_count":      len(attendance),
@@ -541,8 +527,6 @@ def get_attendance_and_days(employee, start_date, working_days_calculation_metho
         "total_holidays":        flt(holiday_days, 2),
         "total_earned_leaves":   flt(earned_leave_days, 2),
         "total_casual_leaves":   flt(casual_leave_days, 2),
-        "total_comp_off":        flt(comp_off_days, 2),
-        "total_on_tour":         flt(on_tour_days, 2),
         "calculation_method":    calculation_method
     }
 
@@ -782,8 +766,6 @@ def bulk_generate_salary_slips(employees, year, month):
             salary_slip.total_holidays        = attendance_data.get('total_holidays', 0)
             salary_slip.total_earned_leaves   = attendance_data.get('total_earned_leaves', 0)
             salary_slip.total_casual_leaves   = attendance_data.get('total_casual_leaves', 0)
-            salary_slip.total_on_tour         = attendance_data.get('total_on_tour', 0)
-            salary_slip.total_comp_off        = attendance_data.get('total_comp_off', 0)
 
             for earning in salary_data.get('earnings', []):
                 row = salary_slip.append('earnings', {})
@@ -808,6 +790,7 @@ def bulk_generate_salary_slips(employees, year, month):
                 row.depends_on_physical_working_days = deduction.get('depends_on_physical_working_days')
                 row.is_special_component             = deduction.get('is_special_component')
 
+            # ── Append additional salary (earnings) and additional deductions ─
             add_earnings, add_deductions = get_additional_components_for_employee(
                 employee, year, month
             )
@@ -871,6 +854,7 @@ def calculate_salary_slip_amounts_exact(salary_slip, variable_pay_percentage, st
     basic_amount = 0
     da_amount    = 0
 
+    # ── Pass 1: compute all earnings so gross is known for ESIC / PF ─────────
     for row in salary_slip.earnings:
         base = flt(
             row.base_amount if row.base_amount is not None
@@ -912,6 +896,7 @@ def calculate_salary_slip_amounts_exact(salary_slip, variable_pay_percentage, st
 
     total_basic_da = basic_amount + da_amount
 
+    # ── Pass 2: compute deductions using final gross salary ───────────────────
     for row in salary_slip.deductions:
         base = flt(
             row.base_amount if row.base_amount is not None
@@ -987,8 +972,8 @@ def get_submitted_salary_slips(company, year, month):
             ss.end_date
         FROM `tabSalary Slip` ss
         WHERE ss.docstatus  = 1
-          AND ss.start_date = %(start_date)s
-          AND ss.company    = %(company)s
+        AND ss.start_date = %(start_date)s
+        AND ss.company    = %(company)s
         ORDER BY ss.employee_name
     """, {"company": company, "start_date": start_date}, as_dict=1)
 
@@ -1021,8 +1006,8 @@ def get_draft_salary_slips(company, year, month):
             ss.end_date
         FROM `tabSalary Slip` ss
         WHERE ss.docstatus  = 0
-          AND ss.start_date = %(start_date)s
-          AND ss.company    = %(company)s
+        AND ss.start_date = %(start_date)s
+        AND ss.company    = %(company)s
         ORDER BY ss.employee_name
     """, {"company": company, "start_date": start_date}, as_dict=1)
 
