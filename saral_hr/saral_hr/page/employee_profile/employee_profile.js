@@ -179,6 +179,8 @@ function inject_ep_styles() {
         .ep-day.weeklyoff  { background:#e9d5ff; color:#4c1d95; border:2px solid #9333ea;  box-shadow:inset 0 0 0 2px #d8b4fe; }
         .ep-day.earnedleave  { background:#99f6e4; color:#134e4a; border:2px solid #0d9488; box-shadow:inset 0 0 0 2px #5eead4; }
         .ep-day.casualleave  { background:#fbcfe8; color:#831843; border:2px solid #db2777; box-shadow:inset 0 0 0 2px #f9a8d4; }
+        .ep-day.ontour     { background:#bbf7d0; color:#14532d; border:2px solid #16a34a;  box-shadow:inset 0 0 0 2px #86efac; }
+        .ep-day.compoff    { background:#e9d5ff; color:#4c1d95; border:2px solid #9333ea;  box-shadow:inset 0 0 0 2px #d8b4fe; }
 
         .ep-tooltip {
             position:fixed; z-index:9999; pointer-events:none;
@@ -203,6 +205,8 @@ function inject_ep_styles() {
         .ep-legend-dot.weeklyoff   { background:#e9d5ff; border-color:#9333ea; }
         .ep-legend-dot.earnedleave { background:#99f6e4; border-color:#0d9488; }
         .ep-legend-dot.casualleave { background:#fbcfe8; border-color:#db2777; }
+        .ep-legend-dot.ontour      { background:#bbf7d0; border-color:#16a34a; }
+        .ep-legend-dot.compoff     { background:#e9d5ff; border-color:#9333ea; }
         .ep-legend-dot.future      { background:#f3f4f6; border-color:#e5e7eb; }
         .ep-legend-label { font-weight:500; }
         .ep-legend-label.present     { color:#16a34a; }
@@ -213,9 +217,11 @@ function inject_ep_styles() {
         .ep-legend-label.weeklyoff   { color:#9333ea; }
         .ep-legend-label.earnedleave { color:#0d9488; }
         .ep-legend-label.casualleave { color:#db2777; }
+        .ep-legend-label.ontour      { color:#16a34a; }
+        .ep-legend-label.compoff     { color:#9333ea; }
         .ep-legend-label.future      { color:#9ca3af; }
 
-        .ep-att-summary { display:grid; grid-template-columns:repeat(8,1fr); gap:8px; margin-top:14px; }
+        .ep-att-summary { display:grid; grid-template-columns:repeat(5,1fr); gap:8px; margin-top:14px; }
         .ep-att-box     { background:var(--control-bg,#f9fafb); border-radius:6px; padding:10px 6px; text-align:center; }
         .ep-att-val     { font-size:18px; font-weight:700; }
         .ep-att-label   { font-size:10px; color:var(--text-muted); margin-top:2px; }
@@ -224,7 +230,7 @@ function inject_ep_styles() {
         .ep-timeline-ssa-wrap { display:grid; grid-template-columns:1fr 1fr; gap:20px; align-items:start; }
         @media (max-width:900px) {
             .ep-timeline-ssa-wrap { grid-template-columns:1fr; }
-            .ep-att-summary { grid-template-columns:repeat(4,1fr); }
+            .ep-att-summary { grid-template-columns:repeat(3,1fr); }
             .ep-salary-grid { grid-template-columns:1fr 1fr; }
         }
 
@@ -390,15 +396,30 @@ function calc_age(dob_str) {
     return age;
 }
 
+// ── Status maps (includes On Tour + Comp Off) ─────────────────────────────────
 var STATUS_COLORS = {
-    "Present":"present","Absent":"absent","Half Day":"halfday",
-    "LWP":"lwp","Holiday":"holiday","Weekly Off":"weeklyoff",
-    "Earned Leave":"earnedleave","Casual Leave":"casualleave"
+    "Present":      "present",
+    "Absent":       "absent",
+    "Half Day":     "halfday",
+    "LWP":          "lwp",
+    "Holiday":      "holiday",
+    "Weekly Off":   "weeklyoff",
+    "Earned Leave": "earnedleave",
+    "Casual Leave": "casualleave",
+    "On Tour":      "ontour",
+    "Comp Off":     "compoff"
 };
 var STATUS_HEX = {
-    "present":"#16a34a","absent":"#dc2626","halfday":"#ca8a04",
-    "lwp":"#ea580c","holiday":"#2563eb","weeklyoff":"#9333ea",
-    "earnedleave":"#0d9488","casualleave":"#db2777"
+    "present":      "#16a34a",
+    "absent":       "#dc2626",
+    "halfday":      "#ca8a04",
+    "lwp":          "#ea580c",
+    "holiday":      "#2563eb",
+    "weeklyoff":    "#9333ea",
+    "earnedleave":  "#0d9488",
+    "casualleave":  "#db2777",
+    "ontour":       "#16a34a",
+    "compoff":      "#9333ea"
 };
 var MONTH_NAMES = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
 
@@ -492,7 +513,8 @@ function render_profile($sidebar, $main, d, emp) {
     main += "<div style='display:flex;gap:8px;align-items:center;'>";
     main += "<button class='ep-today-btn' id='ep-today-btn'>Today</button>";
     main += "<select class='ep-year-select' id='ep-year-select'>";
-    years.filter(function(yr) { return yr == 2025 || yr == 2026; }).forEach(function(yr) {
+    // FIX: show ALL years from backend, no hardcoded filter
+    years.forEach(function(yr) {
         main += "<option value='" + yr + "'" + (String(yr) === String(cur_year) ? " selected" : "") + ">" + yr + "</option>";
     });
     main += "</select></div></div>";
@@ -582,7 +604,11 @@ function render_heatmap($w, att_map, year, active_month) {
     year = parseInt(year);
     active_month = active_month || "all";
     var today_str = new Date().toISOString().split("T")[0];
-    var summary = { present:0,absent:0,half_day:0,lwp:0,holiday:0,weekly_off:0,earned_leave:0,casual_leave:0 };
+    var summary = {
+        present:0, absent:0, half_day:0, lwp:0,
+        holiday:0, weekly_off:0, earned_leave:0, casual_leave:0,
+        on_tour:0, comp_off:0
+    };
     var total_counted = 0;
     var selected_month = (active_month === "all") ? null : parseInt(active_month);
 
@@ -628,6 +654,8 @@ function render_heatmap($w, att_map, year, active_month) {
                         else if (status === "Weekly Off")   { summary.weekly_off++;   total_counted++; }
                         else if (status === "Earned Leave") { summary.earned_leave++; total_counted++; }
                         else if (status === "Casual Leave") { summary.casual_leave++; total_counted++; }
+                        else if (status === "On Tour")      { summary.on_tour++;      total_counted++; }
+                        else if (status === "Comp Off")     { summary.comp_off++;     total_counted++; }
                     }
                 } else {
                     cls = "ep-day future"; title_attr = day_str + " (no record)";
@@ -643,7 +671,8 @@ function render_heatmap($w, att_map, year, active_month) {
     var legend_items = [
         ["present","Present"],["absent","Absent"],["halfday","Half Day"],
         ["lwp","LWP"],["holiday","Holiday"],["weeklyoff","Weekly Off"],
-        ["earnedleave","Earned Leave"],["casualleave","Casual Leave"],["future","No Record"]
+        ["earnedleave","Earned Leave"],["casualleave","Casual Leave"],
+        ["ontour","On Tour"],["compoff","Comp Off"],["future","No Record"]
     ];
     var legend = "<div class='ep-legend'>";
     legend_items.forEach(function(li) {
@@ -659,7 +688,9 @@ function render_heatmap($w, att_map, year, active_month) {
         [summary.holiday,      "Holiday",      "#2563eb", false],
         [summary.weekly_off,   "Weekly Off",   "#9333ea", false],
         [summary.earned_leave, "Earned Leave", "#0d9488", false],
-        [summary.casual_leave, "Casual Leave", "#db2777", false]
+        [summary.casual_leave, "Casual Leave", "#db2777", false],
+        [summary.on_tour,      "On Tour",      "#16a34a", false],
+        [summary.comp_off,     "Comp Off",     "#9333ea", false]
     ];
     var summ = "<div class='ep-att-summary'>";
     boxes.forEach(function(b) {

@@ -35,6 +35,8 @@
   "total_lwp",
   "total_earned_leaves",
   "total_casual_leaves",
+  "total_on_tour",
+  "total_comp_off",
   "earnings_and_deductions_tab",
   "earnings_and_deductions_section",
   "earnings",
@@ -179,7 +181,7 @@
    "fieldname": "physical_working_days",
    "fieldtype": "Float",
    "label": "Physical Working Days",
-   "description": "Payment Days minus Earned Leaves and Casual Leaves. Used for components marked as Depends on Physical Working Days.",
+   "description": "Payment Days minus Earned Leaves, Casual Leaves and Comp Off. Used for components marked as Depends on Physical Working Days.",
    "precision": "2",
    "read_only": 1
   },
@@ -328,12 +330,24 @@
    "fieldtype": "Float",
    "label": "Total Casual Leaves",
    "precision": "2"
+  },
+  {
+   "fieldname": "total_on_tour",
+   "fieldtype": "Float",
+   "label": "On Tour Days",
+   "precision": "2"
+  },
+  {
+   "fieldname": "total_comp_off",
+   "fieldtype": "Float",
+   "label": "Total Comp Off",
+   "precision": "2"
   }
  ],
  "index_web_pages_for_search": 1,
  "is_submittable": 1,
  "links": [],
- "modified": "2026-03-05 00:00:00.000000",
+ "modified": "2026-03-07 00:00:00.000000",
  "modified_by": "Administrator",
  "module": "Saral Hr",
  "name": "Salary Slip",

@@ -30,16 +30,24 @@ class Attendance(Document):
 	def validate_attendance_date(self):
 		"""
 		Validate that attendance date is:
-		- Not in the future (except On Leave, Holiday, Weekly Off — these
-		  are pre-known and saved in bulk from the mark-attendance page)
+		- Not in the future (except statuses that are pre-known/leave types)
 		- Not before employee joining date
 		"""
 
 		if not self.employee or not self.attendance_date:
 			return
 
-		# Statuses that are allowed on future dates
-		FUTURE_ALLOWED = {"On Leave", "Holiday", "Weekly Off"}
+		# Statuses allowed on future dates (leaves, offs, tours planned ahead)
+		FUTURE_ALLOWED = {
+			"On Leave",
+			"Holiday",
+			"Weekly Off",
+			"LWP",
+			"Earned Leave",
+			"Casual Leave",
+			"Comp Off",
+			"On Tour",
+		}
 
 		date_of_joining = frappe.db.get_value(
 			"Company Link",

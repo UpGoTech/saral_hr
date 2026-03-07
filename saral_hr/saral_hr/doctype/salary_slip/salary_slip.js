@@ -1093,7 +1093,9 @@ function apply_attendance(frm, d, variable_pay_pct) {
         total_lwp:             d.total_lwp            || 0,
         total_holidays:        d.total_holidays       || 0,
         total_earned_leaves:   d.total_earned_leaves  || 0,
-        total_casual_leaves:   d.total_casual_leaves  || 0
+        total_casual_leaves:   d.total_casual_leaves  || 0,
+        total_on_tour:         d.total_on_tour        || 0,
+        total_comp_off:        d.total_comp_off       || 0
     });
 
     if (variable_pay_pct !== undefined) {
@@ -1253,6 +1255,8 @@ function reset_form(frm) {
         total_basic_da:              0,
         total_employer_contribution: 0,
         retention:                   0,
+        total_on_tour:               0,
+        total_comp_off:              0,
         working_days_calculation_method: ""
     });
 

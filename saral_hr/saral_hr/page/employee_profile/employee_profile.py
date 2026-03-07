@@ -6,10 +6,7 @@ from frappe.utils import today, getdate, date_diff
 def get_employee_profile_data(employee):
     emp = frappe.get_doc("Employee", employee)
 
-    company_link_name = frappe.db.get_value(
-        "Company Link", {"employee": employee}, "name"
-    )
-
+    # ── Company Link ──────────────────────────────────────────────────────────
     CL_FIELDS = ["name", "company", "designation", "department", "branch",
                  "division", "category", "date_of_joining", "is_active", "left_date",
                  "immediate_reporting", "final_reporting"]
@@ -28,8 +25,8 @@ def get_employee_profile_data(employee):
             order_by="date_of_joining desc",
             as_dict=True
         )
-    if company_link and company_link.get("name"):
-        company_link_name = company_link.get("name")
+
+    company_link_name = company_link.get("name") if company_link else None
     company_link = company_link or {}
 
     def get_emp_name(emp_id):
@@ -41,6 +38,7 @@ def get_employee_profile_data(employee):
         company_link["immediate_reporting_name"] = get_emp_name(company_link.get("immediate_reporting"))
         company_link["final_reporting_name"]     = get_emp_name(company_link.get("final_reporting"))
 
+    # ── Salary (from latest submitted SSA) ───────────────────────────────────
     salary = frappe.db.get_value(
         "Salary Structure Assignment",
         filters={"employee": employee, "docstatus": 1},
@@ -50,21 +48,35 @@ def get_employee_profile_data(employee):
         as_dict=True
     )
 
-    all_attendance = frappe.get_all(
-        "Attendance",
-        filters={"employee": employee, "docstatus": ["!=", 2]},
-        fields=["attendance_date", "status"],
-        order_by="attendance_date desc"
+    # ── Attendance ────────────────────────────────────────────────────────────
+    # Attendance.employee links to Company Link (name = e.g. "HR-EMP-00001")
+    # So we must collect ALL Company Link names for this employee first.
+    all_cl_names = frappe.db.get_all(
+        "Company Link",
+        filters={"employee": employee},
+        pluck="name"
     )
 
     att_map = {}
     years_set = set()
-    for r in all_attendance:
-        if r.attendance_date:
-            date_str = str(r.attendance_date)
-            att_map[date_str] = r.status
-            years_set.add(date_str[:4])
 
+    if all_cl_names:
+        all_attendance = frappe.get_all(
+            "Attendance",
+            filters={
+                "employee": ["in", all_cl_names],
+                "docstatus": ["!=", 2]
+            },
+            fields=["attendance_date", "status"],
+            order_by="attendance_date desc"
+        )
+        for r in all_attendance:
+            if r.attendance_date:
+                date_str = str(r.attendance_date)
+                att_map[date_str] = r.status
+                years_set.add(date_str[:4])
+
+    # Always include years from joining year → current year
     current_year = getdate(today()).year
     joining_year = current_year
     doj = company_link.get("date_of_joining") if company_link else None
@@ -79,7 +91,7 @@ def get_employee_profile_data(employee):
 
     years = sorted(list(years_set), reverse=True)
 
-    # Tenure
+    # ── Tenure ────────────────────────────────────────────────────────────────
     tenure = None
     active_doj = None
     if company_link and company_link.get("is_active") and company_link.get("date_of_joining"):
@@ -109,7 +121,7 @@ def get_employee_profile_data(employee):
         except Exception:
             pass
 
-    # Timeline
+    # ── Timeline ──────────────────────────────────────────────────────────────
     raw_timeline = frappe.db.sql("""
         SELECT
             name, company, full_name,
@@ -137,7 +149,7 @@ def get_employee_profile_data(employee):
             "category":    rec.get("category")    or "",
         })
 
-    # Reporting names
+    # ── Reporting names ───────────────────────────────────────────────────────
     immediate_reporting_name = None
     final_reporting_name = None
     if company_link_name:
@@ -155,7 +167,7 @@ def get_employee_profile_data(employee):
                     "Employee", reporting["final_reporting"], "employee"
                 ) or reporting["final_reporting"]
 
-    # Latest submitted SSA
+    # ── Latest submitted SSA ──────────────────────────────────────────────────
     latest_ssa_name = frappe.db.get_value(
         "Salary Structure Assignment",
         filters={"employee": employee, "docstatus": 1},
@@ -190,7 +202,7 @@ def get_employee_profile_data(employee):
             ],
         }
 
-    # Cancelled SSAs
+    # ── Cancelled SSAs ────────────────────────────────────────────────────────
     cancelled_ssas_names = frappe.db.get_all(
         "Salary Structure Assignment",
         filters={"employee": employee, "docstatus": 2},
