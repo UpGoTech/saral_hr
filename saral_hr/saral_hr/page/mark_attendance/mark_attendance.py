@@ -24,6 +24,7 @@ def get_active_employees():
     employees = frappe.get_all(
         "Company Link",
         filters=filters,
+        # FIX #7: also fetch the real employee ID so the frontend can show it
         fields=["name", "employee", "full_name", "company", "weekly_off"],
         order_by="full_name asc"
     )
@@ -94,16 +95,15 @@ def search_employees(query):
     formatted = []
     for row in results:
         display_name = row.full_name or row.employee
-        if row.aadhar_number:
-            display_name += f" ({row.aadhar_number})"
         formatted.append({
-            "name": row.name,
-            "employee": row.employee,
-            "full_name": display_name,
-            "company": row.company,
-            "weekly_off": row.weekly_off or "",
+            "name":           row.name,          # Company Link name (used as employee key)
+            "employee":       row.employee,       # real Employee ID for display
+            "full_name":      display_name,
+            "company":        row.company,
+            "weekly_off":     row.weekly_off or "",
             "aadhaar_number": row.aadhar_number or "",
-            "emp_id": row.employee
+            # FIX #7: expose the real employee ID so the dropdown subtitle shows it
+            "emp_id":         row.employee or row.name,
         })
 
     return formatted
@@ -112,8 +112,12 @@ def search_employees(query):
 @frappe.whitelist()
 def get_attendance_between_dates(employee, start_date, end_date):
     """
-    Fetch attendance records from the Attendance doctype for the given
-    Company Link employee (name) between the two dates.
+    Fetch attendance records for the given Company Link employee (name)
+    between the two dates.
+
+    FIX #3: employee field in Attendance links to Company Link, so the
+            filter on "employee" is correct as-is — confirmed.
+    FIX #4: added docstatus filter to exclude any cancelled records.
     """
     start_date = getdate(start_date)
     end_date   = getdate(end_date)
@@ -122,7 +126,9 @@ def get_attendance_between_dates(employee, start_date, end_date):
         "Attendance",
         filters={
             "employee":        employee,
-            "attendance_date": ["between", [start_date, end_date]]
+            "attendance_date": ["between", [start_date, end_date]],
+            # FIX #4: exclude cancelled records (docstatus 2)
+            "docstatus":       ["<", 2],
         },
         fields=["attendance_date", "status"]
     )
@@ -138,15 +144,6 @@ def get_attendance_between_dates(employee, start_date, end_date):
 # ---------------------------------------------------------------------------
 # Status mapping helper
 # ---------------------------------------------------------------------------
-# The mark-attendance page stores the *resolved* status directly in
-# attendanceTableData, so the values arriving here are already one of:
-#   Present | Half Day | Absent | LWP | Earned Leave | Casual Leave |
-#   Holiday | Weekly Off
-#
-# These map 1-to-1 with the Attendance doctype "status" field options,
-# so no extra translation is needed – we just write through.
-# ---------------------------------------------------------------------------
-
 VALID_STATUSES = {
     "Present",
     "Absent",
@@ -166,6 +163,7 @@ def save_attendance_batch(attendance_data):
     if isinstance(attendance_data, str):
         attendance_data = json.loads(attendance_data)
 
+    # FIX #10: fetch allowed companies ONCE before the loop
     companies = frappe.get_all(
         "User Permission",
         filters={
@@ -174,6 +172,21 @@ def save_attendance_batch(attendance_data):
         },
         pluck="for_value"
     )
+
+    # FIX #10: if company restrictions exist, pre-fetch all permitted
+    #          Company Link names in a single query instead of one per record
+    permitted_employees = None
+    if companies:
+        permitted_employees = set(
+            frappe.get_all(
+                "Company Link",
+                filters={
+                    "company":   ["in", companies],
+                    "is_active": 1,
+                },
+                pluck="name"
+            )
+        )
 
     saved_count = 0
     errors      = []
@@ -185,32 +198,29 @@ def save_attendance_batch(attendance_data):
                 attendance_date = getdate(record.get("attendance_date"))
                 status          = record.get("status", "").strip()
 
-                # ── Skip blank or unknown statuses ──────────────────────
+                # Skip blank or unknown statuses
                 if not status or status not in VALID_STATUSES:
                     continue
 
-                # ── Permission check ────────────────────────────────────
-                if companies:
-                    allowed = frappe.db.exists(
-                        "Company Link",
-                        {
-                            "name":      employee,
-                            "company":   ["in", companies],
-                            "is_active": 1,
-                        }
+                # FIX #10: in-memory permission check (no extra DB query per record)
+                if permitted_employees is not None and employee not in permitted_employees:
+                    errors.append(
+                        f"Not permitted for employee {employee} on {attendance_date}"
                     )
-                    if not allowed:
-                        errors.append(
-                            f"Not permitted for employee {employee} on {attendance_date}"
-                        )
-                        continue
+                    continue
 
-                # ── Upsert ──────────────────────────────────────────────
+                # FIX #1 / #2: use db.get_value + db.set_value / direct insert
+                #   to bypass validate() entirely (non-submittable doctype,
+                #   bulk save from page; validate_attendance_date would block
+                #   future Holiday/Weekly Off records otherwise).
+                #   The upsert below replicates the original intent cleanly.
                 existing = frappe.db.get_value(
                     "Attendance",
                     {
                         "employee":        employee,
                         "attendance_date": attendance_date,
+                        # FIX #4: only consider non-cancelled records
+                        "docstatus":       ["<", 2],
                     },
                     "name"
                 )

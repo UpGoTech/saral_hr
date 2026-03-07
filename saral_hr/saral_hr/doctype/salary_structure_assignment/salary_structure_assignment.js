@@ -77,7 +77,13 @@ frappe.ui.form.on("Salary Structure Assignment", {
 
 frappe.ui.form.on("Salary Details", {
     amount(frm, cdt, cdn) {
-        // Only recalculate totals — do NOT refresh the entire form or tables
+        // ── FIX: read the value directly from the active row in locals,
+        // which Frappe updates before firing the trigger, rather than
+        // relying on frm.doc which may not yet reflect the typed value.
+        const row = frappe.get_doc(cdt, cdn);
+        if (row) {
+            row.amount = flt(row.amount);
+        }
         calculate_salary_silent(frm);
     },
     salary_details_remove(frm) {
@@ -144,8 +150,14 @@ function calculate_salary_silent(frm) {
 }
 
 function _do_calculate(frm, silent) {
+    // ── FIX: sum amounts directly from frappe.model.locals (the in-memory
+    // store that Frappe updates synchronously when a child row value changes),
+    // NOT from frm.doc.earnings which may still hold stale values at trigger time.
     let gross_salary = 0;
-    (frm.doc.earnings || []).forEach(row => { gross_salary += flt(row.amount); });
+    (frm.doc.earnings || []).forEach(row => {
+        const live_row = frappe.get_doc(row.doctype, row.name);
+        gross_salary += flt(live_row ? live_row.amount : row.amount);
+    });
 
     const deductions = frm.doc.deductions || [];
     if (!deductions.length) {
@@ -167,8 +179,9 @@ function _do_calculate(frm, silent) {
             let employee_deductions = 0, employer_contribution = 0;
 
             deductions.forEach(d => {
-                const comp   = component_map[d.salary_component];
-                const amount = flt(d.amount);
+                const live_row = frappe.get_doc(d.doctype, d.name);
+                const amount   = flt(live_row ? live_row.amount : d.amount);
+                const comp     = component_map[d.salary_component];
                 if (!comp || !parseInt(comp.employer_contribution)) {
                     employee_deductions   += amount;
                 } else {
