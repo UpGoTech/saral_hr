@@ -8,7 +8,7 @@ frappe.query_reports["Payroll Report"] = {
           get_data: txt => frappe.db.get_link_options("Company", txt) },
         { fieldname:"category", label:__("Category"), fieldtype:"Link", options:"Category", default:"" },
         { fieldname:"division", label:__("Division"), fieldtype:"MultiSelectList",
-          get_data: txt => frappe.db.get_link_options("Department", txt) },
+          get_data: txt => frappe.db.get_link_options("Division", txt) },
     ],
 
     onload(report) {
