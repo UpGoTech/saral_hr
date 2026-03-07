@@ -26,7 +26,7 @@
    "fieldtype": "Link",
    "in_list_view": 1,
    "label": "Leave Type",
-   "options": "Leave Type",
+   "options": "Leave Types",
    "reqd": 1
   },
   {

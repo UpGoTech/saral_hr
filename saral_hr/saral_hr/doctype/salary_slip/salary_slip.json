@@ -68,12 +68,12 @@
    "reqd": 1
   },
   {
-   "bold": 1,
    "fieldname": "salary_structure",
    "fieldtype": "Link",
    "label": "Salary Structure",
    "options": "Salary Structure",
-   "read_only": 1
+   "read_only": 1,
+   "bold": 1
   },
   {
    "fieldname": "payment_days_tab",
@@ -370,8 +370,6 @@
    "write": 1
   },
   {
-   "create": 1,
-   "delete": 1,
    "email": 1,
    "export": 1,
    "print": 1,
@@ -379,9 +377,7 @@
    "report": 1,
    "role": "Saral HR User",
    "select": 1,
-   "share": 1,
-   "submit": 1,
-   "write": 1
+   "share": 1
   }
  ],
  "sort_field": "modified",
