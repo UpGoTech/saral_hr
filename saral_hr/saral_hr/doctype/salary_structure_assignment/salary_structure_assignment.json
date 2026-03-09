@@ -22,6 +22,8 @@
   "branch",
   "column_break_mhdz",
   "department",
+  "statutory_section_bar",
+  "statutory_info_html",
   "earnings_and_deductions_section",
   "earnings",
   "column_break_oeow",
@@ -56,12 +58,36 @@
    "read_only": 1
   },
   {
-   "fetch_from": "employee.branch",
-   "fieldname": "branch",
+   "fieldname": "column_break_ngyh",
+   "fieldtype": "Column Break"
+  },
+  {
+   "default": "INR",
+   "fieldname": "currency",
    "fieldtype": "Link",
-   "label": "Branch",
-   "options": "Branch",
+   "label": "Currency",
+   "options": "Currency",
    "read_only": 1
+  },
+  {
+   "fetch_from": "employee.company",
+   "fieldname": "company",
+   "fieldtype": "Data",
+   "label": "Company",
+   "read_only": 1,
+   "reqd": 1
+  },
+  {
+   "fieldname": "assignment_section",
+   "fieldtype": "Section Break",
+   "label": "Assignment"
+  },
+  {
+   "fieldname": "from_date",
+   "fieldtype": "Date",
+   "in_list_view": 1,
+   "label": "From Date",
+   "reqd": 1
   },
   {
    "fieldname": "salary_structure",
@@ -73,11 +99,8 @@
    "search_index": 1
   },
   {
-   "fieldname": "from_date",
-   "fieldtype": "Date",
-   "in_list_view": 1,
-   "label": "From Date",
-   "reqd": 1
+   "fieldname": "column_break_dates",
+   "fieldtype": "Column Break"
   },
   {
    "fieldname": "to_date",
@@ -87,20 +110,9 @@
    "reqd": 1
   },
   {
-   "fieldname": "column_break_ngyh",
-   "fieldtype": "Column Break"
-  },
-  {
-   "fieldname": "column_break_dates",
-   "fieldtype": "Column Break"
-  },
-  {
-   "fetch_from": "employee.company",
-   "fieldname": "company",
-   "fieldtype": "Data",
-   "label": "Company",
-   "read_only": 1,
-   "reqd": 1
+   "fieldname": "details_section",
+   "fieldtype": "Section Break",
+   "label": "Details"
   },
   {
    "fetch_from": "employee.designation",
@@ -110,6 +122,18 @@
    "read_only": 1
   },
   {
+   "fetch_from": "employee.branch",
+   "fieldname": "branch",
+   "fieldtype": "Link",
+   "label": "Branch",
+   "options": "Branch",
+   "read_only": 1
+  },
+  {
+   "fieldname": "column_break_mhdz",
+   "fieldtype": "Column Break"
+  },
+  {
    "fetch_from": "employee.department",
    "fieldname": "department",
    "fieldtype": "Data",
@@ -117,18 +141,21 @@
    "read_only": 1
   },
   {
-   "fieldname": "assignment_section",
+   "fieldname": "statutory_section_bar",
    "fieldtype": "Section Break",
-   "label": "Assignment"
+   "label": "",
+   "hide_border": 1
   },
   {
-   "fieldname": "details_section",
-   "fieldtype": "Section Break",
-   "label": "Details"
+   "fieldname": "statutory_info_html",
+   "fieldtype": "HTML",
+   "label": "Statutory Info",
+   "options": ""
   },
   {
-   "fieldname": "column_break_mhdz",
-   "fieldtype": "Column Break"
+   "fieldname": "earnings_and_deductions_section",
+   "fieldtype": "Section Break",
+   "label": "Earnings and Deductions"
   },
   {
    "fieldname": "earnings",
@@ -137,27 +164,14 @@
    "options": "Salary Details"
   },
   {
-   "fieldname": "deductions",
-   "fieldtype": "Table",
-   "label": "Deductions",
-   "options": "Salary Details"
-  },
-  {
-   "fieldname": "earnings_and_deductions_section",
-   "fieldtype": "Section Break",
-   "label": "Earnings and Deductions"
-  },
-  {
    "fieldname": "column_break_oeow",
    "fieldtype": "Column Break"
   },
   {
-   "default": "INR",
-   "fieldname": "currency",
-   "fieldtype": "Link",
-   "label": "Currency",
-   "options": "Currency",
-   "read_only": 1
+   "fieldname": "deductions",
+   "fieldtype": "Table",
+   "label": "Deductions",
+   "options": "Salary Details"
   },
   {
    "fieldname": "calculations_section",
@@ -224,7 +238,7 @@
  "index_web_pages_for_search": 1,
  "is_submittable": 1,
  "links": [],
- "modified": "2026-03-04 00:00:00.000000",
+ "modified": "2026-03-09 00:00:00.000000",
  "modified_by": "Administrator",
  "module": "Saral Hr",
  "name": "Salary Structure Assignment",

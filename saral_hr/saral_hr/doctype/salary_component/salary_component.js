@@ -59,8 +59,36 @@ frappe.ui.form.on('Salary Component', {
                 indicator: 'orange'
             });
         }
-    }
+    },
+
+    // ------------------------------------------------------------------
+    // ESIC handlers
+    // ------------------------------------------------------------------
+
+    is_esic_component(frm) {
+        if (!frm.doc.is_esic_component) {
+            frm.set_value('esic_calculation_based_on', '');
+            frm.set_value('esic_percentage', 0);
+            frm.set_value('esic_cap_amount', null);
+        }
+    },
+
+    // ------------------------------------------------------------------
+    // PF handlers
+    // ------------------------------------------------------------------
+
+    is_pf_component(frm) {
+        if (!frm.doc.is_pf_component) {
+            frm.set_value('pf_calculation_based_on', '');
+            frm.set_value('pf_percentage', 0);
+            frm.set_value('pf_cap_amount', null);
+        }
+    },
 });
+
+// ------------------------------------------------------------------
+// Month table helpers
+// ------------------------------------------------------------------
 
 const MONTHS = [
     "January", "February", "March", "April", "May", "June",

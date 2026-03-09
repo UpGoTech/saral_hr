@@ -5,6 +5,7 @@ frappe.ui.form.on("Salary Structure Assignment", {
         if (frm.doc.salary_structure) {
             toggle_salary_sections(frm);
             calculate_salary(frm);
+            render_statutory_bar(frm);
         }
     },
 
@@ -27,7 +28,6 @@ frappe.ui.form.on("Salary Structure Assignment", {
             args: { employee: frm.doc.employee },
             callback(r) {
                 frm._has_existing = !!(r.message && r.message.length);
-
                 if (frm._has_existing) {
                     const lines = r.message.map(rec =>
                         `<a href="/app/salary-structure-assignment/${rec.name}" target="_blank">${rec.name}</a> (${rec.from_date} to ${rec.to_date || "Ongoing"})`
@@ -38,7 +38,6 @@ frappe.ui.form.on("Salary Structure Assignment", {
                         message: `An active Salary Structure Assignment already exists for this employee. Please cancel it before creating a new one.<br><br>${lines}`
                     });
                 }
-
                 toggle_fields(frm);
             }
         });
@@ -56,7 +55,12 @@ frappe.ui.form.on("Salary Structure Assignment", {
 
     salary_structure(frm) {
         toggle_salary_sections(frm);
-        if (!frm.doc.salary_structure) { clear_salary_tables(frm); return; }
+
+        if (!frm.doc.salary_structure) {
+            clear_salary_tables(frm);
+            clear_statutory_bar(frm);
+            return;
+        }
 
         frappe.call({
             method: "frappe.client.get",
@@ -70,6 +74,7 @@ frappe.ui.form.on("Salary Structure Assignment", {
                 frm.refresh_field("earnings");
                 frm.refresh_field("deductions");
                 calculate_salary(frm);
+                render_statutory_bar(frm);
             }
         });
     }
@@ -77,13 +82,8 @@ frappe.ui.form.on("Salary Structure Assignment", {
 
 frappe.ui.form.on("Salary Details", {
     amount(frm, cdt, cdn) {
-        // ── FIX: read the value directly from the active row in locals,
-        // which Frappe updates before firing the trigger, rather than
-        // relying on frm.doc which may not yet reflect the typed value.
         const row = frappe.get_doc(cdt, cdn);
-        if (row) {
-            row.amount = flt(row.amount);
-        }
+        if (row) row.amount = flt(row.amount);
         calculate_salary_silent(frm);
     },
     salary_details_remove(frm) {
@@ -91,16 +91,81 @@ frappe.ui.form.on("Salary Details", {
     }
 });
 
+// ── Statutory one-line badge bar ──────────────────────────────────────────────
+
+function clear_statutory_bar(frm) {
+    const f = frm.fields_dict.statutory_info_html;
+    if (f && f.$wrapper) f.$wrapper.html("");
+    frm.toggle_display("statutory_section_bar", false);
+}
+
+function render_statutory_bar(frm) {
+    if (!frm.doc.employee) return;
+
+    frappe.db.get_value(
+        "Company Link",
+        frm.doc.employee,
+        ["is_esic_applicable", "is_pf_applicable", "pf_applicable"],
+        (r) => {
+            const f = frm.fields_dict.statutory_info_html;
+            if (!f || !f.$wrapper || !r) return;
+
+            const esic_on = parseInt(r.is_esic_applicable);
+            const pf_on   = parseInt(r.is_pf_applicable);
+            const pf_val  = r.pf_applicable || "No PF";
+
+            const badge = (label, color, bg, border) =>
+                `<span style="
+                    display:inline-flex; align-items:center; gap:6px;
+                    background:${bg}; color:${color};
+                    border:1px solid ${border}; border-radius:20px;
+                    padding:4px 12px; font-size:12px; font-weight:600;
+                    letter-spacing:0.2px; white-space:nowrap;">
+                    <span style="width:7px;height:7px;border-radius:50%;
+                        background:${color};display:inline-block;flex-shrink:0;"></span>
+                    ${label}
+                </span>`;
+
+            const badges = [];
+
+            // ESIC
+            if (esic_on) {
+                badges.push(badge("ESIC Applicable", "#1e7e34", "#eaf7ee", "#b7dfc7"));
+            } else {
+                badges.push(badge("ESIC Not Applicable", "#6c757d", "#f4f5f6", "#dee2e6"));
+            }
+
+            // PF
+            if (pf_on) {
+                const pfColor = {
+                    "Full PF":    ["#1e7e34", "#eaf7ee", "#b7dfc7"],
+                    "Limited PF": ["#856404", "#fff8e1", "#ffe082"],
+                    "No PF":      ["#b71c1c", "#fdecea", "#f5c6cb"],
+                }[pf_val] || ["#b71c1c", "#fdecea", "#f5c6cb"];
+                badges.push(badge(`PF: ${__(pf_val)}`, pfColor[0], pfColor[1], pfColor[2]));
+            } else {
+                badges.push(badge("PF Not Applicable", "#6c757d", "#f4f5f6", "#dee2e6"));
+            }
+
+            f.$wrapper.html(`
+                <div style="display:flex;flex-wrap:wrap;align-items:center;
+                    gap:8px;padding:6px 0 14px 0;">
+                    ${badges.join("")}
+                </div>
+            `);
+            frm.toggle_display("statutory_section_bar", true);
+        }
+    );
+}
+
 // ── Field visibility ──────────────────────────────────────────────────────────
 
 function toggle_fields(frm) {
     const can_create = !frm._has_existing;
-
     frm.toggle_display("assignment_section", can_create);
     frm.toggle_display("from_date",          can_create);
     frm.toggle_display("to_date",            can_create);
     frm.toggle_display("salary_structure",   can_create);
-
     toggle_salary_sections(frm);
 }
 
@@ -137,22 +202,10 @@ function check_overlap(frm) {
 
 // ── Salary calculation ────────────────────────────────────────────────────────
 
-// Called on initial load / salary_structure change — safe to use full refresh here
-function calculate_salary(frm) {
-    _do_calculate(frm, false);
-}
-
-// Called when user edits an amount cell — must NOT call frm.refresh_field()
-// on the earnings/deductions tables, as that would destroy the active input
-// and move focus away from the cell being edited.
-function calculate_salary_silent(frm) {
-    _do_calculate(frm, true);
-}
+function calculate_salary(frm) { _do_calculate(frm, false); }
+function calculate_salary_silent(frm) { _do_calculate(frm, true); }
 
 function _do_calculate(frm, silent) {
-    // ── FIX: sum amounts directly from frappe.model.locals (the in-memory
-    // store that Frappe updates synchronously when a child row value changes),
-    // NOT from frm.doc.earnings which may still hold stale values at trigger time.
     let gross_salary = 0;
     (frm.doc.earnings || []).forEach(row => {
         const live_row = frappe.get_doc(row.doctype, row.name);
@@ -173,82 +226,52 @@ function _do_calculate(frm, silent) {
             filters: { name: ["in", deductions.map(d => d.salary_component)] }
         },
         callback(res) {
-            const component_map = {};
-            (res.message || []).forEach(c => { component_map[c.name] = c; });
-
-            let employee_deductions = 0, employer_contribution = 0;
-
+            const cm = {};
+            (res.message || []).forEach(c => { cm[c.name] = c; });
+            let emp_ded = 0, empr_cont = 0;
             deductions.forEach(d => {
-                const live_row = frappe.get_doc(d.doctype, d.name);
-                const amount   = flt(live_row ? live_row.amount : d.amount);
-                const comp     = component_map[d.salary_component];
-                if (!comp || !parseInt(comp.employer_contribution)) {
-                    employee_deductions   += amount;
-                } else {
-                    employer_contribution += amount;
-                }
+                const lr  = frappe.get_doc(d.doctype, d.name);
+                const amt = flt(lr ? lr.amount : d.amount);
+                const c   = cm[d.salary_component];
+                if (!c || !parseInt(c.employer_contribution)) emp_ded   += amt;
+                else                                           empr_cont += amt;
             });
-
-            set_salary_totals(frm, gross_salary, employee_deductions, employer_contribution, silent);
+            set_salary_totals(frm, gross_salary, emp_ded, empr_cont, silent);
         }
     });
 }
 
-function set_salary_totals(frm, gross, employee_deductions, employer, silent) {
-    const net_salary  = gross - employee_deductions;
-    const annual_ctc  = (gross + employer) * 12;
-    const monthly_ctc = annual_ctc / 12;
-
+function set_salary_totals(frm, gross, emp_ded, empr, silent) {
     const values = {
         gross_salary:                gross,
-        total_deductions:            employee_deductions,
-        total_employer_contribution: employer,
-        net_salary,
-        monthly_ctc,
-        annual_ctc
+        total_deductions:            emp_ded,
+        total_employer_contribution: empr,
+        net_salary:                  gross - emp_ded,
+        monthly_ctc:                 (gross + empr),
+        annual_ctc:                  (gross + empr) * 12
     };
-
     if (silent) {
-        // Write directly to frm.doc — bypasses set_value()'s internal refresh
-        // which would re-render the grid and destroy the active input cell focus
         Object.assign(frm.doc, values);
-
-        // Manually update only the display of each read-only calculation field
-        // without touching the earnings/deductions tables at all
-        Object.keys(values).forEach(fieldname => {
-            const field = frm.get_field(fieldname);
+        Object.keys(values).forEach(fn => {
+            const field = frm.get_field(fn);
             if (!field) return;
-
-            if (field.$input) {
-                field.$input.val(format_number(values[fieldname], null, 2));
-            } else if (field.$wrapper) {
-                // read_only fields are rendered as static text
-                field.$wrapper
-                    .find(".like-disabled-input, .control-value")
-                    .text(format_number(values[fieldname], null, 2));
-            }
+            if (field.$input) field.$input.val(format_number(values[fn], null, 2));
+            else if (field.$wrapper) field.$wrapper.find(".like-disabled-input, .control-value").text(format_number(values[fn], null, 2));
         });
     } else {
-        // Normal mode (initial load / structure change) — safe to use set_value + refresh
         frm.set_value(values);
-        frm.refresh_fields([
-            "gross_salary", "total_deductions", "total_employer_contribution",
-            "net_salary", "monthly_ctc", "annual_ctc"
-        ]);
+        frm.refresh_fields(["gross_salary","total_deductions","total_employer_contribution","net_salary","monthly_ctc","annual_ctc"]);
     }
 }
 
 function clear_salary_tables(frm) {
     frm.clear_table("earnings");
     frm.clear_table("deductions");
-    frm.set_value({
-        gross_salary: 0, total_deductions: 0, total_employer_contribution: 0,
-        net_salary: 0, monthly_ctc: 0, annual_ctc: 0
-    });
+    frm.set_value({ gross_salary:0, total_deductions:0, total_employer_contribution:0, net_salary:0, monthly_ctc:0, annual_ctc:0 });
     frm.refresh_fields();
 }
 
 function copy_row(target, source) {
     const skip = ["name","parent","parenttype","parentfield","idx","docstatus","creation","modified","modified_by","owner"];
-    Object.keys(source).forEach(key => { if (!skip.includes(key)) target[key] = source[key]; });
+    Object.keys(source).forEach(k => { if (!skip.includes(k)) target[k] = source[k]; });
 }

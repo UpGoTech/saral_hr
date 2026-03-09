@@ -12,7 +12,15 @@
   "amount",
   "depends_on_payment_days",
   "is_daily_rate",
-  "employer_contribution"
+  "employer_contribution",
+  "is_esic_component",
+  "esic_calculation_based_on",
+  "esic_percentage",
+  "esic_cap_amount",
+  "is_pf_component",
+  "pf_calculation_based_on",
+  "pf_percentage",
+  "pf_cap_amount"
  ],
  "fields": [
   {
@@ -68,12 +76,70 @@
    "fieldtype": "Check",
    "in_list_view": 1,
    "label": "Employer Contribution"
+  },
+  {
+   "default": "0",
+   "fetch_from": "salary_component.is_esic_component",
+   "fieldname": "is_esic_component",
+   "fieldtype": "Check",
+   "label": "Is ESIC Component",
+   "read_only": 1
+  },
+  {
+   "fetch_from": "salary_component.esic_calculation_based_on",
+   "fieldname": "esic_calculation_based_on",
+   "fieldtype": "Data",
+   "label": "ESIC Basis",
+   "read_only": 1
+  },
+  {
+   "fetch_from": "salary_component.esic_percentage",
+   "fieldname": "esic_percentage",
+   "fieldtype": "Percent",
+   "label": "ESIC %",
+   "read_only": 1
+  },
+  {
+   "fetch_from": "salary_component.esic_cap_amount",
+   "fieldname": "esic_cap_amount",
+   "fieldtype": "Currency",
+   "label": "ESIC Cap",
+   "read_only": 1
+  },
+  {
+   "default": "0",
+   "fetch_from": "salary_component.is_pf_component",
+   "fieldname": "is_pf_component",
+   "fieldtype": "Check",
+   "label": "Is PF Component",
+   "read_only": 1
+  },
+  {
+   "fetch_from": "salary_component.pf_calculation_based_on",
+   "fieldname": "pf_calculation_based_on",
+   "fieldtype": "Data",
+   "label": "PF Basis",
+   "read_only": 1
+  },
+  {
+   "fetch_from": "salary_component.pf_percentage",
+   "fieldname": "pf_percentage",
+   "fieldtype": "Percent",
+   "label": "PF %",
+   "read_only": 1
+  },
+  {
+   "fetch_from": "salary_component.pf_cap_amount",
+   "fieldname": "pf_cap_amount",
+   "fieldtype": "Currency",
+   "label": "PF Cap",
+   "read_only": 1
   }
  ],
  "index_web_pages_for_search": 1,
  "istable": 1,
  "links": [],
- "modified": "2026-02-11 15:19:34.173608",
+ "modified": "2026-03-09 00:00:00.000000",
  "modified_by": "Administrator",
  "module": "Saral Hr",
  "name": "Salary Details",
