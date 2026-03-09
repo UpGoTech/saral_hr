@@ -31,7 +31,12 @@
   "section_break_reporting",
   "immediate_reporting",
   "column_break_reporting2",
-  "final_reporting"
+  "final_reporting",
+  "section_break_statutory",
+  "is_esic_applicable",
+  "is_pf_applicable",
+  "pf_applicable",
+  "column_break_statutory2"
  ],
  "fields": [
   {
@@ -183,11 +188,40 @@
    "fieldtype": "Link",
    "label": "Final Reporting",
    "options": "Employee"
+  },
+  {
+   "fieldname": "section_break_statutory",
+   "fieldtype": "Section Break",
+   "label": "Statutory Applicability"
+  },
+  {
+   "default": "0",
+   "fieldname": "is_esic_applicable",
+   "fieldtype": "Check",
+   "label": "Is ESIC Applicable"
+  },
+  {
+   "default": "0",
+   "fieldname": "is_pf_applicable",
+   "fieldtype": "Check",
+   "label": "Is PF Applicable"
+  },
+  {
+   "default": "No PF",
+   "depends_on": "eval:doc.is_pf_applicable==1",
+   "fieldname": "pf_applicable",
+   "fieldtype": "Select",
+   "label": "PF Applicable",
+   "options": "No PF\nLimited PF\nFull PF"
+  },
+  {
+   "fieldname": "column_break_statutory2",
+   "fieldtype": "Column Break"
   }
  ],
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-03-04 00:35:19.088633",
+ "modified": "2026-03-09 00:00:00.000000",
  "modified_by": "Administrator",
  "module": "Saral Hr",
  "name": "Company Link",

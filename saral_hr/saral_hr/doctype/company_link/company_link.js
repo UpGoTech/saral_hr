@@ -18,6 +18,8 @@ frappe.ui.form.on("Company Link", {
         if (!frm.is_new()) {
             refresh_company_fields(frm);
         }
+
+        toggle_pf_color(frm);
     },
 
     company(frm) {
@@ -30,8 +32,6 @@ frappe.ui.form.on("Company Link", {
         const selected_employee = frm.doc.employee;
         if (!selected_employee || !frm.is_new()) return;
 
-        // Frappe fires the trigger twice on Link field select (value + fetch).
-        // Guard so we only warn once per unique employee selection.
         if (frm._last_warned_employee === selected_employee) return;
         frm._last_warned_employee = selected_employee;
 
@@ -69,8 +69,39 @@ frappe.ui.form.on("Company Link", {
             });
             frm.set_value("is_active", 0);
         }
+    },
+
+    pf_applicable(frm) {
+        toggle_pf_color(frm);
+    },
+
+    is_pf_applicable(frm) {
+        if (!frm.doc.is_pf_applicable) {
+            frm.set_value("pf_applicable", "");
+        }
+        toggle_pf_color(frm);
     }
+
 });
+
+function toggle_pf_color(frm) {
+
+    if (!frm.doc.is_pf_applicable) return;
+
+    const pf = frm.doc.pf_applicable;
+    const field = frm.get_field("pf_applicable");
+    if (!field || !field.$wrapper) return;
+
+    field.$wrapper.find("select, .frappe-control").css("color", "");
+
+    if (pf === "No PF") {
+        field.$wrapper.find(".control-value, select").css("color", "#d9534f"); // red
+    } else if (pf === "Limited PF") {
+        field.$wrapper.find(".control-value, select").css("color", "#f0ad4e"); // orange
+    } else if (pf === "Full PF") {
+        field.$wrapper.find(".control-value, select").css("color", "#5cb85c"); // green
+    }
+}
 
 function find_active_record(employee) {
     return frappe.call({
