@@ -33,7 +33,6 @@
    "search_index": 1
   },
   {
-   "depends_on": "eval:doc.parenttype=='Salary Structure'",
    "fetch_from": "salary_component.salary_component_abbr",
    "fieldname": "abbr",
    "fieldtype": "Data",

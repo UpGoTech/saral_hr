@@ -144,25 +144,21 @@ frappe.ui.form.on("Salary Structure Assignment", {
                             args: {
                                 doctype: "Salary Component",
                                 filters: [["name", "in", to_fetch]],
-                                fields: ["name", "salary_component_abbr", "type",
-                                         "employer_contribution", "is_pf_component",
-                                         "pf_calculation_based_on", "pf_percentage",
-                                         "is_esic_component", "esic_calculation_based_on",
-                                         "esic_percentage"],
+                                fields: ["name", "salary_component_abbr"],
                                 limit: 20
                             },
                             callback(sc) {
-                                // Sort to match original order in to_fetch
                                 const sc_map = {};
                                 (sc.message || []).forEach(c => { sc_map[c.name] = c; });
 
                                 to_fetch.forEach(comp_name => {
                                     const c = sc_map[comp_name];
                                     if (!c) return;
+                                    const abbr = c.salary_component_abbr || "";
                                     const child = frm.add_child("deductions");
-                                    child.salary_component       = c.name;
-                                    child.salary_component_abbr  = c.salary_component_abbr;
-                                    child.amount                 = 0;
+                                    child.salary_component = c.name;
+                                    child.abbr = abbr;
+                                    child.amount = 0;
                                 });
 
                                 frm.refresh_field("earnings");
