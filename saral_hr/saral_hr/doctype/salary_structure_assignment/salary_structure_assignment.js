@@ -67,14 +67,112 @@ frappe.ui.form.on("Salary Structure Assignment", {
             args: { doctype: "Salary Structure", name: frm.doc.salary_structure },
             callback(r) {
                 if (!r.message) return;
-                clear_salary_tables(frm);
-                (r.message.earnings   || []).forEach(row => copy_row(frm.add_child("earnings"),   row));
-                (r.message.deductions || []).forEach(row => copy_row(frm.add_child("deductions"), row));
-                frm.set_value("currency", r.message.currency || "INR");
-                frm.refresh_field("earnings");
-                frm.refresh_field("deductions");
-                calculate_salary(frm);
-                render_statutory_bar(frm);
+                const structure = r.message;
+
+                // Fetch employee statutory flags first, then build tables
+                frappe.db.get_value(
+                    "Company Link",
+                    frm.doc.employee,
+                    ["is_esic_applicable", "is_pf_applicable", "pf_applicable"],
+                    (stat) => {
+                        clear_salary_tables(frm);
+                        (structure.earnings || []).forEach(row => copy_row(frm.add_child("earnings"), row));
+
+                        const esic_on = stat && parseInt(stat.is_esic_applicable);
+                        const pf_on   = stat && parseInt(stat.is_pf_applicable);
+                        const pf_type = (stat && stat.pf_applicable) || "";
+
+                        // Component names per PF type
+                        const PF_COMPONENT_NAMES = {
+                            "Limited PF": [
+                                "Employee - Limited PF",
+                                "Employer - EPF (Limited)",
+                                "Employer - EPS (Limited)",
+                                "Employer - EDLI (Limited)",
+                                "Employer - PF Admin (Limited)"
+                            ],
+                            "Full PF": [
+                                "Employee - Full PF",
+                                "Employer - EPF (Full)",
+                                "Employer - EPS (Full)",
+                                "Employer - EDLI (Full)",
+                                "Employer - PF Admin (Full)"
+                            ],
+                            "No PF": [
+                                "Employee - No PF",
+                                "Employer - EPF (No PF)",
+                                "Employer - EPS (No PF)",
+                                "Employer - EDLI (No PF)",
+                                "Employer - PF Admin (No PF)"
+                            ],
+                        };
+                        const ESIC_COMPONENT_NAMES = ["Employee - ESIC", "Employer - ESIC"];
+
+                        // Copy non-PF/ESIC deductions from structure
+                        const ALL_PF_NAMES   = Object.values(PF_COMPONENT_NAMES).flat();
+                        const ALL_ESIC_NAMES = ESIC_COMPONENT_NAMES;
+
+                        (structure.deductions || []).forEach(row => {
+                            const name = (row.salary_component || "").trim();
+                            if (ALL_PF_NAMES.includes(name))   return; // handled below
+                            if (ALL_ESIC_NAMES.includes(name)) return; // handled below
+                            copy_row(frm.add_child("deductions"), row);
+                        });
+
+                        // Build list of statutory components to fetch
+                        const to_fetch = [];
+                        if (pf_on && PF_COMPONENT_NAMES[pf_type]) {
+                            to_fetch.push(...PF_COMPONENT_NAMES[pf_type]);
+                        }
+                        if (esic_on) {
+                            to_fetch.push(...ESIC_COMPONENT_NAMES);
+                        }
+
+                        frm.set_value("currency", structure.currency || "INR");
+
+                        if (!to_fetch.length) {
+                            frm.refresh_field("earnings");
+                            frm.refresh_field("deductions");
+                            calculate_salary(frm);
+                            render_statutory_bar(frm);
+                            return;
+                        }
+
+                        // Fetch the actual Salary Component docs and inject them
+                        frappe.call({
+                            method: "frappe.client.get_list",
+                            args: {
+                                doctype: "Salary Component",
+                                filters: [["name", "in", to_fetch]],
+                                fields: ["name", "salary_component_abbr", "type",
+                                         "employer_contribution", "is_pf_component",
+                                         "pf_calculation_based_on", "pf_percentage",
+                                         "is_esic_component", "esic_calculation_based_on",
+                                         "esic_percentage"],
+                                limit: 20
+                            },
+                            callback(sc) {
+                                // Sort to match original order in to_fetch
+                                const sc_map = {};
+                                (sc.message || []).forEach(c => { sc_map[c.name] = c; });
+
+                                to_fetch.forEach(comp_name => {
+                                    const c = sc_map[comp_name];
+                                    if (!c) return;
+                                    const child = frm.add_child("deductions");
+                                    child.salary_component       = c.name;
+                                    child.salary_component_abbr  = c.salary_component_abbr;
+                                    child.amount                 = 0;
+                                });
+
+                                frm.refresh_field("earnings");
+                                frm.refresh_field("deductions");
+                                calculate_salary(frm);
+                                render_statutory_bar(frm);
+                            }
+                        });
+                    }
+                );
             }
         });
     }
