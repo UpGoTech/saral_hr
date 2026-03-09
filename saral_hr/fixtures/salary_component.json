@@ -198,7 +198,92 @@
   "docstatus": 0,
   "doctype": "Salary Component",
   "employer_contribution": 0,
-  "enter_amount_according_to_months": [],
+  "enter_amount_according_to_months": [
+   {
+    "amount": 0.0,
+    "month": "January",
+    "parent": "Professional Tax",
+    "parentfield": "enter_amount_according_to_months",
+    "parenttype": "Salary Component"
+   },
+   {
+    "amount": 0.0,
+    "month": "February",
+    "parent": "Professional Tax",
+    "parentfield": "enter_amount_according_to_months",
+    "parenttype": "Salary Component"
+   },
+   {
+    "amount": 0.0,
+    "month": "March",
+    "parent": "Professional Tax",
+    "parentfield": "enter_amount_according_to_months",
+    "parenttype": "Salary Component"
+   },
+   {
+    "amount": 0.0,
+    "month": "April",
+    "parent": "Professional Tax",
+    "parentfield": "enter_amount_according_to_months",
+    "parenttype": "Salary Component"
+   },
+   {
+    "amount": 0.0,
+    "month": "May",
+    "parent": "Professional Tax",
+    "parentfield": "enter_amount_according_to_months",
+    "parenttype": "Salary Component"
+   },
+   {
+    "amount": 0.0,
+    "month": "June",
+    "parent": "Professional Tax",
+    "parentfield": "enter_amount_according_to_months",
+    "parenttype": "Salary Component"
+   },
+   {
+    "amount": 0.0,
+    "month": "July",
+    "parent": "Professional Tax",
+    "parentfield": "enter_amount_according_to_months",
+    "parenttype": "Salary Component"
+   },
+   {
+    "amount": 0.0,
+    "month": "August",
+    "parent": "Professional Tax",
+    "parentfield": "enter_amount_according_to_months",
+    "parenttype": "Salary Component"
+   },
+   {
+    "amount": 0.0,
+    "month": "September",
+    "parent": "Professional Tax",
+    "parentfield": "enter_amount_according_to_months",
+    "parenttype": "Salary Component"
+   },
+   {
+    "amount": 0.0,
+    "month": "October",
+    "parent": "Professional Tax",
+    "parentfield": "enter_amount_according_to_months",
+    "parenttype": "Salary Component"
+   },
+   {
+    "amount": 0.0,
+    "month": "November",
+    "parent": "Professional Tax",
+    "parentfield": "enter_amount_according_to_months",
+    "parenttype": "Salary Component"
+   },
+   {
+    "amount": 0.0,
+    "month": "December",
+    "parent": "Professional Tax",
+    "parentfield": "enter_amount_according_to_months",
+    "parenttype": "Salary Component"
+   }
+  ],
   "esic_calculation_based_on": null,
   "esic_cap_amount": 0.0,
   "esic_percentage": 0.0,
@@ -595,7 +680,92 @@
   "docstatus": 0,
   "doctype": "Salary Component",
   "employer_contribution": 1,
-  "enter_amount_according_to_months": [],
+  "enter_amount_according_to_months": [
+   {
+    "amount": 0.0,
+    "month": "January",
+    "parent": "Employer - Labour Welfare Fund",
+    "parentfield": "enter_amount_according_to_months",
+    "parenttype": "Salary Component"
+   },
+   {
+    "amount": 0.0,
+    "month": "February",
+    "parent": "Employer - Labour Welfare Fund",
+    "parentfield": "enter_amount_according_to_months",
+    "parenttype": "Salary Component"
+   },
+   {
+    "amount": 0.0,
+    "month": "March",
+    "parent": "Employer - Labour Welfare Fund",
+    "parentfield": "enter_amount_according_to_months",
+    "parenttype": "Salary Component"
+   },
+   {
+    "amount": 0.0,
+    "month": "April",
+    "parent": "Employer - Labour Welfare Fund",
+    "parentfield": "enter_amount_according_to_months",
+    "parenttype": "Salary Component"
+   },
+   {
+    "amount": 0.0,
+    "month": "May",
+    "parent": "Employer - Labour Welfare Fund",
+    "parentfield": "enter_amount_according_to_months",
+    "parenttype": "Salary Component"
+   },
+   {
+    "amount": 0.0,
+    "month": "June",
+    "parent": "Employer - Labour Welfare Fund",
+    "parentfield": "enter_amount_according_to_months",
+    "parenttype": "Salary Component"
+   },
+   {
+    "amount": 0.0,
+    "month": "July",
+    "parent": "Employer - Labour Welfare Fund",
+    "parentfield": "enter_amount_according_to_months",
+    "parenttype": "Salary Component"
+   },
+   {
+    "amount": 0.0,
+    "month": "August",
+    "parent": "Employer - Labour Welfare Fund",
+    "parentfield": "enter_amount_according_to_months",
+    "parenttype": "Salary Component"
+   },
+   {
+    "amount": 0.0,
+    "month": "September",
+    "parent": "Employer - Labour Welfare Fund",
+    "parentfield": "enter_amount_according_to_months",
+    "parenttype": "Salary Component"
+   },
+   {
+    "amount": 0.0,
+    "month": "October",
+    "parent": "Employer - Labour Welfare Fund",
+    "parentfield": "enter_amount_according_to_months",
+    "parenttype": "Salary Component"
+   },
+   {
+    "amount": 0.0,
+    "month": "November",
+    "parent": "Employer - Labour Welfare Fund",
+    "parentfield": "enter_amount_according_to_months",
+    "parenttype": "Salary Component"
+   },
+   {
+    "amount": 0.0,
+    "month": "December",
+    "parent": "Employer - Labour Welfare Fund",
+    "parentfield": "enter_amount_according_to_months",
+    "parenttype": "Salary Component"
+   }
+  ],
   "esic_calculation_based_on": null,
   "esic_cap_amount": 0.0,
   "esic_percentage": 0.0,
@@ -1120,10 +1290,10 @@
   "is_esic_component": 0,
   "is_pf_component": 1,
   "is_special_component": 0,
-  "modified": "2026-03-09 16:17:53.242502",
+  "modified": "2026-03-09 17:29:11.694193",
   "name": "Employee - Limited PF",
   "pf_calculation_based_on": "Prorated Gross",
-  "pf_cap_amount": 0.0,
+  "pf_cap_amount": 1800.0,
   "pf_percentage": 12.0,
   "salary_component": "Employee - Limited PF",
   "salary_component_abbr": "L-PF-EMP",
