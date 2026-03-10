@@ -34,8 +34,10 @@ class SalaryComponent(Document):
         if self.is_esic_component:
             if not self.esic_calculation_based_on:
                 frappe.throw("Please select <b>ESIC Calculation Based On</b> when ESIC component is enabled.")
-            if not self.esic_percentage or flt(self.esic_percentage) <= 0:
-                frappe.throw("Please enter a valid <b>ESIC Percentage</b> greater than 0.")
+            if self.esic_percentage is None or self.esic_percentage == "":
+                frappe.throw("Please enter a valid <b>ESIC Percentage</b> (0 or greater).")
+            if flt(self.esic_percentage) < 0:
+                frappe.throw("<b>ESIC Percentage</b> cannot be negative.")
             if flt(self.esic_percentage) > 100:
                 frappe.throw("<b>ESIC Percentage</b> cannot exceed 100%.")
             if self.esic_cap_amount and flt(self.esic_cap_amount) < 0:
@@ -44,8 +46,10 @@ class SalaryComponent(Document):
         if self.is_pf_component:
             if not self.pf_calculation_based_on:
                 frappe.throw("Please select <b>PF Calculation Based On</b> when PF component is enabled.")
-            if not self.pf_percentage or flt(self.pf_percentage) <= 0:
-                frappe.throw("Please enter a valid <b>PF Percentage</b> greater than 0.")
+            if self.pf_percentage is None or self.pf_percentage == "":
+                frappe.throw("Please enter a valid <b>PF Percentage</b> (0 or greater).")
+            if flt(self.pf_percentage) < 0:
+                frappe.throw("<b>PF Percentage</b> cannot be negative.")
             if flt(self.pf_percentage) > 100:
                 frappe.throw("<b>PF Percentage</b> cannot exceed 100%.")
             if self.pf_cap_amount and flt(self.pf_cap_amount) < 0:
