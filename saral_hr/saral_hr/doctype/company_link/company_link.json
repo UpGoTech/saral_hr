@@ -36,6 +36,7 @@
   "is_esic_applicable",
   "is_pf_applicable",
   "pf_applicable",
+  "is_pt_applicable",
   "column_break_statutory2"
  ],
  "fields": [
@@ -213,6 +214,12 @@
    "fieldtype": "Select",
    "label": "PF Applicable",
    "options": "No PF\nLimited PF\nFull PF"
+  },
+  {
+   "default": "0",
+   "fieldname": "is_pt_applicable",
+   "fieldtype": "Check",
+   "label": "Is PT Applicable"
   },
   {
    "fieldname": "column_break_statutory2",

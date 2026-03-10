@@ -69,20 +69,20 @@ frappe.ui.form.on("Salary Structure Assignment", {
                 if (!r.message) return;
                 const structure = r.message;
 
-                // Fetch employee statutory flags first, then build tables
                 frappe.db.get_value(
                     "Company Link",
                     frm.doc.employee,
-                    ["is_esic_applicable", "is_pf_applicable", "pf_applicable"],
+                    ["is_esic_applicable", "is_pf_applicable", "pf_applicable", "is_pt_applicable"],
                     (stat) => {
                         clear_salary_tables(frm);
+
                         (structure.earnings || []).forEach(row => copy_row(frm.add_child("earnings"), row));
 
                         const esic_on = stat && parseInt(stat.is_esic_applicable);
                         const pf_on   = stat && parseInt(stat.is_pf_applicable);
                         const pf_type = (stat && stat.pf_applicable) || "";
+                        const pt_on   = stat && parseInt(stat.is_pt_applicable);
 
-                        // Component names per PF type
                         const PF_COMPONENT_NAMES = {
                             "Limited PF": [
                                 "Employee - Limited PF",
@@ -107,25 +107,29 @@ frappe.ui.form.on("Salary Structure Assignment", {
                             ],
                         };
                         const ESIC_COMPONENT_NAMES = ["Employee - ESIC", "Employer - ESIC"];
+                        const PT_COMPONENT_NAME    = "Professional Tax";
 
-                        // Copy non-PF/ESIC deductions from structure
                         const ALL_PF_NAMES   = Object.values(PF_COMPONENT_NAMES).flat();
                         const ALL_ESIC_NAMES = ESIC_COMPONENT_NAMES;
+                        const ALL_PT_NAMES   = [PT_COMPONENT_NAME];
 
                         (structure.deductions || []).forEach(row => {
                             const name = (row.salary_component || "").trim();
-                            if (ALL_PF_NAMES.includes(name))   return; // handled below
-                            if (ALL_ESIC_NAMES.includes(name)) return; // handled below
+                            if (ALL_PF_NAMES.includes(name))   return;
+                            if (ALL_ESIC_NAMES.includes(name)) return;
+                            if (ALL_PT_NAMES.includes(name))   return;
                             copy_row(frm.add_child("deductions"), row);
                         });
 
-                        // Build list of statutory components to fetch
                         const to_fetch = [];
                         if (pf_on && PF_COMPONENT_NAMES[pf_type]) {
                             to_fetch.push(...PF_COMPONENT_NAMES[pf_type]);
                         }
                         if (esic_on) {
                             to_fetch.push(...ESIC_COMPONENT_NAMES);
+                        }
+                        if (pt_on) {
+                            to_fetch.push(PT_COMPONENT_NAME);
                         }
 
                         frm.set_value("currency", structure.currency || "INR");
@@ -138,7 +142,6 @@ frappe.ui.form.on("Salary Structure Assignment", {
                             return;
                         }
 
-                        // Fetch the actual Salary Component docs and inject them
                         frappe.call({
                             method: "frappe.client.get_list",
                             args: {
@@ -146,10 +149,11 @@ frappe.ui.form.on("Salary Structure Assignment", {
                                 filters: [["name", "in", to_fetch]],
                                 fields: [
                                     "name", "salary_component_abbr", "employer_contribution",
-                                    "is_pf_component", "pf_calculation_based_on", "pf_percentage", "pf_cap_amount",
-                                    "is_esic_component", "esic_calculation_based_on", "esic_percentage", "esic_cap_amount"
+                                    "is_pf_component",   "pf_calculation_based_on",   "pf_percentage",   "pf_cap_amount",
+                                    "is_esic_component", "esic_calculation_based_on", "esic_percentage", "esic_cap_amount",
+                                    "is_pt_component"
                                 ],
-                                limit: 20
+                                limit: 25
                             },
                             callback(sc) {
                                 const sc_map = {};
@@ -159,18 +163,34 @@ frappe.ui.form.on("Salary Structure Assignment", {
                                     const c = sc_map[comp_name];
                                     if (!c) return;
                                     const child = frm.add_child("deductions");
-                                    child.salary_component          = c.name;
-                                    child.abbr                      = c.salary_component_abbr || "";
-                                    child.amount                    = 0;
-                                    child.employer_contribution     = c.employer_contribution || 0;
-                                    child.is_pf_component           = c.is_pf_component || 0;
-                                    child.pf_calculation_based_on   = c.pf_calculation_based_on || "";
-                                    child.pf_percentage             = c.pf_percentage || 0;
-                                    child.pf_cap_amount             = c.pf_cap_amount || 0;
-                                    child.is_esic_component         = c.is_esic_component || 0;
-                                    child.esic_calculation_based_on = c.esic_calculation_based_on || "";
-                                    child.esic_percentage           = c.esic_percentage || 0;
-                                    child.esic_cap_amount           = c.esic_cap_amount || 0;
+
+                                    // ── PT: compute from from_date month ─────────────────────
+                                    // February (getMonth() === 1, 0-indexed) → ₹300, all other months → ₹200
+                                    let pt_amt = 0;
+                                    if (c.is_pt_component) {
+                                        const ref_date = frm.doc.from_date
+                                            ? frappe.datetime.str_to_obj(frm.doc.from_date)
+                                            : new Date();
+                                        pt_amt = ref_date.getMonth() === 1 ? 300 : 200;
+                                    }
+
+                                    // Use frappe.model.set_value so values land in the doc store
+                                    frappe.model.set_value(child.doctype, child.name, {
+                                        salary_component:          c.name,
+                                        abbr:                      c.salary_component_abbr || "",
+                                        amount:                    c.is_pt_component ? pt_amt : 0,
+                                        base_amount:               c.is_pt_component ? pt_amt : 0,
+                                        employer_contribution:     c.employer_contribution  || 0,
+                                        is_pf_component:           c.is_pf_component        || 0,
+                                        pf_calculation_based_on:   c.pf_calculation_based_on || "",
+                                        pf_percentage:             c.pf_percentage           || 0,
+                                        pf_cap_amount:             c.pf_cap_amount            || 0,
+                                        is_esic_component:         c.is_esic_component       || 0,
+                                        esic_calculation_based_on: c.esic_calculation_based_on || "",
+                                        esic_percentage:           c.esic_percentage          || 0,
+                                        esic_cap_amount:           c.esic_cap_amount           || 0,
+                                        is_pt_component:           c.is_pt_component           || 0,
+                                    });
                                 });
 
                                 frm.refresh_field("earnings");
@@ -211,7 +231,7 @@ function render_statutory_bar(frm) {
     frappe.db.get_value(
         "Company Link",
         frm.doc.employee,
-        ["is_esic_applicable", "is_pf_applicable", "pf_applicable"],
+        ["is_esic_applicable", "is_pf_applicable", "pf_applicable", "is_pt_applicable"],
         (r) => {
             const f = frm.fields_dict.statutory_info_html;
             if (!f || !f.$wrapper || !r) return;
@@ -219,6 +239,7 @@ function render_statutory_bar(frm) {
             const esic_on = parseInt(r.is_esic_applicable);
             const pf_on   = parseInt(r.is_pf_applicable);
             const pf_val  = r.pf_applicable || "No PF";
+            const pt_on   = parseInt(r.is_pt_applicable);
 
             const badge = (label, color, bg, border) =>
                 `<span style="
@@ -234,14 +255,12 @@ function render_statutory_bar(frm) {
 
             const badges = [];
 
-            // ESIC
             if (esic_on) {
                 badges.push(badge("ESIC Applicable", "#1e7e34", "#eaf7ee", "#b7dfc7"));
             } else {
                 badges.push(badge("ESIC Not Applicable", "#6c757d", "#f4f5f6", "#dee2e6"));
             }
 
-            // PF
             if (pf_on) {
                 const pfColor = {
                     "Full PF":    ["#1e7e34", "#eaf7ee", "#b7dfc7"],
@@ -251,6 +270,12 @@ function render_statutory_bar(frm) {
                 badges.push(badge(`PF: ${__(pf_val)}`, pfColor[0], pfColor[1], pfColor[2]));
             } else {
                 badges.push(badge("PF Not Applicable", "#6c757d", "#f4f5f6", "#dee2e6"));
+            }
+
+            if (pt_on) {
+                badges.push(badge("PT Applicable", "#5b2d8e", "#f3eeff", "#c9a8f5"));
+            } else {
+                badges.push(badge("PT Not Applicable", "#6c757d", "#f4f5f6", "#dee2e6"));
             }
 
             f.$wrapper.html(`
@@ -268,10 +293,10 @@ function render_statutory_bar(frm) {
 
 function toggle_fields(frm) {
     const can_create = !frm._has_existing;
-    frm.toggle_display("assignment_section", can_create);
-    frm.toggle_display("from_date",          can_create);
-    frm.toggle_display("to_date",            can_create);
-    frm.toggle_display("salary_structure",   can_create);
+    frm.toggle_display("assignment_section",  can_create);
+    frm.toggle_display("from_date",           can_create);
+    frm.toggle_display("to_date",             can_create);
+    frm.toggle_display("salary_structure",    can_create);
     toggle_salary_sections(frm);
 }
 
@@ -308,20 +333,16 @@ function check_overlap(frm) {
 
 // ── Salary calculation ────────────────────────────────────────────────────────
 
-function calculate_salary(frm) { _do_calculate(frm, false); }
-function calculate_salary_silent(frm) { _do_calculate(frm, true); }
+function calculate_salary(frm)        { _do_calculate(frm, false); }
+function calculate_salary_silent(frm) { _do_calculate(frm, true);  }
 
 function _do_calculate(frm, silent) {
-    // ── Step 1: compute gross (SSA preview = full month, no proration) ────────
-    // In the SSA context there is no attendance data yet, so every earning
-    // is treated as a fixed monthly amount.  ssa_gross === prorated_gross here.
     let gross_salary = 0;
     (frm.doc.earnings || []).forEach(row => {
         const live_row = frappe.get_doc(row.doctype, row.name);
         gross_salary += flt(live_row ? live_row.amount : row.amount);
     });
 
-    // ssa_gross = same as gross_salary in SSA context (no proration applied)
     const ssa_gross = gross_salary;
 
     const deductions = frm.doc.deductions || [];
@@ -330,21 +351,9 @@ function _do_calculate(frm, silent) {
         return;
     }
 
-    // ── Step 2: compute deductions ────────────────────────────────────────────
-    //
-    // PF components  → use pf_calculation_based_on + pf_percentage + pf_cap_amount
-    // ESIC components → use esic_calculation_based_on + esic_percentage + esic_cap_amount
-    //                   (only when gross < ₹21,000)
-    // All other       → use the amount already entered on the row
-    //
-    // "Prorated Gross"                         → gross_salary  (prorated earnings total)
-    // "Gross from Salary Structure Assignment" → ssa_gross     (raw SSA earnings total)
-    //   In the SSA form both values are identical, but we keep the distinction
-    //   so the preview logic exactly mirrors the backend calculation.
-    //
-    let emp_ded   = 0;
-    let empr_cont = 0;
-    const statutory_names = []; // track row names to highlight yellow later
+    let emp_ded        = 0;
+    let empr_cont      = 0;
+    const statutory_names = [];
 
     deductions.forEach(d => {
         const live_row = frappe.get_doc(d.doctype, d.name);
@@ -353,67 +362,55 @@ function _do_calculate(frm, silent) {
         let amt = 0;
 
         if (row.is_pf_component) {
-            // ── PF: fully dynamic via Salary Component flags ──────────────────
             const pf_pct   = flt(row.pf_percentage  || 0);
             const pf_cap   = flt(row.pf_cap_amount   || 0);
             const pf_basis = (row.pf_calculation_based_on || "").trim();
-
-            // Choose gross basis
             const gross_for_pf = (pf_basis === "Gross from Salary Structure Assignment")
-                ? ssa_gross
-                : gross_salary; // "Prorated Gross" or unset → prorated (= SSA gross here)
+                ? ssa_gross : gross_salary;
 
             if (pf_pct > 0) {
-                amt = gross_for_pf * pf_pct / 100;
+                amt = flt(gross_for_pf * pf_pct / 100, 2);
                 if (pf_cap > 0) amt = Math.min(amt, pf_cap);
-                amt = flt(amt, 2);
             }
-
-            if (live_row) live_row.amount = amt;
-            else          d.amount        = amt;
+            if (live_row) live_row.amount = amt; else d.amount = amt;
             statutory_names.push(d.name);
 
         } else if (row.is_esic_component) {
-            // ── ESIC: fully dynamic via Salary Component flags ────────────────
             const esic_pct   = flt(row.esic_percentage  || 0);
             const esic_cap   = flt(row.esic_cap_amount   || 0);
             const esic_basis = (row.esic_calculation_based_on || "").trim();
-
-            // Choose gross basis
             const gross_for_esic = (esic_basis === "Gross from Salary Structure Assignment")
-                ? ssa_gross
-                : gross_salary; // "Prorated Gross" or unset → prorated
+                ? ssa_gross : gross_salary;
 
-            // ESIC ceiling: no deduction when gross ≥ ₹21,000
             if (esic_pct > 0 && gross_salary < 21000) {
-                amt = gross_for_esic * esic_pct / 100;
+                amt = flt(gross_for_esic * esic_pct / 100, 2);
                 if (esic_cap > 0) amt = Math.min(amt, esic_cap);
-                amt = flt(amt, 2);
             }
+            if (live_row) live_row.amount = amt; else d.amount = amt;
+            statutory_names.push(d.name);
 
-            if (live_row) live_row.amount = amt;
-            else          d.amount        = amt;
+        } else if (row.is_pt_component) {
+            // ── PT: recalculate from the actual from_date month ───────────────
+            // February (getMonth() === 1, 0-indexed) → ₹300, all other months → ₹200
+            if (frm.doc.from_date) {
+                const ref_date = frappe.datetime.str_to_obj(frm.doc.from_date);
+                amt = ref_date.getMonth() === 1 ? 300 : 200;
+            } else {
+                amt = flt(d.amount);
+            }
+            if (live_row) live_row.amount = amt; else d.amount = amt;
             statutory_names.push(d.name);
 
         } else {
-            // Regular (non-statutory) deduction — use stored amount as-is
             amt = flt(live_row ? live_row.amount : d.amount);
         }
 
-        if (parseInt(row.employer_contribution)) {
-            empr_cont += amt;
-        } else {
-            emp_ded   += amt;
-        }
+        if (parseInt(row.employer_contribution)) empr_cont += amt;
+        else                                     emp_ded   += amt;
     });
 
     frm.refresh_field("deductions");
-
-    // ── Step 3: highlight PF/ESIC amount cells yellow ─────────────────────────
-    frappe.after_ajax(() => {
-        _highlight_statutory_rows(frm, statutory_names);
-    });
-
+    frappe.after_ajax(() => { _highlight_statutory_rows(frm, statutory_names); });
     set_salary_totals(frm, gross_salary, emp_ded, empr_cont, silent);
 }
 
@@ -438,7 +435,7 @@ function set_salary_totals(frm, gross, emp_ded, empr, silent) {
         total_deductions:            emp_ded,
         total_employer_contribution: empr,
         net_salary:                  gross - emp_ded,
-        monthly_ctc:                 (gross + empr),
+        monthly_ctc:                 gross + empr,
         annual_ctc:                  (gross + empr) * 12
     };
     if (silent) {
@@ -446,7 +443,7 @@ function set_salary_totals(frm, gross, emp_ded, empr, silent) {
         Object.keys(values).forEach(fn => {
             const field = frm.get_field(fn);
             if (!field) return;
-            if (field.$input) field.$input.val(format_number(values[fn], null, 2));
+            if (field.$input)   field.$input.val(format_number(values[fn], null, 2));
             else if (field.$wrapper) field.$wrapper.find(".like-disabled-input, .control-value").text(format_number(values[fn], null, 2));
         });
     } else {

@@ -1,43 +1,36 @@
+// ─── List View Buttons ────────────────────────────────────────────────────────
+
 frappe.listview_settings['Salary Slip'] = {
-    onload: function(listview) {
+    onload(listview) {
         listview.page.add_inner_button(__('Bulk Generate Salary Slips'), () => show_bulk_salary_slip_dialog());
         listview.page.add_inner_button(__('Bulk Print Salary Slips'),    () => show_bulk_print_dialog());
         listview.page.add_inner_button(__('Draft to Submit'),            () => show_draft_to_submit_dialog());
     }
 };
 
-// ─── Shared Helpers ───────────────────────────────────────────────────────────
-
-function get_year_options() {
-    const y = new Date().getFullYear();
-    return [y - 2, y - 1, y, y + 1].map(String);
-}
-
-function get_current_month() {
-    return ['January','February','March','April','May','June',
-            'July','August','September','October','November','December'][new Date().getMonth()];
-}
+// ─── Constants ────────────────────────────────────────────────────────────────
 
 const MONTHS = ['January','February','March','April','May','June',
                 'July','August','September','October','November','December'];
 
-// ─── Card Grid ────────────────────────────────────────────────────────────────
+function get_year_options() { const y = new Date().getFullYear(); return [y-2,y-1,y,y+1].map(String); }
+function get_current_month() { return MONTHS[new Date().getMonth()]; }
 
-function build_cards(items, card_class) {
+// ─── Card grid helpers ────────────────────────────────────────────────────────
+
+function build_cards(items, cls) {
     if (!items || !items.length)
         return `<div class="text-muted" style="padding:20px;width:100%;text-align:center;">No employees available for the selected period.</div>`;
-
     return items.map(item => `
         <label style="display:flex;flex-direction:column;align-items:flex-start;
             width:calc(33.33% - 8px);min-width:140px;
-            border:1px solid var(--border-color,#d1d8dd);
-            border-radius:6px;padding:10px 12px;cursor:pointer;
-            background:var(--card-bg,#fff);
-            transition:border-color 0.15s,box-shadow 0.15s;box-sizing:border-box;gap:4px;"
+            border:1px solid var(--border-color,#d1d8dd);border-radius:6px;
+            padding:10px 12px;cursor:pointer;background:var(--card-bg,#fff);
+            transition:border-color .15s,box-shadow .15s;box-sizing:border-box;gap:4px;"
             onmouseover="this.style.borderColor='var(--primary,#5e64ff)';this.style.boxShadow='0 0 0 2px var(--primary-light,#eef0ff)'"
             onmouseout="this.style.borderColor='var(--border-color,#d1d8dd)';this.style.boxShadow='none'">
             <div style="display:flex;align-items:center;gap:8px;width:100%;">
-                <input type="checkbox" class="${card_class}"
+                <input type="checkbox" class="${cls}"
                     data-id="${frappe.utils.escape_html(item.id)}"
                     data-name="${frappe.utils.escape_html(item.name)}"
                     style="cursor:pointer;margin:0;flex-shrink:0;">
@@ -52,75 +45,57 @@ function build_cards(items, card_class) {
         </label>`).join('');
 }
 
-function render_card_grid(dialog, html_field, card_class, count_id, search_id, items) {
-    dialog._card_items = dialog._card_items || {};
+// Render a card grid with search + select-all controls inside a dialog HTML field
+function render_card_grid(dialog, html_field, cls, count_id, search_id, items) {
+    dialog._card_items             = dialog._card_items || {};
     dialog._card_items[html_field] = items;
-
     const wrapper = dialog.fields_dict[html_field].$wrapper;
     wrapper.html(`
         <div style="margin-bottom:10px;display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
             <input id="${search_id}" type="text" class="form-control"
                 placeholder="Search by name or Employee ID..."
                 style="flex:1;min-width:160px;max-width:320px;">
-            <button class="btn btn-xs btn-default" id="${search_id}_select_all">${__('Select All')}</button>
-            <button class="btn btn-xs btn-default" id="${search_id}_deselect_all">${__('Deselect All')}</button>
+            <button class="btn btn-xs btn-default" id="${search_id}_sel_all">${__('Select All')}</button>
+            <button class="btn btn-xs btn-default" id="${search_id}_desel_all">${__('Deselect All')}</button>
             <span id="${count_id}" class="text-muted" style="font-size:12px;">0 selected</span>
         </div>
-        <div id="${search_id}_grid"
-            style="display:flex;flex-wrap:wrap;gap:10px;max-height:380px;overflow-y:auto;padding:4px 2px;">
-            ${build_cards(items, card_class)}
+        <div id="${search_id}_grid" style="display:flex;flex-wrap:wrap;gap:10px;max-height:380px;overflow-y:auto;padding:4px 2px;">
+            ${build_cards(items, cls)}
         </div>`);
 
-    const update = () => update_count(wrapper, card_class, count_id);
-    const bind   = () => {
-        wrapper.find(`.${card_class}`).off('change').on('change', update);
-        update();
-    };
+    const upd  = () => wrapper.find(`#${count_id}`).text(wrapper.find(`.${cls}:checked`).length + ' selected');
+    const bind = () => { wrapper.find(`.${cls}`).off('change').on('change', upd); upd(); };
 
     wrapper.find(`#${search_id}`).on('input', function() {
-        const q        = $(this).val().toLowerCase().trim();
-        const filtered = q
-            ? dialog._card_items[html_field].filter(i => i.id.toLowerCase().includes(q) || i.name.toLowerCase().includes(q))
-            : dialog._card_items[html_field];
-        wrapper.find(`#${search_id}_grid`).html(build_cards(filtered, card_class));
+        const q = $(this).val().toLowerCase().trim();
+        wrapper.find(`#${search_id}_grid`).html(build_cards(
+            q ? dialog._card_items[html_field].filter(i => i.id.toLowerCase().includes(q) || i.name.toLowerCase().includes(q))
+              : dialog._card_items[html_field], cls));
         bind();
     });
-
-    wrapper.find(`#${search_id}_select_all`).on('click',   () => { wrapper.find(`.${card_class}`).prop('checked', true);  update(); });
-    wrapper.find(`#${search_id}_deselect_all`).on('click', () => { wrapper.find(`.${card_class}`).prop('checked', false); update(); });
-
+    wrapper.find(`#${search_id}_sel_all`).on('click',   () => { wrapper.find(`.${cls}`).prop('checked', true);  upd(); });
+    wrapper.find(`#${search_id}_desel_all`).on('click', () => { wrapper.find(`.${cls}`).prop('checked', false); upd(); });
     bind();
 }
 
-function update_count(wrapper, card_class, count_id) {
-    wrapper.find(`#${count_id}`).text(wrapper.find(`.${card_class}:checked`).length + ' selected');
-}
-
-function get_checked_ids(dialog, html_field, card_class) {
+function get_checked_ids(dialog, html_field, cls) {
     const ids = [];
-    dialog.fields_dict[html_field].$wrapper.find(`.${card_class}:checked`).each(function() {
+    dialog.fields_dict[html_field].$wrapper.find(`.${cls}:checked`).each(function() {
         ids.push({ id: $(this).data('id'), name: $(this).data('name') });
     });
     return ids;
 }
 
-// ─── Result Dialog ────────────────────────────────────────────────────────────
-
 function show_result_dialog(title, result, success_label) {
-    let msg = `
-        <table class="table table-bordered" style="margin-bottom:0;">
-            <tr><td><strong>${success_label}:</strong></td>
-                <td style="color:var(--green);font-weight:bold;">${result.success}</td></tr>
-            <tr><td><strong>Failed:</strong></td>
-                <td style="color:var(--red);font-weight:bold;">${result.failed}</td></tr>
-        </table>`;
-
+    let msg = `<table class="table table-bordered" style="margin-bottom:0;">
+        <tr><td><strong>${success_label}:</strong></td><td style="color:var(--green);font-weight:bold;">${result.success}</td></tr>
+        <tr><td><strong>Failed:</strong></td><td style="color:var(--red);font-weight:bold;">${result.failed}</td></tr>
+    </table>`;
     if (result.errors && result.errors.length) {
         msg += '<div style="margin-top:12px;"><strong>Details:</strong><ul style="margin-top:4px;">';
         result.errors.forEach(e => { msg += `<li>${e}</li>`; });
         msg += '</ul></div>';
     }
-
     frappe.msgprint({ title, message: msg, indicator: result.failed > 0 ? 'orange' : 'green' });
 }
 
@@ -130,20 +105,18 @@ function show_bulk_salary_slip_dialog() {
     const d = new frappe.ui.Dialog({
         title: __('Bulk Generate Salary Slips'),
         fields: [
-            { fieldname: 'company',  fieldtype: 'Link',   label: 'Company', options: 'Company', reqd: 1 },
-            { fieldname: 'cb1',      fieldtype: 'Column Break' },
-            { fieldname: 'year',     fieldtype: 'Select', label: 'Year',  options: get_year_options(), reqd: 1, default: new Date().getFullYear().toString() },
-            { fieldname: 'cb2',      fieldtype: 'Column Break' },
-            { fieldname: 'month',    fieldtype: 'Select', label: 'Month', options: MONTHS, reqd: 1, default: get_current_month() },
-            { fieldname: 'sb_category', fieldtype: 'Section Break', label: 'Filter by Category' },
-            {
-                fieldname: 'category', fieldtype: 'Link', label: 'Category', options: 'Category', reqd: 1,
-                description: 'Salary slips will only be generated for employees belonging to this category.'
-            },
-            { fieldname: 'sb1',             fieldtype: 'Section Break' },
-            { fieldname: 'fetch_employees', fieldtype: 'Button', label: 'Fetch Eligible Employees', click: () => fetch_eligible_employees(d) },
-            { fieldname: 'sb2',             fieldtype: 'Section Break' },
-            { fieldname: 'employees_html',  fieldtype: 'HTML' }
+            { fieldname:'company',        fieldtype:'Link',   label:'Company', options:'Company', reqd:1 },
+            { fieldname:'cb1',            fieldtype:'Column Break' },
+            { fieldname:'year',           fieldtype:'Select', label:'Year',  options:get_year_options(), reqd:1, default:new Date().getFullYear().toString() },
+            { fieldname:'cb2',            fieldtype:'Column Break' },
+            { fieldname:'month',          fieldtype:'Select', label:'Month', options:MONTHS, reqd:1, default:get_current_month() },
+            { fieldname:'sb_cat',         fieldtype:'Section Break', label:'Filter by Category' },
+            { fieldname:'category',       fieldtype:'Link', label:'Category', options:'Category', reqd:1,
+              description:'Salary slips will only be generated for employees in this category.' },
+            { fieldname:'sb1',            fieldtype:'Section Break' },
+            { fieldname:'fetch_employees',fieldtype:'Button', label:'Fetch Eligible Employees', click:() => fetch_eligible_employees(d) },
+            { fieldname:'sb2',            fieldtype:'Section Break' },
+            { fieldname:'employees_html', fieldtype:'HTML' }
         ],
         primary_action_label: __('Generate Salary Slips'),
         primary_action: () => generate_bulk_salary_slips(d)
@@ -152,254 +125,134 @@ function show_bulk_salary_slip_dialog() {
 }
 
 function fetch_eligible_employees(dialog) {
-    const company  = dialog.get_value('company');
-    const year     = dialog.get_value('year');
-    const month    = dialog.get_value('month');
-    const category = dialog.get_value('category');
-
-    if (!company)        { frappe.msgprint(__('Please select Company'));          return; }
-    if (!year || !month) { frappe.msgprint(__('Please select Year and Month'));   return; }
-    if (!category)       { frappe.msgprint(__('Please select a Category'));       return; }
+    const { company, year, month, category } = _get_dialog_values(dialog, ['company','year','month','category']);
+    if (!company)        { frappe.msgprint(__('Please select Company'));        return; }
+    if (!year || !month) { frappe.msgprint(__('Please select Year and Month')); return; }
+    if (!category)       { frappe.msgprint(__('Please select a Category'));     return; }
 
     const wrapper = dialog.fields_dict.employees_html.$wrapper;
     wrapper.html(`<div class="text-muted" style="padding:16px 0;text-align:center;font-size:12px;">
-        ${frappe.utils.icon('loading', 'xs')} &nbsp;Retrieving employee payroll eligibility...
+        ${frappe.utils.icon('loading','xs')} &nbsp;Retrieving employee payroll eligibility...
     </div>`);
 
     frappe.call({
         method: 'saral_hr.saral_hr.doctype.salary_slip.salary_slip.get_eligible_employees_for_salary_slip',
         args: { company, year, month, category },
         callback(r) {
-            if (!r.message) {
-                wrapper.html('<div class="text-muted" style="padding:16px 0;text-align:center;">Unable to retrieve employee data. Please try again.</div>');
-                return;
-            }
+            if (!r.message) { wrapper.html('<div class="text-muted" style="padding:16px 0;text-align:center;">Unable to retrieve employee data.</div>'); return; }
 
-            const { eligible, skipped, total_active, total_eligible, category_requires_variable_pay } = r.message;
-            const ineligible_list = skipped || [];
+            const { eligible=[], skipped=[], total_active, total_eligible, category_requires_variable_pay } = r.message;
+            dialog._card_items                   = dialog._card_items || {};
+            dialog._card_items['employees_html'] = eligible.map(e => ({ id:e.name, name:e.employee_name||e.name }));
+            dialog._ineligible_employees         = skipped;
 
-            dialog._card_items                 = dialog._card_items || {};
-            dialog._card_items['employees_html'] = (eligible || []).map(emp => ({ id: emp.name, name: emp.employee_name || emp.name }));
-            dialog._ineligible_employees       = ineligible_list;
-
-            const ineligible_btn = ineligible_list.length > 0
+            const ineligible_btn = skipped.length
                 ? `<button class="btn btn-default btn-sm" id="btn_view_ineligible" style="margin-left:auto;">
-                       ${__('View Ineligibility Details')} (${ineligible_list.length})
-                   </button>`
-                : '';
+                       ${__('View Ineligibility Details')} (${skipped.length})
+                   </button>` : '';
 
-            const summary = `
-                <div style="display:flex;align-items:center;flex-wrap:wrap;gap:16px;
-                    padding:8px 0;margin-bottom:12px;font-size:12px;border-bottom:1px solid var(--border-color);">
-                    <span style="color:var(--text-muted);">
-                        Active Employees <em style="font-size:10px;">(${frappe.utils.escape_html(category)})</em>:
-                        <strong style="color:var(--text-color);">${total_active}</strong>
-                    </span>
-                    <span style="color:var(--border-color);">|</span>
-                    <span style="color:var(--text-muted);">
-                        Eligible for Processing: <strong style="color:var(--text-color);">${total_eligible}</strong>
-                    </span>
-                    <span style="color:var(--border-color);">|</span>
-                    <span style="color:var(--text-muted);">
-                        Excluded: <strong style="color:var(--text-color);">${ineligible_list.length}</strong>
-                    </span>
-                    ${ineligible_btn}
-                </div>`;
+            const summary = _summary_bar([
+                [`Active Employees <em style="font-size:10px;">(${frappe.utils.escape_html(category)})</em>`, total_active],
+                ['Eligible for Processing', total_eligible],
+                ['Excluded', skipped.length]
+            ], ineligible_btn);
 
-            let grid_html = '';
-            if (eligible && eligible.length > 0) {
-                grid_html = `
-                    <div style="margin-bottom:10px;display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
-                        <input id="emp_search" type="text" class="form-control"
-                            placeholder="Search by name or Employee ID..."
-                            style="flex:1;min-width:160px;max-width:300px;font-size:12px;">
-                        <button class="btn btn-xs btn-default" id="emp_search_select_all">${__('Select All')}</button>
-                        <button class="btn btn-xs btn-default" id="emp_search_deselect_all">${__('Deselect All')}</button>
-                        <span id="emp_selected_count" class="text-muted" style="font-size:12px;">0 selected</span>
-                    </div>
-                    <div id="emp_search_grid"
-                        style="display:flex;flex-wrap:wrap;gap:10px;max-height:300px;overflow-y:auto;padding:4px 2px;">
-                        ${build_cards(dialog._card_items['employees_html'], 'emp-card-check')}
-                    </div>`;
-            } else {
-                grid_html = `<div class="text-muted" style="padding:20px 0;text-align:center;font-size:12px;">
-                    No employees are eligible for payroll processing in the selected period.</div>`;
-            }
+            let grid_html = eligible.length
+                ? _search_grid_html('emp_search', 'emp-card-check', 'emp_count', dialog._card_items['employees_html'])
+                : `<div class="text-muted" style="padding:20px 0;text-align:center;font-size:12px;">No employees eligible for the selected period.</div>`;
 
             wrapper.html(summary + grid_html);
 
-            if (ineligible_list.length > 0) {
+            if (skipped.length)
                 wrapper.find('#btn_view_ineligible').on('click', () =>
                     show_ineligible_employees_dialog(dialog._ineligible_employees, month, year, category_requires_variable_pay));
-            }
 
-            if (eligible && eligible.length > 0) {
-                const update = () => update_count(wrapper, 'emp-card-check', 'emp_selected_count');
-                const bind   = () => { wrapper.find('.emp-card-check').off('change').on('change', update); update(); };
-
-                wrapper.find('#emp_search').on('input', function() {
-                    const q        = $(this).val().toLowerCase().trim();
-                    const all      = dialog._card_items['employees_html'];
-                    const filtered = q ? all.filter(i => i.id.toLowerCase().includes(q) || i.name.toLowerCase().includes(q)) : all;
-                    wrapper.find('#emp_search_grid').html(build_cards(filtered, 'emp-card-check'));
-                    bind();
-                });
-                wrapper.find('#emp_search_select_all').on('click',   () => { wrapper.find('.emp-card-check').prop('checked', true);  update(); });
-                wrapper.find('#emp_search_deselect_all').on('click', () => { wrapper.find('.emp-card-check').prop('checked', false); update(); });
-                bind();
-            }
+            if (eligible.length)
+                _bind_inline_grid(wrapper, 'emp_search', 'emp-card-check', 'emp_count', dialog._card_items['employees_html']);
         }
     });
 }
 
 function generate_bulk_salary_slips(dialog) {
-    const company  = dialog.get_value('company');
-    const year     = dialog.get_value('year');
-    const month    = dialog.get_value('month');
-    const category = dialog.get_value('category');
     const selected = get_checked_ids(dialog, 'employees_html', 'emp-card-check');
+    const category = dialog.get_value('category');
+    if (!category)        { frappe.msgprint(__('Please select a Category'));            return; }
+    if (!selected.length) { frappe.msgprint(__('Please select at least one employee')); return; }
 
-    if (!category)        { frappe.msgprint(__('Please select a Category'));                              return; }
-    if (!selected.length) { frappe.msgprint(__('Please select at least one employee to proceed'));        return; }
-
-    frappe.confirm(`Are you sure you want to generate salary slips for <b>${selected.length}</b> employee(s)?`, () => {
+    frappe.confirm(`Generate salary slips for <b>${selected.length}</b> employee(s)?`, () => {
         dialog.hide();
-        frappe.dom.freeze(__('Generating Salary Slips... Please wait...'));
-
+        frappe.dom.freeze(__('Generating Salary Slips...'));
         frappe.call({
             method: 'saral_hr.saral_hr.doctype.salary_slip.salary_slip.bulk_generate_salary_slips',
-            args: { employees: selected.map(s => ({ employee: s.id, employee_name: s.name })), year, month },
-            callback(r) {
-                frappe.dom.unfreeze();
-                if (r.message) {
-                    show_result_dialog(__('Bulk Generation Result'), r.message, 'Successfully Created');
-                    if (cur_list) cur_list.refresh();
-                }
-            },
-            error() {
-                frappe.dom.unfreeze();
-                frappe.msgprint({ title: __('Error'), message: __('Failed to generate salary slips. Please try again or contact your system administrator.'), indicator: 'red' });
-            }
+            args: { employees: selected.map(s => ({ employee:s.id, employee_name:s.name })), year:dialog.get_value('year'), month:dialog.get_value('month') },
+            callback(r) { frappe.dom.unfreeze(); if (r.message) { show_result_dialog(__('Bulk Generation Result'), r.message, 'Successfully Created'); if (cur_list) cur_list.refresh(); } },
+            error()     { frappe.dom.unfreeze(); frappe.msgprint({ title:__('Error'), message:__('Failed to generate salary slips.'), indicator:'red' }); }
         });
     });
 }
 
 // ─── Ineligible Employees Dialog ──────────────────────────────────────────────
 
-function show_ineligible_employees_dialog(ineligible_list, month, year, show_variable_pay) {
+function show_ineligible_employees_dialog(list, month, year, show_vpa) {
+    const FAIL = `<span style="display:inline-flex;align-items:center;justify-content:center;width:20px;height:20px;border-radius:50%;background:var(--red-100,#fde8e8);color:var(--red-500,#e03131);font-size:13px;font-weight:700;">&#x2715;</span>`;
+    const OK   = `<span style="display:inline-flex;align-items:center;justify-content:center;width:20px;height:20px;border-radius:50%;background:var(--green-100,#ebfbee);color:var(--green-600,#2f9e44);font-size:13px;font-weight:700;">&#x2713;</span>`;
+    const cols = show_vpa ? 4 : 3;
 
-    function parse_reasons(reasons) {
-        const f = { no_salary_structure: false, no_variable_pay: false, no_attendance: false };
-        (reasons || []).forEach(r => {
-            const l = r.toLowerCase();
-            if (l.includes('salary structure')) f.no_salary_structure = true;
-            if (l.includes('variable pay'))     f.no_variable_pay     = true;
-            if (l.includes('attendance'))       f.no_attendance       = true;
-        });
-        return f;
+    function flags(reasons) {
+        const r = reasons || [];
+        return {
+            ss:  r.some(x => x.toLowerCase().includes('salary structure')),
+            vpa: r.some(x => x.toLowerCase().includes('variable pay')),
+            att: r.some(x => x.toLowerCase().includes('attendance'))
+        };
     }
 
-    const ICON_FAIL = `<span style="display:inline-flex;align-items:center;justify-content:center;
-        width:20px;height:20px;border-radius:50%;
-        background:var(--red-100,#fde8e8);color:var(--red-500,#e03131);
-        font-size:13px;font-weight:700;">&#x2715;</span>`;
-
-    const ICON_OK = `<span style="display:inline-flex;align-items:center;justify-content:center;
-        width:20px;height:20px;border-radius:50%;
-        background:var(--green-100,#ebfbee);color:var(--green-600,#2f9e44);
-        font-size:13px;font-weight:700;">&#x2713;</span>`;
-
-    const total_cols = show_variable_pay ? 4 : 3;
-
     function build_rows(source) {
-        if (!source || !source.length)
-            return `<tr><td colspan="${total_cols}" class="text-muted" style="padding:20px;text-align:center;">No matching employees found.</td></tr>`;
-
-        return source.map((s, idx) => {
-            const f  = parse_reasons(s.reasons || []);
-            const bg = idx % 2 !== 0 ? 'background:var(--subtle-accent-bg,#f9fafb);' : '';
+        if (!source || !source.length) return `<tr><td colspan="${cols}" class="text-muted" style="padding:20px;text-align:center;">No matching employees found.</td></tr>`;
+        return source.map((s, i) => {
+            const f  = flags(s.reasons);
+            const bg = i % 2 ? 'background:var(--subtle-accent-bg,#f9fafb);' : '';
             return `<tr style="${bg}">
-                <td style="padding:8px 10px;border-bottom:1px solid var(--border-color);border-right:1px solid var(--border-color);vertical-align:middle;white-space:nowrap;">
-                    <div style="font-size:12px;font-weight:600;color:var(--text-color);">${frappe.utils.escape_html(s.name)}</div>
-                    <div style="font-size:11px;color:var(--text-muted);margin-top:1px;">${frappe.utils.escape_html(s.id)}</div>
+                <td style="padding:8px 10px;border-bottom:1px solid var(--border-color);border-right:1px solid var(--border-color);white-space:nowrap;">
+                    <div style="font-size:12px;font-weight:600;">${frappe.utils.escape_html(s.name)}</div>
+                    <div style="font-size:11px;color:var(--text-muted);">${frappe.utils.escape_html(s.id)}</div>
                 </td>
-                <td style="padding:8px 10px;border-bottom:1px solid var(--border-color);border-right:1px solid var(--border-color);text-align:center;vertical-align:middle;">${f.no_salary_structure ? ICON_FAIL : ICON_OK}</td>
-                ${show_variable_pay ? `<td style="padding:8px 10px;border-bottom:1px solid var(--border-color);border-right:1px solid var(--border-color);text-align:center;vertical-align:middle;">${f.no_variable_pay ? ICON_FAIL : ICON_OK}</td>` : ''}
-                <td style="padding:8px 10px;border-bottom:1px solid var(--border-color);text-align:center;vertical-align:middle;">${f.no_attendance ? ICON_FAIL : ICON_OK}</td>
+                <td style="padding:8px 10px;border-bottom:1px solid var(--border-color);border-right:1px solid var(--border-color);text-align:center;">${f.ss  ? FAIL : OK}</td>
+                ${show_vpa ? `<td style="padding:8px 10px;border-bottom:1px solid var(--border-color);border-right:1px solid var(--border-color);text-align:center;">${f.vpa ? FAIL : OK}</td>` : ''}
+                <td style="padding:8px 10px;border-bottom:1px solid var(--border-color);text-align:center;">${f.att ? FAIL : OK}</td>
             </tr>`;
         }).join('');
     }
 
-    const th = (label, last) => `<th style="
-        position:sticky;top:0;z-index:1;
-        padding:8px 10px;text-align:center;font-size:11px;font-weight:600;
-        text-transform:uppercase;letter-spacing:0.04em;
-        color:var(--text-muted);background:var(--subtle-accent-bg,#f5f6f7);
-        border-bottom:2px solid var(--border-color);
-        ${last ? '' : 'border-right:1px solid var(--border-color);'}
-        white-space:normal;line-height:1.4;">${label}</th>`;
+    const th = (l, last=false) => `<th style="position:sticky;top:0;z-index:1;padding:8px 10px;text-align:center;font-size:11px;font-weight:600;text-transform:uppercase;color:var(--text-muted);background:var(--subtle-accent-bg,#f5f6f7);border-bottom:2px solid var(--border-color);${last?'':'border-right:1px solid var(--border-color);'}white-space:normal;line-height:1.4;">${l}</th>`;
 
-    const legend = `
-        <div style="display:flex;align-items:center;gap:16px;margin-bottom:10px;font-size:11px;color:var(--text-muted);">
-            <span style="display:flex;align-items:center;gap:5px;">
-                <span style="display:inline-flex;align-items:center;justify-content:center;width:18px;height:18px;border-radius:50%;
-                    background:var(--red-100,#fde8e8);color:var(--red-500,#e03131);font-size:11px;font-weight:700;">&#x2715;</span>
-                Criterion not met
-            </span>
-            <span style="display:flex;align-items:center;gap:5px;">
-                <span style="display:inline-flex;align-items:center;justify-content:center;width:18px;height:18px;border-radius:50%;
-                    background:var(--green-100,#ebfbee);color:var(--green-600,#2f9e44);font-size:11px;font-weight:700;">&#x2713;</span>
-                Criterion met
-            </span>
-        </div>`;
+    const legend = `<div style="display:flex;gap:16px;margin-bottom:10px;font-size:11px;color:var(--text-muted);">
+        <span style="display:flex;align-items:center;gap:5px;">${FAIL} Criterion not met</span>
+        <span style="display:flex;align-items:center;gap:5px;">${OK} Criterion met</span>
+    </div>`;
 
-    const content = `
-        <p style="margin-bottom:12px;font-size:12px;color:var(--text-color);">
-            <strong>${ineligible_list.length}</strong> employee(s) have been excluded from payroll processing for
-            <strong>${month} ${year}</strong> as they do not meet one or more eligibility criteria.
-        </p>
+    const dlg = new frappe.ui.Dialog({ title:__(`Payroll Eligibility Review — ${month} ${year}`), size:'large', fields:[{fieldname:'html',fieldtype:'HTML'}] });
+    dlg.fields_dict.html.$wrapper.html(`<div style="padding-bottom:4px;">
+        <p style="margin-bottom:12px;font-size:12px;"><strong>${list.length}</strong> employee(s) excluded from payroll for <strong>${month} ${year}</strong>.</p>
         ${legend}
-        <div style="margin-bottom:10px;">
-            <input id="ineligible_search" type="text" class="form-control"
-                placeholder="Search by name or Employee ID..."
-                style="max-width:320px;font-size:12px;">
-        </div>
+        <div style="margin-bottom:10px;"><input id="inel_search" type="text" class="form-control" placeholder="Search..." style="max-width:320px;font-size:12px;"></div>
         <div style="border:1px solid var(--border-color);border-radius:var(--border-radius);overflow:hidden;">
-            <div style="overflow-x:auto;max-height:400px;overflow-y:auto;">
-                <table id="ineligible_table" style="width:100%;border-collapse:collapse;min-width:${show_variable_pay ? '460px' : '360px'};">
-                    <thead>
-                        <tr>
-                            <th style="position:sticky;top:0;z-index:1;padding:8px 10px;text-align:left;
-                                font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:0.04em;
-                                color:var(--text-muted);background:var(--subtle-accent-bg,#f5f6f7);
-                                border-bottom:2px solid var(--border-color);border-right:1px solid var(--border-color);
-                                width:32%;">Employee</th>
-                            ${th('Salary Structure<br>Assigned', !show_variable_pay)}
-                            ${show_variable_pay ? th('Variable Pay<br>Configured', false) : ''}
-                            ${th('Attendance<br>Recorded', true)}
-                        </tr>
-                    </thead>
-                    <tbody id="ineligible_tbody">${build_rows(ineligible_list)}</tbody>
-                </table>
-            </div>
-        </div>`;
-
-    const ineligible_dialog = new frappe.ui.Dialog({
-        title:  __('Payroll Eligibility Review \u2014 ' + month + ' ' + year),
-        size:   'large',
-        fields: [{ fieldname: 'ineligible_html', fieldtype: 'HTML' }]
-    });
-
-    ineligible_dialog.fields_dict.ineligible_html.$wrapper.html(`<div style="padding-bottom:4px;">${content}</div>`);
-    ineligible_dialog.show();
-
-    ineligible_dialog.fields_dict.ineligible_html.$wrapper.find('#ineligible_search').on('input', function() {
-        const q      = $(this).val().toLowerCase().trim();
-        const tbody  = ineligible_dialog.fields_dict.ineligible_html.$wrapper.find('#ineligible_tbody');
-        const source = q
-            ? ineligible_list.filter(s => s.id.toLowerCase().includes(q) || s.name.toLowerCase().includes(q))
-            : ineligible_list;
-        tbody.html(build_rows(source));
+        <div style="overflow-x:auto;max-height:400px;overflow-y:auto;">
+        <table style="width:100%;border-collapse:collapse;min-width:${show_vpa?'460px':'360px'};">
+        <thead><tr>
+            <th style="position:sticky;top:0;z-index:1;padding:8px 10px;text-align:left;font-size:11px;font-weight:600;text-transform:uppercase;color:var(--text-muted);background:var(--subtle-accent-bg,#f5f6f7);border-bottom:2px solid var(--border-color);border-right:1px solid var(--border-color);width:32%;">Employee</th>
+            ${th('Salary Structure<br>Assigned', !show_vpa)}
+            ${show_vpa ? th('Variable Pay<br>Configured', false) : ''}
+            ${th('Attendance<br>Recorded', true)}
+        </tr></thead>
+        <tbody id="inel_tbody">${build_rows(list)}</tbody>
+        </table></div></div>
+    </div>`);
+    dlg.show();
+    dlg.fields_dict.html.$wrapper.find('#inel_search').on('input', function() {
+        const q = $(this).val().toLowerCase().trim();
+        dlg.fields_dict.html.$wrapper.find('#inel_tbody').html(build_rows(
+            q ? list.filter(s => s.id.toLowerCase().includes(q) || s.name.toLowerCase().includes(q)) : list));
     });
 }
 
@@ -409,20 +262,18 @@ function show_bulk_print_dialog() {
     const d = new frappe.ui.Dialog({
         title: __('Bulk Print Salary Slips'),
         fields: [
-            { fieldname: 'company',   fieldtype: 'Link',   label: 'Company', options: 'Company', reqd: 1 },
-            { fieldname: 'cb1',       fieldtype: 'Column Break' },
-            { fieldname: 'year',      fieldtype: 'Select', label: 'Year',  options: get_year_options(), reqd: 1, default: new Date().getFullYear().toString() },
-            { fieldname: 'cb2',       fieldtype: 'Column Break' },
-            { fieldname: 'month',     fieldtype: 'Select', label: 'Month', options: MONTHS, reqd: 1, default: get_current_month() },
-            { fieldname: 'sb_category', fieldtype: 'Section Break', label: 'Filter by Category' },
-            {
-                fieldname: 'category', fieldtype: 'Link', label: 'Category', options: 'Category', reqd: 1,
-                description: 'Only salary slips for employees belonging to this category will be shown.'
-            },
-            { fieldname: 'sb1',        fieldtype: 'Section Break' },
-            { fieldname: 'fetch_slips', fieldtype: 'Button', label: 'Fetch Submitted Salary Slips', click: () => fetch_submitted_salary_slips(d) },
-            { fieldname: 'sb2',        fieldtype: 'Section Break' },
-            { fieldname: 'slips_html', fieldtype: 'HTML' }
+            { fieldname:'company',    fieldtype:'Link',   label:'Company', options:'Company', reqd:1 },
+            { fieldname:'cb1',        fieldtype:'Column Break' },
+            { fieldname:'year',       fieldtype:'Select', label:'Year',  options:get_year_options(), reqd:1, default:new Date().getFullYear().toString() },
+            { fieldname:'cb2',        fieldtype:'Column Break' },
+            { fieldname:'month',      fieldtype:'Select', label:'Month', options:MONTHS, reqd:1, default:get_current_month() },
+            { fieldname:'sb_cat',     fieldtype:'Section Break', label:'Filter by Category' },
+            { fieldname:'category',   fieldtype:'Link', label:'Category', options:'Category', reqd:1,
+              description:'Only salary slips for employees in this category will be shown.' },
+            { fieldname:'sb1',        fieldtype:'Section Break' },
+            { fieldname:'fetch_slips',fieldtype:'Button', label:'Fetch Submitted Salary Slips', click:() => fetch_submitted_salary_slips(d) },
+            { fieldname:'sb2',        fieldtype:'Section Break' },
+            { fieldname:'slips_html', fieldtype:'HTML' }
         ],
         primary_action_label: __('Print Selected Slips'),
         primary_action: () => print_selected_salary_slips(d)
@@ -431,101 +282,49 @@ function show_bulk_print_dialog() {
 }
 
 function fetch_submitted_salary_slips(dialog) {
-    const company  = dialog.get_value('company');
-    const year     = dialog.get_value('year');
-    const month    = dialog.get_value('month');
-    const category = dialog.get_value('category');
-
+    const { company, year, month, category } = _get_dialog_values(dialog, ['company','year','month','category']);
     if (!company)        { frappe.msgprint(__('Please select Company'));        return; }
     if (!year || !month) { frappe.msgprint(__('Please select Year and Month')); return; }
     if (!category)       { frappe.msgprint(__('Please select a Category'));     return; }
 
     const wrapper = dialog.fields_dict.slips_html.$wrapper;
-    wrapper.html(`<div class="text-muted" style="padding:16px 0;text-align:center;font-size:12px;">
-        ${frappe.utils.icon('loading', 'xs')} &nbsp;Retrieving submitted salary slips...
-    </div>`);
+    wrapper.html(`<div class="text-muted" style="padding:16px 0;text-align:center;font-size:12px;">${frappe.utils.icon('loading','xs')} &nbsp;Retrieving submitted salary slips...</div>`);
 
     frappe.call({
         method: 'saral_hr.saral_hr.doctype.salary_slip.salary_slip.get_salary_slips_print_summary',
         args: { company, year, month, category },
         callback(r) {
-            if (!r.message) {
-                wrapper.html('<div class="text-muted" style="padding:16px 0;text-align:center;">Unable to retrieve data. Please try again.</div>');
-                return;
-            }
+            if (!r.message) { wrapper.html('<div class="text-muted" style="padding:16px 0;text-align:center;">Unable to retrieve data.</div>'); return; }
 
-            const { submitted = [], not_printable = [], total_active, total_submitted } = r.message;
+            const { submitted=[], not_printable=[], total_active, total_submitted } = r.message;
             dialog._not_printable_slips = not_printable;
 
-            const excl_btn = not_printable.length > 0
-                ? `<button class="btn btn-default btn-sm" id="btn_view_print_exclusions" style="margin-left:auto;">
-                       ${__('View Exclusion Details')} (${not_printable.length})
-                   </button>`
-                : '';
+            const excl_btn = not_printable.length
+                ? `<button class="btn btn-default btn-sm" id="btn_view_excl" style="margin-left:auto;">${__('View Exclusion Details')} (${not_printable.length})</button>` : '';
 
-            const summary = `
-                <div style="display:flex;align-items:center;flex-wrap:wrap;gap:16px;
-                    padding:8px 0;margin-bottom:12px;font-size:12px;border-bottom:1px solid var(--border-color);">
-                    <span style="color:var(--text-muted);">
-                        Active Employees <em style="font-size:10px;">(${frappe.utils.escape_html(category)})</em>:
-                        <strong style="color:var(--text-color);">${total_active}</strong>
-                    </span>
-                    <span style="color:var(--border-color);">|</span>
-                    <span style="color:var(--text-muted);">
-                        Submitted Slips: <strong style="color:var(--text-color);">${total_submitted}</strong>
-                    </span>
-                    <span style="color:var(--border-color);">|</span>
-                    <span style="color:var(--text-muted);">
-                        Excluded from Print: <strong style="color:var(--text-color);">${not_printable.length}</strong>
-                    </span>
-                    ${excl_btn}
-                </div>`;
+            const summary = _summary_bar([
+                [`Active <em style="font-size:10px;">(${frappe.utils.escape_html(category)})</em>`, total_active],
+                ['Submitted Slips', total_submitted],
+                ['Excluded from Print', not_printable.length]
+            ], excl_btn);
 
             let grid_html = '';
-            if (submitted && submitted.length > 0) {
-                const items = submitted.map(s => ({ id: s.name, name: s.employee_name || s.employee }));
+            if (submitted.length) {
+                const items = submitted.map(s => ({ id:s.name, name:s.employee_name||s.employee }));
                 dialog._card_items             = dialog._card_items || {};
                 dialog._card_items['slips_html'] = items;
-
-                grid_html = `
-                    <div style="margin-bottom:10px;display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
-                        <input id="slip_search" type="text" class="form-control"
-                            placeholder="Search by name or Employee ID..."
-                            style="flex:1;min-width:160px;max-width:320px;">
-                        <button class="btn btn-xs btn-default" id="slip_search_select_all">${__('Select All')}</button>
-                        <button class="btn btn-xs btn-default" id="slip_search_deselect_all">${__('Deselect All')}</button>
-                        <span id="slip_selected_count" class="text-muted" style="font-size:12px;">0 selected</span>
-                    </div>
-                    <div id="slip_search_grid"
-                        style="display:flex;flex-wrap:wrap;gap:10px;max-height:380px;overflow-y:auto;padding:4px 2px;">
-                        ${build_cards(items, 'slip-card-check')}
-                    </div>`;
+                grid_html = _search_grid_html('slip_search', 'slip-card-check', 'slip_count', items);
             } else {
-                grid_html = `<div class="text-muted" style="padding:20px;text-align:center;">No submitted salary slips found for the selected payroll period.</div>`;
+                grid_html = `<div class="text-muted" style="padding:20px;text-align:center;">No submitted salary slips found.</div>`;
             }
 
             wrapper.html(summary + grid_html);
 
-            if (not_printable.length > 0) {
-                wrapper.find('#btn_view_print_exclusions').on('click', () =>
-                    show_print_exclusions_dialog(dialog._not_printable_slips, month, year));
-            }
+            if (not_printable.length)
+                wrapper.find('#btn_view_excl').on('click', () => show_print_exclusions_dialog(dialog._not_printable_slips, month, year));
 
-            if (submitted && submitted.length > 0) {
-                const items  = dialog._card_items['slips_html'];
-                const update = () => update_count(wrapper, 'slip-card-check', 'slip_selected_count');
-                const bind   = () => { wrapper.find('.slip-card-check').off('change').on('change', update); update(); };
-
-                wrapper.find('#slip_search').on('input', function() {
-                    const q        = $(this).val().toLowerCase().trim();
-                    const filtered = q ? items.filter(i => i.id.toLowerCase().includes(q) || i.name.toLowerCase().includes(q)) : items;
-                    wrapper.find('#slip_search_grid').html(build_cards(filtered, 'slip-card-check'));
-                    bind();
-                });
-                wrapper.find('#slip_search_select_all').on('click',   () => { wrapper.find('.slip-card-check').prop('checked', true);  update(); });
-                wrapper.find('#slip_search_deselect_all').on('click', () => { wrapper.find('.slip-card-check').prop('checked', false); update(); });
-                bind();
-            }
+            if (submitted.length)
+                _bind_inline_grid(wrapper, 'slip_search', 'slip-card-check', 'slip_count', dialog._card_items['slips_html']);
         }
     });
 }
@@ -534,155 +333,67 @@ function print_selected_salary_slips(dialog) {
     const selected = get_checked_ids(dialog, 'slips_html', 'slip-card-check');
     if (!selected.length) { frappe.msgprint(__('Please select at least one salary slip to print')); return; }
 
-    frappe.confirm(`Are you sure you want to print <b>${selected.length}</b> salary slip(s)?`, () => {
+    frappe.confirm(`Print <b>${selected.length}</b> salary slip(s)?`, () => {
         dialog.hide();
-        frappe.dom.freeze(__('Preparing PDF for printing... Please wait...'));
-
+        frappe.dom.freeze(__('Preparing PDF...'));
         frappe.call({
             method: 'saral_hr.saral_hr.doctype.salary_slip.salary_slip.bulk_print_salary_slips',
             args: { salary_slip_names: selected.map(s => s.id) },
-            callback(r) {
-                frappe.dom.unfreeze();
-                if (r.message) {
-                    window.open(r.message.pdf_url, '_blank');
-                    frappe.msgprint({ title: __('Print Ready'), message: `${selected.length} salary slip(s) have been prepared for printing.`, indicator: 'green' });
-                }
-            },
-            error() {
-                frappe.dom.unfreeze();
-                frappe.msgprint({ title: __('Error'), message: __('Failed to generate PDF. Please try again or contact your system administrator.'), indicator: 'red' });
-            }
+            callback(r) { frappe.dom.unfreeze(); if (r.message) { window.open(r.message.pdf_url, '_blank'); frappe.msgprint({ title:__('Print Ready'), message:`${selected.length} slip(s) prepared.`, indicator:'green' }); } },
+            error()     { frappe.dom.unfreeze(); frappe.msgprint({ title:__('Error'), message:__('Failed to generate PDF.'), indicator:'red' }); }
         });
     });
 }
 
-// ─── Print Exclusion Details Dialog ──────────────────────────────────────────
+// ─── Print Exclusions Dialog ──────────────────────────────────────────────────
 
-function show_print_exclusions_dialog(not_printable_list, month, year) {
-
-    function slip_status_badge(status) {
-        const cfg = {
-            'Draft':     { bg: '#fff3cd', color: '#856404', label: 'Draft'     },
-            'No Slip':   { bg: '#fde8e8', color: '#e03131', label: 'No Slip'   },
-            'Cancelled': { bg: '#f0f0f0', color: '#6c757d', label: 'Cancelled' },
-        };
-        const s = cfg[status] || { bg: '#f0f0f0', color: '#495057', label: status };
-        return `<span style="display:inline-block;padding:2px 10px;border-radius:20px;
-            font-size:10px;font-weight:700;letter-spacing:0.04em;text-transform:uppercase;
-            background:${s.bg};color:${s.color};border:1px solid ${s.color}33;">${s.label}</span>`;
+function show_print_exclusions_dialog(list, month, year) {
+    function status_badge(s) {
+        const cfg = { Draft:{bg:'#fff3cd',c:'#856404'}, 'No Slip':{bg:'#fde8e8',c:'#e03131'}, Cancelled:{bg:'#f0f0f0',c:'#6c757d'} };
+        const x = cfg[s] || {bg:'#f0f0f0',c:'#495057'};
+        return `<span style="display:inline-block;padding:2px 10px;border-radius:20px;font-size:10px;font-weight:700;text-transform:uppercase;background:${x.bg};color:${x.c};border:1px solid ${x.c}33;">${s}</span>`;
     }
-
-    function reason_pill(text) {
-        return `<span style="display:inline-block;padding:2px 8px;border-radius:4px;margin:2px 2px 2px 0;
-            font-size:10px;background:var(--subtle-accent-bg,#f5f6f7);
-            color:var(--text-muted,#8d99a6);border:1px solid var(--border-color,#d1d8dd);">
-            ${frappe.utils.escape_html(text)}</span>`;
-    }
+    function pill(t) { return `<span style="display:inline-block;padding:2px 8px;border-radius:4px;margin:2px 2px 2px 0;font-size:10px;background:var(--subtle-accent-bg,#f5f6f7);color:var(--text-muted);border:1px solid var(--border-color);">${frappe.utils.escape_html(t)}</span>`; }
 
     function build_rows(source) {
-        if (!source.length)
-            return `<tr><td colspan="4" class="text-muted" style="padding:20px;text-align:center;">No matching employees found.</td></tr>`;
-
-        return source.map((s, idx) => {
-            const bg    = idx % 2 !== 0 ? 'background:var(--subtle-accent-bg,#f9fafb);' : '';
-            const pills = (s.reasons || []).map(reason_pill).join('');
+        if (!source.length) return `<tr><td colspan="4" class="text-muted" style="padding:20px;text-align:center;">No matching employees found.</td></tr>`;
+        return source.map((s, i) => {
+            const bg = i%2 ? 'background:var(--subtle-accent-bg,#f9fafb);' : '';
             return `<tr style="${bg}">
-                <td style="padding:8px 10px;border-bottom:1px solid var(--border-color);border-right:1px solid var(--border-color);vertical-align:middle;white-space:nowrap;">
-                    <div style="font-size:12px;font-weight:600;color:var(--text-color);">${frappe.utils.escape_html(s.employee_name || s.name)}</div>
-                    <div style="font-size:11px;color:var(--text-muted);margin-top:1px;">${frappe.utils.escape_html(s.employee)}</div>
+                <td style="padding:8px 10px;border-bottom:1px solid var(--border-color);border-right:1px solid var(--border-color);white-space:nowrap;">
+                    <div style="font-size:12px;font-weight:600;">${frappe.utils.escape_html(s.employee_name||s.name)}</div>
+                    <div style="font-size:11px;color:var(--text-muted);">${frappe.utils.escape_html(s.employee)}</div>
                 </td>
-                <td style="padding:8px 10px;border-bottom:1px solid var(--border-color);border-right:1px solid var(--border-color);text-align:center;vertical-align:middle;">
-                    ${s.slip_name
-                        ? `<div style="font-size:11px;font-weight:600;color:var(--text-color);">${frappe.utils.escape_html(s.slip_name)}</div>`
-                        : `<span style="font-size:11px;color:var(--text-muted);">\u2014</span>`}
+                <td style="padding:8px 10px;border-bottom:1px solid var(--border-color);border-right:1px solid var(--border-color);text-align:center;">
+                    ${s.slip_name ? `<div style="font-size:11px;font-weight:600;">${frappe.utils.escape_html(s.slip_name)}</div>` : `<span style="color:var(--text-muted);">—</span>`}
                 </td>
-                <td style="padding:8px 10px;border-bottom:1px solid var(--border-color);border-right:1px solid var(--border-color);text-align:center;vertical-align:middle;">
-                    ${slip_status_badge(s.slip_status)}
-                </td>
-                <td style="padding:8px 10px;border-bottom:1px solid var(--border-color);vertical-align:middle;">
-                    <div style="line-height:1.8;">${pills}</div>
-                </td>
+                <td style="padding:8px 10px;border-bottom:1px solid var(--border-color);border-right:1px solid var(--border-color);text-align:center;">${status_badge(s.slip_status)}</td>
+                <td style="padding:8px 10px;border-bottom:1px solid var(--border-color);"><div style="line-height:1.8;">${(s.reasons||[]).map(pill).join('')}</div></td>
             </tr>`;
         }).join('');
     }
 
-    const th_left = (label, extra = '') => `<th style="
-        position:sticky;top:0;z-index:1;padding:8px 10px;text-align:left;
-        font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:0.04em;
-        color:var(--text-muted);background:var(--subtle-accent-bg,#f5f6f7);
-        border-bottom:2px solid var(--border-color);border-right:1px solid var(--border-color);
-        white-space:normal;line-height:1.4;${extra}">${label}</th>`;
+    const th = (l, last=false) => `<th style="position:sticky;top:0;z-index:1;padding:8px 10px;text-align:center;font-size:11px;font-weight:600;text-transform:uppercase;color:var(--text-muted);background:var(--subtle-accent-bg,#f5f6f7);border-bottom:2px solid var(--border-color);${last?'':'border-right:1px solid var(--border-color);'}white-space:normal;line-height:1.4;">${l}</th>`;
 
-    const th_center = (label, last = false) => `<th style="
-        position:sticky;top:0;z-index:1;padding:8px 10px;text-align:center;
-        font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:0.04em;
-        color:var(--text-muted);background:var(--subtle-accent-bg,#f5f6f7);
-        border-bottom:2px solid var(--border-color);
-        ${last ? '' : 'border-right:1px solid var(--border-color);'}
-        white-space:normal;line-height:1.4;">${label}</th>`;
-
-    const legend = `
-        <div style="display:flex;align-items:center;gap:16px;margin-bottom:12px;flex-wrap:wrap;">
-            <strong style="color:var(--text-color);font-size:12px;white-space:nowrap;">Status Key:</strong>
-            <span style="display:inline-flex;align-items:center;gap:6px;">
-                <span style="display:inline-block;padding:2px 10px;border-radius:20px;font-size:10px;font-weight:700;background:#fff3cd;color:#856404;border:1px solid #856404;">Draft</span>
-                <span style="font-size:11px;color:var(--text-muted);">Slip exists but not yet submitted</span>
-            </span>
-            <span style="display:inline-flex;align-items:center;gap:6px;">
-                <span style="display:inline-block;padding:2px 10px;border-radius:20px;font-size:10px;font-weight:700;background:#fde8e8;color:#e03131;border:1px solid #e03131;">No Slip</span>
-                <span style="font-size:11px;color:var(--text-muted);">Salary slip not created yet</span>
-            </span>
-            <span style="display:inline-flex;align-items:center;gap:6px;">
-                <span style="display:inline-block;padding:2px 10px;border-radius:20px;font-size:10px;font-weight:700;background:#f0f0f0;color:#6c757d;border:1px solid #6c757d;">Cancelled</span>
-                <span style="font-size:11px;color:var(--text-muted);">Slip was cancelled</span>
-            </span>
-        </div>`;
-
-    const content = `
-        <p style="margin-bottom:12px;font-size:12px;color:var(--text-color);">
-            <strong>${not_printable_list.length}</strong> employee(s) cannot be included in the bulk print for
-            <strong>${month} ${year}</strong>. Only <strong>Submitted</strong> salary slips can be printed.
-        </p>
-        ${legend}
-        <div style="margin-bottom:10px;">
-            <input id="print_excl_search" type="text" class="form-control"
-                placeholder="Search by name or Employee ID..."
-                style="max-width:320px;font-size:12px;">
-        </div>
+    const dlg = new frappe.ui.Dialog({ title:__(`Print Exclusion Review — ${month} ${year}`), size:'large', fields:[{fieldname:'html',fieldtype:'HTML'}] });
+    dlg.fields_dict.html.$wrapper.html(`<div style="padding-bottom:4px;">
+        <p style="margin-bottom:12px;font-size:12px;"><strong>${list.length}</strong> employee(s) cannot be printed for <strong>${month} ${year}</strong>. Only Submitted slips can be printed.</p>
+        <div style="margin-bottom:10px;"><input id="pexcl_search" type="text" class="form-control" placeholder="Search..." style="max-width:320px;font-size:12px;"></div>
         <div style="border:1px solid var(--border-color);border-radius:var(--border-radius);overflow:hidden;">
-            <div style="overflow-x:auto;max-height:420px;overflow-y:auto;">
-                <table style="width:100%;border-collapse:collapse;min-width:580px;">
-                    <thead>
-                        <tr>
-                            ${th_left('Employee', 'width:28%;')}
-                            ${th_center('Salary Slip')}
-                            ${th_center('Slip Status')}
-                            ${th_center('Reason(s)', true)}
-                        </tr>
-                    </thead>
-                    <tbody id="print_excl_tbody">${build_rows(not_printable_list)}</tbody>
-                </table>
-            </div>
-        </div>`;
-
-    const excl_dialog = new frappe.ui.Dialog({
-        title:  __('Print Exclusion Review \u2014 ' + month + ' ' + year),
-        size:   'large',
-        fields: [{ fieldname: 'excl_html', fieldtype: 'HTML' }]
-    });
-
-    excl_dialog.fields_dict.excl_html.$wrapper.html(`<div style="padding-bottom:4px;">${content}</div>`);
-    excl_dialog.show();
-
-    excl_dialog.fields_dict.excl_html.$wrapper.find('#print_excl_search').on('input', function() {
-        const q      = $(this).val().toLowerCase().trim();
-        const tbody  = excl_dialog.fields_dict.excl_html.$wrapper.find('#print_excl_tbody');
-        const source = q
-            ? not_printable_list.filter(s =>
-                (s.employee || '').toLowerCase().includes(q) ||
-                (s.employee_name || '').toLowerCase().includes(q))
-            : not_printable_list;
-        tbody.html(build_rows(source));
+        <div style="overflow-x:auto;max-height:420px;overflow-y:auto;">
+        <table style="width:100%;border-collapse:collapse;min-width:580px;">
+        <thead><tr>
+            <th style="position:sticky;top:0;z-index:1;padding:8px 10px;text-align:left;font-size:11px;font-weight:600;text-transform:uppercase;color:var(--text-muted);background:var(--subtle-accent-bg,#f5f6f7);border-bottom:2px solid var(--border-color);border-right:1px solid var(--border-color);width:28%;">Employee</th>
+            ${th('Salary Slip')}${th('Slip Status')}${th('Reason(s)',true)}
+        </tr></thead>
+        <tbody id="pexcl_tbody">${build_rows(list)}</tbody>
+        </table></div></div>
+    </div>`);
+    dlg.show();
+    dlg.fields_dict.html.$wrapper.find('#pexcl_search').on('input', function() {
+        const q = $(this).val().toLowerCase().trim();
+        dlg.fields_dict.html.$wrapper.find('#pexcl_tbody').html(build_rows(
+            q ? list.filter(s => (s.employee||'').toLowerCase().includes(q)||(s.employee_name||'').toLowerCase().includes(q)) : list));
     });
 }
 
@@ -692,15 +403,15 @@ function show_draft_to_submit_dialog() {
     const d = new frappe.ui.Dialog({
         title: __('Submit Draft Salary Slips'),
         fields: [
-            { fieldname: 'company',      fieldtype: 'Link',   label: 'Company', options: 'Company', reqd: 1 },
-            { fieldname: 'cb1',          fieldtype: 'Column Break' },
-            { fieldname: 'year',         fieldtype: 'Select', label: 'Year',  options: get_year_options(), reqd: 1, default: new Date().getFullYear().toString() },
-            { fieldname: 'cb2',          fieldtype: 'Column Break' },
-            { fieldname: 'month',        fieldtype: 'Select', label: 'Month', options: MONTHS, reqd: 1, default: get_current_month() },
-            { fieldname: 'sb1',          fieldtype: 'Section Break' },
-            { fieldname: 'fetch_drafts', fieldtype: 'Button', label: 'Fetch Draft Salary Slips', click: () => fetch_draft_salary_slips(d) },
-            { fieldname: 'sb2',          fieldtype: 'Section Break' },
-            { fieldname: 'drafts_html',  fieldtype: 'HTML' }
+            { fieldname:'company',      fieldtype:'Link',   label:'Company', options:'Company', reqd:1 },
+            { fieldname:'cb1',          fieldtype:'Column Break' },
+            { fieldname:'year',         fieldtype:'Select', label:'Year',  options:get_year_options(), reqd:1, default:new Date().getFullYear().toString() },
+            { fieldname:'cb2',          fieldtype:'Column Break' },
+            { fieldname:'month',        fieldtype:'Select', label:'Month', options:MONTHS, reqd:1, default:get_current_month() },
+            { fieldname:'sb1',          fieldtype:'Section Break' },
+            { fieldname:'fetch_drafts', fieldtype:'Button', label:'Fetch Draft Salary Slips', click:() => fetch_draft_salary_slips(d) },
+            { fieldname:'sb2',          fieldtype:'Section Break' },
+            { fieldname:'drafts_html',  fieldtype:'HTML' }
         ],
         primary_action_label: __('Submit Selected Slips'),
         primary_action: () => submit_selected_salary_slips(d)
@@ -709,23 +420,18 @@ function show_draft_to_submit_dialog() {
 }
 
 function fetch_draft_salary_slips(dialog) {
-    const company = dialog.get_value('company');
-    const year    = dialog.get_value('year');
-    const month   = dialog.get_value('month');
-
+    const { company, year, month } = _get_dialog_values(dialog, ['company','year','month']);
     if (!company)        { frappe.msgprint(__('Please select Company'));        return; }
     if (!year || !month) { frappe.msgprint(__('Please select Year and Month')); return; }
-
     frappe.call({
         method: 'saral_hr.saral_hr.doctype.salary_slip.salary_slip.get_draft_salary_slips',
         args: { company, year, month },
         callback(r) {
             if (r.message && r.message.length) {
-                render_card_grid(dialog, 'drafts_html', 'draft-card-check', 'draft_selected_count', 'draft_search',
-                    r.message.map(s => ({ id: s.name, name: s.employee_name || s.employee })));
+                render_card_grid(dialog, 'drafts_html', 'draft-card-check', 'draft_count', 'draft_search',
+                    r.message.map(s => ({ id:s.name, name:s.employee_name||s.employee })));
             } else {
-                dialog.fields_dict.drafts_html.$wrapper.html(
-                    '<div class="text-muted" style="padding:20px;text-align:center;">No draft salary slips found for the selected payroll period.</div>');
+                dialog.fields_dict.drafts_html.$wrapper.html('<div class="text-muted" style="padding:20px;text-align:center;">No draft salary slips found.</div>');
             }
         }
     });
@@ -735,24 +441,59 @@ function submit_selected_salary_slips(dialog) {
     const selected = get_checked_ids(dialog, 'drafts_html', 'draft-card-check');
     if (!selected.length) { frappe.msgprint(__('Please select at least one salary slip to submit')); return; }
 
-    frappe.confirm(`Are you sure you want to submit <b>${selected.length}</b> salary slip(s)? This action cannot be undone.`, () => {
+    frappe.confirm(`Submit <b>${selected.length}</b> salary slip(s)? This cannot be undone.`, () => {
         dialog.hide();
-        frappe.dom.freeze(__('Submitting salary slips... Please wait...'));
-
+        frappe.dom.freeze(__('Submitting salary slips...'));
         frappe.call({
             method: 'saral_hr.saral_hr.doctype.salary_slip.salary_slip.bulk_submit_salary_slips',
             args: { salary_slip_names: selected.map(s => s.id) },
-            callback(r) {
-                frappe.dom.unfreeze();
-                if (r.message) {
-                    show_result_dialog(__('Bulk Submission Result'), r.message, 'Successfully Submitted');
-                    if (cur_list) cur_list.refresh();
-                }
-            },
-            error() {
-                frappe.dom.unfreeze();
-                frappe.msgprint({ title: __('Error'), message: __('Failed to submit salary slips. Please try again or contact your system administrator.'), indicator: 'red' });
-            }
+            callback(r) { frappe.dom.unfreeze(); if (r.message) { show_result_dialog(__('Bulk Submission Result'), r.message, 'Successfully Submitted'); if (cur_list) cur_list.refresh(); } },
+            error()     { frappe.dom.unfreeze(); frappe.msgprint({ title:__('Error'), message:__('Failed to submit salary slips.'), indicator:'red' }); }
         });
     });
+}
+
+// ─── Private UI helpers ───────────────────────────────────────────────────────
+
+function _get_dialog_values(dialog, fields) {
+    return fields.reduce((acc, f) => { acc[f] = dialog.get_value(f); return acc; }, {});
+}
+
+function _summary_bar(stats, trailing_html = '') {
+    const items = stats.map(([label, value]) =>
+        `<span style="color:var(--text-muted);">${label}: <strong style="color:var(--text-color);">${value}</strong></span>`
+    ).join(`<span style="color:var(--border-color);">|</span>`);
+    return `<div style="display:flex;align-items:center;flex-wrap:wrap;gap:16px;
+        padding:8px 0;margin-bottom:12px;font-size:12px;border-bottom:1px solid var(--border-color);">
+        ${items}${trailing_html ? trailing_html : ''}
+    </div>`;
+}
+
+function _search_grid_html(search_id, cls, count_id, items) {
+    return `<div style="margin-bottom:10px;display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+        <input id="${search_id}" type="text" class="form-control"
+            placeholder="Search by name or Employee ID..."
+            style="flex:1;min-width:160px;max-width:320px;">
+        <button class="btn btn-xs btn-default" id="${search_id}_sel_all">${__('Select All')}</button>
+        <button class="btn btn-xs btn-default" id="${search_id}_desel_all">${__('Deselect All')}</button>
+        <span id="${count_id}" class="text-muted" style="font-size:12px;">0 selected</span>
+    </div>
+    <div id="${search_id}_grid" style="display:flex;flex-wrap:wrap;gap:10px;max-height:300px;overflow-y:auto;padding:4px 2px;">
+        ${build_cards(items, cls)}
+    </div>`;
+}
+
+function _bind_inline_grid(wrapper, search_id, cls, count_id, all_items) {
+    const upd  = () => wrapper.find(`#${count_id}`).text(wrapper.find(`.${cls}:checked`).length + ' selected');
+    const bind = () => { wrapper.find(`.${cls}`).off('change').on('change', upd); upd(); };
+
+    wrapper.find(`#${search_id}`).on('input', function() {
+        const q = $(this).val().toLowerCase().trim();
+        wrapper.find(`#${search_id}_grid`).html(build_cards(
+            q ? all_items.filter(i => i.id.toLowerCase().includes(q) || i.name.toLowerCase().includes(q)) : all_items, cls));
+        bind();
+    });
+    wrapper.find(`#${search_id}_sel_all`).on('click',   () => { wrapper.find(`.${cls}`).prop('checked', true);  upd(); });
+    wrapper.find(`#${search_id}_desel_all`).on('click', () => { wrapper.find(`.${cls}`).prop('checked', false); upd(); });
+    bind();
 }

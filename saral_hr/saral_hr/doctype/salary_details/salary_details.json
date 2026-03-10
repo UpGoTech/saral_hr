@@ -10,8 +10,10 @@
   "abbr",
   "column_break_snib",
   "amount",
+  "base_amount",
   "depends_on_payment_days",
   "is_daily_rate",
+  "depends_on_physical_working_days",
   "employer_contribution",
   "is_esic_component",
   "esic_calculation_based_on",
@@ -20,7 +22,8 @@
   "is_pf_component",
   "pf_calculation_based_on",
   "pf_percentage",
-  "pf_cap_amount"
+  "pf_cap_amount",
+  "is_pt_component"
  ],
  "fields": [
   {
@@ -49,6 +52,12 @@
    "options": "currency"
   },
   {
+   "fieldname": "base_amount",
+   "fieldtype": "Currency",
+   "label": "Base Amount",
+   "hidden": 1
+  },
+  {
    "fieldname": "column_break_snib",
    "fieldtype": "Column Break"
   },
@@ -67,6 +76,13 @@
    "fieldtype": "Check",
    "in_list_view": 1,
    "label": "Is Daily Rate"
+  },
+  {
+   "default": "0",
+   "fetch_from": "salary_component.depends_on_physical_working_days",
+   "fieldname": "depends_on_physical_working_days",
+   "fieldtype": "Check",
+   "label": "Depends on Physical Working Days"
   },
   {
    "default": "0",
@@ -132,6 +148,14 @@
    "fieldname": "pf_cap_amount",
    "fieldtype": "Currency",
    "label": "PF Cap",
+   "read_only": 1
+  },
+  {
+   "default": "0",
+   "fetch_from": "salary_component.is_pt_component",
+   "fieldname": "is_pt_component",
+   "fieldtype": "Check",
+   "label": "Is PT Component",
    "read_only": 1
   }
  ],
