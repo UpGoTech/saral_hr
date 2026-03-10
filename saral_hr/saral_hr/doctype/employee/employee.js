@@ -8,6 +8,35 @@ frappe.ui.form.on("Employee", {
 
         create_sidebar_image(frm);
         update_sidebar_image(frm);
+
+        // Active Company - Company Link se fetch
+        if (frm.doc.name) {
+            frappe.call({
+                method: 'frappe.client.get_list',
+                args: {
+                    doctype: 'Company Link',
+                    filters: [
+                        ['employee', '=', frm.doc.name],
+                        ['is_active', '=', 1]
+                    ],
+                    fields: ['company'],
+                    limit: 50
+                },
+                callback: function(r) {
+                    if (r.message && r.message.length > 0) {
+                        let companies = r.message
+                            .map(d => d.company)
+                            .join('\n');
+                        frm.doc.active_company = companies;
+                    } else {
+                        frm.doc.active_company = 'No Active Company';
+                    }
+                    frm.refresh_field('active_company');
+                    frm.doc.__unsaved = 0;
+                    frm.page.clear_indicator();
+                }
+            });
+        }
     },
 
     onload(frm) {

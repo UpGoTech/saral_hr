@@ -38,7 +38,6 @@ DEDUCTION_COMPONENTS = [
     ("Retention","RET"),("Other Deduction - 1","OD -1"),
 ]
 
-# bank_advice removed; home/other kept as first-class reports
 REPORTS = [
     "home_bank_advice",
     "other_bank_advice",
@@ -63,9 +62,6 @@ REPORT_LABELS = {
     "monthly_attendance":        "Monthly Attendance Report",
 }
 
-# ============================================================
-# ATTENDANCE PAGE LAYOUT CONSTANTS — A4 @ 96dpi, margin 15mm
-# ============================================================
 PAGE_H_PX      = 1122
 PAGE_MARGIN_TB = 114
 H_CO_BLOCK     = 100
@@ -164,7 +160,6 @@ def _get_company_bank_map(companies):
     }
 
 def _get_on_hold_employees(filters):
-    """Return set of employee IDs that are on salary hold for the given month/year."""
     month, year = filters.get("month", ""), filters.get("year", "")
     if not month or not year: return set()
     records = frappe.db.sql("""
@@ -175,7 +170,6 @@ def _get_on_hold_employees(filters):
     return {r.employee for r in records}
 
 def _fetch_slip_components(slip_names, parentfield):
-    """Bulk-fetch salary component amounts for a list of slip names."""
     if not slip_names: return {}
     result = {}
     for r in frappe.db.sql(
@@ -760,10 +754,11 @@ def _render_transaction_checklist(columns, data):
     return html + "</tbody></table>"
 
 
-def _render_bank_advice(columns, data, company="", month="", year="", report_title="Bank Advice"):
-    if not data:
-        return '<p style="color:#888;padding:10px;font-size:8px;text-align:center;">No data</p>'
+# ============================================================
+# BANK ADVICE RENDERER — header always shown, "No data" row if empty
+# ============================================================
 
+def _render_bank_advice(columns, data, company="", month="", year="", report_title="Bank Advice"):
     rows      = [r for r in data if not r.get("bold")]
     total_row = next((r for r in data if r.get("bold")), {})
 
@@ -820,6 +815,23 @@ def _render_bank_advice(columns, data, company="", month="", year="", report_tit
         )
         return f'<tr>{tr}</tr>'
 
+    # ── Always render header; show "No data" row if no employees ──
+    if not rows:
+        empty_cols = len(columns) or 1
+        no_data_row = (
+            f'<tr><td colspan="{empty_cols}" '
+            f'style="text-align:center;padding:20px;font-size:13px;color:#888;'
+            f'border:1px solid #ccc;">No data for this period</td></tr>'
+        )
+        return (
+            _header_block()
+            + f'<table style="width:100%;border-collapse:collapse;table-layout:fixed;margin-top:8px;">'
+            + colgroup
+            + '<thead>' + _col_header_row() + '</thead>'
+            + '<tbody>' + no_data_row + '</tbody>'
+            + '</table>'
+        )
+
     BANK_ROWS_FIRST = 20
     BANK_ROWS_OTHER = 25
     pages, idx, first = [], 0, True
@@ -846,6 +858,10 @@ def _render_bank_advice(columns, data, company="", month="", year="", report_tit
         html += '</tbody></table>'
     return html
 
+
+# ============================================================
+# ATTENDANCE RENDERER
+# ============================================================
 
 def _render_attendance(columns, data, company="", month="", year=""):
     if not data:
@@ -975,10 +991,6 @@ def _render_attendance(columns, data, company="", month="", year=""):
 # ============================================================
 
 def _build_bank_advice_data(filters, mode="home"):
-    """
-    mode='home'  → employees whose bank matches company's home bank
-    mode='other' → employees whose bank does NOT match company's home bank
-    """
     cols = [
         _col("Employee ID",    "employee_id"),
         _col("Employee Name",  "employee_name", width=180),
