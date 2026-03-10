@@ -79,6 +79,9 @@ def get_salary_structure_for_employee(employee, start_date=None):
         ]
         current_month = month_names[start_date_obj.month - 1]
 
+    # ── Fetch PT applicability for this employee ──────────────────────────────
+    is_pt_applicable = frappe.db.get_value("Company Link", employee, "is_pt_applicable") or 0
+
     def _get_comp_meta(comp_name):
         return frappe.db.get_value(
             "Salary Component", comp_name,
@@ -114,6 +117,10 @@ def get_salary_structure_for_employee(employee, start_date=None):
     for row in ssa_doc.deductions:
         comp = _get_comp_meta(row.salary_component)
         if not comp:
+            continue
+
+        # ── Skip PT component if employee is not PT applicable ────────────────
+        if comp.is_pt_component and not is_pt_applicable:
             continue
 
         amount = flt(row.amount)
@@ -724,6 +731,9 @@ def bulk_generate_salary_slips(employees, year, month):
 
             ssa_earning_amount = sum(flt(e.get('amount', 0)) for e in salary_data.get('earnings', []))
 
+            # ── PT already filtered in get_salary_structure_for_employee ──────
+            # This loop copies whatever deductions were returned (PT excluded
+            # for non-applicable employees at the source).
             for deduction in salary_data.get('deductions', []):
                 row = salary_slip.append('deductions', {})
                 row.salary_component                 = deduction.get('salary_component')

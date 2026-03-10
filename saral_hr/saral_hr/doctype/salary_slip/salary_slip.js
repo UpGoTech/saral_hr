@@ -272,7 +272,8 @@ function apply_attendance(frm, d, variable_pay_pct) {
 //   row.pf_cap_amount  / esic_cap_amount          → monthly ceiling (0 = no cap)
 //
 // ESIC additional rule: amount = 0 when prorated_gross >= ₹21,000.
-// PT rule: February → ₹300, all other months → ₹200 (derived from start_date).
+// PT rule: February → ₹300, all other months → ₹200 (parsed directly from
+//          start_date string "YYYY-MM-DD" to avoid timezone issues).
 // User never types PF / ESIC / PT amounts — always auto-computed here.
 
 function recalculate_salary(frm, wd_override, pd_override, phd_override) {
@@ -361,11 +362,12 @@ function recalculate_salary(frm, wd_override, pd_override, phd_override) {
             row.amount = flt(amount, 2);
 
         } else if (row.is_pt_component) {
-            // ── PT: recalculate from the actual payroll month ─────────────────
-            // February (getMonth() === 1, 0-indexed) → ₹300, all other months → ₹200
+            // ── PT: parse month directly from "YYYY-MM-DD" string ─────────────
+            // Avoids timezone issues that affect Date object month detection.
+            // February (month 2) → ₹300, all other months → ₹200
             if (frm.doc.start_date) {
-                const sd = frappe.datetime.str_to_obj(frm.doc.start_date);
-                amount = sd.getMonth() === 1 ? 300 : 200;
+                const month = parseInt(frm.doc.start_date.split('-')[1], 10);
+                amount = month === 2 ? 300 : 200;
             } else {
                 amount = base;
             }
