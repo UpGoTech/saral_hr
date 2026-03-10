@@ -153,6 +153,7 @@ function get_ma_html() {
                         <!-- Present group -->
                         <th class="ma-present-group-th text-center" colspan="2">
                             <div class="ma-present-group-label">Present <span id="ma_p_col_count" class="ma-group-total">(0)</span></div>
+
                             <div class="ma-present-sub-row">
                                 <div class="ma-present-sub-cell">Regular<br><span id="ma_pr_col_count">0</span></div>
                                 <div class="ma-present-sub-cell">On Tour<br><span id="ma_pt_col_count">0</span></div>
@@ -487,9 +488,12 @@ function init_mark_attendance($main) {
     // ── Count update ───────────────────────────────────────────────────────
     function updateCounts() {
         var p = 0, pr = 0, pt = 0, a = 0, h = 0, l = 0, el = 0, cl = 0, coff = 0, wo = 0, hol = 0;
+        var totalDays = 0;
 
         Object.values(attendanceTableData).forEach(function (s) {
-            if      (s === "Present")      { p++; pr++; }  // legacy records
+            if (!s) return;
+            totalDays++;
+            if      (s === "Present")      { p++; pr++; }
             else if (s === "Regular")      { p++; pr++; }
             else if (s === "On Tour")      { p++; pt++; }
             else if (s === "Absent")       a++;
@@ -501,6 +505,8 @@ function init_mark_attendance($main) {
             else if (s === "Weekly Off")   wo++;
             else if (s === "Holiday")      hol++;
         });
+
+        var totalAbsents = a + l + el + cl + coff;
 
         document.getElementById("ma_hd_col_count").textContent   = h;
         document.getElementById("ma_p_col_count").textContent    = p;
@@ -560,7 +566,6 @@ function init_mark_attendance($main) {
     }
 
     function maxWeeklyOffInMonth() {
-        // The allowed limit = number of default weekly-off days in the current month
         var employee  = employeeSel.value;
         var year      = parseInt(yearSel.value);
         var month     = parseInt(monthSel.value);
@@ -574,6 +579,30 @@ function init_mark_attendance($main) {
             if (weeklyOffDays.includes(dayName)) count++;
         }
         return count;
+    }
+
+    // ── resetRowToPresent: fully reset a row to a present subtype ─────────
+    // FIX: This helper correctly wires up a row after switching to present
+    // from any previous state (including absent-with-subtype).
+    function resetRowToPresent(row, dateKey, subtype) {
+        // 1. Uncheck & enable all main status radios, clear them
+        row.querySelectorAll('input[name="status_' + dateKey + '"]').forEach(function (r) {
+            r.disabled = false;
+            r.checked  = false;
+        });
+        // 2. Enable present subtypes & check the right one
+        row.querySelectorAll('input[name="p_subtype_' + dateKey + '"]').forEach(function (r) {
+            r.disabled = false;
+            r.checked  = (r.value === subtype);
+        });
+        // 3. Disable & clear absent subtypes
+        row.querySelectorAll('input[name="a_subtype_' + dateKey + '"]').forEach(function (r) {
+            r.disabled = true;
+            r.checked  = false;
+        });
+        attendanceTableData[dateKey] = subtype;
+        applyRowClass(row, "Present");
+        row.classList.remove("ma-override-row");
     }
 
     // ── buildRow ───────────────────────────────────────────────────────────
@@ -593,14 +622,16 @@ function init_mark_attendance($main) {
         else if (isDefaultWeeklyOff && toggleChecked) row.classList.add("ma-weekly-off-row");
         else if (isRestDay && !toggleChecked)         row.classList.add("ma-override-row");
 
-        // Present subtype state — Regular/On Tour are the direct present entry (no parent radio)
         var isPresentStatus = isPresent(savedStatus);
         var presentSubtype  = isPresentSubtype(savedStatus) ? savedStatus : (savedStatus === "Present" ? "Regular" : "");
+        // Present subtypes are always enabled on active rows — user must be able to
+        // click Regular/On Tour to switch back from Absent at any time.
         var pSubDisabled    = radiosDisabled;
 
-        // Absent subtype state
         var isAbsentStatus = savedStatus === "Absent" || isAbsentSubtype(savedStatus);
         var absentSubtype  = isAbsentSubtype(savedStatus) ? savedStatus : "";
+        // Absent subtypes enabled when row is Absent; also keep pSub enabled when absent
+        // so switching to present is always possible.
         var aSubDisabled   = radiosDisabled || !isAbsentStatus;
 
         // Toggle cell
@@ -692,7 +723,6 @@ function init_mark_attendance($main) {
                     if (isNowChecked) {
                         var restStatus = isHoliday ? "Holiday" : "Weekly Off";
 
-                        // ── WO limit check when restoring a Weekly Off toggle ──
                         if (restStatus === "Weekly Off") {
                             var limit     = maxWeeklyOffInMonth();
                             var prevSt    = attendanceTableData[dateKey] || "";
@@ -700,7 +730,7 @@ function init_mark_attendance($main) {
                             var woAfter   = prevSt === "Weekly Off" ? currentWo : currentWo + 1;
 
                             if (limit > 0 && woAfter > limit) {
-                                this.checked = false;   // revert toggle
+                                this.checked = false;
                                 var monthName = new Date(
                                     parseInt(yearSel.value), parseInt(monthSel.value), 1
                                 ).toLocaleDateString("en-US", { month: "long" });
@@ -731,7 +761,7 @@ function init_mark_attendance($main) {
                 });
             }
 
-            // Main status radios
+            // Main status radios (Half Day, Absent, Weekly Off, Holiday)
             row.querySelectorAll('input[name="status_' + dateKey + '"]').forEach(function (inp) {
                 inp.addEventListener("change", function () {
                     var val = this.value;
@@ -740,26 +770,25 @@ function init_mark_attendance($main) {
                     var aSubRadios = row.querySelectorAll('input[name="a_subtype_' + dateKey + '"]');
 
                     if (val === "Absent") {
-                        // Enable absent subtypes, disable present subtypes
+                        // Enable absent subtypes; keep present subtypes ENABLED (unchecked)
+                        // so the user can click Regular/On Tour to switch back to Present
                         aSubRadios.forEach(function (r) { r.disabled = false; });
-                        pSubRadios.forEach(function (r) { r.disabled = true; r.checked = false; });
+                        pSubRadios.forEach(function (r) { r.disabled = false; r.checked = false; });
                         var checkedASub = row.querySelector('input[name="a_subtype_' + dateKey + '"]:checked');
                         attendanceTableData[dateKey] = checkedASub ? checkedASub.value : "Absent";
                     } else {
-                        // All subtypes disabled
+                        // Disable & clear ALL subtypes when switching to Half Day / WO / Holiday
                         pSubRadios.forEach(function (r) { r.disabled = true; r.checked = false; });
                         aSubRadios.forEach(function (r) { r.disabled = true; r.checked = false; });
 
                         // ── Weekly Off hard limit ──────────────────────────
                         if (val === "Weekly Off") {
                             var limit = maxWeeklyOffInMonth();
-                            // Count BEFORE applying this change (current cell may already be WO)
                             var prevStatus = attendanceTableData[dateKey] || "";
                             var currentWo  = countWeeklyOffInMonth();
                             var woAfter    = prevStatus === "Weekly Off" ? currentWo : currentWo + 1;
 
                             if (limit > 0 && woAfter > limit) {
-                                // Revert radio to previous value
                                 this.checked = false;
                                 var prevRadio = row.querySelector(
                                     'input[name="status_' + dateKey + '"][value="' + prevStatus + '"]'
@@ -791,22 +820,48 @@ function init_mark_attendance($main) {
                 });
             });
 
-            // Present subtype radios — clicking these IS the "present" action
+            // ── Present subtype radios (Regular / On Tour) ─────────────────
+            // These are ALWAYS enabled on active rows.
+            // Clicking one switches the row fully to Present, clearing everything else.
             row.querySelectorAll('input[name="p_subtype_' + dateKey + '"]').forEach(function (inp) {
                 inp.addEventListener("change", function () {
-                    row.querySelectorAll('input[name="a_subtype_' + dateKey + '"]').forEach(function (r) { r.disabled = true; r.checked = false; });
-                    // Uncheck all main status radios
-                    row.querySelectorAll('input[name="status_' + dateKey + '"]').forEach(function (r) { r.checked = false; });
-                    attendanceTableData[dateKey] = this.value;
+                    var val = this.value;
+
+                    // Uncheck + re-enable all main status radios
+                    row.querySelectorAll('input[name="status_' + dateKey + '"]').forEach(function (r) {
+                        r.checked  = false;
+                        r.disabled = false;
+                    });
+                    // Uncheck + re-enable the other present subtype
+                    row.querySelectorAll('input[name="p_subtype_' + dateKey + '"]').forEach(function (r) {
+                        r.disabled = false;
+                        // keep 'this' checked (browser already did it), uncheck others
+                        if (r !== inp) r.checked = false;
+                    });
+                    // Uncheck absent subtypes but keep them enabled
+                    // (they'll re-enable properly if user clicks Absent again)
+                    row.querySelectorAll('input[name="a_subtype_' + dateKey + '"]').forEach(function (r) {
+                        r.checked  = false;
+                        r.disabled = true;
+                    });
+
+                    attendanceTableData[dateKey] = val;
                     applyRowClass(row, "Present");
                     row.classList.remove("ma-override-row");
                     updateCounts();
                 });
             });
 
-            // Absent subtype radios
+            // ── Absent subtype radios (LWP / EL / CL / Comp Off) ───────────
+            // NEVER disable pSubRadios here — user must always be able to click
+            // Regular/On Tour to switch back to Present.
             row.querySelectorAll('input[name="a_subtype_' + dateKey + '"]').forEach(function (inp) {
                 inp.addEventListener("change", function () {
+                    // pSubRadios: uncheck but leave ENABLED
+                    row.querySelectorAll('input[name="p_subtype_' + dateKey + '"]').forEach(function (r) {
+                        r.checked  = false;
+                        r.disabled = false;
+                    });
                     attendanceTableData[dateKey] = this.value;
                     updateCounts();
                 });
@@ -913,28 +968,38 @@ function init_mark_attendance($main) {
             var mainRadios   = document.querySelectorAll('input[name="status_' + date + '"]');
             var pSubRadios   = document.querySelectorAll('input[name="p_subtype_' + date + '"]');
             var aSubRadios   = document.querySelectorAll('input[name="a_subtype_' + date + '"]');
-            // Use pSubRadios as disabled guard (they're always present)
-            if (!pSubRadios.length || pSubRadios[0].disabled) return;
+            if (!mainRadios.length || mainRadios[0].disabled) return;
 
-            if (status === "Present") {
-                // Default bulk Present → Regular
-                mainRadios.forEach(function (r) { r.checked = false; });
-                aSubRadios.forEach(function (r) { r.disabled = true; r.checked = false; });
+            // ── FIX: Always fully reset all radio groups before applying bulk ──
+            mainRadios.forEach(function (r) { r.checked = false; r.disabled = false; });
+            pSubRadios.forEach(function (r) { r.checked = false; r.disabled = false; });
+            aSubRadios.forEach(function (r) { r.checked = false; r.disabled = true; });
+
+            if (status === "Present" || status === "Regular") {
+                // Bulk Present → Regular subtype
                 pSubRadios.forEach(function (r) { r.disabled = false; r.checked = (r.value === "Regular"); });
+                aSubRadios.forEach(function (r) { r.disabled = true; r.checked = false; });
                 attendanceTableData[date] = "Regular";
+            } else if (isPresentSubtype(status)) {
+                pSubRadios.forEach(function (r) { r.disabled = false; r.checked = (r.value === status); });
+                aSubRadios.forEach(function (r) { r.disabled = true; r.checked = false; });
+                attendanceTableData[date] = status;
             } else if (isAbsentSubtype(status)) {
+                // Absent subtype: check Absent main radio + the subtype
+                // Keep pSubRadios ENABLED so user can click Regular/On Tour to switch back
                 mainRadios.forEach(function (r) { r.checked = (r.value === "Absent"); });
                 pSubRadios.forEach(function (r) { r.disabled = false; r.checked = false; });
                 aSubRadios.forEach(function (r) { r.disabled = false; r.checked = (r.value === status); });
                 attendanceTableData[date] = status;
-            } else if (isPresentSubtype(status)) {
-                mainRadios.forEach(function (r) { r.checked = false; });
-                aSubRadios.forEach(function (r) { r.disabled = true; r.checked = false; });
-                pSubRadios.forEach(function (r) { r.disabled = false; r.checked = (r.value === status); });
-                attendanceTableData[date] = status;
+            } else if (status === "Absent") {
+                mainRadios.forEach(function (r) { r.checked = (r.value === "Absent"); });
+                pSubRadios.forEach(function (r) { r.disabled = false; r.checked = false; });
+                aSubRadios.forEach(function (r) { r.disabled = false; r.checked = false; });
+                attendanceTableData[date] = "Absent";
             } else {
+                // Half Day, etc.
                 mainRadios.forEach(function (r) { r.checked = (r.value === status); });
-                pSubRadios.forEach(function (r) { r.checked = false; });
+                pSubRadios.forEach(function (r) { r.disabled = true; r.checked = false; });
                 aSubRadios.forEach(function (r) { r.disabled = true; r.checked = false; });
                 attendanceTableData[date] = status;
             }
@@ -1200,7 +1265,6 @@ function init_mark_attendance($main) {
         }
     });
 
-    // Wrap generateTable to bust calendar cache on reload
     var _origGenerateTable = generateTable;
     generateTable = function () {
         invalidateCalendarCache();
@@ -1340,7 +1404,7 @@ function inject_ma_styles() {
 
         /* ── Present group header ── */
         .ma-present-group-th  { background: #f0fdf4 !important; color: #166534 !important; padding: 0 !important; vertical-align: top !important; }
-        .ma-present-group-label { font-size: 11px; font-weight: 600; color: #166534; text-align: center; padding: 6px 10px 4px; border-bottom: 1px solid var(--border-color, #d1d8dd); }
+        .ma-present-group-label { font-size: 11px; font-weight: 600; color: #166534; text-align: center; padding: 6px 10px 2px; border-bottom: 1px solid var(--border-color, #d1d8dd); }
         .ma-present-sub-row   { display: flex; width: 100%; }
         .ma-present-sub-cell  { flex: 1; text-align: center; font-size: 11px; font-weight: 600; color: #166534; padding: 5px 4px; border-right: 1px solid var(--border-color, #d1d8dd); }
         .ma-present-sub-cell:last-child { border-right: none; }

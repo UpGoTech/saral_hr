@@ -79,6 +79,9 @@ def get_salary_structure_for_employee(employee, start_date=None):
         ]
         current_month = month_names[start_date_obj.month - 1]
 
+    # ── Fetch PT applicability for this employee ──────────────────────────────
+    is_pt_applicable = frappe.db.get_value("Company Link", employee, "is_pt_applicable") or 0
+
     def _get_comp_meta(comp_name):
         return frappe.db.get_value(
             "Salary Component", comp_name,
@@ -87,7 +90,6 @@ def get_salary_structure_for_employee(employee, start_date=None):
                 "depends_on_payment_days",
                 "is_daily_rate",
                 "depends_on_physical_working_days",
-                "is_special_component",
                 "employer_contribution",
                 "type",
                 "is_esic_component",
@@ -98,6 +100,7 @@ def get_salary_structure_for_employee(employee, start_date=None):
                 "pf_calculation_based_on",
                 "pf_percentage",
                 "pf_cap_amount",
+                "is_pt_component",
             ],
             as_dict=True
         )
@@ -109,23 +112,22 @@ def get_salary_structure_for_employee(employee, start_date=None):
         comp = _get_comp_meta(row.salary_component)
         if not comp:
             continue
-        base_amount = flt(row.amount)
-        if comp.is_special_component and current_month:
-            amount = _get_special_component_amount(row.salary_component, current_month) or 0
-        else:
-            amount = base_amount
-
-        earnings.append(_earning_row(row.salary_component, comp, amount))
+        earnings.append(_earning_row(row.salary_component, comp, flt(row.amount)))
 
     for row in ssa_doc.deductions:
         comp = _get_comp_meta(row.salary_component)
         if not comp:
             continue
-        base_amount = flt(row.amount)
-        if comp.is_special_component and current_month:
-            amount = _get_special_component_amount(row.salary_component, current_month) or 0
-        else:
-            amount = base_amount
+
+        # ── Skip PT component if employee is not PT applicable ────────────────
+        if comp.is_pt_component and not is_pt_applicable:
+            continue
+
+        amount = flt(row.amount)
+
+        # For PT component, pick the correct monthly amount (Feb: ₹300, others: ₹200)
+        if comp.is_pt_component:
+            amount = 300 if current_month == "February" else 200
 
         deductions.append(_deduction_row(row.salary_component, comp, amount))
 
@@ -146,7 +148,6 @@ def _earning_row(comp_name, comp, amount):
         "depends_on_payment_days":          comp.depends_on_payment_days,
         "is_daily_rate":                    comp.is_daily_rate,
         "depends_on_physical_working_days": comp.depends_on_physical_working_days,
-        "is_special_component":             comp.is_special_component,
     }
 
 
@@ -160,7 +161,6 @@ def _deduction_row(comp_name, comp, amount):
         "depends_on_payment_days":          comp.depends_on_payment_days,
         "is_daily_rate":                    comp.is_daily_rate,
         "depends_on_physical_working_days": comp.depends_on_physical_working_days,
-        "is_special_component":             comp.is_special_component,
         # PF flags
         "is_pf_component":                  comp.is_pf_component,
         "pf_calculation_based_on":          comp.pf_calculation_based_on or "",
@@ -171,6 +171,8 @@ def _deduction_row(comp_name, comp, amount):
         "esic_calculation_based_on":        comp.esic_calculation_based_on or "",
         "esic_percentage":                  flt(comp.esic_percentage),
         "esic_cap_amount":                  flt(comp.esic_cap_amount),
+        # PT flag
+        "is_pt_component":                  comp.is_pt_component or 0,
     }
 
 
@@ -193,7 +195,6 @@ def get_additional_components_for_employee(employee, year, month):
                 "depends_on_payment_days":          0,
                 "is_daily_rate":                    0,
                 "depends_on_physical_working_days": 0,
-                "is_special_component":             0,
                 "is_additional_component":          1,
             })
 
@@ -211,7 +212,6 @@ def get_additional_components_for_employee(employee, year, month):
                 "depends_on_payment_days":          0,
                 "is_daily_rate":                    0,
                 "depends_on_physical_working_days": 0,
-                "is_special_component":             0,
                 "is_additional_component":          1,
             })
 
@@ -229,18 +229,6 @@ def get_additional_components_api(employee, start_date):
     month_str = month_names[start_date_obj.month - 1]
     earnings, deductions = get_additional_components_for_employee(employee, year_str, month_str)
     return {"earnings": earnings, "deductions": deductions}
-
-
-# ─── Special Component ────────────────────────────────────────────────────────
-
-def _get_special_component_amount(component_name, month):
-    doc = frappe.get_doc("Salary Component", component_name)
-    if not doc.is_special_component:
-        return None
-    for row in doc.enter_amount_according_to_months:
-        if row.month == month:
-            return flt(row.amount)
-    return None
 
 
 # ─── Variable Pay ─────────────────────────────────────────────────────────────
@@ -351,7 +339,6 @@ def get_attendance_and_days(employee, start_date, working_days_calculation_metho
 
     present_days = absent_days = half_day_count = 0
     lwp_days = holiday_days = earned_leave_days = casual_leave_days = 0
-    on_tour_days = comp_off_days = 0
 
     for a in attendance:
         if a.status == "Present":
@@ -372,12 +359,6 @@ def get_attendance_and_days(employee, start_date, working_days_calculation_metho
             lwp_days += 1
         elif a.status == "Holiday":
             holiday_days += 1
-        elif a.status == "On Tour":
-            on_tour_days += 1
-            present_days += 1
-        elif a.status == "Comp Off":
-            comp_off_days += 1
-            present_days  += 1
 
     combined_absent_days = flt(absent_days + lwp_days, 2)
 
@@ -388,9 +369,7 @@ def get_attendance_and_days(employee, start_date, working_days_calculation_metho
         working_days = total_days - weekly_off_count
         payment_days = flt(working_days - combined_absent_days, 2)
 
-    physical_working_days = flt(
-        payment_days - earned_leave_days - casual_leave_days - comp_off_days, 2
-    )
+    physical_working_days = flt(payment_days - earned_leave_days - casual_leave_days, 2)
 
     return {
         "attendance_count":      len(attendance),
@@ -406,47 +385,15 @@ def get_attendance_and_days(employee, start_date, working_days_calculation_metho
         "total_holidays":        flt(holiday_days, 2),
         "total_earned_leaves":   flt(earned_leave_days, 2),
         "total_casual_leaves":   flt(casual_leave_days, 2),
-        "total_on_tour":         flt(on_tour_days, 2),
-        "total_comp_off":        flt(comp_off_days, 2),
         "calculation_method":    calculation_method,
     }
 
 
 # ─── Core Salary Calculation ──────────────────────────────────────────────────
-#
-# Gross definitions:
-#   "Prorated Gross"                         = total of all earnings after proration
-#                                              (includes additional earnings)
-#   "Gross from Salary Structure Assignment" = raw sum of SSA earnings rows
-#                                              (no proration, no additional earnings)
-#
-# PF and ESIC amounts are driven entirely by the flags on the Salary Component:
-#   - is_pf_component / is_esic_component       → marks it as statutory
-#   - pf_calculation_based_on / esic_calc...    → "Prorated Gross" or
-#                                                  "Gross from Salary Structure Assignment"
-#   - pf_percentage / esic_percentage           → rate (%)
-#   - pf_cap_amount / esic_cap_amount           → monthly ceiling (0 = no cap)
-#
-# ESIC additionally has a ₹21,000 gross ceiling — no ESIC is deducted when
-# the prorated gross equals or exceeds ₹21,000.
 
 def calculate_salary_slip_amounts_exact(salary_slip, variable_pay_percentage,
                                         start_date, category=None,
                                         ssa_gross=None):
-    """
-    Compute all earnings and deductions for a Salary Slip document in-place.
-
-    Parameters
-    ----------
-    salary_slip          : Salary Slip document object (rows mutated directly)
-    variable_pay_percentage : decimal fraction (e.g. 0.85 for 85 %)
-    start_date           : payroll start date string / date object
-    category             : employee category name (unused currently, reserved)
-    ssa_gross            : pre-computed raw sum of SSA earnings rows (no proration).
-                           Used when a component's calculation_based_on ==
-                           "Gross from Salary Structure Assignment".
-                           Pass None to fall back to prorated gross for those rows.
-    """
     wd           = flt(salary_slip.total_working_days)
     pd           = flt(salary_slip.payment_days)
     phd          = flt(salary_slip.physical_working_days)
@@ -468,7 +415,6 @@ def calculate_salary_slip_amounts_exact(salary_slip, variable_pay_percentage,
         comp = (row.salary_component or "").lower()
 
         if "variable" in comp:
-            # Variable pay is scaled by the VPA percentage for the period
             if pd == 0:
                 amount = 0.0
             elif wd > 0 and row.depends_on_payment_days:
@@ -477,19 +423,15 @@ def calculate_salary_slip_amounts_exact(salary_slip, variable_pay_percentage,
                 amount = base * variable_pct
 
         elif row.depends_on_physical_working_days and wd > 0:
-            # Prorated on physical working days (excl. EL / CL / Comp Off)
             amount = (base / wd) * phd
 
         elif row.is_daily_rate:
-            # Per-day rate × payment days
             amount = base * pd
 
         elif row.depends_on_payment_days and wd > 0:
-            # Standard proration: monthly ÷ working days × payment days
             amount = (base / wd) * pd
 
         else:
-            # Fixed amount (special component, additional earning, etc.)
             amount = base
 
         row.amount      = flt(amount, 2)
@@ -502,8 +444,6 @@ def calculate_salary_slip_amounts_exact(salary_slip, variable_pay_percentage,
             da_amount = row.amount
 
     total_basic_da = basic_amount + da_amount
-
-    # prorated_gross includes additional earnings injected into the slip
     prorated_gross = total_earnings
 
     # ── Pass 2: compute deductions ────────────────────────────────────────────
@@ -512,19 +452,12 @@ def calculate_salary_slip_amounts_exact(salary_slip, variable_pay_percentage,
         row.base_amount = base
         comp = (row.salary_component or "").lower()
 
-        # ── PF component (fully flag-driven) ──────────────────────────────────
         if getattr(row, "is_pf_component", 0):
             pf_pct  = flt(getattr(row, "pf_percentage", 0))
             pf_cap  = flt(getattr(row, "pf_cap_amount", 0))
-            pf_basis = (getattr(row, "pf_calculation_based_on", "") or "").strip()
+            pf_basis = getattr(row, "pf_calculation_based_on", "") or ""
 
-            # Choose gross basis
-            if pf_basis == "Gross from Salary Structure Assignment":
-                # Use the raw SSA gross (unprorated, excludes additional earnings)
-                gross_for_pf = flt(ssa_gross) if ssa_gross is not None else prorated_gross
-            else:
-                # "Prorated Gross" or any unrecognised value → prorated gross
-                gross_for_pf = prorated_gross
+            gross_for_pf = flt(ssa_gross) if (pf_basis == "Gross from Salary Structure Assignment" and ssa_gross is not None) else prorated_gross
 
             if pf_pct > 0:
                 amount = flt(gross_for_pf * pf_pct / 100, 2)
@@ -533,19 +466,13 @@ def calculate_salary_slip_amounts_exact(salary_slip, variable_pay_percentage,
             else:
                 amount = 0.0
 
-        # ── ESIC component (fully flag-driven) ────────────────────────────────
         elif getattr(row, "is_esic_component", 0):
             esic_pct   = flt(getattr(row, "esic_percentage", 0))
             esic_cap   = flt(getattr(row, "esic_cap_amount", 0))
-            esic_basis = (getattr(row, "esic_calculation_based_on", "") or "").strip()
+            esic_basis = getattr(row, "esic_calculation_based_on", "") or ""
 
-            # Choose gross basis
-            if esic_basis == "Gross from Salary Structure Assignment":
-                gross_for_esic = flt(ssa_gross) if ssa_gross is not None else prorated_gross
-            else:
-                gross_for_esic = prorated_gross
+            gross_for_esic = flt(ssa_gross) if (esic_basis == "Gross from Salary Structure Assignment" and ssa_gross is not None) else prorated_gross
 
-            # ESIC ceiling: no deduction when prorated gross ≥ ₹21,000
             if prorated_gross >= 21000 or esic_pct <= 0:
                 amount = 0.0
             else:
@@ -553,7 +480,15 @@ def calculate_salary_slip_amounts_exact(salary_slip, variable_pay_percentage,
                 if esic_cap > 0:
                     amount = min(amount, esic_cap)
 
-        # ── Prorated / physical-working-days / daily-rate deductions ──────────
+        elif getattr(row, "is_pt_component", 0):
+            # ── PT: recalculate from the actual payroll month ─────────────────
+            # February → ₹300, all other months → ₹200
+            if start_date:
+                _sd = getdate(start_date)
+                amount = 300.0 if _sd.month == 2 else 200.0
+            else:
+                amount = base
+
         elif row.depends_on_physical_working_days and wd > 0 and base > 0:
             amount = (base / wd) * phd
 
@@ -564,7 +499,6 @@ def calculate_salary_slip_amounts_exact(salary_slip, variable_pay_percentage,
             amount = (base / wd) * pd
 
         else:
-            # Fixed deduction (special component, additional deduction, etc.)
             amount = base
 
         row.amount = flt(amount, 2)
@@ -764,7 +698,6 @@ def bulk_generate_salary_slips(employees, year, month):
             variable_pay_pct     = get_variable_pay_percentage(employee, start_date)
             variable_pay_decimal = flt(variable_pay_pct if variable_pay_pct is not None else 0) / 100.0
 
-            # Additional components
             add_earnings, add_deductions = get_additional_components_for_employee(employee, year, month)
 
             salary_slip = frappe.new_doc("Salary Slip")
@@ -785,10 +718,7 @@ def bulk_generate_salary_slips(employees, year, month):
             salary_slip.total_holidays        = attendance_data.get('total_holidays', 0)
             salary_slip.total_earned_leaves   = attendance_data.get('total_earned_leaves', 0)
             salary_slip.total_casual_leaves   = attendance_data.get('total_casual_leaves', 0)
-            salary_slip.total_on_tour         = attendance_data.get('total_on_tour', 0)
-            salary_slip.total_comp_off        = attendance_data.get('total_comp_off', 0)
 
-            # ── Populate earnings from SSA ────────────────────────────────────
             for earning in salary_data.get('earnings', []):
                 row = salary_slip.append('earnings', {})
                 row.salary_component                 = earning.get('salary_component')
@@ -798,12 +728,12 @@ def bulk_generate_salary_slips(employees, year, month):
                 row.depends_on_payment_days          = earning.get('depends_on_payment_days')
                 row.is_daily_rate                    = earning.get('is_daily_rate')
                 row.depends_on_physical_working_days = earning.get('depends_on_physical_working_days')
-                row.is_special_component             = earning.get('is_special_component')
 
-            # Raw SSA gross (unprorated) — used by "Gross from Salary Structure Assignment" basis
             ssa_earning_amount = sum(flt(e.get('amount', 0)) for e in salary_data.get('earnings', []))
 
-            # ── Populate deductions from SSA ──────────────────────────────────
+            # ── PT already filtered in get_salary_structure_for_employee ──────
+            # This loop copies whatever deductions were returned (PT excluded
+            # for non-applicable employees at the source).
             for deduction in salary_data.get('deductions', []):
                 row = salary_slip.append('deductions', {})
                 row.salary_component                 = deduction.get('salary_component')
@@ -814,19 +744,16 @@ def bulk_generate_salary_slips(employees, year, month):
                 row.depends_on_payment_days          = deduction.get('depends_on_payment_days')
                 row.is_daily_rate                    = deduction.get('is_daily_rate')
                 row.depends_on_physical_working_days = deduction.get('depends_on_physical_working_days')
-                row.is_special_component             = deduction.get('is_special_component')
-                # PF flags
                 row.is_pf_component                  = deduction.get('is_pf_component', 0)
                 row.pf_calculation_based_on          = deduction.get('pf_calculation_based_on', '')
                 row.pf_percentage                    = deduction.get('pf_percentage', 0)
                 row.pf_cap_amount                    = deduction.get('pf_cap_amount', 0)
-                # ESIC flags
                 row.is_esic_component                = deduction.get('is_esic_component', 0)
                 row.esic_calculation_based_on        = deduction.get('esic_calculation_based_on', '')
                 row.esic_percentage                  = deduction.get('esic_percentage', 0)
                 row.esic_cap_amount                  = deduction.get('esic_cap_amount', 0)
+                row.is_pt_component                  = deduction.get('is_pt_component', 0)
 
-            # ── Inject additional earnings ────────────────────────────────────
             for earning in add_earnings:
                 row = salary_slip.append('earnings', {})
                 row.salary_component                 = earning.get('salary_component')
@@ -836,9 +763,7 @@ def bulk_generate_salary_slips(employees, year, month):
                 row.depends_on_payment_days          = 0
                 row.is_daily_rate                    = 0
                 row.depends_on_physical_working_days = 0
-                row.is_special_component             = 0
 
-            # ── Inject additional deductions ──────────────────────────────────
             for deduction in add_deductions:
                 row = salary_slip.append('deductions', {})
                 row.salary_component                 = deduction.get('salary_component')
@@ -849,11 +774,9 @@ def bulk_generate_salary_slips(employees, year, month):
                 row.depends_on_payment_days          = 0
                 row.is_daily_rate                    = 0
                 row.depends_on_physical_working_days = 0
-                row.is_special_component             = 0
                 row.is_pf_component                  = 0
                 row.is_esic_component                = 0
 
-            # ── Calculate all amounts (prorated + statutory) ──────────────────
             calculate_salary_slip_amounts_exact(
                 salary_slip, variable_pay_decimal, start_date, category,
                 ssa_gross=ssa_earning_amount

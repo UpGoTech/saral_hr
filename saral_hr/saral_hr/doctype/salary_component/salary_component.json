@@ -16,8 +16,6 @@
   "is_daily_rate",
   "depends_on_physical_working_days",
   "employer_contribution",
-  "is_special_component",
-  "enter_amount_according_to_months",
   "section_esic",
   "is_esic_component",
   "esic_calculation_based_on",
@@ -27,7 +25,9 @@
   "is_pf_component",
   "pf_calculation_based_on",
   "pf_percentage",
-  "pf_cap_amount"
+  "pf_cap_amount",
+  "section_pt",
+  "is_pt_component"
  ],
  "fields": [
   {
@@ -91,19 +91,6 @@
    "fieldname": "employer_contribution",
    "fieldtype": "Check",
    "label": "Employer Contribution"
-  },
-  {
-   "default": "0",
-   "fieldname": "is_special_component",
-   "fieldtype": "Check",
-   "label": "Is Special Component?"
-  },
-  {
-   "depends_on": "eval:doc.is_special_component == 1",
-   "fieldname": "enter_amount_according_to_months",
-   "fieldtype": "Table",
-   "label": "Enter Amount according to months",
-   "options": "Special Salary Component"
   },
   {
    "fieldname": "section_esic",
@@ -173,7 +160,20 @@
    "description": "Maximum PF deduction amount per month. Leave blank for no cap.",
    "fieldname": "pf_cap_amount",
    "fieldtype": "Currency",
-   "label": "PF Cap Amount"
+   "label": "PF Cap Amount",
+   "description": "Maximum PF deduction amount per month. Leave blank for no cap."
+  },
+  {
+   "fieldname": "section_pt",
+   "fieldtype": "Section Break",
+   "label": "Professional Tax (PT)"
+  },
+  {
+   "default": "0",
+   "fieldname": "is_pt_component",
+   "fieldtype": "Check",
+   "label": "Is PT Component?",
+   "description": "Mark this component as Professional Tax. February: \u20b9300, all other months: \u20b9200."
   }
  ],
  "index_web_pages_for_search": 1,

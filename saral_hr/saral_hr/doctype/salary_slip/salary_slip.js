@@ -10,7 +10,6 @@ frappe.ui.form.on("Salary Slip", {
     employee(frm) {
         if (!frm.doc.employee) return;
         reset_form(frm);
-
         frappe.db.get_value("Company Link", frm.doc.employee, "category", (r) => {
             if (r && r.category) {
                 frappe.db.get_value("Category", r.category, "salary_calculation_based_on", (cat) => {
@@ -50,23 +49,17 @@ frappe.ui.form.on("Salary Details", {
     deductions_remove(frm){ recalculate_salary(frm); }
 });
 
-// ─── DA component detection (matches Python _is_da_component) ─────────────────
+// ─── DA detection (mirrors Python _is_da_component) ──────────────────────────
 
 function is_da_component(comp_name, abbr) {
-    const name = (comp_name || '').toLowerCase();
-    const ab   = (abbr || '').toLowerCase().trim();
-    return (
-        name.includes('dearness')
-        || name === 'da'
-        || ab === 'da'
-        || ab.startsWith('da-')
-        || ab.startsWith('da ')
-        || ab === 'da - dr'
-        || ab.startsWith('da-dr')
-    );
+    const n = (comp_name || '').toLowerCase();
+    const a = (abbr     || '').toLowerCase().trim();
+    return n.includes('dearness') || n === 'da'
+        || a === 'da' || a.startsWith('da-') || a.startsWith('da ')
+        || a === 'da - dr' || a.startsWith('da-dr');
 }
 
-// ─── Core Form Functions ──────────────────────────────────────────────────────
+// ─── Duplicate check + full fetch ─────────────────────────────────────────────
 
 function check_duplicate_and_fetch(frm) {
     frappe.call({
@@ -84,10 +77,15 @@ function check_duplicate_and_fetch(frm) {
 }
 
 function set_end_date(frm) {
-    const start = frappe.datetime.str_to_obj(frm.doc.start_date);
-    const end   = new Date(start.getFullYear(), start.getMonth() + 1, 0);
-    frm.set_value("end_date", frappe.datetime.obj_to_str(end));
+    const s = frappe.datetime.str_to_obj(frm.doc.start_date);
+    frm.set_value("end_date", frappe.datetime.obj_to_str(new Date(s.getFullYear(), s.getMonth() + 1, 0)));
 }
+
+// ─── Parallel data fetch + validation ────────────────────────────────────────
+//
+// Fires 4 parallel API calls (salary structure, variable pay check, attendance,
+// additional components). Variable pay check may spawn a 5th nested call for
+// the actual percentage. All results are merged in try_finalize().
 
 function fetch_and_validate_all(frm) {
     frm.page.btn_primary.prop("disabled", false);
@@ -99,9 +97,7 @@ function fetch_and_validate_all(frm) {
     let vpa_status      = null;
     let vpa_percentage  = 0;
     let additional_data = { earnings: [], deductions: [] };
-
-    // pending covers 4 parallel calls; vpa_check may bump it to 5 via nested call
-    let pending = 4;
+    let pending         = 4; // bumped to 5 if VPA check succeeds
 
     function try_finalize() {
         if (--pending > 0) return;
@@ -112,15 +108,17 @@ function fetch_and_validate_all(frm) {
         if (vpa_status && vpa_status.status === "missing")
             unmet.push(vpa_status.message.replace(/<[^>]+>/g, ""));
         if (!attendance_data)
-            unmet.push("Attendance data could not be retrieved for the selected period. Please verify attendance records.");
+            unmet.push("Attendance data could not be retrieved. Please verify attendance records.");
         else if (attendance_data.attendance_count === 0)
             unmet.push("No attendance has been recorded for this employee in the selected month.");
 
-        if (unmet.length > 0) {
+        if (unmet.length) {
             frappe.msgprint({
-                title:   __("Payroll Processing Requirements Not Met"),
-                message: `<div style="margin-bottom:8px;font-weight:600;">Please resolve the following before saving this salary slip:</div>
-                          <ul style="margin:0;padding-left:18px;line-height:1.7;">${unmet.map(e => `<li style="margin-bottom:6px;">${e}</li>`).join("")}</ul>`,
+                title: __("Payroll Processing Requirements Not Met"),
+                message: `<div style="margin-bottom:8px;font-weight:600;">Please resolve the following before saving:</div>
+                    <ul style="margin:0;padding-left:18px;line-height:1.7;">
+                        ${unmet.map(e => `<li style="margin-bottom:6px;">${e}</li>`).join("")}
+                    </ul>`,
                 indicator: "red"
             });
             frm.page.btn_primary.prop("disabled", true);
@@ -129,31 +127,33 @@ function fetch_and_validate_all(frm) {
 
         apply_salary_structure(frm, salary_data);
 
-        // Inject additional earnings (end of table — fixed, no proration)
+        // Append additional earnings — fixed amounts, excluded from ssa_gross
         (additional_data.earnings || []).forEach(row => {
             const e = frm.add_child("earnings");
             e.salary_component                 = row.salary_component;
-            e.abbr                             = row.abbr;
+            e.abbr                             = row.abbr || "";
             e.amount                           = flt(row.amount);
             e.base_amount                      = flt(row.amount);
-            e.depends_on_payment_days          = row.depends_on_payment_days          || 0;
-            e.is_daily_rate                    = row.is_daily_rate                    || 0;
-            e.depends_on_physical_working_days = row.depends_on_physical_working_days || 0;
-            e.is_special_component             = row.is_special_component             || 0;
+            e.depends_on_payment_days          = 0;
+            e.is_daily_rate                    = 0;
+            e.depends_on_physical_working_days = 0;
+            e._is_additional                   = true;
         });
 
-        // Inject additional deductions (end of table — fixed, no proration)
+        // Append additional deductions — fixed amounts, no statutory flags
         (additional_data.deductions || []).forEach(row => {
             const d = frm.add_child("deductions");
             d.salary_component                 = row.salary_component;
-            d.abbr                             = row.abbr;
+            d.abbr                             = row.abbr || "";
             d.amount                           = flt(row.amount);
             d.base_amount                      = flt(row.amount);
-            d.employer_contribution            = row.employer_contribution            || 0;
-            d.depends_on_payment_days          = row.depends_on_payment_days          || 0;
-            d.is_daily_rate                    = row.is_daily_rate                    || 0;
-            d.depends_on_physical_working_days = row.depends_on_physical_working_days || 0;
-            d.is_special_component             = row.is_special_component             || 0;
+            d.employer_contribution            = 0;
+            d.depends_on_payment_days          = 0;
+            d.is_daily_rate                    = 0;
+            d.depends_on_physical_working_days = 0;
+            d.is_pf_component                  = 0;
+            d.is_esic_component                = 0;
+            d._is_additional                   = true;
         });
 
         frm.refresh_fields(["earnings", "deductions"]);
@@ -161,7 +161,7 @@ function fetch_and_validate_all(frm) {
         frm.page.btn_primary.prop("disabled", false);
     }
 
-    // Call 1: salary structure
+    // Call 1 — salary structure
     frappe.call({
         method: "saral_hr.saral_hr.doctype.salary_slip.salary_slip.get_salary_structure_for_employee",
         args:   { employee: frm.doc.employee, start_date: frm.doc.start_date },
@@ -169,14 +169,14 @@ function fetch_and_validate_all(frm) {
         error()     { salary_data = null;              try_finalize(); }
     });
 
-    // Call 2: variable pay check (may spawn a 5th nested call)
+    // Call 2 — variable pay check (nested call 5 if VPA exists)
     frappe.call({
         method: "saral_hr.saral_hr.doctype.salary_slip.salary_slip.check_variable_pay_assignment",
         args:   { employee: frm.doc.employee, start_date: frm.doc.start_date },
         callback(r) {
             vpa_status = r.message || { status: "ok" };
             if (vpa_status.status === "ok") {
-                pending++; // bump BEFORE issuing nested call
+                pending++;
                 frappe.call({
                     method: "saral_hr.saral_hr.doctype.salary_slip.salary_slip.get_variable_pay_percentage",
                     args:   { employee: frm.doc.employee, start_date: frm.doc.start_date },
@@ -189,15 +189,19 @@ function fetch_and_validate_all(frm) {
         error() { vpa_status = { status: "ok" }; try_finalize(); }
     });
 
-    // Call 3: attendance
+    // Call 3 — attendance
     frappe.call({
         method: "saral_hr.saral_hr.doctype.salary_slip.salary_slip.get_attendance_and_days",
-        args:   { employee: frm.doc.employee, start_date: frm.doc.start_date, working_days_calculation_method: frm.doc.working_days_calculation_method },
+        args:   {
+            employee:                        frm.doc.employee,
+            start_date:                      frm.doc.start_date,
+            working_days_calculation_method: frm.doc.working_days_calculation_method
+        },
         callback(r) { attendance_data = r.message || null; try_finalize(); },
         error()     { attendance_data = null;              try_finalize(); }
     });
 
-    // Call 4: additional components
+    // Call 4 — additional components
     frappe.call({
         method: "saral_hr.saral_hr.doctype.salary_slip.salary_slip.get_additional_components_api",
         args:   { employee: frm.doc.employee, start_date: frm.doc.start_date },
@@ -206,7 +210,7 @@ function fetch_and_validate_all(frm) {
     });
 }
 
-// ─── Apply Fetched Data ───────────────────────────────────────────────────────
+// ─── Apply SSA rows to form ───────────────────────────────────────────────────
 
 function apply_salary_structure(frm, data) {
     frm.set_value("salary_structure", data.salary_structure);
@@ -216,13 +220,15 @@ function apply_salary_structure(frm, data) {
     (data.earnings || []).forEach(row => {
         const e = frm.add_child("earnings");
         Object.assign(e, row);
-        e.base_amount = row.base_amount !== undefined ? row.base_amount : row.amount;
+        e.base_amount    = row.base_amount !== undefined ? row.base_amount : row.amount;
+        e._is_additional = false;
     });
 
     (data.deductions || []).forEach(row => {
         const d = frm.add_child("deductions");
         Object.assign(d, row);
-        d.base_amount = row.base_amount !== undefined ? row.base_amount : row.amount;
+        d.base_amount    = row.base_amount !== undefined ? row.base_amount : row.amount;
+        d._is_additional = false;
     });
 
     frm.refresh_fields(["earnings", "deductions"]);
@@ -244,26 +250,31 @@ function apply_attendance(frm, d, variable_pay_pct) {
         total_on_tour:         d.total_on_tour       || 0,
         total_comp_off:        d.total_comp_off      || 0
     });
-
     if (variable_pay_pct !== undefined) frm.variable_pay_percentage = variable_pay_pct;
-
     recalculate_salary(frm, d.working_days, d.payment_days, d.physical_working_days);
 }
 
 // ─── Salary Calculation ───────────────────────────────────────────────────────
 //
-// Mirrors calculate_salary_slip_amounts_exact() in salary_slip.py exactly.
-// PF/ESIC are computed from component flags (is_pf_component, pf_percentage,
-// pf_cap_amount, pf_calculation_based_on) — NOT hardcoded rates.
+// Exactly mirrors calculate_salary_slip_amounts_exact() in salary_slip.py.
 //
-// Two gross values are tracked:
+// TWO GROSS VALUES
 //   prorated_gross  — total earnings after proration (includes additional)
-//   ssa_gross       — raw sum of base_amounts for SSA rows only
-//                     (approximated here as the base_amount sum of all earnings,
-//                      since additional rows carry base_amount = 0 from the server)
+//   ssa_gross       — unprorated base sum of SSA-origin rows only
+//                     (rows where _is_additional !== true)
 //
-// "Gross from Salary Structure Assignment" basis uses ssa_gross.
-// "Prorated Gross" (or blank) uses prorated_gross.
+// PF / ESIC are 100% flag-driven — never hardcoded:
+//   row.is_pf_component / is_esic_component      → marks row as statutory
+//   row.pf_calculation_based_on                  → "Prorated Gross"
+//        / esic_calculation_based_on                or
+//                                                   "Gross from Salary Structure Assignment"
+//   row.pf_percentage  / esic_percentage          → rate (e.g. 12 for 12%)
+//   row.pf_cap_amount  / esic_cap_amount          → monthly ceiling (0 = no cap)
+//
+// ESIC additional rule: amount = 0 when prorated_gross >= ₹21,000.
+// PT rule: February → ₹300, all other months → ₹200 (parsed directly from
+//          start_date string "YYYY-MM-DD" to avoid timezone issues).
+// User never types PF / ESIC / PT amounts — always auto-computed here.
 
 function recalculate_salary(frm, wd_override, pd_override, phd_override) {
     const wd           = flt(wd_override  !== undefined ? wd_override  : frm.doc.total_working_days);
@@ -274,11 +285,10 @@ function recalculate_salary(frm, wd_override, pd_override, phd_override) {
     let total_earnings              = 0;
     let total_deductions            = 0;
     let total_employer_contribution = 0;
-    let total_basic_da              = 0;
-    let retention                   = 0;
     let basic_amount                = 0;
     let da_amount                   = 0;
-    let ssa_gross                   = 0; // sum of base_amounts (unprorated SSA rows)
+    let retention                   = 0;
+    let ssa_gross                   = 0; // unprorated SSA earnings only
 
     // ── Pass 1: earnings ──────────────────────────────────────────────────────
     (frm.doc.earnings || []).forEach(row => {
@@ -291,29 +301,25 @@ function recalculate_salary(frm, wd_override, pd_override, phd_override) {
             amount = pd === 0 ? 0
                 : (wd > 0 && row.depends_on_payment_days) ? (base / wd) * pd * variable_pct
                 : base * variable_pct;
-
         } else if (row.depends_on_physical_working_days && wd > 0) {
             amount = (base / wd) * phd;
-
         } else if (row.is_daily_rate) {
             amount = base * pd;
-
         } else if (row.depends_on_payment_days && wd > 0) {
             amount = (base / wd) * pd;
-
         } else {
             amount = base; // fixed / additional
         }
 
         row.amount      = flt(amount, 2);
         total_earnings += row.amount;
-        ssa_gross      += base; // base_amount tracks the unprorated figure
 
-        if (comp.includes("basic"))                             basic_amount = row.amount;
-        if (is_da_component(row.salary_component, row.abbr))   da_amount    = row.amount;
+        if (!row._is_additional) ssa_gross += base; // SSA rows only
+
+        if (comp.includes("basic"))                           basic_amount = row.amount;
+        if (is_da_component(row.salary_component, row.abbr)) da_amount    = row.amount;
     });
 
-    total_basic_da = basic_amount + da_amount;
     const prorated_gross = total_earnings;
 
     // ── Pass 2: deductions ────────────────────────────────────────────────────
@@ -325,46 +331,64 @@ function recalculate_salary(frm, wd_override, pd_override, phd_override) {
         let amount;
 
         if (row.is_pf_component) {
-            // Fully flag-driven PF
             const pf_pct   = flt(row.pf_percentage  || 0);
             const pf_cap   = flt(row.pf_cap_amount   || 0);
             const pf_basis = (row.pf_calculation_based_on || "").trim();
-            const gross_for_pf = (pf_basis === "Gross from Salary Structure Assignment") ? ssa_gross : prorated_gross;
+            const gross_for_pf = (pf_basis === "Gross from Salary Structure Assignment")
+                ? ssa_gross : prorated_gross;
 
-            amount = pf_pct > 0 ? flt(gross_for_pf * pf_pct / 100, 2) : 0;
-            if (pf_cap > 0 && amount > pf_cap) amount = pf_cap;
+            if (pf_pct > 0) {
+                amount = flt(gross_for_pf * pf_pct / 100, 2);
+                if (pf_cap > 0) amount = Math.min(amount, pf_cap);
+            } else {
+                amount = 0;
+            }
+            if (row.base_amount !== undefined) row.base_amount = base;
+            row.amount = flt(amount, 2);
 
         } else if (row.is_esic_component) {
-            // Fully flag-driven ESIC (ceiling: no deduction when gross ≥ ₹21,000)
             const esic_pct   = flt(row.esic_percentage  || 0);
             const esic_cap   = flt(row.esic_cap_amount   || 0);
             const esic_basis = (row.esic_calculation_based_on || "").trim();
-            const gross_for_esic = (esic_basis === "Gross from Salary Structure Assignment") ? ssa_gross : prorated_gross;
+            const gross_for_esic = (esic_basis === "Gross from Salary Structure Assignment")
+                ? ssa_gross : prorated_gross;
 
-            if (esic_pct <= 0 || prorated_gross >= 21000) {
-                amount = 0;
-            } else {
+            if (esic_pct > 0 && prorated_gross < 21000) {
                 amount = flt(gross_for_esic * esic_pct / 100, 2);
-                if (esic_cap > 0 && amount > esic_cap) amount = esic_cap;
+                if (esic_cap > 0) amount = Math.min(amount, esic_cap);
+            } else {
+                amount = 0;
             }
+            row.amount = flt(amount, 2);
+
+        } else if (row.is_pt_component) {
+            // ── PT: parse month directly from "YYYY-MM-DD" string ─────────────
+            // Avoids timezone issues that affect Date object month detection.
+            // February (month 2) → ₹300, all other months → ₹200
+            if (frm.doc.start_date) {
+                const month = parseInt(frm.doc.start_date.split('-')[1], 10);
+                amount = month === 2 ? 300 : 200;
+            } else {
+                amount = base;
+            }
+            row.amount = flt(amount, 2);
 
         } else if (row.depends_on_physical_working_days && wd > 0 && base > 0) {
             amount = (base / wd) * phd;
-
+            row.amount = flt(amount, 2);
         } else if (row.is_daily_rate) {
             amount = base * pd;
-
+            row.amount = flt(amount, 2);
         } else if (row.depends_on_payment_days && wd > 0 && base > 0) {
             amount = (base / wd) * pd;
-
+            row.amount = flt(amount, 2);
         } else {
-            amount = base; // fixed / additional
+            amount = base;
+            row.amount = flt(amount, 2);
         }
 
-        row.amount = flt(amount, 2);
-
-        if (row.employer_contribution) total_employer_contribution += row.amount;
-        else                           total_deductions            += row.amount;
+        if (parseInt(row.employer_contribution)) total_employer_contribution += row.amount;
+        else                                     total_deductions            += row.amount;
 
         if (comp.includes("retention")) retention += row.amount;
     });
@@ -373,7 +397,7 @@ function recalculate_salary(frm, wd_override, pd_override, phd_override) {
         total_earnings:              flt(total_earnings, 2),
         total_deductions:            flt(total_deductions, 2),
         net_salary:                  flt(total_earnings - total_deductions, 2),
-        total_basic_da:              flt(total_basic_da, 2),
+        total_basic_da:              flt(basic_amount + da_amount, 2),
         total_employer_contribution: flt(total_employer_contribution, 2),
         retention:                   flt(retention, 2)
     });
