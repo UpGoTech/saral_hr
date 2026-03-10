@@ -1,5 +1,3 @@
-// ─── Form Events ──────────────────────────────────────────────────────────────
-
 frappe.ui.form.on("Salary Slip", {
 
     refresh(frm) {
@@ -82,10 +80,6 @@ function set_end_date(frm) {
 }
 
 // ─── Parallel data fetch + validation ────────────────────────────────────────
-//
-// Fires 4 parallel API calls (salary structure, variable pay check, attendance,
-// additional components). Variable pay check may spawn a 5th nested call for
-// the actual percentage. All results are merged in try_finalize().
 
 function fetch_and_validate_all(frm) {
     frm.page.btn_primary.prop("disabled", false);
@@ -97,7 +91,7 @@ function fetch_and_validate_all(frm) {
     let vpa_status      = null;
     let vpa_percentage  = 0;
     let additional_data = { earnings: [], deductions: [] };
-    let pending         = 4; // bumped to 5 if VPA check succeeds
+    let pending         = 4;
 
     function try_finalize() {
         if (--pending > 0) return;
@@ -127,7 +121,6 @@ function fetch_and_validate_all(frm) {
 
         apply_salary_structure(frm, salary_data);
 
-        // Append additional earnings — fixed amounts, excluded from ssa_gross
         (additional_data.earnings || []).forEach(row => {
             const e = frm.add_child("earnings");
             e.salary_component                 = row.salary_component;
@@ -140,7 +133,6 @@ function fetch_and_validate_all(frm) {
             e._is_additional                   = true;
         });
 
-        // Append additional deductions — fixed amounts, no statutory flags
         (additional_data.deductions || []).forEach(row => {
             const d = frm.add_child("deductions");
             d.salary_component                 = row.salary_component;
@@ -256,25 +248,9 @@ function apply_attendance(frm, d, variable_pay_pct) {
 
 // ─── Salary Calculation ───────────────────────────────────────────────────────
 //
-// Exactly mirrors calculate_salary_slip_amounts_exact() in salary_slip.py.
-//
-// TWO GROSS VALUES
-//   prorated_gross  — total earnings after proration (includes additional)
-//   ssa_gross       — unprorated base sum of SSA-origin rows only
-//                     (rows where _is_additional !== true)
-//
-// PF / ESIC are 100% flag-driven — never hardcoded:
-//   row.is_pf_component / is_esic_component      → marks row as statutory
-//   row.pf_calculation_based_on                  → "Prorated Gross"
-//        / esic_calculation_based_on                or
-//                                                   "Gross from Salary Structure Assignment"
-//   row.pf_percentage  / esic_percentage          → rate (e.g. 12 for 12%)
-//   row.pf_cap_amount  / esic_cap_amount          → monthly ceiling (0 = no cap)
-//
-// ESIC additional rule: amount = 0 when prorated_gross >= ₹21,000.
-// PT rule: February → ₹300, all other months → ₹200 (parsed directly from
-//          start_date string "YYYY-MM-DD" to avoid timezone issues).
-// User never types PF / ESIC / PT amounts — always auto-computed here.
+// ESIC: no ₹21,000 gross threshold check — if the employee has is_esic_applicable
+// on their Company Link record, ESIC components are included. The percentage,
+// cap, and basis are all read from the Salary Component table fields.
 
 function recalculate_salary(frm, wd_override, pd_override, phd_override) {
     const wd           = flt(wd_override  !== undefined ? wd_override  : frm.doc.total_working_days);
@@ -288,7 +264,7 @@ function recalculate_salary(frm, wd_override, pd_override, phd_override) {
     let basic_amount                = 0;
     let da_amount                   = 0;
     let retention                   = 0;
-    let ssa_gross                   = 0; // unprorated SSA earnings only
+    let ssa_gross                   = 0;
 
     // ── Pass 1: earnings ──────────────────────────────────────────────────────
     (frm.doc.earnings || []).forEach(row => {
@@ -308,13 +284,13 @@ function recalculate_salary(frm, wd_override, pd_override, phd_override) {
         } else if (row.depends_on_payment_days && wd > 0) {
             amount = (base / wd) * pd;
         } else {
-            amount = base; // fixed / additional
+            amount = base;
         }
 
         row.amount      = flt(amount, 2);
         total_earnings += row.amount;
 
-        if (!row._is_additional) ssa_gross += base; // SSA rows only
+        if (!row._is_additional) ssa_gross += base;
 
         if (comp.includes("basic"))                           basic_amount = row.amount;
         if (is_da_component(row.salary_component, row.abbr)) da_amount    = row.amount;
@@ -337,34 +313,24 @@ function recalculate_salary(frm, wd_override, pd_override, phd_override) {
             const gross_for_pf = (pf_basis === "Gross from Salary Structure Assignment")
                 ? ssa_gross : prorated_gross;
 
-            if (pf_pct > 0) {
-                amount = flt(gross_for_pf * pf_pct / 100, 2);
-                if (pf_cap > 0) amount = Math.min(amount, pf_cap);
-            } else {
-                amount = 0;
-            }
-            if (row.base_amount !== undefined) row.base_amount = base;
+            amount = (pf_pct > 0) ? flt(gross_for_pf * pf_pct / 100, 2) : 0;
+            if (pf_cap > 0) amount = Math.min(amount, pf_cap);
             row.amount = flt(amount, 2);
 
         } else if (row.is_esic_component) {
             const esic_pct   = flt(row.esic_percentage  || 0);
             const esic_cap   = flt(row.esic_cap_amount   || 0);
             const esic_basis = (row.esic_calculation_based_on || "").trim();
+            // ✅ Always use ssa_gross; no ₹21,000 check —
+            // eligibility is driven solely by is_esic_applicable on the employee
             const gross_for_esic = (esic_basis === "Gross from Salary Structure Assignment")
                 ? ssa_gross : prorated_gross;
 
-            if (esic_pct > 0 && prorated_gross < 21000) {
-                amount = flt(gross_for_esic * esic_pct / 100, 2);
-                if (esic_cap > 0) amount = Math.min(amount, esic_cap);
-            } else {
-                amount = 0;
-            }
+            amount = (esic_pct > 0) ? flt(gross_for_esic * esic_pct / 100, 2) : 0;
+            if (esic_cap > 0) amount = Math.min(amount, esic_cap);
             row.amount = flt(amount, 2);
 
         } else if (row.is_pt_component) {
-            // ── PT: parse month directly from "YYYY-MM-DD" string ─────────────
-            // Avoids timezone issues that affect Date object month detection.
-            // February (month 2) → ₹300, all other months → ₹200
             if (frm.doc.start_date) {
                 const month = parseInt(frm.doc.start_date.split('-')[1], 10);
                 amount = month === 2 ? 300 : 200;
@@ -374,17 +340,13 @@ function recalculate_salary(frm, wd_override, pd_override, phd_override) {
             row.amount = flt(amount, 2);
 
         } else if (row.depends_on_physical_working_days && wd > 0 && base > 0) {
-            amount = (base / wd) * phd;
-            row.amount = flt(amount, 2);
+            row.amount = flt((base / wd) * phd, 2);
         } else if (row.is_daily_rate) {
-            amount = base * pd;
-            row.amount = flt(amount, 2);
+            row.amount = flt(base * pd, 2);
         } else if (row.depends_on_payment_days && wd > 0 && base > 0) {
-            amount = (base / wd) * pd;
-            row.amount = flt(amount, 2);
+            row.amount = flt((base / wd) * pd, 2);
         } else {
-            amount = base;
-            row.amount = flt(amount, 2);
+            row.amount = flt(base, 2);
         }
 
         if (parseInt(row.employer_contribution)) total_employer_contribution += row.amount;

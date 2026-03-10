@@ -497,3 +497,5 @@ function _bind_inline_grid(wrapper, search_id, cls, count_id, all_items) {
     wrapper.find(`#${search_id}_desel_all`).on('click', () => { wrapper.find(`.${cls}`).prop('checked', false); upd(); });
     bind();
 }
+
+// ─── Form Events ──────────────────────────────────────────────────────────────

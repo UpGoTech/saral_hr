@@ -390,6 +390,12 @@ def get_attendance_and_days(employee, start_date, working_days_calculation_metho
 
 
 # ─── Core Salary Calculation ──────────────────────────────────────────────────
+#
+# ESIC: no ₹21,000 gross threshold check.
+# If is_esic_component is set on the deduction row, ESIC is calculated using
+# esic_percentage and esic_cap_amount from the Salary Component table.
+# Eligibility is controlled upstream by is_esic_applicable on Company Link —
+# if not applicable the component is never added to the slip at all.
 
 def calculate_salary_slip_amounts_exact(salary_slip, variable_pay_percentage,
                                         start_date, category=None,
@@ -423,7 +429,8 @@ def calculate_salary_slip_amounts_exact(salary_slip, variable_pay_percentage,
                 amount = base * variable_pct
 
         elif row.depends_on_physical_working_days and wd > 0:
-            amount = (base / wd) * phd
+            amount = base * phd
+            # amount = (base / wd) * phd
 
         elif row.is_daily_rate:
             amount = base * pd
@@ -453,8 +460,8 @@ def calculate_salary_slip_amounts_exact(salary_slip, variable_pay_percentage,
         comp = (row.salary_component or "").lower()
 
         if getattr(row, "is_pf_component", 0):
-            pf_pct  = flt(getattr(row, "pf_percentage", 0))
-            pf_cap  = flt(getattr(row, "pf_cap_amount", 0))
+            pf_pct   = flt(getattr(row, "pf_percentage", 0))
+            pf_cap   = flt(getattr(row, "pf_cap_amount", 0))
             pf_basis = getattr(row, "pf_calculation_based_on", "") or ""
 
             gross_for_pf = flt(ssa_gross) if (pf_basis == "Gross from Salary Structure Assignment" and ssa_gross is not None) else prorated_gross
@@ -471,17 +478,19 @@ def calculate_salary_slip_amounts_exact(salary_slip, variable_pay_percentage,
             esic_cap   = flt(getattr(row, "esic_cap_amount", 0))
             esic_basis = getattr(row, "esic_calculation_based_on", "") or ""
 
+            # ✅ No ₹21,000 check — if the component is present, employee is
+            # eligible (controlled by is_esic_applicable on Company Link).
+            # Use ssa_gross or prorated_gross per the component's basis setting.
             gross_for_esic = flt(ssa_gross) if (esic_basis == "Gross from Salary Structure Assignment" and ssa_gross is not None) else prorated_gross
 
-            if prorated_gross >= 21000 or esic_pct <= 0:
-                amount = 0.0
-            else:
+            if esic_pct > 0:
                 amount = flt(gross_for_esic * esic_pct / 100, 2)
                 if esic_cap > 0:
                     amount = min(amount, esic_cap)
+            else:
+                amount = 0.0
 
         elif getattr(row, "is_pt_component", 0):
-            # ── PT: recalculate from the actual payroll month ─────────────────
             # February → ₹300, all other months → ₹200
             if start_date:
                 _sd = getdate(start_date)
@@ -731,9 +740,6 @@ def bulk_generate_salary_slips(employees, year, month):
 
             ssa_earning_amount = sum(flt(e.get('amount', 0)) for e in salary_data.get('earnings', []))
 
-            # ── PT already filtered in get_salary_structure_for_employee ──────
-            # This loop copies whatever deductions were returned (PT excluded
-            # for non-applicable employees at the source).
             for deduction in salary_data.get('deductions', []):
                 row = salary_slip.append('deductions', {})
                 row.salary_component                 = deduction.get('salary_component')

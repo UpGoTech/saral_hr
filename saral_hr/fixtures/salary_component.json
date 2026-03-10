@@ -115,29 +115,6 @@
   "type": "Deduction"
  },
  {
-  "depends_on_payment_days": 0,
-  "depends_on_physical_working_days": 0,
-  "description": null,
-  "docstatus": 0,
-  "doctype": "Salary Component",
-  "employer_contribution": 1,
-  "esic_calculation_based_on": null,
-  "esic_cap_amount": 0.0,
-  "esic_percentage": 0.0,
-  "is_daily_rate": 0,
-  "is_esic_component": 0,
-  "is_pf_component": 0,
-  "is_pt_component": 0,
-  "modified": "2026-02-09 14:25:02.305721",
-  "name": "Employer -  ESIC",
-  "pf_calculation_based_on": null,
-  "pf_cap_amount": 0.0,
-  "pf_percentage": 0.0,
-  "salary_component": "Employer -  ESIC",
-  "salary_component_abbr": "EESI",
-  "type": "Deduction"
- },
- {
   "depends_on_payment_days": 1,
   "depends_on_physical_working_days": 0,
   "description": "Cost-of-living adjustment allowance. Prorated for payment days.",
@@ -381,7 +358,7 @@
   "is_esic_component": 0,
   "is_pf_component": 0,
   "is_pt_component": 0,
-  "modified": "2026-02-16 12:00:44.279815",
+  "modified": "2026-02-16 12:00:44.279813",
   "name": "Employee -  PF",
   "pf_calculation_based_on": null,
   "pf_cap_amount": 0.0,
@@ -845,7 +822,7 @@
   "name": "Employee - No PF",
   "pf_calculation_based_on": "Prorated Gross",
   "pf_cap_amount": 0.0,
-  "pf_percentage": 12.0,
+  "pf_percentage": 0.0,
   "salary_component": "Employee - No PF",
   "salary_component_abbr": "NO-PF-EMP",
   "type": "Deduction"
@@ -868,7 +845,7 @@
   "name": "Employer - EPF (No PF)",
   "pf_calculation_based_on": "Prorated Gross",
   "pf_cap_amount": 0.0,
-  "pf_percentage": 3.67,
+  "pf_percentage": 0.0,
   "salary_component": "Employer - EPF (No PF)",
   "salary_component_abbr": "EPF-N-EMPR",
   "type": "Deduction"
@@ -891,7 +868,7 @@
   "name": "Employer - EPS (No PF)",
   "pf_calculation_based_on": "Prorated Gross",
   "pf_cap_amount": 0.0,
-  "pf_percentage": 8.33,
+  "pf_percentage": 0.0,
   "salary_component": "Employer - EPS (No PF)",
   "salary_component_abbr": "EPS-N-EMPR",
   "type": "Deduction"
@@ -914,7 +891,7 @@
   "name": "Employer - EDLI (No PF)",
   "pf_calculation_based_on": "Prorated Gross",
   "pf_cap_amount": 0.0,
-  "pf_percentage": 0.5,
+  "pf_percentage": 0.0,
   "salary_component": "Employer - EDLI (No PF)",
   "salary_component_abbr": "EDLI-N-EMPR",
   "type": "Deduction"
@@ -937,7 +914,7 @@
   "name": "Employer - PF Admin (No PF)",
   "pf_calculation_based_on": "Prorated Gross",
   "pf_cap_amount": 0.0,
-  "pf_percentage": 0.5,
+  "pf_percentage": 0.0,
   "salary_component": "Employer - PF Admin (No PF)",
   "salary_component_abbr": "PF-ADM-N",
   "type": "Deduction"

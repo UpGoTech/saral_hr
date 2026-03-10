@@ -174,7 +174,6 @@ frappe.ui.form.on("Salary Structure Assignment", {
                                         pt_amt = ref_date.getMonth() === 1 ? 300 : 200;
                                     }
 
-                                    // Use frappe.model.set_value so values land in the doc store
                                     frappe.model.set_value(child.doctype, child.name, {
                                         salary_component:          c.name,
                                         abbr:                      c.salary_component_abbr || "",
@@ -337,12 +336,14 @@ function calculate_salary(frm)        { _do_calculate(frm, false); }
 function calculate_salary_silent(frm) { _do_calculate(frm, true);  }
 
 function _do_calculate(frm, silent) {
+    // ── ssa_gross: sum of all earnings rows (gross from salary structure assignment)
     let gross_salary = 0;
     (frm.doc.earnings || []).forEach(row => {
         const live_row = frappe.get_doc(row.doctype, row.name);
         gross_salary += flt(live_row ? live_row.amount : row.amount);
     });
 
+    // Always use ssa_gross as the base for all statutory calculations
     const ssa_gross = gross_salary;
 
     const deductions = frm.doc.deductions || [];
@@ -362,35 +363,31 @@ function _do_calculate(frm, silent) {
         let amt = 0;
 
         if (row.is_pf_component) {
-            const pf_pct   = flt(row.pf_percentage  || 0);
-            const pf_cap   = flt(row.pf_cap_amount   || 0);
-            const pf_basis = (row.pf_calculation_based_on || "").trim();
-            const gross_for_pf = (pf_basis === "Gross from Salary Structure Assignment")
-                ? ssa_gross : gross_salary;
+            const pf_pct = flt(row.pf_percentage || 0);
+            const pf_cap = flt(row.pf_cap_amount  || 0);
 
+            // Always use ssa_gross for PF regardless of pf_calculation_based_on
             if (pf_pct > 0) {
-                amt = flt(gross_for_pf * pf_pct / 100, 2);
+                amt = flt(ssa_gross * pf_pct / 100, 2);
                 if (pf_cap > 0) amt = Math.min(amt, pf_cap);
             }
             if (live_row) live_row.amount = amt; else d.amount = amt;
             statutory_names.push(d.name);
 
         } else if (row.is_esic_component) {
-            const esic_pct   = flt(row.esic_percentage  || 0);
-            const esic_cap   = flt(row.esic_cap_amount   || 0);
-            const esic_basis = (row.esic_calculation_based_on || "").trim();
-            const gross_for_esic = (esic_basis === "Gross from Salary Structure Assignment")
-                ? ssa_gross : gross_salary;
+            const esic_pct = flt(row.esic_percentage || 0);
+            const esic_cap = flt(row.esic_cap_amount  || 0);
 
-            if (esic_pct > 0 && gross_salary < 21000) {
-                amt = flt(gross_for_esic * esic_pct / 100, 2);
+            // Always use ssa_gross for ESIC; no ₹21,000 eligibility check —
+            // eligibility is already determined by is_esic_applicable on the employee
+            if (esic_pct > 0) {
+                amt = flt(ssa_gross * esic_pct / 100, 2);
                 if (esic_cap > 0) amt = Math.min(amt, esic_cap);
             }
             if (live_row) live_row.amount = amt; else d.amount = amt;
             statutory_names.push(d.name);
 
         } else if (row.is_pt_component) {
-            // ── PT: recalculate from the actual from_date month ───────────────
             // February (getMonth() === 1, 0-indexed) → ₹300, all other months → ₹200
             if (frm.doc.from_date) {
                 const ref_date = frappe.datetime.str_to_obj(frm.doc.from_date);
