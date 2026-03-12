@@ -3,6 +3,21 @@
 
 frappe.ui.form.on("Company", {
     refresh(frm) {
+        // Apply Earning-only filter on both tables at load time
+        if (frm.fields_dict["esic_dependent_component"]) {
+            frm.fields_dict["esic_dependent_component"].grid.update_docfield_property(
+                "wage_components", "get_query", () => ({ filters: { type: "Earning" } })
+            );
+        }
+        if (frm.fields_dict["pf_dependent_component"]) {
+            frm.fields_dict["pf_dependent_component"].grid.update_docfield_property(
+                "wage_components", "get_query", () => ({ filters: { type: "Earning" } })
+            );
+        }
+
+        // Auto-populate both tables with all Earning components if empty
+        auto_populate_earning_components(frm);
+
         render_esic_formula(frm);
         render_pf_formula(frm);
         render_salary_calc_preview(frm);
@@ -14,7 +29,16 @@ frappe.ui.form.on("Company", {
 });
 
 frappe.ui.form.on("Statutory Wage Component", {
-    // Fires when any row's wage_components value changes
+    esic_dependent_component_add(frm, cdt, cdn) {
+        frm.fields_dict["esic_dependent_component"].grid.update_docfield_property(
+            "wage_components", "get_query", () => ({ filters: { type: "Earning" } })
+        );
+    },
+    pf_dependent_component_add(frm, cdt, cdn) {
+        frm.fields_dict["pf_dependent_component"].grid.update_docfield_property(
+            "wage_components", "get_query", () => ({ filters: { type: "Earning" } })
+        );
+    },
     wage_components(frm) {
         render_esic_formula(frm);
         render_pf_formula(frm);
@@ -28,6 +52,48 @@ frappe.ui.form.on("Statutory Wage Component", {
 });
 
 // ─────────────────────────────────────────────────────────────
+//  Auto-populate both tables with ALL Earning components
+//  Only runs if the table is currently empty
+// ─────────────────────────────────────────────────────────────
+
+function auto_populate_earning_components(frm) {
+    frappe.db.get_list("Salary Component", {
+        filters: { type: "Earning" },
+        fields: ["name"],
+        limit: 0
+    }).then(results => {
+        if (!results || !results.length) return;
+
+        let dirty = false;
+
+        if (!(frm.doc.esic_dependent_component || []).length) {
+            results.forEach(r => {
+                const row = frappe.model.add_child(frm.doc, "Statutory Wage Component", "esic_dependent_component");
+                row.wage_components = r.name;
+            });
+            frm.refresh_field("esic_dependent_component");
+            dirty = true;
+        }
+
+        if (!(frm.doc.pf_dependent_component || []).length) {
+            results.forEach(r => {
+                const row = frappe.model.add_child(frm.doc, "Statutory Wage Component", "pf_dependent_component");
+                row.wage_components = r.name;
+            });
+            frm.refresh_field("pf_dependent_component");
+            dirty = true;
+        }
+
+        if (dirty) {
+            render_esic_formula(frm);
+            render_pf_formula(frm);
+        }
+    });
+}
+
+
+
+// ─────────────────────────────────────────────────────────────
 //  ESIC  —  wage basis = A − B − C …  capped at ESIC Wage Limit
 // ─────────────────────────────────────────────────────────────
 
@@ -37,7 +103,7 @@ function render_esic_formula(frm) {
         .map(r => r.wage_components)
         .filter(Boolean);
     const limit = frm.doc.esic_wage_limit;
-    render_formula_banner($section, "esic-formula-preview", rows, "subtract", "ESIC", limit);
+    render_formula_banner($section, "esic-formula-preview", rows, "sum", "ESIC", limit);
 }
 
 // ─────────────────────────────────────────────────────────────

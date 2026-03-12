@@ -4,256 +4,343 @@
 import frappe
 from frappe import _
 from frappe.model.document import Document
+from frappe.utils import flt, getdate
+from datetime import date
 
-VIRTUAL_COMPONENTS = {"Gross", "Gross Including Additional Salary"}
+FAR_FUTURE = date(9999, 12, 31)
+
+MONTHS = [
+    "January", "February", "March", "April",
+    "May", "June", "July", "August",
+    "September", "October", "November", "December"
+]
+
+# Exact component names — must match Salary Component records
+SC_EMP_ESIC   = "Employee ESIC"
+SC_EMPR_ESIC  = "Employer ESIC"
+SC_EMP_PF     = "Employee PF"
+SC_EMPR_PF    = "Employer PF"
+SC_EMPR_EPS   = "Employer EPS"
+SC_EMPR_EDLI  = "Employer EDLI"
+SC_EMPR_PFADM = "Employer PF Admin Charges"
+SC_PT         = "Professional Tax"
+SC_EMP_LWF    = "Employee Labour Welfare Fund"
+SC_EMPR_LWF   = "Employer Labour Welfare Fund"
 
 
-class Company(Document):
+class SalaryStructureAssignment(Document):
 
-    def validate(self):
-        self.validate_esic_settings()
-        self.validate_pf_settings()
-
-    def on_update(self):
-        pass
-
-    # ──────────────────────────────────────────────
-    # ESIC
-    # ──────────────────────────────────────────────
-
-    def validate_esic_settings(self):
-        components = self._get_child_components("esic_dependent_component")
-        if not components:
-            return
-
-        self._validate_components(components, "ESIC")
-
-        if len(components) < 2:
-            frappe.msgprint(
-                _("ESIC Wage Basis: only one component listed — nothing will be subtracted."),
-                indicator="orange",
-                alert=True
-            )
-
-        if self.esic_wage_limit and self.esic_wage_limit < 0:
-            frappe.throw(_("ESIC Wage Limit cannot be negative."))
-        if self.esic_employee_contribution is not None and self.esic_employee_contribution < 0:
-            frappe.throw(_("ESIC Employee Contribution % cannot be negative."))
-        if self.esic_employer_contribution is not None and self.esic_employer_contribution < 0:
-            frappe.throw(_("ESIC Employer Contribution % cannot be negative."))
-
-    # ──────────────────────────────────────────────
-    # PF
-    # ──────────────────────────────────────────────
-
-    def validate_pf_settings(self):
-        components = self._get_child_components("pf_dependent_component")
-        if not components:
-            return
-
-        self._validate_components(components, "PF")
-
-        for fieldname, label in [
-            ("pf_employee_percent", "PF Employee Contribution %"),
-            ("pf_employer_eps",     "PF Employer EPS %"),
-            ("pf_employer_epf",     "PF Employer EPF %"),
-            ("pf_edli_insurance",   "PF Employee EDLI Insurance %"),
-            ("pf_admin_charges",    "PF Employer Admin Charges %"),
-        ]:
-            val = self.get(fieldname)
-            if val is not None and val < 0:
-                frappe.throw(_("{0} cannot be negative.").format(label))
-
-    # ──────────────────────────────────────────────
-    # Internal helpers
-    # ──────────────────────────────────────────────
-
-    def _get_child_components(self, table_fieldname):
-        """Return an ordered list of component names from a child table field."""
-        rows = self.get(table_fieldname) or []
-        return [row.wage_components for row in rows if row.wage_components]
-
-    def _validate_components(self, components, label_prefix):
-        for comp in components:
-            if comp in VIRTUAL_COMPONENTS:
-                continue
-            comp_type = frappe.db.get_value("Salary Component", comp, "type")
-            if not comp_type:
-                frappe.throw(
-                    _("{0} Wage Component <b>{1}</b> does not exist.").format(label_prefix, comp)
-                )
-            if comp_type != "Earning":
-                frappe.throw(
-                    _("{0} Wage Component <b>{1}</b> must be of type Earning.").format(label_prefix, comp)
-                )
-
-    def _resolve_component_value(self, comp: str, salary_components: dict) -> float:
-        """
-        Resolve a component name to its numeric value.
-
-        Virtual components are resolved as follows:
-
-        "Gross"
-            = sum of all values in salary_components whose key is a real
-              Earning component (i.e. NOT a virtual keyword and NOT a
-              reserved internal key starting with "_").
-              Callers must pass every earning row as {component_name: amount}.
-
-        "Gross Including Additional Salary"
-            = Gross (as above) + salary_components.get("_additional_salary", 0)
-              Callers must inject the pre-fetched Additional Salary amount
-              under the reserved key "_additional_salary".
-
-        Any other name
-            = direct lookup in salary_components, defaulting to 0.0.
-
-        Example salary_components dict the caller should build:
-            {
-                "Basic":              15000.0,
-                "Dearness Allowance":  5000.0,
-                "Conveyance Allowance": 800.0,
-                "_additional_salary":  2000.0,   # optional; 0 if none
-            }
-        """
-        if comp == "Gross":
-            # Direct lookup first (SSA passes gross_salary under "Gross" key)
-            if "Gross" in salary_components:
-                return float(salary_components["Gross"])
-            # Fallback: sum all real earning component values
-            return float(sum(
-                v for k, v in salary_components.items()
-                if k not in VIRTUAL_COMPONENTS and not k.startswith("_")
-            ))
-
-        if comp == "Gross Including Additional Salary":
-            # Direct lookup first
-            if "Gross Including Additional Salary" in salary_components:
-                return float(salary_components["Gross Including Additional Salary"])
-            # Fallback: sum real components + additional salary
-            gross = float(sum(
-                v for k, v in salary_components.items()
-                if k not in VIRTUAL_COMPONENTS and not k.startswith("_")
-            ))
-            additional = float(salary_components.get("_additional_salary", 0.0))
-            return gross + additional
-
-        return float(salary_components.get(comp, 0.0))
-
-    # ──────────────────────────────────────────────
-    # Wage basis calculators (called from payroll)
-    # ──────────────────────────────────────────────
-
-    def compute_esic_wage_basis(self, salary_components: dict) -> float:
-        """
-        ESIC wage basis = FIRST component MINUS all remaining components,
-        then capped at esic_wage_limit (if set).
-
-        Common configurations:
-            [Gross]                          → Gross
-            [Gross, Conveyance Allowance]    → Gross − Conveyance Allowance
-            [Basic, DA]                      → Basic − DA  (unusual but supported)
-
-        :param salary_components: dict of {component_name: amount}.
-               Pass "_additional_salary" key if Gross Including Additional
-               Salary is used as a component.
-        :return: wage basis as float, clamped to 0, capped at esic_wage_limit.
-        """
-        components = self._get_child_components("esic_dependent_component")
-        if not components:
-            return 0.0
-
-        result = self._resolve_component_value(components[0], salary_components)
-        for comp in components[1:]:
-            result -= self._resolve_component_value(comp, salary_components)
-
-        result = max(result, 0.0)
-
-        if self.esic_wage_limit:
-            result = min(result, float(self.esic_wage_limit))
-
-        return result
-
-    def compute_pf_wage_basis(self, salary_components: dict) -> float:
-        """
-        PF wage basis = SUM of ALL listed components (no cap applied here).
-
-        The Limited PF wage cap is applied by the caller (get_statutory_components)
-        based on the pf_type selected on the Salary Structure Assignment:
-            - Limited PF  → wage capped at pf_wage_limit from Company
-            - Full PF     → no cap, full computed wage basis used
-
-        Common configurations:
-            [Basic, Dearness Allowance]      → Basic + DA
-            [Gross]                          → full gross
-            [Basic, DA, Special Allowance]   → Basic + DA + Special Allowance
-
-        :param salary_components: dict of {component_name: amount}.
-        :return: raw wage basis as float, clamped to 0. No cap applied.
-        """
-        components = self._get_child_components("pf_dependent_component")
-        if not components:
-            return 0.0
-
-        result = sum(
-            self._resolve_component_value(comp, salary_components)
-            for comp in components
+    def on_submit(self):
+        _check_overlap(
+            employee=self.employee,
+            from_date=self.from_date,
+            to_date=self.to_date,
+            employee_name=self.employee_name,
+            current_name=self.name,
+            throw_if_overlap=True,
         )
 
-        return max(result, 0.0)
+    def on_cancel(self):
+        pass
 
-    # ──────────────────────────────────────────────
-    # Public config helpers for payroll
-    # ──────────────────────────────────────────────
 
-    def get_salary_calculation_method(self) -> str:
-        """
-        Returns the payroll calculation method for this company.
-        Used by attendance/payment-days logic.
+# ─────────────────────────────────────────────────────────────
+#  Statutory computation — called from JS
+# ─────────────────────────────────────────────────────────────
 
-        Returns:
-            "Exclude Weekly Offs" — payment days = working days − weekly offs − absences
-            "Include Weekly Offs" — payment days = calendar days − absences
-        """
-        val = self.salary_calculation_based_on or ""
-        if "Include" in val:
-            return "Include Weekly Offs"
-        return "Exclude Weekly Offs"
+@frappe.whitelist()
+def get_statutory_components(company, gross_salary, from_date,
+                              is_esic_applicable=0, is_pf_applicable=0,
+                              pf_type=None, is_pt_applicable=0,
+                              is_lwf_applicable=0,
+                              earnings_map=None):
+    """
+    Compute statutory deduction and employer-share amounts from Company config.
 
-    def get_esic_config(self):
-        """
-        Returns the full ESIC config for payroll processing.
-        wage_basis_mode = 'subtract'
-            ESIC wage = first component − rest, capped at esic_wage_limit.
-        """
-        components = self._get_child_components("esic_dependent_component")
-        if not components:
-            return None
+    ESIC:
+        wage = SUM of ALL components listed in esic_dependent_component
+               (zero-amount components contribute 0, no cap applied).
+        Employee ESIC = wage * employee_percent / 100
+        Employer ESIC = wage * employer_percent / 100
+
+    PF:
+        wage = SUM of ALL components listed in pf_dependent_component
+               (zero-amount components contribute 0).
+        Limited PF: wage is capped at pf_wage_limit from Company.
+        Full PF:    no cap.
+
+    PT:
+        Month-specific fixed amount from Salary Component monthly_amounts table.
+
+    LWF:
+        Fixed constant amount (most common non-zero across all months).
+    """
+    import json as _json
+
+    gross_salary       = flt(gross_salary)
+    is_esic_applicable = int(is_esic_applicable or 0)
+    is_pf_applicable   = int(is_pf_applicable   or 0)
+    is_pt_applicable   = int(is_pt_applicable   or 0)
+    is_lwf_applicable  = int(is_lwf_applicable  or 0)
+
+    # Parse earnings_map if sent as JSON string from JS
+    if isinstance(earnings_map, str):
+        try:
+            earnings_map = _json.loads(earnings_map)
+        except Exception:
+            earnings_map = {}
+    earnings_map = earnings_map or {}
+
+    deductions     = []
+    employer_share = []
+
+    comp_doc = frappe.get_doc("Company", company) if company else None
+
+    def abbr(name):
+        return frappe.db.get_value("Salary Component", name, "salary_component_abbr") or ""
+
+    def row(name, amount, employer=0):
         return {
-            "is_applicable":    True,
-            "wage_basis_mode":  "subtract",
-            "wage_components":  components,
-            "wage_limit":       self.esic_wage_limit or None,
-            "employee_percent": self.esic_employee_contribution or 0,
-            "employer_percent": self.esic_employer_contribution or 0,
+            "salary_component":      name,
+            "abbr":                  abbr(name),
+            "amount":                flt(amount, 2),
+            "employer_contribution": employer,
         }
 
-    def get_pf_config(self):
-        """
-        Returns the full PF config for payroll processing.
-        wage_basis_mode = 'sum'
-            PF wage = sum of all components, capped at pf_wage_limit.
-        """
-        components = self._get_child_components("pf_dependent_component")
-        if not components:
-            return None
-        return {
-            "is_applicable":    True,
-            "wage_basis_mode":  "sum",
-            "wage_components":  components,
-            "wage_limit":       self.pf_wage_limit or None,
-            "employee_percent": self.pf_employee_percent or 0,
-            "employer_eps":     self.pf_employer_eps or 0,
-            "employer_epf":     self.pf_employer_epf or 0,
-            "edli_insurance":   self.pf_edli_insurance or 0,
-            "admin_charges":    self.pf_admin_charges or 0,
-        }
+    # ── ESIC ─────────────────────────────────────────────────
+    # Wage basis = SUM of ALL listed components in esic_dependent_component.
+    # Zero-amount components are included as 0 (no skip).
+    # NO CAP is applied — esic_wage_limit is for display reference only.
+    # Employee ESIC = wage * employee_percent / 100
+    # Employer ESIC = wage * employer_percent / 100
+    if is_esic_applicable and comp_doc:
+        esic_cfg = comp_doc.get_esic_config()
+        if esic_cfg:
+            # Build salary_map with ALL components from the table
+            salary_map = _build_salary_map(
+                comp_doc, "esic_dependent_component", gross_salary, earnings_map
+            )
+            # Sum ALL components — no cap
+            esic_components = comp_doc._get_child_components("esic_dependent_component")
+            wage = max(
+                sum(
+                    comp_doc._resolve_component_value(c, salary_map)
+                    for c in esic_components
+                ),
+                0.0
+            )
+            # NOTE: esic_wage_limit is intentionally NOT applied here.
+            # It is shown on Company form for reference only.
+
+            emp_pct  = flt(esic_cfg.get("employee_percent", 0))
+            empr_pct = flt(esic_cfg.get("employer_percent", 0))
+
+            if emp_pct:
+                deductions.append(row(SC_EMP_ESIC, wage * emp_pct / 100))
+            if empr_pct:
+                employer_share.append(row(SC_EMPR_ESIC, wage * empr_pct / 100, employer=1))
+
+    # ── PF ───────────────────────────────────────────────────
+    # Wage basis = SUM of ALL listed components in pf_dependent_component.
+    # Zero-amount components are included as 0 (no skip).
+    #
+    # Limited PF: wage is capped at pf_wage_limit from Company.
+    #   e.g. Basic+DA = 16000, limit = 15000 → PF on 15000
+    #   e.g. Basic+DA = 12000, limit = 15000 → PF on 12000
+    #
+    # Full PF: no cap — all percentages applied to full computed wage.
+    if is_pf_applicable and comp_doc:
+        pf_cfg = comp_doc.get_pf_config()
+        if pf_cfg:
+            salary_map = _build_salary_map(
+                comp_doc, "pf_dependent_component", gross_salary, earnings_map
+            )
+
+            # Sum ALL components — cap applied separately below
+            pf_components = comp_doc._get_child_components("pf_dependent_component")
+            raw_wage = max(
+                sum(
+                    comp_doc._resolve_component_value(c, salary_map)
+                    for c in pf_components
+                ),
+                0.0
+            )
+
+            # Apply Limited PF cap only when pf_type is explicitly "Limited PF"
+            if pf_type == "Limited PF" and pf_cfg.get("wage_limit"):
+                wage = min(raw_wage, flt(pf_cfg["wage_limit"]))
+            else:
+                # Full PF — use the full raw wage, ignore pf_wage_limit
+                wage = raw_wage
+
+            emp_pct  = flt(pf_cfg.get("employee_percent", 0))
+            epf_pct  = flt(pf_cfg.get("employer_epf",    0))
+            eps_pct  = flt(pf_cfg.get("employer_eps",    0))
+            edli_pct = flt(pf_cfg.get("edli_insurance",  0))
+            adm_pct  = flt(pf_cfg.get("admin_charges",   0))
+
+            if emp_pct:
+                deductions.append(row(SC_EMP_PF,     wage * emp_pct  / 100))
+            if epf_pct:
+                employer_share.append(row(SC_EMPR_PF,    wage * epf_pct  / 100, employer=1))
+            if eps_pct:
+                employer_share.append(row(SC_EMPR_EPS,   wage * eps_pct  / 100, employer=1))
+            if edli_pct:
+                employer_share.append(row(SC_EMPR_EDLI,  wage * edli_pct / 100, employer=1))
+            if adm_pct:
+                employer_share.append(row(SC_EMPR_PFADM, wage * adm_pct  / 100, employer=1))
+
+    # ── PT ───────────────────────────────────────────────────
+    # PT amount is month-specific — Feb = ₹300, all others = ₹200 (example).
+    # Amounts are read from the Professional Tax Special Salary Component.
+    if is_pt_applicable and from_date:
+        month_name = MONTHS[getdate(from_date).month - 1]
+        pt_amt     = _special_component_amount(SC_PT, month_name)
+        deductions.append(row(SC_PT, pt_amt))
+
+    # ── LWF ──────────────────────────────────────────────────
+    # LWF is a fixed constant amount (same every applicable month).
+    # Most common non-zero value is used across all 12 months.
+    if is_lwf_applicable:
+        emp_lwf_amt  = _special_component_constant_amount(SC_EMP_LWF)
+        empr_lwf_amt = _special_component_constant_amount(SC_EMPR_LWF)
+        deductions.append(row(SC_EMP_LWF,  emp_lwf_amt))
+        employer_share.append(row(SC_EMPR_LWF, empr_lwf_amt, employer=1))
+
+    return {"deductions": deductions, "employer_share": employer_share}
+
+
+def _build_salary_map(comp_doc, table_fieldname, gross_salary, earnings_map):
+    """
+    Build the salary_components dict used by Company._resolve_component_value.
+
+    For each component listed in the wage-basis config table:
+      1. Virtual ("Gross", "Gross Including Additional Salary") → gross_salary
+      2. Present in earnings_map (actual SSA earning rows from JS) → exact amount
+      3. Not in earnings_map → 0.0
+         (Component is listed on Company config but not in this SSA's earnings —
+          treat as zero rather than approximating with gross_salary.)
+
+    Always inject both virtual keys so _resolve_component_value can look them up.
+    """
+    VIRTUAL = {"Gross", "Gross Including Additional Salary"}
+
+    rows       = comp_doc.get(table_fieldname) or []
+    components = [r.wage_components for r in rows if r.wage_components]
+
+    salary_map = {
+        "Gross":                             flt(gross_salary),
+        "Gross Including Additional Salary": flt(gross_salary),
+    }
+
+    for comp in components:
+        if comp in VIRTUAL:
+            continue  # already injected above
+        if comp in earnings_map:
+            salary_map[comp] = flt(earnings_map[comp])
+        else:
+            # Component listed in Company config but not in SSA earnings → 0
+            salary_map[comp] = 0.0
+
+    return salary_map
+
+
+def _special_component_amount(component_name, month_name):
+    """Read monthly amount from a Special Salary Component."""
+    try:
+        doc = frappe.get_doc("Salary Component", component_name)
+        if not int(doc.is_special_component or 0):
+            return 0.0
+        for r in (doc.monthly_amounts or []):
+            if r.month == month_name:
+                return flt(r.amount)
+    except frappe.DoesNotExistError:
+        pass
+    return 0.0
+
+
+def _special_component_constant_amount(component_name):
+    """Return the most common non-zero amount across all months (for LWF)."""
+    try:
+        doc = frappe.get_doc("Salary Component", component_name)
+        if not int(doc.is_special_component or 0):
+            return 0.0
+        non_zero = [flt(r.amount) for r in (doc.monthly_amounts or []) if flt(r.amount) > 0]
+        if not non_zero:
+            return 0.0
+        from collections import Counter
+        return Counter(non_zero).most_common(1)[0][0]
+    except frappe.DoesNotExistError:
+        pass
+    return 0.0
+
+
+# ─────────────────────────────────────────────────────────────
+#  Overlap helpers
+# ─────────────────────────────────────────────────────────────
+
+@frappe.whitelist()
+def check_overlap(employee, from_date, to_date=None, employee_name=None,
+                  current_name=None, throw_if_overlap=False):
+    return _check_overlap(
+        employee=employee, from_date=from_date, to_date=to_date,
+        employee_name=employee_name, current_name=current_name,
+        throw_if_overlap=throw_if_overlap, submitted_only=False,
+    )
+
+
+def _check_overlap(employee, from_date, to_date=None, employee_name=None,
+                   current_name=None, throw_if_overlap=False, submitted_only=False):
+    if not employee or not from_date:
+        return None
+
+    filters = {"employee": employee, "docstatus": 1 if submitted_only else ["!=", 2]}
+    if current_name:
+        filters["name"] = ["!=", current_name]
+
+    records = frappe.db.get_all(
+        "Salary Structure Assignment",
+        filters=filters,
+        fields=["name", "from_date", "to_date"],
+    )
+
+    a_start = getdate(from_date)
+    a_end   = getdate(to_date) if to_date else None
+
+    for rec in records:
+        b_start = getdate(rec.from_date)
+        b_end   = getdate(rec.to_date) if rec.to_date else FAR_FUTURE
+
+        if (b_start <= a_start <= b_end) or (a_end and b_start <= a_end <= b_end):
+            if throw_if_overlap:
+                frappe.throw(
+                    title=_("Duplicate Salary Structure Assignment"),
+                    msg=(
+                        f"A Salary Structure Assignment already exists for "
+                        f"<b>{employee_name or employee}</b> overlapping the selected period.<br><br>"
+                        f"Existing: <a href='/app/salary-structure-assignment/{rec.name}' target='_blank'>"
+                        f"<b>{rec.name}</b></a> &nbsp;|&nbsp; "
+                        f"<b>{rec.from_date}</b> to <b>{rec.to_date or 'Ongoing'}</b>"
+                    ),
+                    exc=frappe.DuplicateEntryError,
+                )
+            else:
+                return {
+                    "name":      rec.name,
+                    "from_date": str(rec.from_date),
+                    "to_date":   str(rec.to_date) if rec.to_date else None,
+                }
+
+    return None
+
+
+@frappe.whitelist()
+def get_existing_assignments(employee):
+    if not employee:
+        return []
+    return frappe.db.get_all(
+        "Salary Structure Assignment",
+        filters={"employee": employee, "docstatus": ["!=", 2]},
+        fields=["name", "from_date", "to_date", "docstatus"],
+        order_by="from_date desc",
+    )

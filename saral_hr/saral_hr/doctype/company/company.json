@@ -187,7 +187,7 @@
    "label": "Statutory Settings"
   },
   {
-   "description": "Add the Earning components used to compute the ESIC wage basis. Formula: first component \u2212 all remaining components (e.g. Gross \u2212 HRA \u2212 Special Allowance). The result is then capped at the ESIC Wage Limit set below.",
+   "description": "Add the Earning components used to compute the ESIC wage basis. Formula: sum of all listed components (e.g. Basic + DA + HRA). The result is then capped at the ESIC Wage Limit set below.",
    "fieldname": "section_esic_components",
    "fieldtype": "Section Break",
    "label": "ESIC Wage Components"
@@ -199,13 +199,13 @@
    "options": "Statutory Wage Component"
   },
   {
-   "description": "Set the ESIC wage ceiling and contribution percentages. The computed ESIC wage basis (first component minus the rest) will be capped at the limit below. Employees at or below this limit are covered under ESIC.",
+   "description": "Set the ESIC wage ceiling and contribution percentages. The computed ESIC wage basis (sum of all listed components) will be capped at the limit below. Employees whose wage basis is at or below this limit are covered under ESIC.",
    "fieldname": "section_esic_rates",
    "fieldtype": "Section Break",
    "label": "ESIC Rates & Limit"
   },
   {
-   "description": "The ESIC wage basis will be capped at this amount. Employees whose wage basis is at or below this limit are covered under ESIC.",
+   "description": "The ESIC wage basis (sum of listed components) will be capped at this amount. Employees whose wage basis is at or below this limit are covered under ESIC.",
    "fieldname": "esic_wage_limit",
    "fieldtype": "Currency",
    "label": "ESIC Wage Limit"
