@@ -29,7 +29,27 @@
   "bank_details_tab",
   "bank_name",
   "ifcs_code",
-  "bank_account_number"
+  "bank_account_number",
+  "payroll_settings_tab",
+  "salary_calculation_based_on",
+  "statutory_settings_tab",
+  "section_esic_components",
+  "esic_dependent_component",
+  "section_esic_rates",
+  "esic_wage_limit",
+  "column_break_esic_rates",
+  "esic_employee_contribution",
+  "esic_employer_contribution",
+  "section_pf_components",
+  "pf_dependent_component",
+  "section_pf_rates",
+  "pf_wage_limit",
+  "pf_employee_percent",
+  "column_break_pf_rates",
+  "pf_employer_epf",
+  "pf_employer_eps",
+  "pf_edli_insurance",
+  "pf_admin_charges"
  ],
  "fields": [
   {
@@ -160,11 +180,128 @@
    "fieldname": "bank_account_number",
    "fieldtype": "Data",
    "label": "Bank Account Number"
+  },
+  {
+   "fieldname": "statutory_settings_tab",
+   "fieldtype": "Tab Break",
+   "label": "Statutory Settings"
+  },
+  {
+   "description": "Add the Earning components used to compute the ESIC wage basis. Formula: first component \u2212 all remaining components (e.g. Gross \u2212 HRA \u2212 Special Allowance). The result is then capped at the ESIC Wage Limit set below.",
+   "fieldname": "section_esic_components",
+   "fieldtype": "Section Break",
+   "label": "ESIC Wage Components"
+  },
+  {
+   "fieldname": "esic_dependent_component",
+   "fieldtype": "Table",
+   "label": "ESIC Dependent Component",
+   "options": "Statutory Wage Component"
+  },
+  {
+   "description": "Set the ESIC wage ceiling and contribution percentages. The computed ESIC wage basis (first component minus the rest) will be capped at the limit below. Employees at or below this limit are covered under ESIC.",
+   "fieldname": "section_esic_rates",
+   "fieldtype": "Section Break",
+   "label": "ESIC Rates & Limit"
+  },
+  {
+   "description": "The ESIC wage basis will be capped at this amount. Employees whose wage basis is at or below this limit are covered under ESIC.",
+   "fieldname": "esic_wage_limit",
+   "fieldtype": "Currency",
+   "label": "ESIC Wage Limit"
+  },
+  {
+   "fieldname": "column_break_esic_rates",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "esic_employee_contribution",
+   "fieldtype": "Float",
+   "label": "Employee Contribution %",
+   "precision": "2"
+  },
+  {
+   "fieldname": "esic_employer_contribution",
+   "fieldtype": "Float",
+   "label": "Employer Contribution %",
+   "precision": "2"
+  },
+  {
+   "description": "Add the Earning components used to compute the PF wage basis. Formula: sum of all listed components (e.g. Basic + DA + Special Allowance). The result is then capped at the Limited PF Wage Limit set below (if applicable).",
+   "fieldname": "section_pf_components",
+   "fieldtype": "Section Break",
+   "label": "PF Wage Components"
+  },
+  {
+   "fieldname": "pf_dependent_component",
+   "fieldtype": "Table",
+   "label": "PF Dependent Component",
+   "options": "Statutory Wage Component"
+  },
+  {
+   "description": "Set the PF contribution percentages. The computed PF wage basis (sum of all listed components) will be capped at the wage limit below. Leave the limit blank to use the full computed wage basis with no cap.",
+   "fieldname": "section_pf_rates",
+   "fieldtype": "Section Break",
+   "label": "PF Rates & Limit"
+  },
+  {
+   "description": "Applicable only for Limited PF employees. The PF wage basis (sum of listed components) will be capped at this amount. Leave blank for no cap.",
+   "fieldname": "pf_wage_limit",
+   "fieldtype": "Currency",
+   "label": "Limited PF Wage Limit"
+  },
+  {
+   "fieldname": "pf_employee_percent",
+   "fieldtype": "Float",
+   "label": "Employee Contribution %",
+   "precision": "2"
+  },
+  {
+   "fieldname": "pf_employer_eps",
+   "fieldtype": "Float",
+   "label": "Employer EPS %",
+   "precision": "2"
+  },
+  {
+   "fieldname": "pf_employer_epf",
+   "fieldtype": "Float",
+   "label": "Employer EPF %",
+   "precision": "2"
+  },
+  {
+   "fieldname": "column_break_pf_rates",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "pf_edli_insurance",
+   "fieldtype": "Float",
+   "label": "Employee EDLI Insurance %",
+   "precision": "2"
+  },
+  {
+   "fieldname": "pf_admin_charges",
+   "fieldtype": "Float",
+   "label": "Employer Admin Charges %",
+   "precision": "2"
+  },
+  {
+   "fieldname": "payroll_settings_tab",
+   "fieldtype": "Tab Break",
+   "label": "Payroll Settings"
+  },
+  {
+   "fieldname": "salary_calculation_based_on",
+   "fieldtype": "Select",
+   "label": "Salary Calculation Based On",
+   "options": "Exclude Weekly Offs (Working Days)\nInclude Weekly Offs (Calendar Days)",
+   "reqd": 1,
+   "default": "Exclude Weekly Offs (Working Days)",
+   "description": "<b>Exclude Weekly Offs (Working Days):</b> Payment days = Working days in month \u2212 Weekly offs \u2212 Absences. E.g. Jan 2026: 31 days, 4 Sundays \u2192 27 working days \u2212 1 absent = 26 payment days.<br><b>Include Weekly Offs (Calendar Days):</b> Payment days = Total calendar days \u2212 Absences. E.g. Jan 2026: 31 days \u2212 1 absent = 30 payment days."
   }
  ],
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-02-24 15:35:27.740327",
+ "modified": "2026-03-12 00:00:00.000000",
  "modified_by": "Administrator",
  "module": "Saral Hr",
  "name": "Company",

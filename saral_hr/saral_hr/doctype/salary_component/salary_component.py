@@ -1,98 +1,101 @@
+# Copyright (c) 2026, sj and contributors
+# For license information, please see license.txt
+
 import frappe
 from frappe.model.document import Document
-from frappe.utils import flt
+
+MONTHS = [
+    "January", "February", "March", "April",
+    "May", "June", "July", "August",
+    "September", "October", "November", "December"
+]
 
 
 class SalaryComponent(Document):
 
     def validate(self):
         self._validate_calculation_flags()
-        self._validate_esic_pf_flags()
+        self._populate_monthly_amounts()
 
     def on_update(self):
         self._sync_flags_to_salary_details()
 
-    # ------------------------------------------------------------------
+    # ──────────────────────────────────────────────
     # Validation
-    # ------------------------------------------------------------------
+    # ──────────────────────────────────────────────
 
     def _validate_calculation_flags(self):
-        active_flags = [
-            bool(self.is_daily_rate),
-            bool(self.depends_on_payment_days),
-            bool(self.depends_on_physical_working_days),
-        ]
-        if sum(active_flags) > 1:
+        """Only one payment-day calculation mode may be active at a time."""
+        if self.depends_on_payment_days and self.depends_on_physical_working_days:
             frappe.throw(
                 "Only one calculation mode can be enabled at a time. "
-                "Please check only one of: <b>Is Daily Rate Component</b>, "
-                "<b>Depends on Payment Days</b>, or "
+                "Please check only one of: <b>Depends on Payment Days</b> or "
                 "<b>Depends on Physical Working Days</b>."
             )
 
-    def _validate_esic_pf_flags(self):
-        if self.is_esic_component:
-            if not self.esic_calculation_based_on:
-                frappe.throw("Please select <b>ESIC Calculation Based On</b> when ESIC component is enabled.")
-            if self.esic_percentage is None or self.esic_percentage == "":
-                frappe.throw("Please enter a valid <b>ESIC Percentage</b> (0 or greater).")
-            if flt(self.esic_percentage) < 0:
-                frappe.throw("<b>ESIC Percentage</b> cannot be negative.")
-            if flt(self.esic_percentage) > 100:
-                frappe.throw("<b>ESIC Percentage</b> cannot exceed 100%.")
-            if self.esic_cap_amount and flt(self.esic_cap_amount) < 0:
-                frappe.throw("<b>ESIC Cap Amount</b> cannot be negative.")
+    # ──────────────────────────────────────────────
+    # Monthly amounts — ensure all 12 months exist
+    # in correct Jan→Dec order when special component
+    # ──────────────────────────────────────────────
 
-        if self.is_pf_component:
-            if not self.pf_calculation_based_on:
-                frappe.throw("Please select <b>PF Calculation Based On</b> when PF component is enabled.")
-            if self.pf_percentage is None or self.pf_percentage == "":
-                frappe.throw("Please enter a valid <b>PF Percentage</b> (0 or greater).")
-            if flt(self.pf_percentage) < 0:
-                frappe.throw("<b>PF Percentage</b> cannot be negative.")
-            if flt(self.pf_percentage) > 100:
-                frappe.throw("<b>PF Percentage</b> cannot exceed 100%.")
-            if self.pf_cap_amount and flt(self.pf_cap_amount) < 0:
-                frappe.throw("<b>PF Cap Amount</b> cannot be negative.")
+    def _populate_monthly_amounts(self):
+        if not self.is_special_component:
+            # Clear rows if the flag is turned off
+            self.monthly_amounts = []
+            return
 
-    # ------------------------------------------------------------------
-    # Sync to child tables
-    # ------------------------------------------------------------------
+        # Build a map of existing rows keyed by month name
+        existing = {row.month: row for row in (self.monthly_amounts or [])}
+
+        # Rebuild the table in strict Jan→Dec order,
+        # preserving any amounts the user has already entered
+        self.monthly_amounts = []
+        for month in MONTHS:
+            row = self.append("monthly_amounts", {
+                "month":  month,
+                "amount": existing[month].amount if month in existing else 0,
+            })
+
+    # ──────────────────────────────────────────────
+    # Helpers — public accessor for payroll
+    # ──────────────────────────────────────────────
+
+    def get_amount_for_month(self, month_name: str) -> float:
+        """
+        Return the configured amount for a given month name.
+        Used during payroll to fetch the correct monthly value.
+
+        :param month_name: e.g. 'March'
+        :return: float amount (0.0 if not found)
+        """
+        if not self.is_special_component:
+            return 0.0
+        for row in (self.monthly_amounts or []):
+            if row.month == month_name:
+                return float(row.amount or 0)
+        return 0.0
+
+    # ──────────────────────────────────────────────
+    # Sync to Salary Details child rows
+    # ──────────────────────────────────────────────
 
     def _sync_flags_to_salary_details(self):
-        """Push updated flags to every Salary Details row referencing this component."""
+        """Push updated payment-day flags to every Salary Details row
+        that references this component."""
         try:
-            existing_columns = frappe.db.get_table_columns("Salary Details")
+            existing_columns = set(frappe.db.get_table_columns("Salary Details"))
         except Exception:
             return
 
-        required_columns = {"is_daily_rate", "depends_on_payment_days", "depends_on_physical_working_days"}
-        if not required_columns.issubset(set(existing_columns)):
+        required = {"depends_on_payment_days", "depends_on_physical_working_days"}
+        if not required.issubset(existing_columns):
             return
-
-        update_fields = {
-            "depends_on_payment_days":          self.depends_on_payment_days or 0,
-            "is_daily_rate":                    self.is_daily_rate or 0,
-            "depends_on_physical_working_days": self.depends_on_physical_working_days or 0,
-        }
-
-        optional_fields = {
-            "is_esic_component":          self.is_esic_component or 0,
-            "esic_calculation_based_on":  self.esic_calculation_based_on or "",
-            "esic_percentage":            flt(self.esic_percentage),
-            "esic_cap_amount":            flt(self.esic_cap_amount),
-            "is_pf_component":            self.is_pf_component or 0,
-            "pf_calculation_based_on":    self.pf_calculation_based_on or "",
-            "pf_percentage":              flt(self.pf_percentage),
-            "pf_cap_amount":              flt(self.pf_cap_amount),
-            "is_pt_component":            self.is_pt_component or 0,
-        }
-        for col, val in optional_fields.items():
-            if col in existing_columns:
-                update_fields[col] = val
 
         frappe.db.set_value(
             "Salary Details",
             {"salary_component": self.salary_component},
-            update_fields
+            {
+                "depends_on_payment_days":          self.depends_on_payment_days or 0,
+                "depends_on_physical_working_days": self.depends_on_physical_working_days or 0,
+            }
         )

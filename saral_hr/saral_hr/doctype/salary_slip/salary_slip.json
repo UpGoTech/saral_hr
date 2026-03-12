@@ -181,7 +181,7 @@
    "fieldname": "physical_working_days",
    "fieldtype": "Float",
    "label": "Physical Working Days",
-   "description": "Payment Days minus Earned Leaves, Casual Leaves and Comp Off. Used for components marked as Depends on Physical Working Days.",
+   "description": "Payment Days minus Earned Leaves, Casual Leaves and Comp Off.",
    "precision": "2",
    "read_only": 1
   },
@@ -347,7 +347,7 @@
  "index_web_pages_for_search": 1,
  "is_submittable": 1,
  "links": [],
- "modified": "2026-03-07 00:00:00.000000",
+ "modified": "2026-03-12 00:00:00.000000",
  "modified_by": "Administrator",
  "module": "Saral Hr",
  "name": "Salary Slip",

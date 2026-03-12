@@ -45,7 +45,6 @@ function build_cards(items, cls) {
         </label>`).join('');
 }
 
-// Render a card grid with search + select-all controls inside a dialog HTML field
 function render_card_grid(dialog, html_field, cls, count_id, search_id, items) {
     dialog._card_items             = dialog._card_items || {};
     dialog._card_items[html_field] = items;
@@ -311,7 +310,7 @@ function fetch_submitted_salary_slips(dialog) {
             let grid_html = '';
             if (submitted.length) {
                 const items = submitted.map(s => ({ id:s.name, name:s.employee_name||s.employee }));
-                dialog._card_items             = dialog._card_items || {};
+                dialog._card_items               = dialog._card_items || {};
                 dialog._card_items['slips_html'] = items;
                 grid_html = _search_grid_html('slip_search', 'slip-card-check', 'slip_count', items);
             } else {
@@ -497,5 +496,3 @@ function _bind_inline_grid(wrapper, search_id, cls, count_id, all_items) {
     wrapper.find(`#${search_id}_desel_all`).on('click', () => { wrapper.find(`.${cls}`).prop('checked', false); upd(); });
     bind();
 }
-
-// ─── Form Events ──────────────────────────────────────────────────────────────

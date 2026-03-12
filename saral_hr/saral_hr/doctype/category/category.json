@@ -9,9 +9,7 @@
  "field_order": [
   "category",
   "column_break_ifpd",
-  "requires_variable_pay",
-  "section_break_diun",
-  "salary_calculation_based_on"
+  "requires_variable_pay"
  ],
  "fields": [
   {
@@ -30,29 +28,16 @@
   },
   {
    "default": "0",
-   "description": "Tick for category who requires Variable Pay.",
+   "description": "Tick for categories that require Variable Pay.",
    "fieldname": "requires_variable_pay",
    "fieldtype": "Check",
    "in_list_view": 1,
    "label": "Requires Variable Pay"
-  },
-  {
-   "fieldname": "section_break_diun",
-   "fieldtype": "Section Break"
-  },
-  {
-   "description": "<b>Working days:</b> Base \u00f7 (31 \u2212 4 Sundays = 27) \u00d7 26 paid<br><b>Calendar days:</b> Base \u00f7 31 \u00d7 30 paid<br><br><i>Example \u2014 Jan 2026: 31 days, 4 Sundays, 1 absent</i><br>Working days \u2192 paid days = 27 \u2212 1 = 26<br>Calendar days \u2192 paid days = 31 \u2212 1 = 30",
-   "fieldname": "salary_calculation_based_on",
-   "fieldtype": "Select",
-   "in_list_view": 1,
-   "label": "Salary Calculation Based on",
-   "options": "Working days in a month\nNo. of days in a month",
-   "reqd": 1
   }
  ],
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-02-27 16:59:07.980055",
+ "modified": "2026-03-12 00:00:00.000000",
  "modified_by": "Administrator",
  "module": "Saral Hr",
  "name": "Category",
