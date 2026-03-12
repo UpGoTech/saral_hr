@@ -15,7 +15,6 @@ MONTHS = [
     "September", "October", "November", "December"
 ]
 
-# Exact component names — must match Salary Component records
 SC_EMP_ESIC   = "Employee ESIC"
 SC_EMPR_ESIC  = "Employer ESIC"
 SC_EMP_PF     = "Employee PF"
@@ -57,22 +56,18 @@ def get_statutory_components(company, gross_salary, from_date,
     """
     Compute statutory deduction and employer-share amounts from Company config.
 
-    Parameters
-    ----------
-    company             : Company name
-    gross_salary        : Total gross (sum of all earnings rows) — used as
-                          fallback when a component name in the wage-basis
-                          config is not found in earnings_map.
-    from_date           : Pay-period start (YYYY-MM-DD) — used for PT month.
-    is_esic_applicable  : 1/0
-    is_pf_applicable    : 1/0
-    pf_type             : "Limited PF" | "Full PF" | ""
-    is_pt_applicable    : 1/0
-    is_lwf_applicable   : 1/0
-    earnings_map        : JSON string or dict of {component_name: amount}
-                          for every earning row in the SSA.  When supplied,
-                          each component's actual amount is used for wage-basis
-                          resolution instead of gross_salary as a proxy.
+    ESIC:
+        wage = SUM of ALL components listed in esic_dependent_component.
+               If a component is listed in Company config but NOT present in
+               the SSA earnings, it contributes 0 (not gross as fallback).
+               If "Gross" is listed, use gross_salary directly.
+               NO CAP applied — esic_wage_limit is reference only.
+
+    PF:
+        wage = SUM of ALL components listed in pf_dependent_component.
+               Same zero-fallback rule as ESIC.
+               Limited PF: capped at pf_wage_limit.
+               Full PF: no cap.
     """
     import json as _json
 
@@ -82,7 +77,6 @@ def get_statutory_components(company, gross_salary, from_date,
     is_pt_applicable   = int(is_pt_applicable   or 0)
     is_lwf_applicable  = int(is_lwf_applicable  or 0)
 
-    # Parse earnings_map if sent as JSON string from JS
     if isinstance(earnings_map, str):
         try:
             earnings_map = _json.loads(earnings_map)
@@ -107,18 +101,16 @@ def get_statutory_components(company, gross_salary, from_date,
         }
 
     # ── ESIC ─────────────────────────────────────────────────
-    # Wage basis = first component MINUS remaining components
-    # (defined in Company → ESIC Wage Components table).
-    # Example: [Gross, HRA, Conveyance] → Gross − HRA − Conveyance
-    # Result is capped at esic_wage_limit (display/reference purpose on Company).
-    # Applicability is controlled solely by is_esic_applicable on SSA.
+    # Sum ALL components listed in esic_dependent_component.
+    # "Gross" → use gross_salary.
+    # Any other component → use earnings_map value, or 0 if not present.
+    # NO CAP — esic_wage_limit is display/reference only.
     if is_esic_applicable and comp_doc:
         esic_cfg = comp_doc.get_esic_config()
         if esic_cfg:
-            salary_map = _build_salary_map(
-                comp_doc, "esic_dependent_component", gross_salary, earnings_map
-            )
-            wage     = comp_doc.compute_esic_wage_basis(salary_map)
+            esic_components = comp_doc._get_child_components("esic_dependent_component")
+            wage = _sum_components(esic_components, gross_salary, earnings_map)
+
             emp_pct  = flt(esic_cfg.get("employee_percent", 0))
             empr_pct = flt(esic_cfg.get("employer_percent", 0))
 
@@ -128,34 +120,19 @@ def get_statutory_components(company, gross_salary, from_date,
                 employer_share.append(row(SC_EMPR_ESIC, wage * empr_pct / 100, employer=1))
 
     # ── PF ───────────────────────────────────────────────────
-    # Wage basis = SUM of all listed components
-    # (defined in Company → PF Wage Components table).
-    # Example: [Basic, DA] → Basic + DA
-    #
-    # Limited PF: wage is capped at pf_wage_limit from Company.
-    #   e.g. Basic+DA = 16000, limit = 15000 → PF calculated on 15000
-    #   e.g. Basic+DA = 12000, limit = 15000 → PF calculated on 12000 (less than limit)
-    #
-    # Full PF: no cap — all percentages applied to full computed wage basis.
+    # Sum ALL components listed in pf_dependent_component.
+    # "Gross" → use gross_salary.
+    # Any other component → use earnings_map value, or 0 if not present.
+    # Limited PF: cap at pf_wage_limit. Full PF: no cap.
     if is_pf_applicable and comp_doc:
         pf_cfg = comp_doc.get_pf_config()
         if pf_cfg:
-            salary_map = _build_salary_map(
-                comp_doc, "pf_dependent_component", gross_salary, earnings_map
-            )
-
-            # Compute raw wage basis (sum of all components, no cap yet)
             pf_components = comp_doc._get_child_components("pf_dependent_component")
-            raw_wage = max(
-                sum(comp_doc._resolve_component_value(c, salary_map) for c in pf_components),
-                0.0
-            )
+            raw_wage = _sum_components(pf_components, gross_salary, earnings_map)
 
-            # Apply Limited PF cap only when pf_type is explicitly "Limited PF"
             if pf_type == "Limited PF" and pf_cfg.get("wage_limit"):
                 wage = min(raw_wage, flt(pf_cfg["wage_limit"]))
             else:
-                # Full PF — use the full raw wage, ignore pf_wage_limit
                 wage = raw_wage
 
             emp_pct  = flt(pf_cfg.get("employee_percent", 0))
@@ -176,16 +153,12 @@ def get_statutory_components(company, gross_salary, from_date,
                 employer_share.append(row(SC_EMPR_PFADM, wage * adm_pct  / 100, employer=1))
 
     # ── PT ───────────────────────────────────────────────────
-    # PT amount is month-specific — Feb = ₹300, all others = ₹200.
-    # Amounts are read from the Professional Tax Special Salary Component.
     if is_pt_applicable and from_date:
         month_name = MONTHS[getdate(from_date).month - 1]
         pt_amt     = _special_component_amount(SC_PT, month_name)
         deductions.append(row(SC_PT, pt_amt))
 
     # ── LWF ──────────────────────────────────────────────────
-    # LWF is a fixed constant amount (same every applicable month).
-    # Most common non-zero value is used across all 12 months.
     if is_lwf_applicable:
         emp_lwf_amt  = _special_component_constant_amount(SC_EMP_LWF)
         empr_lwf_amt = _special_component_constant_amount(SC_EMPR_LWF)
@@ -195,59 +168,33 @@ def get_statutory_components(company, gross_salary, from_date,
     return {"deductions": deductions, "employer_share": employer_share}
 
 
-def _build_salary_map(comp_doc, table_fieldname, gross_salary, earnings_map):
+def _sum_components(components, gross_salary, earnings_map):
     """
-    Build the salary_components dict that Company._resolve_component_value
-    uses to resolve wage-basis component values.
+    Sum a list of component names using earnings_map for actual amounts.
 
-    Resolution priority for each component in the wage-basis config:
+    Rules:
+      "Gross" or "Gross Including Additional Salary" → gross_salary
+      Any real component in earnings_map                → earnings_map[comp]
+      Any real component NOT in earnings_map            → 0.0
 
-    1. Virtual components ("Gross", "Gross Including Additional Salary"):
-       Always injected as gross_salary — these are computed from all earnings.
-
-    2. Real components present in earnings_map (actual SSA earnings rows
-       sent from JS as {salary_component: amount}):
-       Use the exact amount from the SSA form.
-
-    3. Real components NOT in earnings_map:
-       Fall back to gross_salary as a best-effort approximation.
-
-    Examples
-    --------
-    Company ESIC config: [Gross, HRA, Conveyance Allowance]
-    SSA earnings: {Basic: 10000, HRA: 4000, Conveyance Allowance: 800, ...}
-    → salary_map = {Gross: 22000, HRA: 4000, Conveyance Allowance: 800}
-    → ESIC wage = 22000 − 4000 − 800 = 17200, capped at esic_wage_limit
-
-    Company PF config: [Basic, Dearness Allowance]
-    SSA earnings: {Basic: 10000, Dearness Allowance: 2000, HRA: 4000, ...}
-    → salary_map = {Basic: 10000, Dearness Allowance: 2000}
-    → PF wage = 10000 + 2000 = 12000
+    This means if Company ESIC config lists [Basic, HRA, TA, OA, Variable Pay]
+    and the SSA has all five, we sum all five exactly.
+    If a component is listed in Company config but missing from the SSA, it
+    contributes 0 — NOT gross_salary as a fallback (which caused the bug).
     """
     VIRTUAL = {"Gross", "Gross Including Additional Salary"}
-
-    rows       = comp_doc.get(table_fieldname) or []
-    components = [r.wage_components for r in rows if r.wage_components]
-
-    salary_map = {
-        "Gross":                              flt(gross_salary),
-        "Gross Including Additional Salary":  flt(gross_salary),
-    }
-
+    total = 0.0
     for comp in components:
         if comp in VIRTUAL:
-            continue  # already injected above
-        if comp in earnings_map:
-            salary_map[comp] = flt(earnings_map[comp])
+            total += flt(gross_salary)
+        elif comp in earnings_map:
+            total += flt(earnings_map[comp])
         else:
-            # Component listed in Company config but not in SSA earnings
-            salary_map[comp] = flt(gross_salary)
-
-    return salary_map
+            total += 0.0   # listed in Company config but not in this SSA → 0
+    return max(total, 0.0)
 
 
 def _special_component_amount(component_name, month_name):
-    """Read monthly amount from a Special Salary Component."""
     try:
         doc = frappe.get_doc("Salary Component", component_name)
         if not int(doc.is_special_component or 0):
@@ -261,7 +208,6 @@ def _special_component_amount(component_name, month_name):
 
 
 def _special_component_constant_amount(component_name):
-    """Return the most common non-zero amount across all months (for LWF)."""
     try:
         doc = frappe.get_doc("Salary Component", component_name)
         if not int(doc.is_special_component or 0):

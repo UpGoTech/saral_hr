@@ -3,16 +3,17 @@
  "allow_import": 1,
  "allow_rename": 1,
  "autoname": "field:company",
- "creation": "2026-01-07 16:09:53.267409",
+ "creation": "2026-03-12 20:16:49.484549",
  "doctype": "DocType",
+ "editable_grid": 1,
  "engine": "InnoDB",
  "field_order": [
   "company",
   "abbr",
-  "default_holiday_list",
   "column_break_opgj",
   "country",
   "default_currency",
+  "default_holiday_list",
   "addresscontact_tab",
   "address_and_contact_section",
   "company_logo",
@@ -53,9 +54,29 @@
  ],
  "fields": [
   {
+   "fieldname": "company",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Company",
+   "reqd": 1,
+   "unique": 1
+  },
+  {
    "fieldname": "abbr",
    "fieldtype": "Data",
    "label": "Abbr",
+   "reqd": 1
+  },
+  {
+   "fieldname": "column_break_opgj",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "country",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Country",
+   "options": "Country",
    "reqd": 1
   },
   {
@@ -67,12 +88,15 @@
    "reqd": 1
   },
   {
-   "fieldname": "country",
+   "fieldname": "default_holiday_list",
    "fieldtype": "Link",
-   "in_list_view": 1,
-   "label": "Country",
-   "options": "Country",
-   "reqd": 1
+   "label": "Default Holiday List",
+   "options": "Holiday List"
+  },
+  {
+   "fieldname": "addresscontact_tab",
+   "fieldtype": "Tab Break",
+   "label": "Address & Contact"
   },
   {
    "fieldname": "address_and_contact_section",
@@ -83,6 +107,11 @@
    "fieldname": "company_logo",
    "fieldtype": "Attach Image",
    "label": "Company Logo"
+  },
+  {
+   "fieldname": "date_of_incorporation",
+   "fieldtype": "Date",
+   "label": "Date of Incorporation"
   },
   {
    "fieldname": "phone_no",
@@ -97,19 +126,6 @@
    "options": "Email"
   },
   {
-   "fieldname": "company",
-   "fieldtype": "Data",
-   "in_list_view": 1,
-   "label": "Company",
-   "reqd": 1,
-   "unique": 1
-  },
-  {
-   "fieldname": "date_of_incorporation",
-   "fieldtype": "Date",
-   "label": "Date of Incorporation"
-  },
-  {
    "fieldname": "company_description",
    "fieldtype": "Text Editor",
    "label": "Company Description"
@@ -117,6 +133,11 @@
   {
    "fieldname": "column_break_wtbl",
    "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "date_of_establishment",
+   "fieldtype": "Date",
+   "label": "Date of Establishment"
   },
   {
    "depends_on": "eval:doc.date_of_incorporation",
@@ -136,34 +157,14 @@
    "label": "Website"
   },
   {
-   "fieldname": "default_holiday_list",
-   "fieldtype": "Link",
-   "label": "Default Holiday List",
-   "options": "Holiday List"
-  },
-  {
-   "fieldname": "column_break_opgj",
-   "fieldtype": "Column Break"
-  },
-  {
-   "fieldname": "date_of_establishment",
-   "fieldtype": "Date",
-   "label": "Date of Establishment"
-  },
-  {
    "fieldname": "address",
    "fieldtype": "Small Text",
    "label": "Address"
   },
   {
-   "fieldname": "addresscontact_tab",
-   "fieldtype": "Tab Break",
-   "label": "Address/Contact"
-  },
-  {
    "fieldname": "bank_details_tab",
    "fieldtype": "Tab Break",
-   "label": "Home Bank Details"
+   "label": "Bank Details"
   },
   {
    "fieldname": "bank_name",
@@ -182,12 +183,26 @@
    "label": "Bank Account Number"
   },
   {
+   "fieldname": "payroll_settings_tab",
+   "fieldtype": "Tab Break",
+   "label": "Payroll Settings"
+  },
+  {
+   "default": "Exclude Weekly Offs (Working Days)",
+   "description": "<b>Exclude Weekly Offs (Working Days):</b> Payment days = Working days in month \u2212 Weekly offs \u2212 Absences. E.g. Jan 2026: 31 days, 4 Sundays \u2192 27 working days \u2212 1 absent = 26 payment days.<br><b>Include Weekly Offs (Calendar Days):</b> Payment days = Total calendar days \u2212 Absences. E.g. Jan 2026: 31 days \u2212 1 absent = 30 payment days.",
+   "fieldname": "salary_calculation_based_on",
+   "fieldtype": "Select",
+   "label": "Salary Calculation Based On",
+   "options": "Exclude Weekly Offs (Working Days)\nInclude Weekly Offs (Calendar Days)",
+   "reqd": 1
+  },
+  {
    "fieldname": "statutory_settings_tab",
    "fieldtype": "Tab Break",
    "label": "Statutory Settings"
   },
   {
-   "description": "Add the Earning components used to compute the ESIC wage basis. Formula: sum of all listed components (e.g. Basic + DA + HRA). The result is then capped at the ESIC Wage Limit set below.",
+   "description": "Add the Earning components used to compute the ESIC wage basis. Formula: sum of all listed components (e.g. Basic + DA + HRA). No cap is applied \u2014 esic_wage_limit is for reference only.",
    "fieldname": "section_esic_components",
    "fieldtype": "Section Break",
    "label": "ESIC Wage Components"
@@ -199,16 +214,16 @@
    "options": "Statutory Wage Component"
   },
   {
-   "description": "Set the ESIC wage ceiling and contribution percentages. The computed ESIC wage basis (sum of all listed components) will be capped at the limit below. Employees whose wage basis is at or below this limit are covered under ESIC.",
+   "description": "Reference only \u2014 ESIC wage limit is NOT used in calculation. Contribution percentages below are applied to the full sum of listed components.",
    "fieldname": "section_esic_rates",
    "fieldtype": "Section Break",
    "label": "ESIC Rates & Limit"
   },
   {
-   "description": "The ESIC wage basis (sum of listed components) will be capped at this amount. Employees whose wage basis is at or below this limit are covered under ESIC.",
+   "description": "For reference only. Not used in ESIC calculation.",
    "fieldname": "esic_wage_limit",
    "fieldtype": "Currency",
-   "label": "ESIC Wage Limit"
+   "label": "ESIC Wage Limit (Reference Only)"
   },
   {
    "fieldname": "column_break_esic_rates",
@@ -227,7 +242,7 @@
    "precision": "2"
   },
   {
-   "description": "Add the Earning components used to compute the PF wage basis. Formula: sum of all listed components (e.g. Basic + DA + Special Allowance). The result is then capped at the Limited PF Wage Limit set below (if applicable).",
+   "description": "Add the Earning components used to compute the PF wage basis. Formula: sum of all listed components. For Limited PF employees the result is capped at the wage limit below.",
    "fieldname": "section_pf_components",
    "fieldtype": "Section Break",
    "label": "PF Wage Components"
@@ -239,13 +254,13 @@
    "options": "Statutory Wage Component"
   },
   {
-   "description": "Set the PF contribution percentages. The computed PF wage basis (sum of all listed components) will be capped at the wage limit below. Leave the limit blank to use the full computed wage basis with no cap.",
+   "description": "Wage limit applies only for Limited PF employees. Leave blank for no cap (Full PF).",
    "fieldname": "section_pf_rates",
    "fieldtype": "Section Break",
    "label": "PF Rates & Limit"
   },
   {
-   "description": "Applicable only for Limited PF employees. The PF wage basis (sum of listed components) will be capped at this amount. Leave blank for no cap.",
+   "description": "Applicable only for Limited PF. The PF wage basis will be capped at this amount. Leave blank for Full PF (no cap).",
    "fieldname": "pf_wage_limit",
    "fieldtype": "Currency",
    "label": "Limited PF Wage Limit"
@@ -257,10 +272,8 @@
    "precision": "2"
   },
   {
-   "fieldname": "pf_employer_eps",
-   "fieldtype": "Float",
-   "label": "Employer EPS %",
-   "precision": "2"
+   "fieldname": "column_break_pf_rates",
+   "fieldtype": "Column Break"
   },
   {
    "fieldname": "pf_employer_epf",
@@ -269,8 +282,10 @@
    "precision": "2"
   },
   {
-   "fieldname": "column_break_pf_rates",
-   "fieldtype": "Column Break"
+   "fieldname": "pf_employer_eps",
+   "fieldtype": "Float",
+   "label": "Employer EPS %",
+   "precision": "2"
   },
   {
    "fieldname": "pf_edli_insurance",
@@ -283,25 +298,11 @@
    "fieldtype": "Float",
    "label": "Employer Admin Charges %",
    "precision": "2"
-  },
-  {
-   "fieldname": "payroll_settings_tab",
-   "fieldtype": "Tab Break",
-   "label": "Payroll Settings"
-  },
-  {
-   "fieldname": "salary_calculation_based_on",
-   "fieldtype": "Select",
-   "label": "Salary Calculation Based On",
-   "options": "Exclude Weekly Offs (Working Days)\nInclude Weekly Offs (Calendar Days)",
-   "reqd": 1,
-   "default": "Exclude Weekly Offs (Working Days)",
-   "description": "<b>Exclude Weekly Offs (Working Days):</b> Payment days = Working days in month \u2212 Weekly offs \u2212 Absences. E.g. Jan 2026: 31 days, 4 Sundays \u2192 27 working days \u2212 1 absent = 26 payment days.<br><b>Include Weekly Offs (Calendar Days):</b> Payment days = Total calendar days \u2212 Absences. E.g. Jan 2026: 31 days \u2212 1 absent = 30 payment days."
   }
  ],
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-03-12 00:00:00.000000",
+ "modified": "2026-03-12 20:16:49.484549",
  "modified_by": "Administrator",
  "module": "Saral Hr",
  "name": "Company",

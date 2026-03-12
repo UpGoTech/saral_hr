@@ -42,6 +42,8 @@
   "earnings",
   "column_break_zrdn",
   "deductions",
+  "employer_share_section",
+  "employer_share",
   "totals_section",
   "net_salary",
   "total_earnings",
@@ -113,9 +115,26 @@
    "options": "Salary Details"
   },
   {
+   "fieldname": "column_break_zrdn",
+   "fieldtype": "Column Break"
+  },
+  {
+   "description": "Employee share of statutory and non-statutory deductions.",
    "fieldname": "deductions",
    "fieldtype": "Table",
-   "label": "Deductions",
+   "label": "Deductions (Employee Share)",
+   "options": "Salary Details"
+  },
+  {
+   "description": "Employer statutory contributions — EPF, EPS, EDLI, Admin Charges, Employer ESIC, Employer LWF. Auto-computed from Company statutory configuration.",
+   "fieldname": "employer_share_section",
+   "fieldtype": "Section Break",
+   "label": "Employer Share"
+  },
+  {
+   "fieldname": "employer_share",
+   "fieldtype": "Table",
+   "label": "Employer Share",
    "options": "Salary Details"
   },
   {
@@ -140,10 +159,6 @@
    "in_standard_filter": 1,
    "label": "Start Date",
    "reqd": 1
-  },
-  {
-   "fieldname": "column_break_zrdn",
-   "fieldtype": "Column Break"
   },
   {
    "fieldname": "column_break_jxct",

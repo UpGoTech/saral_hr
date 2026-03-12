@@ -41,18 +41,96 @@ def check_duplicate_salary_slip(employee, start_date, current_doc=""):
     }
 
 
+# ─── Additional Salary wage-basis helpers ─────────────────────────────────────
+#
+# _ADDITIONAL_SALARY_ALIASES are the component names you add to the Company's
+# ESIC / PF wage component tables to signal "include all Additional Salary here".
+# When "Additional Salary" (or "Arrears") appears in the wage-component list AND
+# the employee has submitted Additional Salary records for that month, the full
+# total of ALL additional salary components (OT, Incentive, any free-text name)
+# is included in the statutory wage basis.
+
+# The marker key written into earnings_map for additional salary totals.
+# Add "Additional Salary" to the Company's ESIC/PF wage component tables
+# to include OT / incentives / any Additional Salary amounts in the wage basis.
+# "Arrears" stays in _ADDITIONAL_SALARY_ALIASES only as a TRIGGER alias
+# (so the recompute fires if someone named their wage component "Arrears")
+# but we NEVER write additional totals under "Arrears" in the earnings_map —
+# that would cause a double-count when both names appear in the component list.
+_ADDITIONAL_SALARY_KEY     = "Additional Salary"
+_ADDITIONAL_SALARY_ALIASES = {"Additional Salary", "Arrears"}
+
+
+def _get_additional_salary_total(employee, year_str, month_str):
+    """Sum all component amounts across all submitted Additional Salary docs."""
+    total = 0.0
+    records = frappe.db.get_all(
+        "Additional Salary",
+        filters={
+            "employee":  employee,
+            "year":      year_str,
+            "month":     month_str,
+            "docstatus": 1,
+        },
+        fields=["name"],
+    )
+    for rec in records:
+        doc = frappe.get_doc("Additional Salary", rec.name)
+        for row in doc.components or []:
+            total += flt(row.amount)
+    return total
+
+
+def _build_earnings_map_with_additional(ssa_doc, employee, year_str, month_str):
+    """
+    Build a {component_name: amount} map from SSA earnings, then add the
+    total of ALL Additional Salary components under a SINGLE key
+    (_ADDITIONAL_SALARY_KEY = "Additional Salary") so _sum_components()
+    picks it up exactly once.
+
+    We intentionally do NOT write under "Arrears" or any other alias —
+    if both "Arrears" and "Additional Salary" appear in the ESIC/PF wage
+    component list, writing the total under both keys would double-count it.
+    """
+    earnings_map = {}
+    for row in ssa_doc.earnings or []:
+        comp = (row.salary_component or "").strip()
+        if comp:
+            earnings_map[comp] = flt(row.amount)
+
+    additional_total = _get_additional_salary_total(employee, year_str, month_str)
+    if additional_total:
+        earnings_map[_ADDITIONAL_SALARY_KEY] = (
+            earnings_map.get(_ADDITIONAL_SALARY_KEY, 0.0) + additional_total
+        )
+
+    return earnings_map
+
+
 # ─── Salary Structure Fetch ───────────────────────────────────────────────────
 #
-# Reads from SSA's three tables:
-#   earnings       → slip earnings
-#   deductions     → employee-share deductions (includes statutory employee rows)
-#   employer_share → employer contribution rows
-#
-# ESIC / PF amounts are already computed by SSA (from Company config).
-# We just copy the amounts as stored in the SSA tables.
+# Returns:
+#   earnings       → slip earnings table
+#   deductions     → employee-share rows only (employer_contribution = 0)
+#   employer_share → employer-contribution rows only (employer_contribution = 1)
 
 @frappe.whitelist()
-def get_salary_structure_for_employee(employee, start_date=None):
+def get_salary_structure_for_employee(employee, start_date=None,
+                                      working_days=None, payment_days=None,
+                                      physical_working_days=None,
+                                      variable_pay_percentage=None):
+    """
+    Fetch SSA rows and compute statutory deductions.
+
+    When attendance params (working_days, payment_days, physical_working_days)
+    and variable_pay_percentage are supplied, statutory contributions are
+    calculated on ACTUAL earned amounts (post-proration).  This is the correct
+    behaviour for ESIC / PF — contributions must be on wages actually paid.
+
+    When called without those params (e.g. from bulk generate before attendance
+    is known) the function falls back to SSA base amounts, which is then
+    corrected later by calculate_salary_slip_amounts_exact.
+    """
     filters = {"employee": employee, "docstatus": 1}
     if start_date:
         filters["from_date"] = ["<=", start_date]
@@ -78,14 +156,25 @@ def get_salary_structure_for_employee(employee, start_date=None):
 
     ssa_doc = frappe.get_doc("Salary Structure Assignment", ssa_name)
 
-    # Month name for PT amount lookup
+    month_names = [
+        "January","February","March","April","May","June",
+        "July","August","September","October","November","December"
+    ]
     current_month = None
+    year_str      = None
+    month_str     = None
     if start_date:
-        month_names = [
-            "January","February","March","April","May","June",
-            "July","August","September","October","November","December"
-        ]
-        current_month = month_names[getdate(start_date).month - 1]
+        d             = getdate(start_date)
+        current_month = month_names[d.month - 1]
+        year_str      = str(d.year)
+        month_str     = current_month
+
+    # ── Attendance / proration params ─────────────────────────
+    wd           = flt(working_days)          if working_days          is not None else None
+    pd           = flt(payment_days)          if payment_days          is not None else None
+    phd          = flt(physical_working_days) if physical_working_days is not None else None
+    vp_pct       = flt(variable_pay_percentage) / 100.0 if variable_pay_percentage is not None else None
+    has_att_data = (wd is not None and pd is not None and phd is not None and vp_pct is not None)
 
     def _comp_meta(comp_name):
         return frappe.db.get_value(
@@ -100,30 +189,88 @@ def get_salary_structure_for_employee(employee, start_date=None):
             as_dict=True
         ) or {}
 
-    earnings   = []
-    deductions = []
+    def _prorate(base, dep_pd, dep_phd):
+        """Return actual earned amount for a component given attendance data."""
+        if not has_att_data or wd == 0:
+            return base
+        comp_name_lower = ""  # not needed here — caller handles variable pay
+        if dep_phd:
+            return (base / wd) * phd
+        if dep_pd:
+            return (base / wd) * pd
+        return base
 
-    # ── Earnings ──────────────────────────────────────────────
+    earnings       = []
+    deductions     = []
+    employer_share = []
+
+    # ── Earnings — store both base (SSA) and actual earned amount ─────────────
+    # actual_earnings_map is used for statutory wage basis calculation
+    actual_earnings_map = {}
+
     for row in (ssa_doc.earnings or []):
-        meta = _comp_meta(row.salary_component)
+        meta      = _comp_meta(row.salary_component)
+        base      = flt(row.amount, 2)
+        dep_pd    = int(meta.get("depends_on_payment_days") or 0)
+        dep_phd   = int(meta.get("depends_on_physical_working_days") or 0)
+        comp_lower = (row.salary_component or "").lower()
+
+        # Calculate actual earned amount for earnings map
+        if has_att_data and "variable" in comp_lower:
+            # Variable pay: base * variable_pct (already at 100% scale in SSA)
+            # prorated by payment_days if depends_on_payment_days
+            if dep_pd and wd > 0:
+                actual = (base / wd) * pd * vp_pct
+            else:
+                actual = base * vp_pct
+        else:
+            actual = _prorate(base, dep_pd, dep_phd)
+
+        actual_earnings_map[row.salary_component] = flt(actual, 2)
+
         earnings.append({
             "salary_component":                 row.salary_component,
             "abbr":                             meta.get("salary_component_abbr") or row.abbr or "",
-            "amount":                           flt(row.amount, 2),
-            "base_amount":                      flt(row.amount, 2),
-            "depends_on_payment_days":          int(meta.get("depends_on_payment_days") or 0),
-            "depends_on_physical_working_days": int(meta.get("depends_on_physical_working_days") or 0),
+            "amount":                           base,   # frontend will re-prorate from base_amount
+            "base_amount":                      base,
+            "depends_on_payment_days":          dep_pd,
+            "depends_on_physical_working_days": dep_phd,
         })
 
+    # ── Always recompute statutory when we have enough data ───────────────────
+    #
+    # Statutory must always reflect ACTUAL wages paid.  We recompute whenever:
+    #   a) Attendance data was passed in (most accurate — uses prorated amounts), OR
+    #   b) Employee has Additional Salary this month that affects ESIC/PF basis.
+    #
+    # When neither condition is met (e.g. no attendance data yet) we fall back
+    # to SSA stored amounts.
+
+    additional_total_for_check = 0.0
+    if employee and year_str and month_str:
+        additional_total_for_check = _get_additional_salary_total(employee, year_str, month_str)
+
+    statutory_needs_recompute = False
+
+    if has_att_data:
+        # Always recompute when attendance data is available — guarantees
+        # statutory is on actual earned wages, not SSA base amounts
+        statutory_needs_recompute = True
+    elif additional_total_for_check > 0 and ssa_doc.company:
+        comp_doc   = frappe.get_doc("Company", ssa_doc.company)
+        esic_comps = set(comp_doc._get_child_components("esic_dependent_component"))
+        pf_comps   = set(comp_doc._get_child_components("pf_dependent_component"))
+        if (esic_comps & _ADDITIONAL_SALARY_ALIASES) or (pf_comps & _ADDITIONAL_SALARY_ALIASES):
+            statutory_needs_recompute = True
+
     # ── Employee-share deductions ─────────────────────────────
-    # SSA.deductions already contains only employee-share rows
-    # (statutory rows like Employee ESIC, Employee PF, PT, Employee LWF
-    #  are injected at SSA level with correct amounts from Company config)
     for row in (ssa_doc.deductions or []):
-        meta = _comp_meta(row.salary_component)
+        if statutory_needs_recompute and _is_statutory_component(row.salary_component):
+            continue  # will be regenerated below
+
+        meta   = _comp_meta(row.salary_component)
         amount = flt(row.amount, 2)
 
-        # PT: override with correct month's amount (Feb=300, others=200)
         if _is_pt_component(row.salary_component):
             amount = 300.0 if current_month == "February" else 200.0
 
@@ -135,17 +282,15 @@ def get_salary_structure_for_employee(employee, start_date=None):
             "employer_contribution":            0,
             "depends_on_payment_days":          int(meta.get("depends_on_payment_days") or 0),
             "depends_on_physical_working_days": int(meta.get("depends_on_physical_working_days") or 0),
-            # Flags for JS recalculation
-            "_is_statutory":                    _is_statutory_component(row.salary_component),
-            "_is_pt":                           _is_pt_component(row.salary_component),
         })
 
     # ── Employer-share rows ───────────────────────────────────
-    # SSA.employer_share: Employer ESIC, Employer PF, EPS, EDLI, Admin Charges, Employer LWF
-    # These go into slip.deductions with employer_contribution=1
     for row in (ssa_doc.employer_share or []):
+        if statutory_needs_recompute and _is_statutory_component(row.salary_component):
+            continue  # will be regenerated below
+
         meta = _comp_meta(row.salary_component)
-        deductions.append({
+        employer_share.append({
             "salary_component":                 row.salary_component,
             "abbr":                             meta.get("salary_component_abbr") or row.abbr or "",
             "amount":                           flt(row.amount, 2),
@@ -153,19 +298,67 @@ def get_salary_structure_for_employee(employee, start_date=None):
             "employer_contribution":            1,
             "depends_on_payment_days":          0,
             "depends_on_physical_working_days": 0,
-            "_is_statutory":                    True,
-            "_is_pt":                           False,
         })
+
+    # ── Recompute statutory on actual earned wages ────────────────────────────
+    if statutory_needs_recompute:
+        # Build earnings map: actual prorated SSA amounts + additional salary total
+        earnings_map = dict(actual_earnings_map)  # already prorated above
+        if additional_total_for_check > 0:
+            earnings_map[_ADDITIONAL_SALARY_KEY] = (
+                earnings_map.get(_ADDITIONAL_SALARY_KEY, 0.0) + additional_total_for_check
+            )
+
+        gross_salary = sum(earnings_map.values())
+
+        recomputed = get_statutory_components_internal(
+            company=ssa_doc.company,
+            gross_salary=gross_salary,
+            earnings_map=earnings_map,
+            from_date=start_date or "",
+            is_esic_applicable=int(ssa_doc.is_esic_applicable or 0),
+            is_pf_applicable=int(ssa_doc.is_pf_applicable or 0),
+            pf_type=ssa_doc.pf_applicable or "",
+            is_pt_applicable=int(ssa_doc.is_pt_applicable or 0),
+            is_lwf_applicable=int(ssa_doc.is_lwf_applicable or 0),
+        )
+
+        for d in (recomputed.get("deductions") or []):
+            amount = flt(d["amount"], 2)
+            if _is_pt_component(d["salary_component"]):
+                amount = 300.0 if current_month == "February" else 200.0
+            deductions.append({
+                "salary_component":                 d["salary_component"],
+                "abbr":                             d.get("abbr") or "",
+                "amount":                           amount,
+                "base_amount":                      amount,
+                "employer_contribution":            0,
+                "depends_on_payment_days":          0,
+                "depends_on_physical_working_days": 0,
+            })
+
+        for d in (recomputed.get("employer_share") or []):
+            employer_share.append({
+                "salary_component":                 d["salary_component"],
+                "abbr":                             d.get("abbr") or "",
+                "amount":                           flt(d["amount"], 2),
+                "base_amount":                      flt(d["amount"], 2),
+                "employer_contribution":            1,
+                "depends_on_payment_days":          0,
+                "depends_on_physical_working_days": 0,
+            })
 
     return {
         "salary_structure": ssa_doc.salary_structure,
         "currency":         "INR",
         "earnings":         earnings,
         "deductions":       deductions,
-        # Pass SSA gross for components that need it
+        "employer_share":   employer_share,
         "ssa_gross":        sum(flt(r.amount) for r in (ssa_doc.earnings or [])),
     }
 
+
+# ─── Statutory component helpers ─────────────────────────────────────────────
 
 STATUTORY_COMPONENTS = {
     "Employee ESIC", "Employer ESIC",
@@ -184,6 +377,145 @@ def _is_statutory_component(comp_name):
 
 def _is_pt_component(comp_name):
     return (comp_name or "").strip() == PT_COMPONENT_NAME
+
+
+# ─── Statutory computation (internal, non-whitelisted) ───────────────────────
+
+MONTHS_LIST = [
+    "January", "February", "March", "April",
+    "May", "June", "July", "August",
+    "September", "October", "November", "December"
+]
+
+SC_EMP_ESIC   = "Employee ESIC"
+SC_EMPR_ESIC  = "Employer ESIC"
+SC_EMP_PF     = "Employee PF"
+SC_EMPR_PF    = "Employer PF"
+SC_EMPR_EPS   = "Employer EPS"
+SC_EMPR_EDLI  = "Employer EDLI"
+SC_EMPR_PFADM = "Employer PF Admin Charges"
+SC_PT         = "Professional Tax"
+SC_EMP_LWF    = "Employee Labour Welfare Fund"
+SC_EMPR_LWF   = "Employer Labour Welfare Fund"
+
+
+def get_statutory_components_internal(company, gross_salary, earnings_map,
+                                      from_date, is_esic_applicable,
+                                      is_pf_applicable, pf_type,
+                                      is_pt_applicable, is_lwf_applicable):
+    VIRTUAL = {"Gross", "Gross Including Additional Salary"}
+
+    def _sum_components(components, gross, emap):
+        total = 0.0
+        for comp in components:
+            if comp in VIRTUAL:
+                total += flt(gross)
+            elif comp in emap:
+                total += flt(emap[comp])
+        return max(total, 0.0)
+
+    def abbr(name):
+        return frappe.db.get_value("Salary Component", name, "salary_component_abbr") or ""
+
+    def row(name, amount, employer=0):
+        return {
+            "salary_component":      name,
+            "abbr":                  abbr(name),
+            "amount":                flt(amount, 2),
+            "employer_contribution": employer,
+        }
+
+    deductions     = []
+    employer_share = []
+
+    comp_doc = frappe.get_doc("Company", company) if company else None
+
+    # ── ESIC ──────────────────────────────────────────────────
+    if is_esic_applicable and comp_doc:
+        esic_cfg = comp_doc.get_esic_config()
+        if esic_cfg:
+            esic_components = comp_doc._get_child_components("esic_dependent_component")
+            wage = _sum_components(esic_components, gross_salary, earnings_map)
+
+            emp_pct  = flt(esic_cfg.get("employee_percent", 0))
+            empr_pct = flt(esic_cfg.get("employer_percent", 0))
+
+            if emp_pct:
+                deductions.append(row(SC_EMP_ESIC, wage * emp_pct / 100))
+            if empr_pct:
+                employer_share.append(row(SC_EMPR_ESIC, wage * empr_pct / 100, employer=1))
+
+    # ── PF ────────────────────────────────────────────────────
+    if is_pf_applicable and comp_doc:
+        pf_cfg = comp_doc.get_pf_config()
+        if pf_cfg:
+            pf_components = comp_doc._get_child_components("pf_dependent_component")
+            raw_wage = _sum_components(pf_components, gross_salary, earnings_map)
+
+            if pf_type == "Limited PF" and pf_cfg.get("wage_limit"):
+                wage = min(raw_wage, flt(pf_cfg["wage_limit"]))
+            else:
+                wage = raw_wage
+
+            emp_pct  = flt(pf_cfg.get("employee_percent", 0))
+            epf_pct  = flt(pf_cfg.get("employer_epf",    0))
+            eps_pct  = flt(pf_cfg.get("employer_eps",    0))
+            edli_pct = flt(pf_cfg.get("edli_insurance",  0))
+            adm_pct  = flt(pf_cfg.get("admin_charges",   0))
+
+            if emp_pct:
+                deductions.append(row(SC_EMP_PF,     wage * emp_pct  / 100))
+            if epf_pct:
+                employer_share.append(row(SC_EMPR_PF,    wage * epf_pct  / 100, employer=1))
+            if eps_pct:
+                employer_share.append(row(SC_EMPR_EPS,   wage * eps_pct  / 100, employer=1))
+            if edli_pct:
+                employer_share.append(row(SC_EMPR_EDLI,  wage * edli_pct / 100, employer=1))
+            if adm_pct:
+                employer_share.append(row(SC_EMPR_PFADM, wage * adm_pct  / 100, employer=1))
+
+    # ── PT ────────────────────────────────────────────────────
+    if is_pt_applicable and from_date:
+        month_name = MONTHS_LIST[getdate(from_date).month - 1]
+        pt_amt     = _special_component_amount_local(SC_PT, month_name)
+        deductions.append(row(SC_PT, pt_amt))
+
+    # ── LWF ───────────────────────────────────────────────────
+    if is_lwf_applicable:
+        emp_lwf_amt  = _special_component_constant_amount_local(SC_EMP_LWF)
+        empr_lwf_amt = _special_component_constant_amount_local(SC_EMPR_LWF)
+        deductions.append(row(SC_EMP_LWF,  emp_lwf_amt))
+        employer_share.append(row(SC_EMPR_LWF, empr_lwf_amt, employer=1))
+
+    return {"deductions": deductions, "employer_share": employer_share}
+
+
+def _special_component_amount_local(component_name, month_name):
+    try:
+        doc = frappe.get_doc("Salary Component", component_name)
+        if not int(doc.is_special_component or 0):
+            return 0.0
+        for r in (doc.monthly_amounts or []):
+            if r.month == month_name:
+                return flt(r.amount)
+    except frappe.DoesNotExistError:
+        pass
+    return 0.0
+
+
+def _special_component_constant_amount_local(component_name):
+    try:
+        doc = frappe.get_doc("Salary Component", component_name)
+        if not int(doc.is_special_component or 0):
+            return 0.0
+        non_zero = [flt(r.amount) for r in (doc.monthly_amounts or []) if flt(r.amount) > 0]
+        if not non_zero:
+            return 0.0
+        from collections import Counter
+        return Counter(non_zero).most_common(1)[0][0]
+    except frappe.DoesNotExistError:
+        pass
+    return 0.0
 
 
 # ─── Additional Components ────────────────────────────────────────────────────
@@ -408,12 +740,9 @@ def get_attendance_and_days(employee, start_date, working_days_calculation_metho
 
 # ─── Core Salary Calculation ──────────────────────────────────────────────────
 #
-# Earnings: prorated by payment_days / physical_working_days / variable pay
-# Deductions (employee share): fixed amounts as stored in SSA
-#   — PT is overridden by month (Feb=300, others=200)
-#   — ESIC / PF amounts come directly from SSA (computed from Company config)
-#   — Non-statutory deductions may be prorated if flagged
-# Deductions (employer share, employer_contribution=1): fixed, never prorated
+# earnings        → prorated by payment_days / physical_working_days / variable pay
+# deductions      → employee-share only; statutory fixed; PT overridden by month
+# employer_share  → fixed, never prorated; summed into total_employer_contribution
 
 def calculate_salary_slip_amounts_exact(salary_slip, variable_pay_percentage,
                                         start_date, category=None,
@@ -465,29 +794,20 @@ def calculate_salary_slip_amounts_exact(salary_slip, variable_pay_percentage,
             da_amount = row.amount
 
     total_basic_da = basic_amount + da_amount
-    prorated_gross = total_earnings
 
-    # ── Pass 2: deductions ────────────────────────────────────
+    # ── Pass 2: deductions (employee share only) ──────────────
     for row in salary_slip.deductions:
         base = flt(row.base_amount if row.base_amount is not None else row.amount)
         row.base_amount = base
         comp = (row.salary_component or "").lower()
 
-        is_employer   = bool(row.employer_contribution)
-        is_statutory  = _is_statutory_component(row.salary_component)
-        is_pt         = _is_pt_component(row.salary_component)
+        is_statutory = _is_statutory_component(row.salary_component)
+        is_pt        = _is_pt_component(row.salary_component)
 
         if is_pt:
-            # PT: Feb=300, all other months=200
             amount = 300.0 if start_month == 2 else 200.0
 
         elif is_statutory:
-            # All other statutory components (ESIC, PF, LWF):
-            # amounts already computed by SSA from Company config — use as-is
-            amount = base
-
-        elif is_employer:
-            # Employer-contribution non-statutory rows — fixed
             amount = base
 
         elif row.depends_on_physical_working_days and wd > 0 and base > 0:
@@ -499,15 +819,18 @@ def calculate_salary_slip_amounts_exact(salary_slip, variable_pay_percentage,
         else:
             amount = base
 
-        row.amount = flt(amount, 2)
-
-        if is_employer:
-            total_employer_contribution += row.amount
-        else:
-            total_deductions += row.amount
+        row.amount        = flt(amount, 2)
+        total_deductions += row.amount
 
         if "retention" in comp:
             retention += row.amount
+
+    # ── Pass 3: employer share (fixed, never prorated) ────────
+    for row in (salary_slip.employer_share or []):
+        base = flt(row.base_amount if row.base_amount is not None else row.amount)
+        row.base_amount = base
+        row.amount      = flt(base, 2)
+        total_employer_contribution += row.amount
 
     salary_slip.total_earnings              = flt(total_earnings, 2)
     salary_slip.total_deductions            = flt(total_deductions, 2)
@@ -672,13 +995,8 @@ def bulk_generate_salary_slips(employees, year, month):
                         failed_count += 1
                         continue
 
-            salary_data = get_salary_structure_for_employee(employee, start_date)
-            if not salary_data:
-                errors.append(f"{emp_display}: No active Salary Structure Assignment found for this payroll period")
-                failed_count += 1
-                continue
-
-            category = frappe.db.get_value("Company Link", employee, "category")
+            # ── Fetch attendance first — needed for correct statutory basis ──
+            category     = frappe.db.get_value("Company Link", employee, "category")
             company_name = frappe.db.get_value("Company Link", employee, "company")
             working_days_calculation_method = None
             if company_name:
@@ -698,6 +1016,20 @@ def bulk_generate_salary_slips(employees, year, month):
 
             variable_pay_pct     = get_variable_pay_percentage(employee, start_date)
             variable_pay_decimal = flt(variable_pay_pct if variable_pay_pct is not None else 0) / 100.0
+
+            # ── Now fetch salary structure with actual attendance data ─────────
+            # Statutory (ESIC/PF) will be computed on actual prorated wages
+            salary_data = get_salary_structure_for_employee(
+                employee, start_date,
+                working_days=attendance_data.get('working_days'),
+                payment_days=attendance_data.get('payment_days'),
+                physical_working_days=attendance_data.get('physical_working_days'),
+                variable_pay_percentage=variable_pay_pct if variable_pay_pct is not None else 0,
+            )
+            if not salary_data:
+                errors.append(f"{emp_display}: No active Salary Structure Assignment found for this payroll period")
+                failed_count += 1
+                continue
 
             add_earnings, add_deductions = get_additional_components_for_employee(employee, year, month)
 
@@ -732,16 +1064,27 @@ def bulk_generate_salary_slips(employees, year, month):
                 row.depends_on_payment_days          = int(earning.get('depends_on_payment_days', 0))
                 row.depends_on_physical_working_days = int(earning.get('depends_on_physical_working_days', 0))
 
-            # ── Deductions (employee + employer share) ────────
+            # ── Deductions (employee share only) ──────────────
             for deduction in salary_data.get('deductions', []):
                 row = salary_slip.append('deductions', {})
                 row.salary_component                 = deduction.get('salary_component')
                 row.abbr                             = deduction.get('abbr', '')
                 row.amount                           = flt(deduction.get('amount'))
                 row.base_amount                      = flt(deduction.get('base_amount', deduction.get('amount')))
-                row.employer_contribution            = int(deduction.get('employer_contribution', 0))
+                row.employer_contribution            = 0
                 row.depends_on_payment_days          = int(deduction.get('depends_on_payment_days', 0))
                 row.depends_on_physical_working_days = int(deduction.get('depends_on_physical_working_days', 0))
+
+            # ── Employer share ────────────────────────────────
+            for emp_row in salary_data.get('employer_share', []):
+                row = salary_slip.append('employer_share', {})
+                row.salary_component                 = emp_row.get('salary_component')
+                row.abbr                             = emp_row.get('abbr', '')
+                row.amount                           = flt(emp_row.get('amount'))
+                row.base_amount                      = flt(emp_row.get('base_amount', emp_row.get('amount')))
+                row.employer_contribution            = 1
+                row.depends_on_payment_days          = 0
+                row.depends_on_physical_working_days = 0
 
             # ── Additional earnings ───────────────────────────
             for earning in add_earnings:
@@ -1023,13 +1366,19 @@ def generate_bulk_print_html(doc):
         computed_items.append(e)
         computed_earnings_total += (e.amount or 0)
 
-    # ── Employee-share deductions only (exclude employer rows) ─
+    # ── Employee-share deductions ─────────────────────────────
     deductions_total = 0
     deduction_items  = []
     for d in doc.deductions:
-        if not int(d.employer_contribution or 0):
-            deduction_items.append(d)
-            deductions_total += (d.amount or 0)
+        deduction_items.append(d)
+        deductions_total += (d.amount or 0)
+
+    # ── Employer-share rows ───────────────────────────────────
+    employer_share_total = 0
+    employer_share_items = []
+    for d in (doc.employer_share or []):
+        employer_share_items.append(d)
+        employer_share_total += (d.amount or 0)
 
     max_rows = max(len(assignment_earnings), len(computed_items), len(deduction_items), 1)
     earnings_deductions_rows = ""
@@ -1061,6 +1410,8 @@ def generate_bulk_print_html(doc):
             earnings_deductions_rows += '<td style="padding:6px;border:1px solid #ddd;">&nbsp;</td><td style="padding:6px;border:1px solid #ddd;">&nbsp;</td>'
         earnings_deductions_rows += "</tr>"
 
+    employer_share_rows = ""  # kept for backward compat but not printed
+
     address_html = f'<p style="font-size:11px;margin:2px 0;"><strong>Address:</strong> {company_address}</p>' if company_address else ""
 
     html = f"""<!DOCTYPE html><html><head><meta charset="UTF-8">
@@ -1078,6 +1429,8 @@ table {{ width:100%;border-collapse:collapse; }}
 .summary-table .label {{ font-weight:600;background-color:#f5f5f5;width:16%; }}
 .earnings-table th {{ background-color:#f8f8f8;padding:8px;border:2px solid #000;font-size:12px;font-weight:bold;text-align:center; }}
 .earnings-table .total-row {{ background-color:#e8f4f8;font-weight:bold; }}
+.employer-table th {{ background-color:#f0f4f8;padding:8px;border:2px solid #000;font-size:12px;font-weight:bold;text-align:center; }}
+.employer-table .total-row {{ background-color:#ddeeff;font-weight:bold; }}
 .net-payable {{ background-color:#f9f9f9;padding:10px;text-align:center;border:2px solid #000;margin-top:10px; }}
 .net-payable .amount {{ font-size:14px;font-weight:bold;margin-bottom:3px; }}
 </style></head><body>
@@ -1094,8 +1447,8 @@ table {{ width:100%;border-collapse:collapse; }}
 <tr><td class="label">Holidays</td><td>{doc.total_holidays or 0}</td><td class="label">Half Days</td><td>{doc.total_half_days or 0}</td><td class="label">LWP</td><td>{doc.total_lwp or 0}</td></tr>
 <tr><td class="label">Earned Leaves</td><td>{doc.total_earned_leaves or 0}</td><td class="label">Casual Leaves</td><td>{doc.total_casual_leaves or 0}</td><td class="label">Physical Working Days</td><td>{doc.physical_working_days or 0}</td></tr>
 </tbody></table>
-<table class="earnings-table"><thead>
-<tr><th colspan="2">Earnings (SSA)</th><th colspan="2">Computed Earnings</th><th colspan="2">Deductions</th></tr>
+<table class="earnings-table" style="margin-top:10px;"><thead>
+<tr><th colspan="2">Earnings (SSA)</th><th colspan="2">Computed Earnings</th><th colspan="2">Deductions (Employee)</th></tr>
 <tr>
 <th style="width:16.66%;text-align:left;font-size:10px;font-weight:normal;">Component</th>
 <th style="width:16.66%;text-align:right;font-size:10px;font-weight:normal;">Amount</th>
