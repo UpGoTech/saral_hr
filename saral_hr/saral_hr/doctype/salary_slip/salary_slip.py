@@ -777,7 +777,7 @@ def calculate_salary_slip_amounts_exact(salary_slip, variable_pay_percentage,
                 amount = base * variable_pct
 
         elif row.depends_on_physical_working_days and wd > 0:
-            amount = (base / wd) * phd
+            amount = base * phd
 
         elif row.depends_on_payment_days and wd > 0:
             amount = (base / wd) * pd
