@@ -1,0 +1,13 @@
+{
+ "doctype": "Page",
+ "module": "Saral Hr",
+ "name": "attendance-dashboard",
+ "page_name": "Attendance Dashboard",
+ "roles": [
+  {"role": "Saral HR Manager"},
+  {"role": "Saral HR User"}
+ ],
+ "standard": "No",
+ "title": "Attendance Dashboard",
+ "is_searchable": 1
+}

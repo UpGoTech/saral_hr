@@ -121,23 +121,15 @@ def get_attendance_between_dates(employee, start_date, end_date):
 
 # ---------------------------------------------------------------------------
 # UI status → DB status mapping
-#
-# "Regular" is a UI-only label meaning a plain Present day.
-# It is not a valid Frappe Select option, so we map it to "Present" before
-# writing to the database.
-#
-# "On Tour" and "Comp Off" ARE added as valid options in the DocType JSON,
-# so they can be saved directly.
 # ---------------------------------------------------------------------------
 UI_TO_DB_STATUS = {
-    "Regular": "Present",   # UI label only — save as Present
+    "Regular": "Present",
 }
 
-# All statuses the page is allowed to send (UI-level)
 VALID_UI_STATUSES = {
     "Present",
-    "Regular",      # maps to Present
-    "On Tour",      # saved directly
+    "Regular",
+    "On Tour",
     "Absent",
     "Half Day",
     "Holiday",
@@ -145,12 +137,11 @@ VALID_UI_STATUSES = {
     "LWP",
     "Earned Leave",
     "Casual Leave",
-    "Comp Off",     # saved directly
+    "Comp Off",
 }
 
 
 def resolve_db_status(ui_status):
-    """Map a UI status to the value that gets written to the Attendance doctype."""
     return UI_TO_DB_STATUS.get(ui_status, ui_status)
 
 
@@ -190,7 +181,6 @@ def save_attendance_batch(attendance_data):
                 if not ui_status or ui_status not in VALID_UI_STATUSES:
                     continue
 
-                # Map UI label → DB value (e.g. Regular → Present)
                 db_status = resolve_db_status(ui_status)
 
                 if permitted_employees is not None and employee not in permitted_employees:
@@ -266,8 +256,20 @@ def get_holidays_between_dates(company, start_date, end_date):
     return [str(h) for h in holidays]
 
 
-# ── NEW: fetch joining date for an employee from Company Link ──────────────
+# ── fetch joining date AND left date from Company Link ─────────────────────
+# joining date itself → CAN mark  (only strictly before is blocked)
+# left date itself    → CAN mark  (only strictly after is blocked)
 @frappe.whitelist()
 def get_employee_joining_date(employee):
-    joining_date = frappe.db.get_value("Company Link", employee, "date_of_joining")
-    return str(joining_date) if joining_date else None
+    result = frappe.db.get_value(
+        "Company Link",
+        employee,
+        ["date_of_joining", "left_date"],
+        as_dict=True
+    )
+    if not result:
+        return {"joining_date": None, "left_date": None}
+    return {
+        "joining_date": str(result.date_of_joining) if result.date_of_joining else None,
+        "left_date":    str(result.left_date)        if result.left_date        else None,
+    }
