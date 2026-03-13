@@ -300,17 +300,28 @@ function inject_ep_styles() {
         .ep-sal-prog-arrow { font-size:14px; color:#d1d5db; padding:0 4px; margin-top:2px; }
         .ep-sal-prog-hike-chip { display:inline-block; font-size:10px; font-weight:700; background:#f0fdf4; color:#166534; border:1px solid #86efac; border-radius:10px; padding:1px 7px; margin-top:3px; }
 
+        /* ── Component toggles — 3 columns now (earnings / deductions / employer share) ── */
         .ep-comp-toggle-wrap { margin-top:10px; }
-        .ep-comp-cols { display:grid; grid-template-columns:1fr 1fr; gap:8px; }
-        .ep-comp-toggle-btn { width:100%; display:flex; justify-content:space-between; align-items:center; padding:6px 10px; border-radius:6px; border:1px solid var(--border-color,#e5e7eb); background:var(--control-bg,#f9fafb); cursor:pointer; font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:0.05em; color:var(--text-color); transition:background 0.15s; }
-        .ep-comp-toggle-btn.earnings-btn   { color:#15803d; border-color:#86efac; background:#f0fdf4; }
-        .ep-comp-toggle-btn.earnings-btn:hover   { background:#dcfce7; }
-        .ep-comp-toggle-btn.deductions-btn { color:#b91c1c; border-color:#fca5a5; background:#fff5f5; }
-        .ep-comp-toggle-btn.deductions-btn:hover { background:#fee2e2; }
+        .ep-comp-cols { display:grid; grid-template-columns:1fr 1fr 1fr; gap:8px; }
+        .ep-comp-toggle-btn {
+            width:100%; display:flex; justify-content:space-between; align-items:center;
+            padding:6px 10px; border-radius:6px;
+            border:1px solid var(--border-color,#e5e7eb);
+            background:var(--control-bg,#f9fafb); cursor:pointer;
+            font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:0.05em;
+            color:var(--text-color); transition:background 0.15s;
+        }
+        .ep-comp-toggle-btn.earnings-btn      { color:#15803d; border-color:#86efac; background:#f0fdf4; }
+        .ep-comp-toggle-btn.earnings-btn:hover      { background:#dcfce7; }
+        .ep-comp-toggle-btn.deductions-btn    { color:#b91c1c; border-color:#fca5a5; background:#fff5f5; }
+        .ep-comp-toggle-btn.deductions-btn:hover    { background:#fee2e2; }
+        .ep-comp-toggle-btn.employer-btn      { color:#1d4ed8; border-color:#bfdbfe; background:#eff6ff; }
+        .ep-comp-toggle-btn.employer-btn:hover      { background:#dbeafe; }
         .ep-comp-btn-left  { display:flex; align-items:center; gap:6px; }
         .ep-comp-btn-count { font-size:10px; font-weight:700; padding:1px 6px; border-radius:8px; }
         .ep-comp-toggle-btn.earnings-btn   .ep-comp-btn-count { background:#bbf7d0; color:#14532d; }
         .ep-comp-toggle-btn.deductions-btn .ep-comp-btn-count { background:#fecaca; color:#7f1d1d; }
+        .ep-comp-toggle-btn.employer-btn   .ep-comp-btn-count { background:#bfdbfe; color:#1e3a8a; }
         .ep-comp-chevron { font-size:9px; transition:transform 0.2s; }
         .ep-comp-chevron.open { transform:rotate(180deg); }
         .ep-comp-list { display:none; border:1px solid var(--border-color,#e5e7eb); border-top:none; border-radius:0 0 6px 6px; overflow:hidden; }
@@ -319,9 +330,10 @@ function inject_ep_styles() {
         .ep-comp-row:last-child { border-bottom:none; }
         .ep-comp-row:nth-child(even) { background:var(--control-bg,#f9fafb); }
         .ep-comp-name { color:var(--text-color); }
-        .ep-comp-amt  { font-weight:600; }
+        .ep-comp-amt        { font-weight:600; }
         .ep-comp-amt.earn   { color:#16a34a; }
         .ep-comp-amt.deduct { color:#ef4444; }
+        .ep-comp-amt.employer { color:#1d4ed8; }
 
         .ep-ssa-cancelled-wrap { border:1px solid var(--border-color,#e5e7eb); border-radius:8px; overflow:hidden; }
         .ep-ssa-cancelled-header { background:var(--control-bg,#f9fafb); padding:8px 14px; display:flex; justify-content:space-between; align-items:center; cursor:pointer; user-select:none; }
@@ -396,7 +408,6 @@ function calc_age(dob_str) {
     return age;
 }
 
-// ── Status maps (includes On Tour + Comp Off) ─────────────────────────────────
 var STATUS_COLORS = {
     "Present":      "present",
     "Absent":       "absent",
@@ -513,7 +524,6 @@ function render_profile($sidebar, $main, d, emp) {
     main += "<div style='display:flex;gap:8px;align-items:center;'>";
     main += "<button class='ep-today-btn' id='ep-today-btn'>Today</button>";
     main += "<select class='ep-year-select' id='ep-year-select'>";
-    // FIX: show ALL years from backend, no hardcoded filter
     years.forEach(function(yr) {
         main += "<option value='" + yr + "'" + (String(yr) === String(cur_year) ? " selected" : "") + ">" + yr + "</option>";
     });
@@ -581,12 +591,11 @@ function render_profile($sidebar, $main, d, emp) {
         $(this).find(".ep-ssa-toggle-icon").toggleClass("open");
     });
     $main.on("click", ".ep-comp-toggle-btn", function() {
-        var $wrap  = $(this).closest(".ep-comp-toggle-wrap");
-        var $lists = $wrap.find(".ep-comp-list");
-        var $chevs = $wrap.find(".ep-comp-chevron");
-        var open = $lists.first().hasClass("open");
-        if (open) { $lists.removeClass("open"); $chevs.removeClass("open"); }
-        else      { $lists.addClass("open");    $chevs.addClass("open");    }
+        var $section = $(this).closest(".ep-comp-section");
+        var $list    = $section.find(".ep-comp-list");
+        var $chev    = $(this).find(".ep-comp-chevron");
+        $list.toggleClass("open");
+        $chev.toggleClass("open");
     });
 }
 
@@ -776,8 +785,11 @@ function render_ssa_panel_html(latest_ssa, cancelled_ssas, company_link) {
         html += ssa_breakdown_item("Employer Contrib", latest_ssa.total_employer_contribution);
         html += "</div>";
 
-        var uid = "ssa-" + (latest_ssa.name || "main").replace(/[^a-z0-9]/gi, "");
-        html += render_comp_toggles(latest_ssa.earnings || [], latest_ssa.deductions || [], uid);
+        html += render_comp_toggles(
+            latest_ssa.earnings       || [],
+            latest_ssa.deductions     || [],
+            latest_ssa.employer_share || []
+        );
 
         var dp = [];
         if (latest_ssa.from_date) dp.push("From: " + fmt_date_human(latest_ssa.from_date));
@@ -847,7 +859,11 @@ function render_ssa_panel_html(latest_ssa, cancelled_ssas, company_link) {
             html += "<div style='font-size:11px;color:var(--text-muted);'>Deductions: <strong>&#8377;" + fmt_currency(rec.total_deductions) + "</strong></div>";
             html += "<div style='font-size:11px;color:var(--text-muted);'>Employer: <strong>&#8377;" + fmt_currency(rec.total_employer_contribution) + "</strong></div>";
             html += "</div>";
-            html += render_comp_toggles(rec.earnings || [], rec.deductions || [], "cancelled-" + idx);
+            html += render_comp_toggles(
+                rec.earnings       || [],
+                rec.deductions     || [],
+                rec.employer_share || []
+            );
             html += "</div>";
         });
         html += "</div></div>";
@@ -856,11 +872,14 @@ function render_ssa_panel_html(latest_ssa, cancelled_ssas, company_link) {
     return html;
 }
 
-// ── Component toggles ─────────────────────────────────────────────────────────
+// ── Component toggles — Earnings / Deductions / Employer Share ────────────────
 
-function render_comp_toggles(earnings, deductions, uid) {
-    if (!earnings.length && !deductions.length) return "";
+function render_comp_toggles(earnings, deductions, employer_share) {
+    if (!earnings.length && !deductions.length && !employer_share.length) return "";
+
     var html = "<div class='ep-comp-toggle-wrap'><div class='ep-comp-cols'>";
+
+    // Earnings
     html += "<div class='ep-comp-section'>";
     if (earnings.length) {
         html += "<button class='ep-comp-toggle-btn earnings-btn'>";
@@ -868,24 +887,48 @@ function render_comp_toggles(earnings, deductions, uid) {
         html += "<span class='ep-comp-chevron'>&#9660;</span></button>";
         html += "<div class='ep-comp-list'>";
         earnings.forEach(function(row) {
-            html += "<div class='ep-comp-row'><span class='ep-comp-name'>" + (row.salary_component||"") + "</span><span class='ep-comp-amt earn'>&#8377;" + fmt_currency(row.amount) + "</span></div>";
+            html += "<div class='ep-comp-row'><span class='ep-comp-name'>" + (row.salary_component || "") + "</span>" +
+                    "<span class='ep-comp-amt earn'>&#8377;" + fmt_currency(row.amount) + "</span></div>";
         });
         html += "</div>";
     }
-    html += "</div><div class='ep-comp-section'>";
+    html += "</div>";
+
+    // Deductions
+    html += "<div class='ep-comp-section'>";
     if (deductions.length) {
         html += "<button class='ep-comp-toggle-btn deductions-btn'>";
         html += "<span class='ep-comp-btn-left'>Deductions <span class='ep-comp-btn-count'>" + deductions.length + "</span></span>";
         html += "<span class='ep-comp-chevron'>&#9660;</span></button>";
         html += "<div class='ep-comp-list'>";
         deductions.forEach(function(row) {
-            html += "<div class='ep-comp-row'><span class='ep-comp-name'>" + (row.salary_component||"") + "</span><span class='ep-comp-amt deduct'>&#8377;" + fmt_currency(row.amount) + "</span></div>";
+            html += "<div class='ep-comp-row'><span class='ep-comp-name'>" + (row.salary_component || "") + "</span>" +
+                    "<span class='ep-comp-amt deduct'>&#8377;" + fmt_currency(row.amount) + "</span></div>";
         });
         html += "</div>";
     }
-    html += "</div></div></div>";
+    html += "</div>";
+
+    // Employer Share
+    html += "<div class='ep-comp-section'>";
+    if (employer_share.length) {
+        html += "<button class='ep-comp-toggle-btn employer-btn'>";
+        html += "<span class='ep-comp-btn-left'>Employer Share <span class='ep-comp-btn-count'>" + employer_share.length + "</span></span>";
+        html += "<span class='ep-comp-chevron'>&#9660;</span></button>";
+        html += "<div class='ep-comp-list'>";
+        employer_share.forEach(function(row) {
+            html += "<div class='ep-comp-row'><span class='ep-comp-name'>" + (row.salary_component || "") + "</span>" +
+                    "<span class='ep-comp-amt employer'>&#8377;" + fmt_currency(row.amount) + "</span></div>";
+        });
+        html += "</div>";
+    }
+    html += "</div>";
+
+    html += "</div></div>";
     return html;
 }
+
+// ── Small helpers ─────────────────────────────────────────────────────────────
 
 function ssa_breakdown_item(label, val) {
     return "<div class='ep-ssa-breakdown-item'><div class='ep-ssa-breakdown-label'>" + label + "</div><div class='ep-ssa-breakdown-val'>&#8377;" + fmt_currency(val) + "</div></div>";

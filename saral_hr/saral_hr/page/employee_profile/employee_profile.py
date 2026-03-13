@@ -49,8 +49,6 @@ def get_employee_profile_data(employee):
     )
 
     # ── Attendance ────────────────────────────────────────────────────────────
-    # Attendance.employee links to Company Link (name = e.g. "HR-EMP-00001")
-    # So we must collect ALL Company Link names for this employee first.
     all_cl_names = frappe.db.get_all(
         "Company Link",
         filters={"employee": employee},
@@ -167,18 +165,9 @@ def get_employee_profile_data(employee):
                     "Employee", reporting["final_reporting"], "employee"
                 ) or reporting["final_reporting"]
 
-    # ── Latest submitted SSA ──────────────────────────────────────────────────
-    latest_ssa_name = frappe.db.get_value(
-        "Salary Structure Assignment",
-        filters={"employee": employee, "docstatus": 1},
-        fieldname="name",
-        order_by="from_date desc",
-    )
-
-    latest_ssa = None
-    if latest_ssa_name:
-        ssa_doc = frappe.get_doc("Salary Structure Assignment", latest_ssa_name)
-        latest_ssa = {
+    # ── Helper: serialize a single SSA doc into a dict ────────────────────────
+    def _serialize_ssa(ssa_doc):
+        return {
             "name":                        ssa_doc.name,
             "salary_structure":            ssa_doc.salary_structure,
             "from_date":                   str(ssa_doc.from_date) if ssa_doc.from_date else None,
@@ -189,9 +178,9 @@ def get_employee_profile_data(employee):
             "total_employer_contribution": ssa_doc.total_employer_contribution,
             "net_salary":                  ssa_doc.net_salary,
             "annual_ctc":                  ssa_doc.annual_ctc,
-            "designation":                 ssa_doc.designation,
-            "department":                  ssa_doc.department,
-            "branch":                      ssa_doc.branch,
+            "designation":                 ssa_doc.designation or "",
+            "department":                  ssa_doc.department  or "",
+            "branch":                      ssa_doc.branch      or "",
             "earnings": [
                 {"salary_component": row.salary_component, "amount": row.amount}
                 for row in (ssa_doc.earnings or [])
@@ -200,7 +189,23 @@ def get_employee_profile_data(employee):
                 {"salary_component": row.salary_component, "amount": row.amount}
                 for row in (ssa_doc.deductions or [])
             ],
+            "employer_share": [
+                {"salary_component": row.salary_component, "amount": row.amount}
+                for row in (ssa_doc.employer_share or [])
+            ],
         }
+
+    # ── Latest submitted SSA ──────────────────────────────────────────────────
+    latest_ssa_name = frappe.db.get_value(
+        "Salary Structure Assignment",
+        filters={"employee": employee, "docstatus": 1},
+        fieldname="name",
+        order_by="from_date desc",
+    )
+
+    latest_ssa = None
+    if latest_ssa_name:
+        latest_ssa = _serialize_ssa(frappe.get_doc("Salary Structure Assignment", latest_ssa_name))
 
     # ── Cancelled SSAs ────────────────────────────────────────────────────────
     cancelled_ssas_names = frappe.db.get_all(
@@ -213,30 +218,7 @@ def get_employee_profile_data(employee):
     cancelled_ssas = []
     for rec in cancelled_ssas_names:
         try:
-            cdoc = frappe.get_doc("Salary Structure Assignment", rec.name)
-            cancelled_ssas.append({
-                "name":                        cdoc.name,
-                "salary_structure":            cdoc.salary_structure,
-                "from_date":                   str(cdoc.from_date) if cdoc.from_date else None,
-                "to_date":                     str(cdoc.to_date)   if cdoc.to_date   else None,
-                "monthly_ctc":                 cdoc.monthly_ctc,
-                "gross_salary":                cdoc.gross_salary,
-                "total_deductions":            cdoc.total_deductions,
-                "total_employer_contribution": cdoc.total_employer_contribution,
-                "net_salary":                  cdoc.net_salary,
-                "annual_ctc":                  cdoc.annual_ctc,
-                "designation":                 cdoc.designation or "",
-                "department":                  cdoc.department  or "",
-                "branch":                      cdoc.branch      or "",
-                "earnings": [
-                    {"salary_component": row.salary_component, "amount": row.amount}
-                    for row in (cdoc.earnings or [])
-                ],
-                "deductions": [
-                    {"salary_component": row.salary_component, "amount": row.amount}
-                    for row in (cdoc.deductions or [])
-                ],
-            })
+            cancelled_ssas.append(_serialize_ssa(frappe.get_doc("Salary Structure Assignment", rec.name)))
         except Exception:
             pass
 
