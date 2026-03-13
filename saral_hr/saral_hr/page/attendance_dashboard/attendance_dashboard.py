@@ -7,9 +7,18 @@ def get_context(context):
 
 @frappe.whitelist()
 def get_companies():
-	"""Get list of all companies"""
-	companies = frappe.get_all("Company", fields=["name"], order_by="name asc")
-	return [c.name for c in companies]
+	user = frappe.session.user
+
+	if "Saral HR Manager" in frappe.get_roles(user):
+		return frappe.get_all("Company", pluck="name", order_by="name asc")
+
+	companies = frappe.get_all(
+		"User Permission",
+		filters={"user": user, "allow": "Company"},
+		pluck="for_value",
+		order_by="for_value asc"
+	)
+	return companies
 
 
 @frappe.whitelist()
