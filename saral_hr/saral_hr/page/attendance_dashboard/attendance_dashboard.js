@@ -140,27 +140,7 @@ frappe.pages["attendance-dashboard"].on_page_load = function (wrapper) {
       .pop-emp-cell.c-inactive .pop-emp-val { color:#f43f5e; }
 
       /* status breakdown rows */
-      .pop-status-section { padding:10px 14px 12px; }
-      .pop-section-title {
-        font-size:10px; font-weight:700; text-transform:uppercase;
-        letter-spacing:.4px; color:var(--text-muted); margin-bottom:8px;
-      }
-      .pop-status-row {
-        display:flex; align-items:center; margin-bottom:6px;
-      }
-      .pop-status-row:last-child { margin-bottom:0; }
-      .pop-s-dot  { width:8px; height:8px; border-radius:50%; flex-shrink:0; margin-right:7px; }
-      .pop-s-name { font-size:12px; color:var(--text-color); flex:1; }
-      .pop-s-bar-wrap { width:70px; height:5px; background:#f1f5f9; border-radius:3px; margin:0 8px; }
-      .pop-s-bar      { height:5px; border-radius:3px; }
-      .pop-s-cnt      { font-size:12px; font-weight:700; color:var(--heading-color); min-width:20px; text-align:right; }
 
-      .pop-loading { padding:16px; text-align:center; color:var(--text-muted); font-size:12px; }
-      .pop-spinner {
-        display:inline-block; width:16px; height:16px;
-        border:2px solid #e2e8f0; border-top-color:#4f46e5;
-        border-radius:50%; animation:att-spin .7s linear infinite; margin-bottom:5px;
-      }
 
       /* empty / loading page */
       .att-empty { text-align:center; padding:60px 0; color:var(--text-muted); font-size:14px; }
@@ -202,7 +182,7 @@ frappe.pages["attendance-dashboard"].on_page_load = function (wrapper) {
           </div>
         </div>
         <div id="att-matrix-body">
-          <div class="att-empty">Select a company </div>
+          <div class="att-empty">Select a company and click Refresh</div>
         </div>
       </div>
     </div>
@@ -366,28 +346,9 @@ frappe.pages["attendance-dashboard"].on_page_load = function (wrapper) {
 			// Build immediately with cached emp stats, loading spinner for status
 			$pop.html(
 				headerHtml(year, month, marked, totalEmp) +
-				empStripHtml(state.company) +
-				`<div class="pop-status-section" id="pop-status-inner">
-           <div class="pop-section-title">Status Breakdown</div>
-           <div class="pop-loading"><div class="pop-spinner"></div><br>Loading…</div>
-         </div>`
+				empStripHtml(state.company)
 			).show();
 			positionPop(e);
-
-			// Fetch status breakdown async
-			frappe.call({
-				method: "saral_hr.saral_hr.page.attendance_dashboard.attendance_dashboard.get_status_breakdown",
-				args: { company: state.company, year, month },
-				callback(r) {
-					const breakdown = r.message || {};
-					const inner = Object.keys(breakdown).length
-						? statusRowsHtml(breakdown)
-						: '<div style="color:var(--text-muted);font-size:12px;text-align:center;padding:4px 0">No records for this month</div>';
-					$("#pop-status-inner").html(
-						`<div class="pop-section-title">Status Breakdown</div>${inner}`
-					);
-				},
-			});
 		});
 
 		$(document).on("mousemove.attcell", ".att-cell", positionPop);
