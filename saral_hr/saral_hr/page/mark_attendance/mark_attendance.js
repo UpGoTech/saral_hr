@@ -153,7 +153,6 @@ function get_ma_html() {
                         <!-- Present group -->
                         <th class="ma-present-group-th text-center" colspan="2">
                             <div class="ma-present-group-label">Present <span id="ma_p_col_count" class="ma-group-total">(0)</span></div>
-
                             <div class="ma-present-sub-row">
                                 <div class="ma-present-sub-cell">Regular<br><span id="ma_pr_col_count">0</span></div>
                                 <div class="ma-present-sub-cell">On Tour<br><span id="ma_pt_col_count">0</span></div>
@@ -182,7 +181,6 @@ function get_ma_html() {
                             <span id="ma_hol_col_count">0</span>
                         </th>
                     </tr>
-                    <!-- second header row is just a spacer to complete the rowspans -->
                     <tr></tr>
                 </thead>
                 <tbody id="ma_table_body"></tbody>
@@ -245,8 +243,13 @@ function init_mark_attendance($main) {
     var employeeWeeklyOffMap = {};
     var calendarCache = {};
 
-    // ── NEW: joining date cache per employee ───────────────────────────────
+    // ── joining date + left date cache per employee ────────────────────────
+    // joiningDateMap[empId] = "YYYY-MM-DD" | null
+    // leftDateMap[empId]    = "YYYY-MM-DD" | null
+    // Rule: joining date itself CAN be marked  → disable only currentDate < joiningDate
+    //       left date itself    CAN be marked  → disable only currentDate > leftDate
     var joiningDateMap = {};
+    var leftDateMap    = {};
 
     // ── Status sets ────────────────────────────────────────────────────────
     var ABSENT_SUBTYPES = ["LWP", "Earned Leave", "Casual Leave", "Comp Off"];
@@ -402,16 +405,17 @@ function init_mark_attendance($main) {
         document.getElementById("ma_weekly_off").value = (employeeWeeklyOffMap[emp.value] || [])
             .map(function (d) { return d.charAt(0).toUpperCase() + d.slice(1); }).join(", ");
 
-        // ── NEW: fetch joining date for this employee ──────────────────────
+        // ── fetch joining date + left date (cached per employee) ───────────
         if (joiningDateMap[emp.value] !== undefined) {
-            // already cached — go straight to table
             generateTable();
         } else {
             frappe.call({
                 method: "saral_hr.saral_hr.page.mark_attendance.mark_attendance.get_employee_joining_date",
                 args: { employee: emp.value },
                 callback: function (r) {
-                    joiningDateMap[emp.value] = r.message || null;
+                    var data = r.message || {};
+                    joiningDateMap[emp.value] = data.joining_date || null;
+                    leftDateMap[emp.value]    = data.left_date    || null;
                     generateTable();
                 }
             });
@@ -496,6 +500,17 @@ function init_mark_attendance($main) {
         return (n % 1 === 0) ? String(n) : n.toFixed(1);
     }
 
+    // ── Safe date parser: avoids UTC-vs-local timezone shift ──────────────
+    // new Date("YYYY-MM-DD") parses as UTC midnight which can shift the date
+    // by one day in non-UTC timezones. Parsing parts manually fixes this.
+    function parseDateLocal(str) {
+        if (!str) return null;
+        var p = str.split("-");
+        var d = new Date(parseInt(p[0]), parseInt(p[1]) - 1, parseInt(p[2]));
+        d.setHours(0, 0, 0, 0);
+        return d;
+    }
+
     // ── Status classification ──────────────────────────────────────────────
     function isAbsentSubtype(status) { return ABSENT_SUBTYPES.includes(status); }
     function isPresentSubtype(status) { return PRESENT_SUBTYPES.includes(status); }
@@ -504,11 +519,9 @@ function init_mark_attendance($main) {
     // ── Count update ───────────────────────────────────────────────────────
     function updateCounts() {
         var p = 0, pr = 0, pt = 0, a = 0, h = 0, l = 0, el = 0, cl = 0, coff = 0, wo = 0, hol = 0;
-        var totalDays = 0;
 
         Object.values(attendanceTableData).forEach(function (s) {
             if (!s) return;
-            totalDays++;
             if (s === "Present") { p++; pr++; }
             else if (s === "Regular") { p++; pr++; }
             else if (s === "On Tour") { p++; pt++; }
@@ -521,8 +534,6 @@ function init_mark_attendance($main) {
             else if (s === "Weekly Off") wo++;
             else if (s === "Holiday") hol++;
         });
-
-        var totalAbsents = a + l + el + cl + coff;
 
         document.getElementById("ma_hd_col_count").textContent = h;
         document.getElementById("ma_p_col_count").textContent = p;
@@ -566,7 +577,6 @@ function init_mark_attendance($main) {
         row.querySelectorAll('input[name="p_subtype_' + dateKey + '"], input[name="a_subtype_' + dateKey + '"]').forEach(function (r) {
             r.disabled = true; r.checked = false;
         });
-        // Also re-enable present subtypes since Regular/On Tour are the "present" entry point
         row.querySelectorAll('input[name="p_subtype_' + dateKey + '"]').forEach(function (r) { r.disabled = false; });
     }
 
@@ -597,24 +607,16 @@ function init_mark_attendance($main) {
         return count;
     }
 
-    // ── resetRowToPresent: fully reset a row to a present subtype ─────────
-    // FIX: This helper correctly wires up a row after switching to present
-    // from any previous state (including absent-with-subtype).
+    // ── resetRowToPresent ──────────────────────────────────────────────────
     function resetRowToPresent(row, dateKey, subtype) {
-        // 1. Uncheck & enable all main status radios, clear them
         row.querySelectorAll('input[name="status_' + dateKey + '"]').forEach(function (r) {
-            r.disabled = false;
-            r.checked = false;
+            r.disabled = false; r.checked = false;
         });
-        // 2. Enable present subtypes & check the right one
         row.querySelectorAll('input[name="p_subtype_' + dateKey + '"]').forEach(function (r) {
-            r.disabled = false;
-            r.checked = (r.value === subtype);
+            r.disabled = false; r.checked = (r.value === subtype);
         });
-        // 3. Disable & clear absent subtypes
         row.querySelectorAll('input[name="a_subtype_' + dateKey + '"]').forEach(function (r) {
-            r.disabled = true;
-            r.checked = false;
+            r.disabled = true; r.checked = false;
         });
         attendanceTableData[dateKey] = subtype;
         applyRowClass(row, "Present");
@@ -638,19 +640,13 @@ function init_mark_attendance($main) {
         else if (isDefaultWeeklyOff && toggleChecked) row.classList.add("ma-weekly-off-row");
         else if (isRestDay && !toggleChecked) row.classList.add("ma-override-row");
 
-        var isPresentStatus = isPresent(savedStatus);
         var presentSubtype = isPresentSubtype(savedStatus) ? savedStatus : (savedStatus === "Present" ? "Regular" : "");
-        // Present subtypes are always enabled on active rows — user must be able to
-        // click Regular/On Tour to switch back from Absent at any time.
         var pSubDisabled = radiosDisabled;
 
         var isAbsentStatus = savedStatus === "Absent" || isAbsentSubtype(savedStatus);
         var absentSubtype = isAbsentSubtype(savedStatus) ? savedStatus : "";
-        // Absent subtypes enabled when row is Absent; also keep pSub enabled when absent
-        // so switching to present is always possible.
         var aSubDisabled = radiosDisabled || !isAbsentStatus;
 
-        // Toggle cell
         var toggleCell;
         if (isRestDay && !isFuture) {
             var restLabel = isHoliday ? "Holiday" : "Weekly Off";
@@ -673,65 +669,54 @@ function init_mark_attendance($main) {
             currentDate.getFullYear() +
             '</td>' +
             toggleCell +
-            // Half Day
             '<td class="text-center">' +
             '<input type="radio" name="status_' + dateKey + '" value="Half Day"' +
             (savedStatus === "Half Day" ? " checked" : "") + (radiosDisabled ? " disabled" : "") + '>' +
             '</td>' +
-            // Present subtype: Regular
             '<td class="text-center ma-psubtype-cell">' +
             '<input type="radio" name="p_subtype_' + dateKey + '" value="Regular"' +
             (presentSubtype === "Regular" ? " checked" : "") + (pSubDisabled ? " disabled" : "") +
             ' class="ma-psubtype-radio">' +
             '</td>' +
-            // Present subtype: On Tour
             '<td class="text-center ma-psubtype-cell">' +
             '<input type="radio" name="p_subtype_' + dateKey + '" value="On Tour"' +
             (presentSubtype === "On Tour" ? " checked" : "") + (pSubDisabled ? " disabled" : "") +
             ' class="ma-psubtype-radio">' +
             '</td>' +
-            // Absent (main)
             '<td class="text-center">' +
             '<input type="radio" name="status_' + dateKey + '" value="Absent"' +
             (isAbsentStatus ? " checked" : "") + (radiosDisabled ? " disabled" : "") + '>' +
             '</td>' +
-            // Absent subtype: LWP
             '<td class="text-center ma-subtype-cell">' +
             '<input type="radio" name="a_subtype_' + dateKey + '" value="LWP"' +
             (absentSubtype === "LWP" ? " checked" : "") + (aSubDisabled ? " disabled" : "") +
             ' class="ma-subtype-radio">' +
             '</td>' +
-            // Absent subtype: Earned Leave
             '<td class="text-center ma-subtype-cell">' +
             '<input type="radio" name="a_subtype_' + dateKey + '" value="Earned Leave"' +
             (absentSubtype === "Earned Leave" ? " checked" : "") + (aSubDisabled ? " disabled" : "") +
             ' class="ma-subtype-radio">' +
             '</td>' +
-            // Absent subtype: Casual Leave
             '<td class="text-center ma-subtype-cell">' +
             '<input type="radio" name="a_subtype_' + dateKey + '" value="Casual Leave"' +
             (absentSubtype === "Casual Leave" ? " checked" : "") + (aSubDisabled ? " disabled" : "") +
             ' class="ma-subtype-radio">' +
             '</td>' +
-            // Absent subtype: Comp Off
             '<td class="text-center ma-subtype-cell">' +
             '<input type="radio" name="a_subtype_' + dateKey + '" value="Comp Off"' +
             (absentSubtype === "Comp Off" ? " checked" : "") + (aSubDisabled ? " disabled" : "") +
             ' class="ma-subtype-radio">' +
             '</td>' +
-            // Weekly Off
             '<td class="text-center ma-wo-cell">' +
             '<input type="radio" name="status_' + dateKey + '" value="Weekly Off"' +
             (savedStatus === "Weekly Off" ? " checked" : "") + (radiosDisabled ? " disabled" : "") + '>' +
             '</td>' +
-            // Holiday
             '<td class="text-center ma-holiday-cell">' +
             '<input type="radio" name="status_' + dateKey + '" value="Holiday"' +
             (savedStatus === "Holiday" ? " checked" : "") + (radiosDisabled ? " disabled" : "") + '>' +
             '</td>';
 
         if (!isFuture) {
-            // Toggle (override rest day)
             var toggleInput = row.querySelector(".ma-weekly-off-toggle");
             if (toggleInput) {
                 toggleInput.addEventListener("change", function () {
@@ -777,27 +762,21 @@ function init_mark_attendance($main) {
                 });
             }
 
-            // Main status radios (Half Day, Absent, Weekly Off, Holiday)
             row.querySelectorAll('input[name="status_' + dateKey + '"]').forEach(function (inp) {
                 inp.addEventListener("change", function () {
                     var val = this.value;
-
                     var pSubRadios = row.querySelectorAll('input[name="p_subtype_' + dateKey + '"]');
                     var aSubRadios = row.querySelectorAll('input[name="a_subtype_' + dateKey + '"]');
 
                     if (val === "Absent") {
-                        // Enable absent subtypes; keep present subtypes ENABLED (unchecked)
-                        // so the user can click Regular/On Tour to switch back to Present
                         aSubRadios.forEach(function (r) { r.disabled = false; });
                         pSubRadios.forEach(function (r) { r.disabled = false; r.checked = false; });
                         var checkedASub = row.querySelector('input[name="a_subtype_' + dateKey + '"]:checked');
                         attendanceTableData[dateKey] = checkedASub ? checkedASub.value : "Absent";
                     } else {
-                        // Disable & clear ALL subtypes when switching to Half Day / WO / Holiday
                         pSubRadios.forEach(function (r) { r.disabled = false; r.checked = false; });
                         aSubRadios.forEach(function (r) { r.disabled = true; r.checked = false; });
 
-                        // ── Weekly Off hard limit ──────────────────────────
                         if (val === "Weekly Off") {
                             var limit = maxWeeklyOffInMonth();
                             var prevStatus = attendanceTableData[dateKey] || "";
@@ -836,31 +815,19 @@ function init_mark_attendance($main) {
                 });
             });
 
-            // ── Present subtype radios (Regular / On Tour) ─────────────────
-            // These are ALWAYS enabled on active rows.
-            // Clicking one switches the row fully to Present, clearing everything else.
             row.querySelectorAll('input[name="p_subtype_' + dateKey + '"]').forEach(function (inp) {
                 inp.addEventListener("change", function () {
                     var val = this.value;
-
-                    // Uncheck + re-enable all main status radios
                     row.querySelectorAll('input[name="status_' + dateKey + '"]').forEach(function (r) {
-                        r.checked = false;
-                        r.disabled = false;
+                        r.checked = false; r.disabled = false;
                     });
-                    // Uncheck + re-enable the other present subtype
                     row.querySelectorAll('input[name="p_subtype_' + dateKey + '"]').forEach(function (r) {
                         r.disabled = false;
-                        // keep 'this' checked (browser already did it), uncheck others
                         if (r !== inp) r.checked = false;
                     });
-                    // Uncheck absent subtypes but keep them enabled
-                    // (they'll re-enable properly if user clicks Absent again)
                     row.querySelectorAll('input[name="a_subtype_' + dateKey + '"]').forEach(function (r) {
-                        r.checked = false;
-                        r.disabled = true;
+                        r.checked = false; r.disabled = true;
                     });
-
                     attendanceTableData[dateKey] = val;
                     applyRowClass(row, "Present");
                     row.classList.remove("ma-override-row");
@@ -868,15 +835,10 @@ function init_mark_attendance($main) {
                 });
             });
 
-            // ── Absent subtype radios (LWP / EL / CL / Comp Off) ───────────
-            // NEVER disable pSubRadios here — user must always be able to click
-            // Regular/On Tour to switch back to Present.
             row.querySelectorAll('input[name="a_subtype_' + dateKey + '"]').forEach(function (inp) {
                 inp.addEventListener("change", function () {
-                    // pSubRadios: uncheck but leave ENABLED
                     row.querySelectorAll('input[name="p_subtype_' + dateKey + '"]').forEach(function (r) {
-                        r.checked = false;
-                        r.disabled = false;
+                        r.checked = false; r.disabled = false;
                     });
                     attendanceTableData[dateKey] = this.value;
                     updateCounts();
@@ -909,9 +871,11 @@ function init_mark_attendance($main) {
         var company = employeeCompanyMap[employee];
         var tbody = document.getElementById("ma_table_body");
 
-        // ── NEW: resolve joining date for this employee ────────────────────
-        var joiningDate = joiningDateMap[employee] ? new Date(joiningDateMap[employee]) : null;
-        if (joiningDate) joiningDate.setHours(0, 0, 0, 0);
+        // Parse joining and left dates safely (local time, no UTC shift)
+        // joining date itself → ALLOWED  (strict < blocks only before it)
+        // left date itself    → ALLOWED  (strict > blocks only after it)
+        var joiningDate = parseDateLocal(joiningDateMap[employee]);
+        var leftDate    = parseDateLocal(leftDateMap[employee]);
 
         showTableLoading();
 
@@ -949,8 +913,10 @@ function init_mark_attendance($main) {
                             var isHoliday = holidayDates[dateKey] === true;
                             var isFuture = currentDate > today;
 
-                            // ── NEW: treat pre-joining dates same as future (disabled) ──
+                            // joining date itself CAN be marked → strict <
+                            // left date itself    CAN be marked → strict >
                             var isBeforeJoining = joiningDate ? (currentDate < joiningDate) : false;
+                            var isAfterLeft     = leftDate    ? (currentDate > leftDate)    : false;
 
                             var rawStatus = attendanceMap[dateKey] || "";
                             var savedStatus = resolveStatus(rawStatus, isHoliday, isDefaultWeeklyOff);
@@ -961,7 +927,8 @@ function init_mark_attendance($main) {
                             tbody.appendChild(buildRow(
                                 dateKey, dayName, currentDate,
                                 savedStatus, rawStatus,
-                                isHoliday, isDefaultWeeklyOff, isFuture || isBeforeJoining
+                                isHoliday, isDefaultWeeklyOff,
+                                isFuture || isBeforeJoining || isAfterLeft
                             ));
                             current.setDate(current.getDate() + 1);
                         }
@@ -993,13 +960,11 @@ function init_mark_attendance($main) {
             var aSubRadios = document.querySelectorAll('input[name="a_subtype_' + date + '"]');
             if (!mainRadios.length || mainRadios[0].disabled) return;
 
-            // ── FIX: Always fully reset all radio groups before applying bulk ──
             mainRadios.forEach(function (r) { r.checked = false; r.disabled = false; });
             pSubRadios.forEach(function (r) { r.checked = false; r.disabled = false; });
             aSubRadios.forEach(function (r) { r.checked = false; r.disabled = true; });
 
             if (status === "Present" || status === "Regular") {
-                // Bulk Present → Regular subtype
                 pSubRadios.forEach(function (r) { r.disabled = false; r.checked = (r.value === "Regular"); });
                 aSubRadios.forEach(function (r) { r.disabled = true; r.checked = false; });
                 attendanceTableData[date] = "Regular";
@@ -1008,8 +973,6 @@ function init_mark_attendance($main) {
                 aSubRadios.forEach(function (r) { r.disabled = true; r.checked = false; });
                 attendanceTableData[date] = status;
             } else if (isAbsentSubtype(status)) {
-                // Absent subtype: check Absent main radio + the subtype
-                // Keep pSubRadios ENABLED so user can click Regular/On Tour to switch back
                 mainRadios.forEach(function (r) { r.checked = (r.value === "Absent"); });
                 pSubRadios.forEach(function (r) { r.disabled = false; r.checked = false; });
                 aSubRadios.forEach(function (r) { r.disabled = false; r.checked = (r.value === status); });
@@ -1020,7 +983,6 @@ function init_mark_attendance($main) {
                 aSubRadios.forEach(function (r) { r.disabled = false; r.checked = false; });
                 attendanceTableData[date] = "Absent";
             } else {
-                // Half Day, etc.
                 mainRadios.forEach(function (r) { r.checked = (r.value === status); });
                 pSubRadios.forEach(function (r) { r.disabled = false; r.checked = false; });
                 aSubRadios.forEach(function (r) { r.disabled = true; r.checked = false; });
@@ -1341,7 +1303,6 @@ function inject_ma_styles() {
         .ma-btn-primary:hover { background: #1a1a1a; }
         .ma-btn:active        { transform: scale(0.98); }
 
-        /* ── Layout ── */
         .ma-top-wrap     { display: flex; gap: 14px; align-items: stretch; }
         .ma-left-block   { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 10px; }
         .ma-row1         { display: flex; gap: 14px; align-items: flex-end; flex: 1; }
@@ -1354,7 +1315,6 @@ function inject_ma_styles() {
         .ma-r2-buttons   { flex: 0 0 auto; }
         .ma-r1-leave     { flex: 0 0 auto; display: flex; align-items: stretch; }
 
-        /* ── Labels & inputs ── */
         .ma-wrap .ma-label, label.ma-label {
             display: block !important; font-size: 11px !important; font-weight: 500 !important;
             color: var(--text-muted) !important; margin-bottom: 4px !important;
@@ -1368,7 +1328,6 @@ function inject_ma_styles() {
         .ma-input:focus     { outline: none; border-color: #666; box-shadow: 0 0 0 2px rgba(45,45,45,0.1); }
         .ma-input[readonly] { background: var(--control-bg, #f8f9fa); color: var(--text-muted); }
 
-        /* ── Search dropdown ── */
         .ma-search-wrapper  { position: relative; }
         .ma-search-input    { padding-right: 30px; }
         .ma-clear-btn {
@@ -1400,7 +1359,6 @@ function inject_ma_styles() {
         .ma-bulk-btns { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
         .ma-th-small  { display: block; font-size: 10px; font-weight: 400; color: var(--text-muted); margin-top: 2px; white-space: nowrap; }
 
-        /* ── Attendance table ── */
         .ma-table-scroll { max-height: 520px; overflow-y: auto; overflow-x: auto; position: relative; }
         .ma-table        { width: 100%; border-collapse: collapse; }
         .ma-table td {
@@ -1409,7 +1367,6 @@ function inject_ma_styles() {
             background: var(--card-bg, #fff);
         }
 
-        /* Loading overlay */
         .ma-table-loading {
             display: flex; flex-direction: column;
             align-items: center; justify-content: center;
@@ -1425,35 +1382,27 @@ function inject_ma_styles() {
         @keyframes ma-spin { to { transform: rotate(360deg); } }
         .ma-loading-text { font-size: 13px; color: var(--text-muted); }
 
-        /* ── Present group header ── */
         .ma-present-group-th  { background: #f0fdf4 !important; color: #166534 !important; padding: 0 !important; vertical-align: top !important; }
         .ma-present-group-label { font-size: 11px; font-weight: 600; color: #166534; text-align: center; padding: 6px 10px 2px; border-bottom: 1px solid var(--border-color, #d1d8dd); }
         .ma-present-sub-row   { display: flex; width: 100%; }
         .ma-present-sub-cell  { flex: 1; text-align: center; font-size: 11px; font-weight: 600; color: #166534; padding: 5px 4px; border-right: 1px solid var(--border-color, #d1d8dd); }
         .ma-present-sub-cell:last-child { border-right: none; }
-
-        /* Present subtype cells */
         .ma-psubtype-cell     { background: #dcfce7 !important; }
         .ma-psubtype-cell input:disabled { opacity: 0.25; cursor: not-allowed; }
         .ma-group-total { font-size: 11px; font-weight: 400; color: #166534; margin-left: 4px; }
 
-        /* ── Absent group header ── */
         .ma-absent-group-th  { background: #fef3f2 !important; color: #c0392b !important; padding: 0 !important; vertical-align: top !important; }
         .ma-absent-group-label { font-size: 11px; font-weight: 600; color: #c0392b; text-align: center; padding: 6px 10px 4px; border-bottom: 1px solid var(--border-color, #d1d8dd); }
         .ma-absent-sub-row   { display: flex; width: 100%; }
         .ma-absent-sub-cell  { flex: 1; text-align: center; font-size: 11px; font-weight: 600; color: #c0392b; padding: 5px 4px; border-right: 1px solid var(--border-color, #d1d8dd); }
         .ma-absent-sub-cell:last-child { border-right: none; }
-
-        /* Absent subtype cells */
         .ma-subtype-cell              { background: #fef9f9 !important; }
         .ma-subtype-cell input:disabled { opacity: 0.25; cursor: not-allowed; }
 
-        /* Weekly Off / Holiday columns */
         .ma-wo-cell      { background: #eff6ff !important; }
         .ma-holiday-cell { background: #fff7ed !important; }
         .ma-no-toggle-cell { color: var(--text-muted); font-size: 16px; vertical-align: middle; }
 
-        /* ── Row colours ── */
         .ma-holiday-row    td { background: #fff3e0 !important; color: #e65100 !important; font-weight: 500; }
         .ma-weekly-off-row td { background: var(--control-bg, #f5f5f5) !important; color: var(--text-muted) !important; }
         .ma-override-row   td:first-child { border-left: 3px solid #f59e0b !important; }
@@ -1462,7 +1411,6 @@ function inject_ma_styles() {
 
         .text-center { text-align: center; }
 
-        /* ── Sticky thead ── */
         .ma-table thead tr th {
             position: sticky; top: 0; z-index: 50;
             background: var(--control-bg, #f7f7f7); border: 1px solid var(--border-color, #d1d8dd);
@@ -1473,7 +1421,6 @@ function inject_ma_styles() {
         .ma-col-wo       { background: #e8f2ff !important; color: #1e40af !important; }
         .ma-col-holiday  { background: #fff1e6 !important; color: #9a3412 !important; }
 
-        /* ── Toggle switch ── */
         .ma-toggle        { position: relative; display: inline-block; width: 50px; height: 26px; margin: 0; }
         .ma-toggle input  { opacity: 0; width: 0; height: 0; }
         .ma-toggle-slider {
@@ -1488,7 +1435,6 @@ function inject_ma_styles() {
         .ma-toggle input:checked + .ma-toggle-slider:before { transform: translateX(24px); }
         .ma-toggle input:not(:checked) + .ma-toggle-slider  { background: #d1fae5; border-color: #059669; }
 
-        /* ── Calendar Modal ── */
         .ma-cal-modal      { display: none; position: fixed; z-index: 2000; left: 0; top: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.6); backdrop-filter: blur(4px); }
         .ma-cal-modal.show { display: flex; align-items: center; justify-content: center; }
         .ma-cal-content    { background: #fff; border-radius: 12px; width: 95%; max-width: 900px; max-height: 85vh; overflow: hidden; box-shadow: 0 20px 60px rgba(0,0,0,0.3); position: relative; }
@@ -1522,7 +1468,6 @@ function inject_ma_styles() {
         .ma-legend-dot.holiday  { background: #ffedd5; border: 2px solid #ea580c; }
         .ma-legend-dot.weekend  { background: #eff6ff; border: 2px solid #93c5fd; }
 
-        /* ── Mini calendar grid ── */
         .ma-months-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }
         .ma-month-card  { background: #fff; border: 2px solid var(--border-color, #e5e7eb); border-radius: 8px; padding: 12px; cursor: pointer; transition: all 0.2s; }
         .ma-month-card:hover { border-color: #2d2d2d; box-shadow: 0 4px 12px rgba(0,0,0,0.1); transform: translateY(-2px); }
@@ -1545,7 +1490,6 @@ function inject_ma_styles() {
 
         .page-head-content { padding: 8px 17px 0px 0px !important; }
 
-        /* ── Leave Summary ── */
         .ma-leave-table { border-collapse: collapse; height: 100%; }
         .ma-leave-th {
             background: var(--control-bg, #f7f7f7); border: 1px solid var(--border-color, #d1d8dd);
