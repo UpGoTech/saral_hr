@@ -102,11 +102,6 @@ fixtures = [
         ]
     },
 
-    # Salary Component
-    {
-        "dt": "Salary Component"
-    },
-
     # Print Formats
     {
         "dt": "Print Format",

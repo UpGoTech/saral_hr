@@ -8,11 +8,11 @@ frappe.ui.form.on("Salary Slip", {
     employee(frm) {
         if (!frm.doc.employee) return;
         reset_form(frm);
-        frappe.db.get_value("Company Link", frm.doc.employee, "category", (r) => {
-            if (r && r.category) {
-                frappe.db.get_value("Category", r.category, "salary_calculation_based_on", (cat) => {
-                    if (cat && cat.salary_calculation_based_on)
-                        frm.set_value("working_days_calculation_method", cat.salary_calculation_based_on);
+        frappe.db.get_value("Company Link", frm.doc.employee, "company", (r) => {
+            if (r && r.company) {
+                frappe.db.get_value("Company", r.company, "salary_calculation_based_on", (comp) => {
+                    if (comp && comp.salary_calculation_based_on)
+                        frm.set_value("working_days_calculation_method", comp.salary_calculation_based_on);
                     if (frm.doc.start_date) check_duplicate_and_fetch(frm);
                 });
             } else {
@@ -42,12 +42,13 @@ frappe.ui.form.on("Salary Slip", {
 });
 
 frappe.ui.form.on("Salary Details", {
-    amount(frm)           { recalculate_salary(frm); },
-    earnings_remove(frm)  { recalculate_salary(frm); },
-    deductions_remove(frm){ recalculate_salary(frm); }
+    amount(frm)                  { recalculate_salary(frm); },
+    earnings_remove(frm)         { recalculate_salary(frm); },
+    deductions_remove(frm)       { recalculate_salary(frm); },
+    employer_share_remove(frm)   { recalculate_salary(frm); }
 });
 
-// ─── DA detection (mirrors Python _is_da_component) ──────────────────────────
+// ─── DA detection ─────────────────────────────────────────────────────────────
 
 function is_da_component(comp_name, abbr) {
     const n = (comp_name || '').toLowerCase();
@@ -55,6 +56,24 @@ function is_da_component(comp_name, abbr) {
     return n.includes('dearness') || n === 'da'
         || a === 'da' || a.startsWith('da-') || a.startsWith('da ')
         || a === 'da - dr' || a.startsWith('da-dr');
+}
+
+// ─── Statutory component detection ───────────────────────────────────────────
+
+const STATUTORY_NAMES = new Set([
+    "Employee ESIC", "Employer ESIC",
+    "Employee PF", "Employer PF",
+    "Employer EPS", "Employer EDLI", "Employer PF Admin Charges",
+    "Professional Tax",
+    "Employee Labour Welfare Fund", "Employer Labour Welfare Fund"
+]);
+
+function is_statutory(comp_name) {
+    return STATUTORY_NAMES.has((comp_name || "").trim());
+}
+
+function is_pt(comp_name) {
+    return (comp_name || "").trim() === "Professional Tax";
 }
 
 // ─── Duplicate check + full fetch ─────────────────────────────────────────────
@@ -80,88 +99,108 @@ function set_end_date(frm) {
 }
 
 // ─── Parallel data fetch + validation ────────────────────────────────────────
+//
+// Flow:
+//   Step 1 (parallel): attendance + variable pay check + variable pay % + additional components
+//   Step 2 (sequential, after step 1): salary structure — called WITH actual
+//          working_days / payment_days / physical_working_days / variable_pay_percentage
+//          so statutory (ESIC/PF) is computed on ACTUAL earned wages, not SSA base amounts.
 
 function fetch_and_validate_all(frm) {
     frm.page.btn_primary.prop("disabled", false);
     frm.clear_table("earnings");
     frm.clear_table("deductions");
+    frm.clear_table("employer_share");
 
-    let salary_data     = null;
     let attendance_data = null;
     let vpa_status      = null;
     let vpa_percentage  = 0;
     let additional_data = { earnings: [], deductions: [] };
-    let pending         = 4;
+    let pending         = 3;  // attendance + vpa_check + additional
 
     function try_finalize() {
         if (--pending > 0) return;
 
-        const unmet = [];
-        if (!salary_data)
-            unmet.push("No Salary Structure has been assigned for the selected payroll period.");
-        if (vpa_status && vpa_status.status === "missing")
-            unmet.push(vpa_status.message.replace(/<[^>]+>/g, ""));
-        if (!attendance_data)
-            unmet.push("Attendance data could not be retrieved. Please verify attendance records.");
-        else if (attendance_data.attendance_count === 0)
-            unmet.push("No attendance has been recorded for this employee in the selected month.");
+        // ── Step 2: fetch salary structure WITH actual attendance data ────────
+        // This lets the backend compute ESIC/PF on actual prorated wages.
+        const att_args = attendance_data ? {
+            working_days:            attendance_data.working_days,
+            payment_days:            attendance_data.payment_days,
+            physical_working_days:   attendance_data.physical_working_days || 0,
+            variable_pay_percentage: vpa_percentage
+        } : {};
 
-        if (unmet.length) {
-            frappe.msgprint({
-                title: __("Payroll Processing Requirements Not Met"),
-                message: `<div style="margin-bottom:8px;font-weight:600;">Please resolve the following before saving:</div>
-                    <ul style="margin:0;padding-left:18px;line-height:1.7;">
-                        ${unmet.map(e => `<li style="margin-bottom:6px;">${e}</li>`).join("")}
-                    </ul>`,
-                indicator: "red"
-            });
-            frm.page.btn_primary.prop("disabled", true);
-            return;
-        }
+        frappe.call({
+            method: "saral_hr.saral_hr.doctype.salary_slip.salary_slip.get_salary_structure_for_employee",
+            args: Object.assign(
+                { employee: frm.doc.employee, start_date: frm.doc.start_date },
+                att_args
+            ),
+            callback(r) {
+                const salary_data = r.message || null;
 
-        apply_salary_structure(frm, salary_data);
+                const unmet = [];
+                if (!salary_data)
+                    unmet.push("No Salary Structure has been assigned for the selected payroll period.");
+                if (vpa_status && vpa_status.status === "missing")
+                    unmet.push(vpa_status.message.replace(/<[^>]+>/g, ""));
+                if (!attendance_data)
+                    unmet.push("Attendance data could not be retrieved. Please verify attendance records.");
+                else if (attendance_data.attendance_count === 0)
+                    unmet.push("No attendance has been recorded for this employee in the selected month.");
 
-        (additional_data.earnings || []).forEach(row => {
-            const e = frm.add_child("earnings");
-            e.salary_component                 = row.salary_component;
-            e.abbr                             = row.abbr || "";
-            e.amount                           = flt(row.amount);
-            e.base_amount                      = flt(row.amount);
-            e.depends_on_payment_days          = 0;
-            e.is_daily_rate                    = 0;
-            e.depends_on_physical_working_days = 0;
-            e._is_additional                   = true;
+                if (unmet.length) {
+                    frappe.msgprint({
+                        title: __("Payroll Processing Requirements Not Met"),
+                        message: `<div style="margin-bottom:8px;font-weight:600;">Please resolve the following before saving:</div>
+                            <ul style="margin:0;padding-left:18px;line-height:1.7;">
+                                ${unmet.map(e => `<li style="margin-bottom:6px;">${e}</li>`).join("")}
+                            </ul>`,
+                        indicator: "red"
+                    });
+                    frm.page.btn_primary.prop("disabled", true);
+                    return;
+                }
+
+                apply_salary_structure(frm, salary_data);
+
+                // Additional earnings
+                (additional_data.earnings || []).forEach(row => {
+                    const e = frm.add_child("earnings");
+                    e.salary_component                 = row.salary_component;
+                    e.abbr                             = row.abbr || "";
+                    e.amount                           = flt(row.amount);
+                    e.base_amount                      = flt(row.amount);
+                    e.depends_on_payment_days          = 0;
+                    e.depends_on_physical_working_days = 0;
+                    e._is_additional                   = true;
+                });
+
+                // Additional deductions
+                (additional_data.deductions || []).forEach(row => {
+                    const d = frm.add_child("deductions");
+                    d.salary_component                 = row.salary_component;
+                    d.abbr                             = row.abbr || "";
+                    d.amount                           = flt(row.amount);
+                    d.base_amount                      = flt(row.amount);
+                    d.employer_contribution            = 0;
+                    d.depends_on_payment_days          = 0;
+                    d.depends_on_physical_working_days = 0;
+                    d._is_additional                   = true;
+                });
+
+                frm.refresh_fields(["earnings", "deductions", "employer_share"]);
+                apply_attendance(frm, attendance_data, flt(vpa_percentage) / 100);
+                frm.page.btn_primary.prop("disabled", false);
+            },
+            error() {
+                frappe.msgprint({ title: __("Error"), message: "Failed to fetch salary structure.", indicator: "red" });
+                frm.page.btn_primary.prop("disabled", true);
+            }
         });
-
-        (additional_data.deductions || []).forEach(row => {
-            const d = frm.add_child("deductions");
-            d.salary_component                 = row.salary_component;
-            d.abbr                             = row.abbr || "";
-            d.amount                           = flt(row.amount);
-            d.base_amount                      = flt(row.amount);
-            d.employer_contribution            = 0;
-            d.depends_on_payment_days          = 0;
-            d.is_daily_rate                    = 0;
-            d.depends_on_physical_working_days = 0;
-            d.is_pf_component                  = 0;
-            d.is_esic_component                = 0;
-            d._is_additional                   = true;
-        });
-
-        frm.refresh_fields(["earnings", "deductions"]);
-        apply_attendance(frm, attendance_data, flt(vpa_percentage) / 100);
-        frm.page.btn_primary.prop("disabled", false);
     }
 
-    // Call 1 — salary structure
-    frappe.call({
-        method: "saral_hr.saral_hr.doctype.salary_slip.salary_slip.get_salary_structure_for_employee",
-        args:   { employee: frm.doc.employee, start_date: frm.doc.start_date },
-        callback(r) { salary_data = r.message || null; try_finalize(); },
-        error()     { salary_data = null;              try_finalize(); }
-    });
-
-    // Call 2 — variable pay check (nested call 5 if VPA exists)
+    // Call 1 — variable pay check (+ sub-call for percentage if ok)
     frappe.call({
         method: "saral_hr.saral_hr.doctype.salary_slip.salary_slip.check_variable_pay_assignment",
         args:   { employee: frm.doc.employee, start_date: frm.doc.start_date },
@@ -181,7 +220,7 @@ function fetch_and_validate_all(frm) {
         error() { vpa_status = { status: "ok" }; try_finalize(); }
     });
 
-    // Call 3 — attendance
+    // Call 2 — attendance
     frappe.call({
         method: "saral_hr.saral_hr.doctype.salary_slip.salary_slip.get_attendance_and_days",
         args:   {
@@ -193,7 +232,7 @@ function fetch_and_validate_all(frm) {
         error()     { attendance_data = null;              try_finalize(); }
     });
 
-    // Call 4 — additional components
+    // Call 3 — additional components
     frappe.call({
         method: "saral_hr.saral_hr.doctype.salary_slip.salary_slip.get_additional_components_api",
         args:   { employee: frm.doc.employee, start_date: frm.doc.start_date },
@@ -203,11 +242,17 @@ function fetch_and_validate_all(frm) {
 }
 
 // ─── Apply SSA rows to form ───────────────────────────────────────────────────
+//
+// SSA returns three distinct lists:
+//   earnings       → slip.earnings  (earned components)
+//   deductions     → slip.deductions  (employee-share statutory + other deductions)
+//   employer_share → slip.employer_share  (employer statutory contributions)
 
 function apply_salary_structure(frm, data) {
     frm.set_value("salary_structure", data.salary_structure);
     frm.clear_table("earnings");
     frm.clear_table("deductions");
+    frm.clear_table("employer_share");
 
     (data.earnings || []).forEach(row => {
         const e = frm.add_child("earnings");
@@ -223,7 +268,15 @@ function apply_salary_structure(frm, data) {
         d._is_additional = false;
     });
 
-    frm.refresh_fields(["earnings", "deductions"]);
+    (data.employer_share || []).forEach(row => {
+        const s = frm.add_child("employer_share");
+        Object.assign(s, row);
+        s.base_amount           = row.base_amount !== undefined ? row.base_amount : row.amount;
+        s.employer_contribution = 1;
+        s._is_additional        = false;
+    });
+
+    frm.refresh_fields(["earnings", "deductions", "employer_share"]);
 }
 
 function apply_attendance(frm, d, variable_pay_pct) {
@@ -248,9 +301,12 @@ function apply_attendance(frm, d, variable_pay_pct) {
 
 // ─── Salary Calculation ───────────────────────────────────────────────────────
 //
-// ESIC: no ₹21,000 gross threshold check — if the employee has is_esic_applicable
-// on their Company Link record, ESIC components are included. The percentage,
-// cap, and basis are all read from the Salary Component table fields.
+// earnings        → prorated by payment_days / physical_working_days as flagged
+// deductions      → employee-share only:
+//   - Statutory (ESIC/PF/LWF): fixed from SSA — already computed on actual wages by backend
+//   - PT: override by month (Feb=300, others=200)
+//   - Non-statutory: prorated if flagged
+// employer_share  → fixed, never prorated; summed into total_employer_contribution
 
 function recalculate_salary(frm, wd_override, pd_override, phd_override) {
     const wd           = flt(wd_override  !== undefined ? wd_override  : frm.doc.total_working_days);
@@ -258,13 +314,17 @@ function recalculate_salary(frm, wd_override, pd_override, phd_override) {
     const phd          = flt(phd_override !== undefined ? phd_override : frm.doc.physical_working_days);
     const variable_pct = flt(frm.variable_pay_percentage || 0);
 
+    let slip_month = null;
+    if (frm.doc.start_date) {
+        slip_month = parseInt(frm.doc.start_date.split('-')[1], 10);
+    }
+
     let total_earnings              = 0;
     let total_deductions            = 0;
     let total_employer_contribution = 0;
     let basic_amount                = 0;
     let da_amount                   = 0;
     let retention                   = 0;
-    let ssa_gross                   = 0;
 
     // ── Pass 1: earnings ──────────────────────────────────────────────────────
     (frm.doc.earnings || []).forEach(row => {
@@ -279,8 +339,6 @@ function recalculate_salary(frm, wd_override, pd_override, phd_override) {
                 : base * variable_pct;
         } else if (row.depends_on_physical_working_days && wd > 0) {
             amount = (base / wd) * phd;
-        } else if (row.is_daily_rate) {
-            amount = base * pd;
         } else if (row.depends_on_payment_days && wd > 0) {
             amount = (base / wd) * pd;
         } else {
@@ -290,69 +348,44 @@ function recalculate_salary(frm, wd_override, pd_override, phd_override) {
         row.amount      = flt(amount, 2);
         total_earnings += row.amount;
 
-        if (!row._is_additional) ssa_gross += base;
-
-        if (comp.includes("basic"))                           basic_amount = row.amount;
-        if (is_da_component(row.salary_component, row.abbr)) da_amount    = row.amount;
+        if (comp.includes("basic"))                               basic_amount = row.amount;
+        if (is_da_component(row.salary_component, row.abbr))     da_amount    = row.amount;
     });
 
-    const prorated_gross = total_earnings;
-
-    // ── Pass 2: deductions ────────────────────────────────────────────────────
+    // ── Pass 2: deductions (employee share only) ──────────────────────────────
     (frm.doc.deductions || []).forEach(row => {
-        const base = flt(row.base_amount != null ? row.base_amount : row.amount);
+        const base      = flt(row.base_amount != null ? row.base_amount : row.amount);
         row.base_amount = base;
-        const comp = (row.salary_component || "").toLowerCase();
+        const comp      = (row.salary_component || "").toLowerCase();
+        const statutory = is_statutory(row.salary_component);
+        const pt        = is_pt(row.salary_component);
 
         let amount;
-
-        if (row.is_pf_component) {
-            const pf_pct   = flt(row.pf_percentage  || 0);
-            const pf_cap   = flt(row.pf_cap_amount   || 0);
-            const pf_basis = (row.pf_calculation_based_on || "").trim();
-            const gross_for_pf = (pf_basis === "Gross from Salary Structure Assignment")
-                ? ssa_gross : prorated_gross;
-
-            amount = (pf_pct > 0) ? flt(gross_for_pf * pf_pct / 100, 2) : 0;
-            if (pf_cap > 0) amount = Math.min(amount, pf_cap);
-            row.amount = flt(amount, 2);
-
-        } else if (row.is_esic_component) {
-            const esic_pct   = flt(row.esic_percentage  || 0);
-            const esic_cap   = flt(row.esic_cap_amount   || 0);
-            const esic_basis = (row.esic_calculation_based_on || "").trim();
-            // ✅ Always use ssa_gross; no ₹21,000 check —
-            // eligibility is driven solely by is_esic_applicable on the employee
-            const gross_for_esic = (esic_basis === "Gross from Salary Structure Assignment")
-                ? ssa_gross : prorated_gross;
-
-            amount = (esic_pct > 0) ? flt(gross_for_esic * esic_pct / 100, 2) : 0;
-            if (esic_cap > 0) amount = Math.min(amount, esic_cap);
-            row.amount = flt(amount, 2);
-
-        } else if (row.is_pt_component) {
-            if (frm.doc.start_date) {
-                const month = parseInt(frm.doc.start_date.split('-')[1], 10);
-                amount = month === 2 ? 300 : 200;
-            } else {
-                amount = base;
-            }
-            row.amount = flt(amount, 2);
-
+        if (pt) {
+            amount = slip_month === 2 ? 300 : 200;
+        } else if (statutory) {
+            // Statutory amounts already computed on actual wages by backend — use as-is
+            amount = base;
         } else if (row.depends_on_physical_working_days && wd > 0 && base > 0) {
-            row.amount = flt((base / wd) * phd, 2);
-        } else if (row.is_daily_rate) {
-            row.amount = flt(base * pd, 2);
+            amount = (base / wd) * phd;
         } else if (row.depends_on_payment_days && wd > 0 && base > 0) {
-            row.amount = flt((base / wd) * pd, 2);
+            amount = (base / wd) * pd;
         } else {
-            row.amount = flt(base, 2);
+            amount = base;
         }
 
-        if (parseInt(row.employer_contribution)) total_employer_contribution += row.amount;
-        else                                     total_deductions            += row.amount;
+        row.amount        = flt(amount, 2);
+        total_deductions += row.amount;
 
         if (comp.includes("retention")) retention += row.amount;
+    });
+
+    // ── Pass 3: employer share (fixed, never prorated) ────────────────────────
+    (frm.doc.employer_share || []).forEach(row => {
+        const base = flt(row.base_amount != null ? row.base_amount : row.amount);
+        row.base_amount = base;
+        row.amount      = flt(base, 2);
+        total_employer_contribution += row.amount;
     });
 
     frm.set_value({
@@ -364,7 +397,7 @@ function recalculate_salary(frm, wd_override, pd_override, phd_override) {
         retention:                   flt(retention, 2)
     });
 
-    frm.refresh_fields(["earnings", "deductions"]);
+    frm.refresh_fields(["earnings", "deductions", "employer_share"]);
 }
 
 // ─── Reset ────────────────────────────────────────────────────────────────────
@@ -372,6 +405,7 @@ function recalculate_salary(frm, wd_override, pd_override, phd_override) {
 function reset_form(frm) {
     frm.clear_table("earnings");
     frm.clear_table("deductions");
+    frm.clear_table("employer_share");
     frm.set_value({
         total_working_days: 0, payment_days: 0, physical_working_days: 0,
         present_days: 0, absent_days: 0, weekly_offs_count: 0,

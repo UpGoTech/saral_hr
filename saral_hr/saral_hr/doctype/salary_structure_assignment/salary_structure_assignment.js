@@ -1,11 +1,46 @@
+// Copyright (c) 2026, sj and contributors
+// For license information, please see license.txt
+
+// ─────────────────────────────────────────────────────────────
+//  Exact Salary Component names (must match DB)
+// ─────────────────────────────────────────────────────────────
+
+const SC = {
+    // ESIC
+    EMP_ESIC:   "Employee ESIC",
+    EMPR_ESIC:  "Employer ESIC",
+
+    // PF
+    EMP_PF:     "Employee PF",
+    EMPR_PF:    "Employer PF",
+    EMPR_EPS:   "Employer EPS",
+    EMPR_EDLI:  "Employer EDLI",
+    EMPR_PFADM: "Employer PF Admin Charges",
+
+    // PT
+    PT:         "Professional Tax",
+
+    // LWF
+    EMP_LWF:    "Employee Labour Welfare Fund",
+    EMPR_LWF:   "Employer Labour Welfare Fund",
+};
+
+const STATUTORY_DEDUCTION  = [SC.EMP_ESIC, SC.EMP_PF, SC.PT, SC.EMP_LWF];
+const STATUTORY_EMPLOYER   = [SC.EMPR_ESIC, SC.EMPR_PF, SC.EMPR_EPS, SC.EMPR_EDLI, SC.EMPR_PFADM, SC.EMPR_LWF];
+const ALL_STATUTORY        = [...STATUTORY_DEDUCTION, ...STATUTORY_EMPLOYER];
+
+// ─────────────────────────────────────────────────────────────
+//  Main form events
+// ─────────────────────────────────────────────────────────────
+
 frappe.ui.form.on("Salary Structure Assignment", {
 
     refresh(frm) {
         toggle_fields(frm);
+        render_statutory_controls(frm);
         if (frm.doc.salary_structure) {
             toggle_salary_sections(frm);
             calculate_salary(frm);
-            render_statutory_bar(frm);
         }
     },
 
@@ -30,15 +65,18 @@ frappe.ui.form.on("Salary Structure Assignment", {
                 frm._has_existing = !!(r.message && r.message.length);
                 if (frm._has_existing) {
                     const lines = r.message.map(rec =>
-                        `<a href="/app/salary-structure-assignment/${rec.name}" target="_blank">${rec.name}</a> (${rec.from_date} to ${rec.to_date || "Ongoing"})`
+                        `<a href="/app/salary-structure-assignment/${rec.name}" target="_blank">${rec.name}</a>`
+                        + ` (${rec.from_date} to ${rec.to_date || "Ongoing"})`
                     ).join("<br>");
                     frappe.msgprint({
                         title: __("Assignment Already Exists"),
                         indicator: "orange",
-                        message: `An active Salary Structure Assignment already exists for this employee. Please cancel it before creating a new one.<br><br>${lines}`
+                        message: `An active Salary Structure Assignment already exists for this employee.`
+                            + ` Please cancel it before creating a new one.<br><br>${lines}`
                     });
                 }
                 toggle_fields(frm);
+                render_statutory_controls(frm);
             }
         });
     },
@@ -46,6 +84,7 @@ frappe.ui.form.on("Salary Structure Assignment", {
     from_date(frm) {
         toggle_fields(frm);
         if (frm.doc.from_date && frm.doc.to_date) check_overlap(frm);
+        if (frm.doc.salary_structure) refresh_statutory_rows(frm);
     },
 
     to_date(frm) {
@@ -55,257 +94,254 @@ frappe.ui.form.on("Salary Structure Assignment", {
 
     salary_structure(frm) {
         toggle_salary_sections(frm);
-
         if (!frm.doc.salary_structure) {
-            clear_salary_tables(frm);
-            clear_statutory_bar(frm);
+            clear_all_tables(frm);
+            render_statutory_controls(frm);
             return;
         }
-
-        frappe.call({
-            method: "frappe.client.get",
-            args: { doctype: "Salary Structure", name: frm.doc.salary_structure },
-            callback(r) {
-                if (!r.message) return;
-                const structure = r.message;
-
-                frappe.db.get_value(
-                    "Company Link",
-                    frm.doc.employee,
-                    ["is_esic_applicable", "is_pf_applicable", "pf_applicable", "is_pt_applicable"],
-                    (stat) => {
-                        clear_salary_tables(frm);
-
-                        (structure.earnings || []).forEach(row => copy_row(frm.add_child("earnings"), row));
-
-                        const esic_on = stat && parseInt(stat.is_esic_applicable);
-                        const pf_on   = stat && parseInt(stat.is_pf_applicable);
-                        const pf_type = (stat && stat.pf_applicable) || "";
-                        const pt_on   = stat && parseInt(stat.is_pt_applicable);
-
-                        const PF_COMPONENT_NAMES = {
-                            "Limited PF": [
-                                "Employee - Limited PF",
-                                "Employer - EPF (Limited)",
-                                "Employer - EPS (Limited)",
-                                "Employer - EDLI (Limited)",
-                                "Employer - PF Admin (Limited)"
-                            ],
-                            "Full PF": [
-                                "Employee - Full PF",
-                                "Employer - EPF (Full)",
-                                "Employer - EPS (Full)",
-                                "Employer - EDLI (Full)",
-                                "Employer - PF Admin (Full)"
-                            ],
-                            "No PF": [
-                                "Employee - No PF",
-                                "Employer - EPF (No PF)",
-                                "Employer - EPS (No PF)",
-                                "Employer - EDLI (No PF)",
-                                "Employer - PF Admin (No PF)"
-                            ],
-                        };
-                        const ESIC_COMPONENT_NAMES = ["Employee - ESIC", "Employer - ESIC"];
-                        const PT_COMPONENT_NAME    = "Professional Tax";
-
-                        const ALL_PF_NAMES   = Object.values(PF_COMPONENT_NAMES).flat();
-                        const ALL_ESIC_NAMES = ESIC_COMPONENT_NAMES;
-                        const ALL_PT_NAMES   = [PT_COMPONENT_NAME];
-
-                        (structure.deductions || []).forEach(row => {
-                            const name = (row.salary_component || "").trim();
-                            if (ALL_PF_NAMES.includes(name))   return;
-                            if (ALL_ESIC_NAMES.includes(name)) return;
-                            if (ALL_PT_NAMES.includes(name))   return;
-                            copy_row(frm.add_child("deductions"), row);
-                        });
-
-                        const to_fetch = [];
-                        if (pf_on && PF_COMPONENT_NAMES[pf_type]) {
-                            to_fetch.push(...PF_COMPONENT_NAMES[pf_type]);
-                        }
-                        if (esic_on) {
-                            to_fetch.push(...ESIC_COMPONENT_NAMES);
-                        }
-                        if (pt_on) {
-                            to_fetch.push(PT_COMPONENT_NAME);
-                        }
-
-                        frm.set_value("currency", structure.currency || "INR");
-
-                        if (!to_fetch.length) {
-                            frm.refresh_field("earnings");
-                            frm.refresh_field("deductions");
-                            calculate_salary(frm);
-                            render_statutory_bar(frm);
-                            return;
-                        }
-
-                        frappe.call({
-                            method: "frappe.client.get_list",
-                            args: {
-                                doctype: "Salary Component",
-                                filters: [["name", "in", to_fetch]],
-                                fields: [
-                                    "name", "salary_component_abbr", "employer_contribution",
-                                    "is_pf_component",   "pf_calculation_based_on",   "pf_percentage",   "pf_cap_amount",
-                                    "is_esic_component", "esic_calculation_based_on", "esic_percentage", "esic_cap_amount",
-                                    "is_pt_component"
-                                ],
-                                limit: 25
-                            },
-                            callback(sc) {
-                                const sc_map = {};
-                                (sc.message || []).forEach(c => { sc_map[c.name] = c; });
-
-                                to_fetch.forEach(comp_name => {
-                                    const c = sc_map[comp_name];
-                                    if (!c) return;
-                                    const child = frm.add_child("deductions");
-
-                                    // ── PT: compute from from_date month ─────────────────────
-                                    // February (getMonth() === 1, 0-indexed) → ₹300, all other months → ₹200
-                                    let pt_amt = 0;
-                                    if (c.is_pt_component) {
-                                        const ref_date = frm.doc.from_date
-                                            ? frappe.datetime.str_to_obj(frm.doc.from_date)
-                                            : new Date();
-                                        pt_amt = ref_date.getMonth() === 1 ? 300 : 200;
-                                    }
-
-                                    frappe.model.set_value(child.doctype, child.name, {
-                                        salary_component:          c.name,
-                                        abbr:                      c.salary_component_abbr || "",
-                                        amount:                    c.is_pt_component ? pt_amt : 0,
-                                        base_amount:               c.is_pt_component ? pt_amt : 0,
-                                        employer_contribution:     c.employer_contribution  || 0,
-                                        is_pf_component:           c.is_pf_component        || 0,
-                                        pf_calculation_based_on:   c.pf_calculation_based_on || "",
-                                        pf_percentage:             c.pf_percentage           || 0,
-                                        pf_cap_amount:             c.pf_cap_amount            || 0,
-                                        is_esic_component:         c.is_esic_component       || 0,
-                                        esic_calculation_based_on: c.esic_calculation_based_on || "",
-                                        esic_percentage:           c.esic_percentage          || 0,
-                                        esic_cap_amount:           c.esic_cap_amount           || 0,
-                                        is_pt_component:           c.is_pt_component           || 0,
-                                    });
-                                });
-
-                                frm.refresh_field("earnings");
-                                frm.refresh_field("deductions");
-                                calculate_salary(frm);
-                                render_statutory_bar(frm);
-                            }
-                        });
-                    }
-                );
-            }
-        });
-    }
+        load_salary_structure(frm);
+    },
 });
+
+// ─────────────────────────────────────────────────────────────
+//  Salary Details — live recalc when earnings amount changes
+// ─────────────────────────────────────────────────────────────
 
 frappe.ui.form.on("Salary Details", {
     amount(frm, cdt, cdn) {
         const row = frappe.get_doc(cdt, cdn);
-        if (row) row.amount = flt(row.amount);
-        calculate_salary_silent(frm);
+        if (row && row.parentfield === "earnings") {
+            refresh_statutory_rows(frm);
+        } else {
+            calculate_salary_silent(frm);
+        }
     },
     salary_details_remove(frm) {
         calculate_salary_silent(frm);
     }
 });
 
-// ── Statutory one-line badge bar ──────────────────────────────────────────────
+// ─────────────────────────────────────────────────────────────
+//  Statutory controls — plain Frappe-style, no colours
+// ─────────────────────────────────────────────────────────────
 
-function clear_statutory_bar(frm) {
-    const f = frm.fields_dict.statutory_info_html;
-    if (f && f.$wrapper) f.$wrapper.html("");
-    frm.toggle_display("statutory_section_bar", false);
+function render_statutory_controls(frm) {
+    const f = frm.fields_dict["statutory_info_html"];
+    if (!f || !f.$wrapper) return;
+
+    f.$wrapper.empty();
+
+    if (!frm.doc.salary_structure) {
+        f.$wrapper.html(`<p class="text-muted small">Select a Salary Structure to configure statutory applicability.</p>`);
+        return;
+    }
+
+    const editable = frm.doc.docstatus === 0;
+    const esic     = !!frm.doc.is_esic_applicable;
+    const pf       = !!frm.doc.is_pf_applicable;
+    const pftype   = frm.doc.pf_applicable || "";
+    const pt       = !!frm.doc.is_pt_applicable;
+    const lwf      = !!frm.doc.is_lwf_applicable;
+
+    const cb = (id, label, checked) => `
+        <div class="checkbox" style="display:inline-flex;align-items:center;margin:0 14px 0 0;">
+            <label style="font-weight:normal;margin:0;cursor:${editable ? "pointer" : "default"};">
+                <input type="checkbox" id="${id}"
+                    ${checked ? "checked" : ""}
+                    ${editable ? "" : "disabled"}
+                    style="margin-right:5px;vertical-align:middle;" />
+                ${__(label)}
+            </label>
+        </div>`;
+
+    // PF dropdown — only visible when PF is checked
+    const pf_select = pf ? `
+        <select id="ssa-pf-type" ${editable ? "" : "disabled"}
+            style="margin-left:4px;margin-right:14px;
+                   height:26px;padding:0 8px;font-size:12px;
+                   border:1px solid var(--border-color,#d1d8dd);
+                   border-radius:4px;background:#fff;
+                   cursor:${editable ? "pointer" : "default"};">
+            <option value=""           ${!pftype                 ? "selected" : ""}>${__("Select type")}</option>
+            <option value="Limited PF" ${pftype === "Limited PF" ? "selected" : ""}>${__("Limited PF")}</option>
+            <option value="Full PF"    ${pftype === "Full PF"    ? "selected" : ""}>${__("Full PF")}</option>
+        </select>` : `<span style="margin-right:14px;"></span>`;
+
+    f.$wrapper.html(`
+        <div style="padding:4px 0 8px 0;display:flex;flex-wrap:wrap;align-items:center;">
+            ${cb("ssa-esic", "ESIC", esic)}
+            ${cb("ssa-pf",   "PF",   pf)}
+            ${pf_select}
+            ${cb("ssa-pt",   "PT",   pt)}
+            ${cb("ssa-lwf",  "LWF",  lwf)}
+        </div>
+    `);
+
+    if (!editable) return;
+
+    f.$wrapper.find("#ssa-esic").on("change", function () {
+        frm.set_value("is_esic_applicable", this.checked ? 1 : 0);
+        refresh_statutory_rows(frm);
+        render_statutory_controls(frm);
+    });
+
+    f.$wrapper.find("#ssa-pf").on("change", function () {
+        frm.set_value("is_pf_applicable", this.checked ? 1 : 0);
+        if (!this.checked) frm.set_value("pf_applicable", "");
+        refresh_statutory_rows(frm);
+        render_statutory_controls(frm);
+    });
+
+    f.$wrapper.find("#ssa-pf-type").on("change", function () {
+        frm.set_value("pf_applicable", this.value);
+        refresh_statutory_rows(frm);
+        // No re-render needed — dropdown already shows correct value
+    });
+
+    f.$wrapper.find("#ssa-pt").on("change", function () {
+        frm.set_value("is_pt_applicable", this.checked ? 1 : 0);
+        refresh_statutory_rows(frm);
+        render_statutory_controls(frm);
+    });
+
+    f.$wrapper.find("#ssa-lwf").on("change", function () {
+        frm.set_value("is_lwf_applicable", this.checked ? 1 : 0);
+        refresh_statutory_rows(frm);
+        render_statutory_controls(frm);
+    });
 }
 
-function render_statutory_bar(frm) {
-    if (!frm.doc.employee) return;
 
-    frappe.db.get_value(
-        "Company Link",
-        frm.doc.employee,
-        ["is_esic_applicable", "is_pf_applicable", "pf_applicable", "is_pt_applicable"],
-        (r) => {
-            const f = frm.fields_dict.statutory_info_html;
-            if (!f || !f.$wrapper || !r) return;
 
-            const esic_on = parseInt(r.is_esic_applicable);
-            const pf_on   = parseInt(r.is_pf_applicable);
-            const pf_val  = r.pf_applicable || "No PF";
-            const pt_on   = parseInt(r.is_pt_applicable);
+// ─────────────────────────────────────────────────────────────
+//  Load salary structure rows
+// ─────────────────────────────────────────────────────────────
 
-            const badge = (label, color, bg, border) =>
-                `<span style="
-                    display:inline-flex; align-items:center; gap:6px;
-                    background:${bg}; color:${color};
-                    border:1px solid ${border}; border-radius:20px;
-                    padding:4px 12px; font-size:12px; font-weight:600;
-                    letter-spacing:0.2px; white-space:nowrap;">
-                    <span style="width:7px;height:7px;border-radius:50%;
-                        background:${color};display:inline-block;flex-shrink:0;"></span>
-                    ${label}
-                </span>`;
+function load_salary_structure(frm) {
+    frappe.call({
+        method: "frappe.client.get",
+        args: { doctype: "Salary Structure", name: frm.doc.salary_structure },
+        callback(r) {
+            if (!r.message) return;
+            const structure = r.message;
 
-            const badges = [];
+            clear_all_tables(frm);
 
-            if (esic_on) {
-                badges.push(badge("ESIC Applicable", "#1e7e34", "#eaf7ee", "#b7dfc7"));
-            } else {
-                badges.push(badge("ESIC Not Applicable", "#6c757d", "#f4f5f6", "#dee2e6"));
-            }
+            // Copy earnings
+            (structure.earnings || []).forEach(row => copy_row(frm.add_child("earnings"), row));
 
-            if (pf_on) {
-                const pfColor = {
-                    "Full PF":    ["#1e7e34", "#eaf7ee", "#b7dfc7"],
-                    "Limited PF": ["#856404", "#fff8e1", "#ffe082"],
-                    "No PF":      ["#b71c1c", "#fdecea", "#f5c6cb"],
-                }[pf_val] || ["#b71c1c", "#fdecea", "#f5c6cb"];
-                badges.push(badge(`PF: ${__(pf_val)}`, pfColor[0], pfColor[1], pfColor[2]));
-            } else {
-                badges.push(badge("PF Not Applicable", "#6c757d", "#f4f5f6", "#dee2e6"));
-            }
+            // Copy deductions — skip statutory, split by employer_contribution
+            (structure.deductions || []).forEach(row => {
+                const name = (row.salary_component || "").trim();
+                if (ALL_STATUTORY.includes(name)) return;
+                if (parseInt(row.employer_contribution)) {
+                    copy_row(frm.add_child("employer_share"), row);
+                } else {
+                    copy_row(frm.add_child("deductions"), row);
+                }
+            });
 
-            if (pt_on) {
-                badges.push(badge("PT Applicable", "#5b2d8e", "#f3eeff", "#c9a8f5"));
-            } else {
-                badges.push(badge("PT Not Applicable", "#6c757d", "#f4f5f6", "#dee2e6"));
-            }
+            frm.set_value("currency", structure.currency || "INR");
+            frm.refresh_fields(["earnings", "deductions", "employer_share"]);
 
-            f.$wrapper.html(`
-                <div style="display:flex;flex-wrap:wrap;align-items:center;
-                    gap:8px;padding:6px 0 14px 0;">
-                    ${badges.join("")}
-                </div>
-            `);
-            frm.toggle_display("statutory_section_bar", true);
+            render_statutory_controls(frm);
+            refresh_statutory_rows(frm);
         }
-    );
+    });
 }
 
-// ── Field visibility ──────────────────────────────────────────────────────────
+// ─────────────────────────────────────────────────────────────
+//  Refresh statutory rows
+// ─────────────────────────────────────────────────────────────
+
+function refresh_statutory_rows(frm) {
+    if (!frm.doc.salary_structure || !frm.doc.company) return;
+
+    // Strip existing statutory rows from both tables
+    frm.doc.deductions = (frm.doc.deductions || [])
+        .filter(r => !ALL_STATUTORY.includes((r.salary_component || "").trim()));
+    frm.doc.employer_share = (frm.doc.employer_share || [])
+        .filter(r => !ALL_STATUTORY.includes((r.salary_component || "").trim()));
+    frm.refresh_fields(["deductions", "employer_share"]);
+
+    const any_on = frm.doc.is_esic_applicable || frm.doc.is_pf_applicable
+        || frm.doc.is_pt_applicable || frm.doc.is_lwf_applicable;
+
+    if (!any_on) {
+        calculate_salary(frm);
+        return;
+    }
+
+    // Build {component_name: amount} map from actual SSA earnings rows.
+    const earnings_map = _earnings_map(frm);
+
+    frappe.call({
+        method: "saral_hr.saral_hr.doctype.salary_structure_assignment.salary_structure_assignment.get_statutory_components",
+        args: {
+            company:            frm.doc.company,
+            gross_salary:       _sum_earnings(frm),
+            earnings_map:       JSON.stringify(earnings_map),
+            from_date:          frm.doc.from_date || "",
+            is_esic_applicable: frm.doc.is_esic_applicable ? 1 : 0,
+            is_pf_applicable:   frm.doc.is_pf_applicable   ? 1 : 0,
+            pf_type:            frm.doc.pf_applicable       || "",
+            is_pt_applicable:   frm.doc.is_pt_applicable   ? 1 : 0,
+            is_lwf_applicable:  frm.doc.is_lwf_applicable  ? 1 : 0,
+        },
+        callback(r) {
+            if (!r.message) return;
+
+            (r.message.deductions || []).forEach(d => {
+                const child = frm.add_child("deductions");
+                frappe.model.set_value(child.doctype, child.name, {
+                    salary_component:      d.salary_component,
+                    abbr:                  d.abbr || "",
+                    amount:                flt(d.amount),
+                    base_amount:           flt(d.amount),
+                    employer_contribution: 0,
+                });
+            });
+
+            (r.message.employer_share || []).forEach(d => {
+                const child = frm.add_child("employer_share");
+                frappe.model.set_value(child.doctype, child.name, {
+                    salary_component:      d.salary_component,
+                    abbr:                  d.abbr || "",
+                    amount:                flt(d.amount),
+                    base_amount:           flt(d.amount),
+                    employer_contribution: 1,
+                });
+            });
+
+            frm.refresh_fields(["deductions", "employer_share"]);
+            calculate_salary(frm);
+        }
+    });
+}
+
+// ─────────────────────────────────────────────────────────────
+//  Field visibility
+// ─────────────────────────────────────────────────────────────
 
 function toggle_fields(frm) {
-    const can_create = !frm._has_existing;
-    frm.toggle_display("assignment_section",  can_create);
-    frm.toggle_display("from_date",           can_create);
-    frm.toggle_display("to_date",             can_create);
-    frm.toggle_display("salary_structure",    can_create);
+    const ok = !frm._has_existing;
+    frm.toggle_display("assignment_section", ok);
+    frm.toggle_display("from_date",          ok);
+    frm.toggle_display("to_date",            ok);
+    frm.toggle_display("salary_structure",   ok);
     toggle_salary_sections(frm);
 }
 
 function toggle_salary_sections(frm) {
     const s = !!frm.doc.salary_structure;
     frm.toggle_display("earnings_and_deductions_section", s);
+    frm.toggle_display("employer_share_section",          s);
     frm.toggle_display("calculations_section",            s);
 }
 
-// ── Overlap check ─────────────────────────────────────────────────────────────
+// ─────────────────────────────────────────────────────────────
+//  Overlap check
+// ─────────────────────────────────────────────────────────────
 
 function check_overlap(frm) {
     if (!frm.doc.employee || !frm.doc.from_date || !frm.doc.to_date) return;
@@ -324,139 +360,97 @@ function check_overlap(frm) {
             frappe.msgprint({
                 title:     __("Date Range Overlap"),
                 indicator: "red",
-                message:   `This date range overlaps with: <a href="/app/salary-structure-assignment/${rec.name}" target="_blank">${rec.name}</a> (${rec.from_date} to ${rec.to_date || "Ongoing"})`
+                message:   `This date range overlaps with: `
+                    + `<a href="/app/salary-structure-assignment/${rec.name}" target="_blank">${rec.name}</a>`
+                    + ` (${rec.from_date} to ${rec.to_date || "Ongoing"})`
             });
         }
     });
 }
 
-// ── Salary calculation ────────────────────────────────────────────────────────
+// ─────────────────────────────────────────────────────────────
+//  Salary calculation
+// ─────────────────────────────────────────────────────────────
 
-function calculate_salary(frm)        { _do_calculate(frm, false); }
-function calculate_salary_silent(frm) { _do_calculate(frm, true);  }
+function calculate_salary()        { _do_calculate(arguments[0], false); }
+function calculate_salary_silent() { _do_calculate(arguments[0], true);  }
 
 function _do_calculate(frm, silent) {
-    // ── ssa_gross: sum of all earnings rows (gross from salary structure assignment)
-    let gross_salary = 0;
-    (frm.doc.earnings || []).forEach(row => {
-        const live_row = frappe.get_doc(row.doctype, row.name);
-        gross_salary += flt(live_row ? live_row.amount : row.amount);
+    const gross    = _sum_earnings(frm);
+    let emp_ded    = 0;
+    let empr_cont  = 0;
+
+    (frm.doc.deductions || []).forEach(d => {
+        const live = frappe.get_doc(d.doctype, d.name);
+        emp_ded += flt(live ? live.amount : d.amount);
     });
 
-    // Always use ssa_gross as the base for all statutory calculations
-    const ssa_gross = gross_salary;
-
-    const deductions = frm.doc.deductions || [];
-    if (!deductions.length) {
-        set_salary_totals(frm, gross_salary, 0, 0, silent);
-        return;
-    }
-
-    let emp_ded        = 0;
-    let empr_cont      = 0;
-    const statutory_names = [];
-
-    deductions.forEach(d => {
-        const live_row = frappe.get_doc(d.doctype, d.name);
-        const row      = live_row || d;
-
-        let amt = 0;
-
-        if (row.is_pf_component) {
-            const pf_pct = flt(row.pf_percentage || 0);
-            const pf_cap = flt(row.pf_cap_amount  || 0);
-
-            // Always use ssa_gross for PF regardless of pf_calculation_based_on
-            if (pf_pct > 0) {
-                amt = flt(ssa_gross * pf_pct / 100, 2);
-                if (pf_cap > 0) amt = Math.min(amt, pf_cap);
-            }
-            if (live_row) live_row.amount = amt; else d.amount = amt;
-            statutory_names.push(d.name);
-
-        } else if (row.is_esic_component) {
-            const esic_pct = flt(row.esic_percentage || 0);
-            const esic_cap = flt(row.esic_cap_amount  || 0);
-
-            // Always use ssa_gross for ESIC; no ₹21,000 eligibility check —
-            // eligibility is already determined by is_esic_applicable on the employee
-            if (esic_pct > 0) {
-                amt = flt(ssa_gross * esic_pct / 100, 2);
-                if (esic_cap > 0) amt = Math.min(amt, esic_cap);
-            }
-            if (live_row) live_row.amount = amt; else d.amount = amt;
-            statutory_names.push(d.name);
-
-        } else if (row.is_pt_component) {
-            // February (getMonth() === 1, 0-indexed) → ₹300, all other months → ₹200
-            if (frm.doc.from_date) {
-                const ref_date = frappe.datetime.str_to_obj(frm.doc.from_date);
-                amt = ref_date.getMonth() === 1 ? 300 : 200;
-            } else {
-                amt = flt(d.amount);
-            }
-            if (live_row) live_row.amount = amt; else d.amount = amt;
-            statutory_names.push(d.name);
-
-        } else {
-            amt = flt(live_row ? live_row.amount : d.amount);
-        }
-
-        if (parseInt(row.employer_contribution)) empr_cont += amt;
-        else                                     emp_ded   += amt;
+    (frm.doc.employer_share || []).forEach(d => {
+        const live = frappe.get_doc(d.doctype, d.name);
+        empr_cont += flt(live ? live.amount : d.amount);
     });
 
-    frm.refresh_field("deductions");
-    frappe.after_ajax(() => { _highlight_statutory_rows(frm, statutory_names); });
-    set_salary_totals(frm, gross_salary, emp_ded, empr_cont, silent);
-}
-
-function _highlight_statutory_rows(frm, statutory_names) {
-    if (!statutory_names.length) return;
-    const grid = frm.fields_dict.deductions && frm.fields_dict.deductions.grid;
-    if (!grid) return;
-
-    grid.wrapper.find(".grid-row").each(function() {
-        const row_name = $(this).attr("data-name");
-        if (!row_name || !statutory_names.includes(row_name)) return;
-        $(this).find("[data-fieldname='amount']").css({
-            "background-color": "#fffde7",
-            "border-left":      "3px solid #f9a825"
-        });
-    });
-}
-
-function set_salary_totals(frm, gross, emp_ded, empr, silent) {
     const values = {
         gross_salary:                gross,
         total_deductions:            emp_ded,
-        total_employer_contribution: empr,
+        total_employer_contribution: empr_cont,
         net_salary:                  gross - emp_ded,
-        monthly_ctc:                 gross + empr,
-        annual_ctc:                  (gross + empr) * 12
+        monthly_ctc:                 gross + empr_cont,
+        annual_ctc:                  (gross + empr_cont) * 12,
     };
+
     if (silent) {
         Object.assign(frm.doc, values);
         Object.keys(values).forEach(fn => {
             const field = frm.get_field(fn);
             if (!field) return;
-            if (field.$input)   field.$input.val(format_number(values[fn], null, 2));
-            else if (field.$wrapper) field.$wrapper.find(".like-disabled-input, .control-value").text(format_number(values[fn], null, 2));
+            const el = field.$input || (field.$wrapper && field.$wrapper.find(".like-disabled-input, .control-value"));
+            if (el) el.val ? el.val(format_number(values[fn], null, 2)) : el.text(format_number(values[fn], null, 2));
         });
     } else {
         frm.set_value(values);
-        frm.refresh_fields(["gross_salary","total_deductions","total_employer_contribution","net_salary","monthly_ctc","annual_ctc"]);
+        frm.refresh_fields(["gross_salary", "total_deductions",
+            "total_employer_contribution", "net_salary", "monthly_ctc", "annual_ctc"]);
     }
 }
 
-function clear_salary_tables(frm) {
+function _sum_earnings(frm) {
+    let t = 0;
+    (frm.doc.earnings || []).forEach(r => {
+        const live = frappe.get_doc(r.doctype, r.name);
+        t += flt(live ? live.amount : r.amount);
+    });
+    return t;
+}
+
+function _earnings_map(frm) {
+    const map = {};
+    (frm.doc.earnings || []).forEach(r => {
+        const live = frappe.get_doc(r.doctype, r.name);
+        const comp = (r.salary_component || "").trim();
+        if (comp) map[comp] = flt(live ? live.amount : r.amount);
+    });
+    return map;
+}
+
+// ─────────────────────────────────────────────────────────────
+//  Utilities
+// ─────────────────────────────────────────────────────────────
+
+function clear_all_tables(frm) {
     frm.clear_table("earnings");
     frm.clear_table("deductions");
-    frm.set_value({ gross_salary:0, total_deductions:0, total_employer_contribution:0, net_salary:0, monthly_ctc:0, annual_ctc:0 });
+    frm.clear_table("employer_share");
+    frm.set_value({
+        gross_salary: 0, total_deductions: 0,
+        total_employer_contribution: 0,
+        net_salary: 0, monthly_ctc: 0, annual_ctc: 0
+    });
     frm.refresh_fields();
 }
 
 function copy_row(target, source) {
-    const skip = ["name","parent","parenttype","parentfield","idx","docstatus","creation","modified","modified_by","owner"];
+    const skip = ["name", "parent", "parenttype", "parentfield",
+                  "idx", "docstatus", "creation", "modified", "modified_by", "owner"];
     Object.keys(source).forEach(k => { if (!skip.includes(k)) target[k] = source[k]; });
 }

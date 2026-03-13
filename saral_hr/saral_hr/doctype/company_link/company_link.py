@@ -128,7 +128,6 @@ class CompanyLink(Document):
 
         suffixes = []
         for rec in existing_archives:
-            # rsplit on last '-' only, so HR-EMP-00069-2 -> ['HR-EMP-00069', '2']
             parts = rec["name"].rsplit("-", 1)
             if len(parts) == 2:
                 try:

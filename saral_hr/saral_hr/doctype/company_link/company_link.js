@@ -1,178 +1,96 @@
-frappe.ui.form.on("Company Link", {
+// Copyright (c) 2026, sj and contributors
+// For license information, please see license.txt
 
+frappe.ui.form.on("Company", {
     refresh(frm) {
-        if (frm.doc.is_active) {
-            frm.page.set_indicator(__("Active"), "green");
-        } else {
-            frm.page.set_indicator(__("Inactive"), "gray");
-        }
-
-        if (frm.doc.employee && !frm.is_new()) {
-            frm.add_custom_button(__("View All Records"), function () {
-                frappe.set_route("List", "Company Link", {
-                    employee: frm.doc.employee
-                });
-            });
-        }
-
-        if (!frm.is_new()) {
-            refresh_company_fields(frm);
-        }
-
-        toggle_pf_color(frm);
-    },
-
-    company(frm) {
-        if (!frm.is_new()) {
-            refresh_company_fields(frm);
-        }
-    },
-
-    employee(frm) {
-        const selected_employee = frm.doc.employee;
-        if (!selected_employee || !frm.is_new()) return;
-
-        if (frm._last_warned_employee === selected_employee) return;
-        frm._last_warned_employee = selected_employee;
-
-        check_and_warn_transfer(frm, selected_employee);
-    },
-
-    date_of_joining(frm) {
-        if (!frm.is_new() || !frm.doc.employee || !frm.doc.date_of_joining) return;
-
-        find_active_record(frm.doc.employee).then(record => {
-            if (record) {
-                const leaving = frappe.datetime.add_days(frm.doc.date_of_joining, -1);
-                frappe.msgprint({
-                    title: __("Transfer Preview"),
-                    indicator: "blue",
-                    message: __(
-                        "On save, the active record at {0} will be archived with leaving date {1}. "
-                        + "This record will become active.",
-                        [record.company, leaving]
-                    )
-                });
-            }
-        });
-    },
-
-    left_date(frm) {
-        if (frm.doc.left_date && frm.doc.is_active) {
-            frappe.msgprint({
-                title: __("Record will be Deactivated"),
-                indicator: "orange",
-                message: __(
-                    "Left date has been set to {0}. On save, this record will be marked as Inactive.",
-                    [frm.doc.left_date]
-                )
-            });
-            frm.set_value("is_active", 0);
-        }
-    },
-
-    pf_applicable(frm) {
-        toggle_pf_color(frm);
-    },
-
-    is_pf_applicable(frm) {
-        if (!frm.doc.is_pf_applicable) {
-            frm.set_value("pf_applicable", "");
-        }
-        toggle_pf_color(frm);
+        render_esic_formula(frm);
+        render_pf_formula(frm);
     }
-
 });
 
-function toggle_pf_color(frm) {
-
-    if (!frm.doc.is_pf_applicable) return;
-
-    const pf = frm.doc.pf_applicable;
-    const field = frm.get_field("pf_applicable");
-    if (!field || !field.$wrapper) return;
-
-    field.$wrapper.find("select, .frappe-control").css("color", "");
-
-    if (pf === "No PF") {
-        field.$wrapper.find(".control-value, select").css("color", "#d9534f"); // red
-    } else if (pf === "Limited PF") {
-        field.$wrapper.find(".control-value, select").css("color", "#f0ad4e"); // orange
-    } else if (pf === "Full PF") {
-        field.$wrapper.find(".control-value, select").css("color", "#5cb85c"); // green
+frappe.ui.form.on("Statutory Wage Component", {
+    // Fires when any row is added, removed, or changed in either child table
+    wage_components(frm) {
+        render_esic_formula(frm);
+        render_pf_formula(frm);
+    },
+    esic_dependent_component_remove(frm) {
+        render_esic_formula(frm);
+    },
+    pf_dependent_component_remove(frm) {
+        render_pf_formula(frm);
     }
+});
+
+// ─────────────────────────────────────────────────────────────
+//  ESIC  —  wage basis = A + B + C + …
+// ─────────────────────────────────────────────────────────────
+
+function render_esic_formula(frm) {
+    const wrapper_id = "esic-formula-preview";
+    const $section   = frm.fields_dict["esic_dependent_component"].$wrapper;
+
+    const rows = (frm.doc.esic_dependent_component || [])
+        .map(r => r.wage_components)
+        .filter(Boolean);
+
+    render_formula_banner($section, wrapper_id, rows, "sum", "ESIC");
 }
 
-function find_active_record(employee) {
-    return frappe.call({
-        method: "frappe.client.get_list",
-        args: {
-            doctype: "Company Link",
-            filters: [
-                ["employee", "=", employee],
-                ["is_active", "=", 1]
-            ],
-            fields: ["name", "company", "employee", "is_active"],
-            limit: 5
-        }
-    }).then(r => {
-        if (r.message && r.message.length > 0) {
-            return r.message[0];
-        }
-        return null;
-    });
+// ─────────────────────────────────────────────────────────────
+//  PF  —  wage basis = A − B − C − …
+// ─────────────────────────────────────────────────────────────
+
+function render_pf_formula(frm) {
+    const wrapper_id = "pf-formula-preview";
+    const $section   = frm.fields_dict["pf_dependent_component"].$wrapper;
+
+    const rows = (frm.doc.pf_dependent_component || [])
+        .map(r => r.wage_components)
+        .filter(Boolean);
+
+    render_formula_banner($section, wrapper_id, rows, "subtract", "PF");
 }
 
-function check_and_warn_transfer(frm, employee) {
-    find_active_record(employee).then(record => {
-        if (record) {
-            frappe.msgprint({
-                title: __("Employee Currently Active"),
-                indicator: "orange",
-                message: __(
-                    "<b>{0}</b> is currently active at <b>{1}</b> (Record: {2}).<br><br>"
-                    + "Saving this record will archive that record and set its leaving date "
-                    + "to one day before the new joining date.<br><br>"
-                    + "Please make sure the <b>Date of Joining</b> is correct before saving.",
-                    [employee, record.company, record.name]
-                )
-            });
-        }
-    }).catch(err => {
-        console.error("Transfer check error:", err);
-    });
-}
+// ─────────────────────────────────────────────────────────────
+//  Shared banner renderer
+// ─────────────────────────────────────────────────────────────
 
-function refresh_company_fields(frm) {
-    if (!frm.doc.company || frm.is_new()) return;
+function render_formula_banner($section, id, components, mode, label) {
+    // Remove old banner
+    $section.find(`#${id}`).remove();
 
-    frappe.db.get_value(
-        "Company",
-        frm.doc.company,
-        ["default_holiday_list"],
-        (r) => {
-            if (!r) return;
+    if (!components.length) return;
 
-            if (r.default_holiday_list &&
-                r.default_holiday_list !== frm.doc.holiday_list) {
+    const operator  = mode === "sum" ? " + " : " − ";
+    const formula   = components.map(c => `<b>${frappe.utils.escape_html(c)}</b>`).join(operator);
+    const color     = mode === "sum" ? "#e6f4ea" : "#fff3e0";
+    const border    = mode === "sum" ? "#2d8a4e" : "#e65100";
+    const text_col  = mode === "sum" ? "#1b5e20" : "#bf360c";
+    const icon      = mode === "sum" ? "✚" : "−";
+    const verb      = mode === "sum" ? "Added" : "Subtracted (first − rest)";
 
-                frm.set_value("holiday_list", r.default_holiday_list);
+    const hint = components.length === 1 && mode === "subtract"
+        ? `<span style="color:#e65100; margin-left:8px;">⚠ Add more components to enable subtraction.</span>`
+        : "";
 
-                setTimeout(() => {
-                    if (frm.is_dirty()) {
-                        frm.save().then(() => {
-                            frappe.msgprint({
-                                title: __("Holiday List Updated"),
-                                indicator: "green",
-                                message: __(
-                                    "Holiday list has been updated to {0} based on company settings.",
-                                    [r.default_holiday_list]
-                                )
-                            });
-                        });
-                    }
-                }, 500);
-            }
-        }
-    );
+    $section.append(`
+        <div id="${id}" style="
+            margin: 6px 0 10px 0;
+            padding: 8px 12px;
+            background: ${color};
+            border-left: 3px solid ${border};
+            border-radius: 4px;
+            font-size: 12px;
+            color: ${text_col};
+            line-height: 1.6;
+        ">
+            <span style="font-weight:600;">${icon} ${label} Wage Basis</span>
+            &nbsp;·&nbsp;
+            <span style="color:#555; font-size:11px;">${verb}</span>
+            <br/>
+            <span style="font-family: monospace; font-size: 12px;">${formula}</span>
+            ${hint}
+        </div>
+    `);
 }
