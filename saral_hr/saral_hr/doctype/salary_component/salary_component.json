@@ -15,24 +15,9 @@
   "depends_on_payment_days",
   "depends_on_physical_working_days",
   "employer_contribution",
-<<<<<<< HEAD
-  "section_esic",
-  "is_esic_component",
-  "esic_calculation_based_on",
-  "esic_cap_amount",
-  "esic_percentage",
-  "section_pf",
-  "is_pf_component",
-  "pf_calculation_based_on",
-  "pf_percentage",
-  "pf_cap_amount",
-  "section_pt",
-  "is_pt_component"
-=======
   "is_special_component",
   "section_monthly_amounts",
   "monthly_amounts"
->>>>>>> origin/daisy
  ],
  "fields": [
   {
@@ -98,99 +83,23 @@
    "label": "Is Special Component"
   },
   {
-<<<<<<< HEAD
-   "depends_on": "eval:doc.is_esic_component == 1",
-   "description": "Prorated Gross: Gross prorated for payment days. Gross from Salary Structure Assignment: Fixed gross as entered in the assignment.",
-   "fieldname": "esic_calculation_based_on",
-   "fieldtype": "Select",
-   "label": "ESIC Calculation Based On",
-   "mandatory_depends_on": "eval:doc.is_esic_component == 1",
-   "options": "\nProrated Gross\nGross from Salary Structure Assignment"
-  },
-  {
-   "depends_on": "eval:doc.is_esic_component == 1",
-   "description": "Employee ESIC contribution percentage applied on the selected gross basis.",
-   "fieldname": "esic_percentage",
-   "fieldtype": "Percent",
-   "label": "ESIC Percentage (%)",
-   "mandatory_depends_on": "eval:doc.is_esic_component == 1"
-  },
-  {
-   "depends_on": "eval:doc.is_esic_component == 1",
-   "description": "Maximum ESIC deduction amount per month. Leave blank for no cap.",
-   "fieldname": "esic_cap_amount",
-   "fieldtype": "Currency",
-   "label": "ESIC Cap Amount"
-  },
-  {
-   "fieldname": "section_pf",
-=======
    "depends_on": "eval:doc.is_special_component == 1",
    "description": "Enter the fixed amount for each calendar month. Rows are pre-populated January to December. Amounts are applied as-is during payroll — no proration.",
    "fieldname": "section_monthly_amounts",
->>>>>>> origin/daisy
    "fieldtype": "Section Break",
    "label": "Monthly Amounts"
   },
   {
-<<<<<<< HEAD
-   "default": "0",
-   "fieldname": "is_pf_component",
-   "fieldtype": "Check",
-   "label": "Is PF Component?"
-  },
-  {
-   "depends_on": "eval:doc.is_pf_component == 1",
-   "description": "Prorated Gross: Gross prorated for payment days. Gross from Salary Structure Assignment: Fixed gross as entered in the assignment.",
-   "fieldname": "pf_calculation_based_on",
-   "fieldtype": "Select",
-   "label": "PF Calculation Based On",
-   "mandatory_depends_on": "eval:doc.is_pf_component == 1",
-   "options": "\nProrated Gross\nGross from Salary Structure Assignment"
-  },
-  {
-   "depends_on": "eval:doc.is_pf_component == 1",
-   "description": "Employee PF contribution percentage applied on the selected gross basis.",
-   "fieldname": "pf_percentage",
-   "fieldtype": "Percent",
-   "label": "PF Percentage (%)",
-   "mandatory_depends_on": "eval:doc.is_pf_component == 1"
-  },
-  {
-   "depends_on": "eval:doc.is_pf_component == 1",
-   "description": "Maximum PF deduction amount per month. Leave blank for no cap.",
-   "fieldname": "pf_cap_amount",
-   "fieldtype": "Currency",
-   "label": "PF Cap Amount",
-   "description": "Maximum PF deduction amount per month. Leave blank for no cap."
-  },
-  {
-   "fieldname": "section_pt",
-   "fieldtype": "Section Break",
-   "label": "Professional Tax (PT)"
-  },
-  {
-   "default": "0",
-   "fieldname": "is_pt_component",
-   "fieldtype": "Check",
-   "label": "Is PT Component?",
-   "description": "Mark this component as Professional Tax. February: \u20b9300, all other months: \u20b9200."
-=======
    "depends_on": "eval:doc.is_special_component == 1",
    "fieldname": "monthly_amounts",
    "fieldtype": "Table",
    "label": "Monthly Amounts",
    "options": "Special Salary Component"
->>>>>>> origin/daisy
   }
  ],
  "index_web_pages_for_search": 1,
  "links": [],
-<<<<<<< HEAD
- "modified": "2026-03-09 17:43:29.890315",
-=======
  "modified": "2026-03-12 00:00:00.000000",
->>>>>>> origin/daisy
  "modified_by": "Administrator",
  "module": "Saral Hr",
  "name": "Salary Component",
