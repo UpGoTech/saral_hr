@@ -245,6 +245,9 @@ function init_mark_attendance($main) {
     var employeeWeeklyOffMap = {};
     var calendarCache = {};
 
+    // ── NEW: joining date cache per employee ───────────────────────────────
+    var joiningDateMap = {};
+
     // ── Status sets ────────────────────────────────────────────────────────
     var ABSENT_SUBTYPES = ["LWP", "Earned Leave", "Casual Leave", "Comp Off"];
     var PRESENT_SUBTYPES = ["Regular", "On Tour"];
@@ -399,7 +402,20 @@ function init_mark_attendance($main) {
         document.getElementById("ma_weekly_off").value = (employeeWeeklyOffMap[emp.value] || [])
             .map(function (d) { return d.charAt(0).toUpperCase() + d.slice(1); }).join(", ");
 
-        generateTable();
+        // ── NEW: fetch joining date for this employee ──────────────────────
+        if (joiningDateMap[emp.value] !== undefined) {
+            // already cached — go straight to table
+            generateTable();
+        } else {
+            frappe.call({
+                method: "saral_hr.saral_hr.page.mark_attendance.mark_attendance.get_employee_joining_date",
+                args: { employee: emp.value },
+                callback: function (r) {
+                    joiningDateMap[emp.value] = r.message || null;
+                    generateTable();
+                }
+            });
+        }
     }
 
     function clearSearch() {
@@ -893,6 +909,10 @@ function init_mark_attendance($main) {
         var company = employeeCompanyMap[employee];
         var tbody = document.getElementById("ma_table_body");
 
+        // ── NEW: resolve joining date for this employee ────────────────────
+        var joiningDate = joiningDateMap[employee] ? new Date(joiningDateMap[employee]) : null;
+        if (joiningDate) joiningDate.setHours(0, 0, 0, 0);
+
         showTableLoading();
 
         frappe.call({
@@ -929,6 +949,9 @@ function init_mark_attendance($main) {
                             var isHoliday = holidayDates[dateKey] === true;
                             var isFuture = currentDate > today;
 
+                            // ── NEW: treat pre-joining dates same as future (disabled) ──
+                            var isBeforeJoining = joiningDate ? (currentDate < joiningDate) : false;
+
                             var rawStatus = attendanceMap[dateKey] || "";
                             var savedStatus = resolveStatus(rawStatus, isHoliday, isDefaultWeeklyOff);
 
@@ -938,7 +961,7 @@ function init_mark_attendance($main) {
                             tbody.appendChild(buildRow(
                                 dateKey, dayName, currentDate,
                                 savedStatus, rawStatus,
-                                isHoliday, isDefaultWeeklyOff, isFuture
+                                isHoliday, isDefaultWeeklyOff, isFuture || isBeforeJoining
                             ));
                             current.setDate(current.getDate() + 1);
                         }

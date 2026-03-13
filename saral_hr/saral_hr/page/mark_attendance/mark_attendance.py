@@ -264,3 +264,10 @@ def get_holidays_between_dates(company, start_date, end_date):
     )
 
     return [str(h) for h in holidays]
+
+
+# ── NEW: fetch joining date for an employee from Company Link ──────────────
+@frappe.whitelist()
+def get_employee_joining_date(employee):
+    joining_date = frappe.db.get_value("Company Link", employee, "date_of_joining")
+    return str(joining_date) if joining_date else None
