@@ -142,7 +142,6 @@ function render_statutory_controls(frm) {
     const pftype   = frm.doc.pf_applicable || "";
     const pt       = !!frm.doc.is_pt_applicable;
     const lwf      = !!frm.doc.is_lwf_applicable;
-    const daily    = !!frm.doc.is_daily_wage_employee;
 
     const cb = (id, label, checked) => `
         <div class="checkbox" style="display:inline-flex;align-items:center;margin:0 14px 0 0;">
@@ -170,12 +169,11 @@ function render_statutory_controls(frm) {
 
     f.$wrapper.html(`
         <div style="padding:4px 0 8px 0;display:flex;flex-wrap:wrap;align-items:center;">
-            ${cb("ssa-esic",  "ESIC",       esic)}
-            ${cb("ssa-pf",    "PF",         pf)}
+            ${cb("ssa-esic", "ESIC", esic)}
+            ${cb("ssa-pf",   "PF",   pf)}
             ${pf_select}
-            ${cb("ssa-pt",    "PT",         pt)}
-            ${cb("ssa-lwf",   "LWF",        lwf)}
-            ${cb("ssa-daily", "Daily Wage", daily)}
+            ${cb("ssa-pt",   "PT",   pt)}
+            ${cb("ssa-lwf",  "LWF",  lwf)}
         </div>
     `);
 
@@ -209,11 +207,6 @@ function render_statutory_controls(frm) {
     f.$wrapper.find("#ssa-lwf").on("change", function () {
         frm.set_value("is_lwf_applicable", this.checked ? 1 : 0);
         refresh_statutory_rows(frm);
-        render_statutory_controls(frm);
-    });
-
-    f.$wrapper.find("#ssa-daily").on("change", function () {
-        frm.set_value("is_daily_wage_employee", this.checked ? 1 : 0);
         render_statutory_controls(frm);
     });
 }
@@ -280,8 +273,6 @@ function refresh_statutory_rows(frm) {
     }
 
     // Build {component_name: amount} map from actual SSA earnings rows.
-    // This lets the server compute ESIC/PF wage basis using real component
-    // amounts instead of using gross_salary as a proxy for everything.
     const earnings_map = _earnings_map(frm);
 
     frappe.call({
@@ -432,9 +423,6 @@ function _sum_earnings(frm) {
     return t;
 }
 
-// Build {salary_component: amount} for every earning row in the SSA.
-// Passed to get_statutory_components so ESIC/PF wage basis uses real
-// amounts (actual Basic, HRA, DA etc.) instead of gross as a proxy.
 function _earnings_map(frm) {
     const map = {};
     (frm.doc.earnings || []).forEach(r => {

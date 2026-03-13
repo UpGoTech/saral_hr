@@ -53,22 +53,6 @@ def get_statutory_components(company, gross_salary, from_date,
                               pf_type=None, is_pt_applicable=0,
                               is_lwf_applicable=0,
                               earnings_map=None):
-    """
-    Compute statutory deduction and employer-share amounts from Company config.
-
-    ESIC:
-        wage = SUM of ALL components listed in esic_dependent_component.
-               If a component is listed in Company config but NOT present in
-               the SSA earnings, it contributes 0 (not gross as fallback).
-               If "Gross" is listed, use gross_salary directly.
-               NO CAP applied — esic_wage_limit is reference only.
-
-    PF:
-        wage = SUM of ALL components listed in pf_dependent_component.
-               Same zero-fallback rule as ESIC.
-               Limited PF: capped at pf_wage_limit.
-               Full PF: no cap.
-    """
     import json as _json
 
     gross_salary       = flt(gross_salary)
@@ -101,10 +85,6 @@ def get_statutory_components(company, gross_salary, from_date,
         }
 
     # ── ESIC ─────────────────────────────────────────────────
-    # Sum ALL components listed in esic_dependent_component.
-    # "Gross" → use gross_salary.
-    # Any other component → use earnings_map value, or 0 if not present.
-    # NO CAP — esic_wage_limit is display/reference only.
     if is_esic_applicable and comp_doc:
         esic_cfg = comp_doc.get_esic_config()
         if esic_cfg:
@@ -120,10 +100,6 @@ def get_statutory_components(company, gross_salary, from_date,
                 employer_share.append(row(SC_EMPR_ESIC, wage * empr_pct / 100, employer=1))
 
     # ── PF ───────────────────────────────────────────────────
-    # Sum ALL components listed in pf_dependent_component.
-    # "Gross" → use gross_salary.
-    # Any other component → use earnings_map value, or 0 if not present.
-    # Limited PF: cap at pf_wage_limit. Full PF: no cap.
     if is_pf_applicable and comp_doc:
         pf_cfg = comp_doc.get_pf_config()
         if pf_cfg:
@@ -169,19 +145,6 @@ def get_statutory_components(company, gross_salary, from_date,
 
 
 def _sum_components(components, gross_salary, earnings_map):
-    """
-    Sum a list of component names using earnings_map for actual amounts.
-
-    Rules:
-      "Gross" or "Gross Including Additional Salary" → gross_salary
-      Any real component in earnings_map                → earnings_map[comp]
-      Any real component NOT in earnings_map            → 0.0
-
-    This means if Company ESIC config lists [Basic, HRA, TA, OA, Variable Pay]
-    and the SSA has all five, we sum all five exactly.
-    If a component is listed in Company config but missing from the SSA, it
-    contributes 0 — NOT gross_salary as a fallback (which caused the bug).
-    """
     VIRTUAL = {"Gross", "Gross Including Additional Salary"}
     total = 0.0
     for comp in components:
@@ -190,7 +153,7 @@ def _sum_components(components, gross_salary, earnings_map):
         elif comp in earnings_map:
             total += flt(earnings_map[comp])
         else:
-            total += 0.0   # listed in Company config but not in this SSA → 0
+            total += 0.0
     return max(total, 0.0)
 
 

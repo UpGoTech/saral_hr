@@ -29,7 +29,6 @@
   "pf_applicable",
   "is_pt_applicable",
   "is_lwf_applicable",
-  "is_daily_wage_employee",
   "earnings_and_deductions_section",
   "earnings",
   "column_break_oeow",
@@ -194,14 +193,6 @@
    "fieldname": "is_lwf_applicable",
    "fieldtype": "Check",
    "label": "LWF Applicable",
-   "hidden": 1
-  },
-  {
-   "default": "0",
-   "description": "Mark this employee as a daily wage employee. This is a flag for reporting purposes only \u2014 no automatic calculation changes are applied.",
-   "fieldname": "is_daily_wage_employee",
-   "fieldtype": "Check",
-   "label": "Is Daily Wage Employee",
    "hidden": 1
   },
   {
