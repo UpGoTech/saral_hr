@@ -43,21 +43,23 @@ function get_ma_html() {
 
             <!-- Row 1 -->
             <div class="ma-row1">
+                <div class="ma-r1-company">
+                    <label class="ma-label">Company</label>
+                    <select id="ma_company" class="ma-input">
+                        <option value="">Select Company</option>
+                    </select>
+                </div>
                 <div class="ma-r1-employee">
                     <label class="ma-label">Employee</label>
                     <div class="ma-search-wrapper">
                         <input type="text" id="ma_employee_search" class="ma-input ma-search-input"
-                            placeholder="Search Employee" autocomplete="off" />
+                            placeholder="Search Employee" autocomplete="off" disabled />
                         <button type="button" id="ma_clear_search" class="ma-clear-btn"></button>
                         <div id="ma_search_results" class="ma-search-dropdown"></div>
                     </div>
                     <select id="ma_employee" style="display:none !important; height:0; width:0; position:absolute; visibility:hidden;">
                         <option value="">Select Employee</option>
                     </select>
-                </div>
-                <div class="ma-r1-company">
-                    <label class="ma-label">Company</label>
-                    <input type="text" id="ma_company" class="ma-input" readonly>
                 </div>
                 <div class="ma-r1-weeklyoff">
                     <label class="ma-label">Weekly Off</label>
@@ -259,6 +261,7 @@ function init_mark_attendance($main) {
     var searchResults = document.getElementById("ma_search_results");
     var employeeSel = document.getElementById("ma_employee");
     var clearBtn = document.getElementById("ma_clear_search");
+    var companySel = document.getElementById("ma_company");
     var yearSel = document.getElementById("ma_year");
     var monthSel = document.getElementById("ma_month");
     var startDateInput = document.getElementById("ma_start_date");
@@ -266,7 +269,10 @@ function init_mark_attendance($main) {
     var tableLoading = document.getElementById("ma_table_loading");
     var tableEl = document.getElementById("ma_table");
 
-    // ── Load employees ─────────────────────────────────────────────────────
+    // allEmployees = full list; employees = filtered by selected company
+    var allEmployees = [];
+
+    // ── Load employees + populate company dropdown ─────────────────────────
     frappe.call({
         method: "saral_hr.saral_hr.page.mark_attendance.mark_attendance.get_active_employees",
         callback: function (r) {
@@ -281,13 +287,60 @@ function init_mark_attendance($main) {
                     ? [row.weekly_off.trim().toLowerCase()]
                     : [];
             });
-            employees = Array.from(employeeSel.options)
+
+            allEmployees = Array.from(employeeSel.options)
                 .filter(function (o) { return o.value; })
                 .map(function (o) {
                     var row = r.message.find(function (e) { return e.name === o.value; }) || {};
-                    return { value: o.value, name: o.text.trim(), emp_id: row.employee || o.value };
+                    return {
+                        value: o.value,
+                        name: o.text.trim(),
+                        emp_id: row.employee || o.value,
+                        company: row.company || ""
+                    };
                 });
+
+            // Populate company dropdown with unique companies
+            var seen = {};
+            r.message.forEach(function (row) {
+                if (row.company && !seen[row.company]) {
+                    seen[row.company] = true;
+                    var opt = document.createElement("option");
+                    opt.value = row.company;
+                    opt.text = row.company;
+                    companySel.appendChild(opt);
+                }
+            });
+
+            employees = [];
         }
+    });
+
+    // ── Company change → filter employees ─────────────────────────────────
+    companySel.addEventListener("change", function () {
+        var selectedCompany = companySel.value;
+        // Reset employee search
+        searchInput.value = "";
+        employeeSel.value = "";
+        clearBtn.classList.remove("show");
+        searchResults.classList.remove("show");
+        document.getElementById("ma_weekly_off").value = "";
+        tableEl.style.display = "none";
+        attendanceTableData = {};
+        originalAttendanceData = {};
+        updateCounts();
+
+        if (!selectedCompany) {
+            searchInput.disabled = true;
+            searchInput.placeholder = "Search Employee";
+            employees = [];
+            return;
+        }
+
+        // Filter employees to selected company
+        employees = allEmployees.filter(function (e) { return e.company === selectedCompany; });
+        searchInput.disabled = false;
+        searchInput.placeholder = "Search Employee";
     });
 
     // ── Search ─────────────────────────────────────────────────────────────
@@ -302,7 +355,7 @@ function init_mark_attendance($main) {
     function apiSearch(term, callback) {
         frappe.call({
             method: "saral_hr.saral_hr.page.mark_attendance.mark_attendance.search_employees",
-            args: { query: term },
+            args: { query: term, company: companySel.value || "" },
             freeze: false,
             callback: function (r) {
                 callback(r.message ? r.message.map(function (row) {
@@ -401,7 +454,7 @@ function init_mark_attendance($main) {
             ? [emp.weekly_off.trim().toLowerCase()]
             : [];
 
-        document.getElementById("ma_company").value = employeeCompanyMap[emp.value] || "";
+        // company field is already set via companySel
         document.getElementById("ma_weekly_off").value = (employeeWeeklyOffMap[emp.value] || [])
             .map(function (d) { return d.charAt(0).toUpperCase() + d.slice(1); }).join(", ");
 
@@ -425,7 +478,6 @@ function init_mark_attendance($main) {
     function clearSearch() {
         searchInput.value = "";
         employeeSel.value = "";
-        document.getElementById("ma_company").value = "";
         document.getElementById("ma_weekly_off").value = "";
         clearBtn.classList.remove("show");
         searchResults.classList.remove("show");
@@ -1307,7 +1359,7 @@ function inject_ma_styles() {
         .ma-left-block   { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 10px; }
         .ma-row1         { display: flex; gap: 14px; align-items: flex-end; flex: 1; }
         .ma-r1-employee  { flex: 2; min-width: 0; position: relative; }
-        .ma-r1-company   { flex: 2; min-width: 0; }
+        .ma-r1-company   { flex: 2; min-width: 0; position: relative; }
         .ma-r1-weeklyoff { flex: 1; min-width: 120px; }
         .ma-row2         { display: flex; gap: 14px; align-items: flex-end; }
         .ma-r2-year      { flex: 0 0 110px; }

@@ -13,7 +13,7 @@ def get_active_employees():
         pluck="for_value"
     )
 
-    filters = {"is_active": 1}
+    filters = {}
     if companies:
         filters["company"] = ["in", companies]
 
@@ -32,18 +32,24 @@ def get_active_employees():
 
 
 @frappe.whitelist()
-def search_employees(query):
+def search_employees(query, company=None):
     if not query or len(query.strip()) < 1:
         return []
 
     user        = frappe.session.user
     search_term = f"%{query.strip()}%"
 
-    companies = frappe.get_all(
+    permitted = frappe.get_all(
         "User Permission",
         filters={"user": user, "allow": "Company"},
         pluck="for_value"
     )
+
+    # If a specific company is passed, use it (must be within permitted)
+    if company:
+        companies = [company] if (not permitted or company in permitted) else []
+    else:
+        companies = permitted
 
     company_filter = ""
     company_params = {}
@@ -67,7 +73,7 @@ def search_employees(query):
             e.last_name
         FROM `tabCompany Link` cl
         LEFT JOIN `tabEmployee` e ON e.name = cl.employee
-        WHERE cl.is_active = 1
+        WHERE 1=1
           {company_filter}
           AND (
               cl.full_name LIKE %(search)s
@@ -163,7 +169,7 @@ def save_attendance_batch(attendance_data):
         permitted_employees = set(
             frappe.get_all(
                 "Company Link",
-                filters={"company": ["in", companies], "is_active": 1},
+                filters={"company": ["in", companies]},
                 pluck="name"
             )
         )
