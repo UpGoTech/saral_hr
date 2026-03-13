@@ -28,6 +28,7 @@
   "physical_working_days",
   "present_days",
   "total_half_days",
+  "total_comp_off",
   "column_break_puyt",
   "absent_days",
   "weekly_offs_count",
@@ -36,7 +37,6 @@
   "total_earned_leaves",
   "total_casual_leaves",
   "total_on_tour",
-  "total_comp_off",
   "earnings_and_deductions_tab",
   "earnings_and_deductions_section",
   "earnings",
@@ -70,12 +70,12 @@
    "reqd": 1
   },
   {
+   "bold": 1,
    "fieldname": "salary_structure",
    "fieldtype": "Link",
    "label": "Salary Structure",
    "options": "Salary Structure",
-   "read_only": 1,
-   "bold": 1
+   "read_only": 1
   },
   {
    "fieldname": "payment_days_tab",
@@ -119,14 +119,13 @@
    "fieldtype": "Column Break"
   },
   {
-   "description": "Employee share of statutory and non-statutory deductions.",
    "fieldname": "deductions",
    "fieldtype": "Table",
    "label": "Deductions (Employee Share)",
    "options": "Salary Details"
   },
   {
-   "description": "Employer statutory contributions — EPF, EPS, EDLI, Admin Charges, Employer ESIC, Employer LWF. Auto-computed from Company statutory configuration.",
+   "description": "Employer statutory contributions ",
    "fieldname": "employer_share_section",
    "fieldtype": "Section Break",
    "label": "Employer Share"
@@ -193,10 +192,10 @@
    "precision": "2"
   },
   {
+   "description": "Payment Days minus Earned Leaves, Casual Leaves and Comp Off.",
    "fieldname": "physical_working_days",
    "fieldtype": "Float",
    "label": "Physical Working Days",
-   "description": "Payment Days minus Earned Leaves, Casual Leaves and Comp Off.",
    "precision": "2",
    "read_only": 1
   },
@@ -362,7 +361,7 @@
  "index_web_pages_for_search": 1,
  "is_submittable": 1,
  "links": [],
- "modified": "2026-03-12 00:00:00.000000",
+ "modified": "2026-03-13 17:08:24.327508",
  "modified_by": "Administrator",
  "module": "Saral Hr",
  "name": "Salary Slip",
