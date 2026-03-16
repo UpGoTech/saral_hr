@@ -1,259 +1,284 @@
-# Copyright (c) 2026, sj and contributors
-# For license information, please see license.txt
-
 import frappe
-from frappe.utils import flt, getdate, add_months
+import json
 
-COMPONENT_NAME = "Retention"
+from frappe import _
+from frappe.utils import flt, getdate, add_months
+from frappe.utils.pdf import get_pdf
+
+# ---------------------------------------------------------------------------
+# Constants
+# ---------------------------------------------------------------------------
 
 MONTH_MAP = {
-    'January': 1, 'February': 2, 'March': 3, 'April': 4,
-    'May': 5, 'June': 6, 'July': 7, 'August': 8,
-    'September': 9, 'October': 10, 'November': 11, 'December': 12
+    "January":1,"February":2,"March":3,"April":4,"May":5,"June":6,
+    "July":7,"August":8,"September":9,"October":10,"November":11,"December":12,
 }
 
+B    = "1px solid #000"
 
-def execute(filters=None):
-    filters = filters or {}
-    validate_filters(filters)
-    columns = get_columns()
-    data    = get_data(filters)
-    return columns, data
+_CSS = """<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:Arial,sans-serif;font-size:10px;color:#000;background:#fff}
+.hdr{text-align:center;border-bottom:2px solid #000;padding:8px 4px 6px;margin-bottom:6px}
+.hdr .co{font-size:18px;font-weight:900;letter-spacing:1px;text-transform:uppercase}
+.hdr .ttl{font-size:13px;font-weight:700;margin-top:3px}
+.hdr .per{font-size:11px;margin-top:2px}
+.sig{display:flex;justify-content:space-between;margin-top:24px;padding-top:6px}
+.sig-b{text-align:center;width:160px}
+.sig-l{border-top:1px solid #000;margin-bottom:3px}
+.sig-t{font-size:10px;color:#333}
+table{width:100%;border-collapse:collapse;margin-top:6px}
+th{border:1px solid #000;padding:5px 7px;font-size:10px;font-weight:700;background:#f0f0f0;color:#000;white-space:nowrap}
+td{border:1px solid #000;padding:5px 7px;font-size:10px;vertical-align:middle;color:#000}
+tr.tot td{background:#e8e8e8;font-weight:700}
+.r{text-align:right}.l{text-align:left}
+.nd{text-align:center;padding:18px;color:#888;font-size:10px}
+</style>"""
+
+_SIG = '<div class="sig">' + "".join(
+    f'<div class="sig-b"><div class="sig-l"></div><div class="sig-t">{l}</div></div>'
+    for l in ["Prepared By", "Checked By", "Authorised Signatory"]
+) + '</div>'
+
+_NUMERIC_FT    = ("Float", "Currency", "Int", "Percent")
+_SKIP_ON_TOTAL = {"date_of_joining", "ded_upto"}
 
 
-def validate_filters(filters):
-    if not filters.get("month"):
-        frappe.throw("Please select a Month")
-    if not filters.get("year"):
-        frappe.throw("Please select a Year")
-    if not filters.get("company"):
-        frappe.throw("Please select at least one Company")
-    if not filters.get("category"):
-        frappe.throw("Please select a Category")
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+def _parse_list(v):
+    if not v: return []
+    if isinstance(v, list): return v
+    try:
+        p = json.loads(v)
+        if isinstance(p, list): return p
+    except Exception: pass
+    return [x.strip() for x in v.split(",") if x.strip()]
+
+def _col(label, fn, ft="Data", w=120, **kw):
+    return {"label": _(label), "fieldname": fn, "fieldtype": ft, "width": w, **kw}
+
+def _start_date(f):
+    m = MONTH_MAP.get(f.get("month", ""))
+    y = f.get("year", "")
+    return f"{y}-{m:02d}-01" if m and y else None
+
+def _base_cond(f, p):
+    c = ["ss.docstatus=1"]
+    sd = _start_date(f)
+    if sd: p["start_date"] = sd; c.append("ss.start_date=%(start_date)s")
+    co = _parse_list(f.get("company"))
+    if co: p["companies"] = tuple(co); c.append("ss.company IN %(companies)s")
+    em = _parse_list(f.get("employee"))
+    if em: p["employees"] = tuple(em); c.append("ss.employee IN %(employees)s")
+    return " AND ".join(c)
+
+def _cat_join(f, p):
+    cat = f.get("category")
+    if not cat: return ""
+    p["category"] = cat
+    return "INNER JOIN `tabCompany Link` cl_cat ON cl_cat.name=ss.employee AND cl_cat.category=%(category)s"
+
+def _div_cond(f, p):
+    d = _parse_list(f.get("division"))
+    if not d: return ""
+    p["divisions"] = tuple(d)
+    return (
+        " AND ss.employee IN ("
+        "SELECT name FROM `tabCompany Link` "
+        "WHERE division IN %(divisions)s OR department IN %(divisions)s)"
+    )
+
+def _company_label(f):
+    c = _parse_list(f.get("company"))
+    return ", ".join(c) if c else (frappe.defaults.get_global_default("company") or "")
+
+def _fmt(v):
+    if v is None or v == "": return ""
+    try: return f"{float(v):,.2f}"
+    except (TypeError, ValueError): return str(v)
 
 
-def get_columns():
-    return [
-        {
-            "label": "Sr. No.",
-            "fieldname": "sr_no",
-            "fieldtype": "Int",
-            "width": 70
-        },
-        {
-            "label": "Employee ID",
-            "fieldname": "employee_id",
-            "fieldtype": "Data",
-            "width": 160
-        },
-        {
-            "label": "Employee Name",
-            "fieldname": "employee_name",
-            "fieldtype": "Data",
-            "width": 220
-        },
-        {
-            "label": "Date of Joining",
-            "fieldname": "date_of_joining",
-            "fieldtype": "Date",
-            "width": 150
-        },
-        {
-            "label": "Deduction Upto (3 Years)",
-            "fieldname": "ded_upto",
-            "fieldtype": "Date",
-            "width": 180
-        },
-        {
-            "label": "Retention Deposit",
-            "fieldname": "retention_amount",
-            "fieldtype": "Float",
-            "precision": 2,
-            "width": 180
-        },
+# ---------------------------------------------------------------------------
+# Core data function
+# ---------------------------------------------------------------------------
+
+def _get_data(f):
+    cols = [
+        _col("Employee ID",              "employee_id",       w=140),
+        _col("Employee Name",            "employee_name",     w=200),
+        _col("Date of Joining",          "date_of_joining",   "Date", 120),
+        _col("Deduction Upto (3 Yrs)",   "ded_upto",          "Date", 150),
+        _col("Retention Amount",         "retention_amount",  "Float", 150, precision=2),
     ]
 
+    if not f.get("company"):
+        return cols, []
 
-def get_data(filters):
-    import json
+    p = {"component": "Retention"}
+    cond = _base_cond(f, p)
+    catj = _cat_join(f, p)
+    divc = _div_cond(f, p)
 
-    month          = filters.get("month")
-    year           = filters.get("year")
-    category       = filters.get("category")       # single string (Link field)
-    company_filter = filters.get("company")
-
-    month_num  = MONTH_MAP.get(month)
-    start_date = f"{year}-{month_num:02d}-01"
-
-    conditions   = ""
-    query_params = {"start_date": start_date, "component": COMPONENT_NAME}
-
-    if company_filter:
-        if isinstance(company_filter, str):
-            company_filter = json.loads(company_filter)
-        if company_filter:
-            conditions += " AND ss.company IN %(companies)s"
-            query_params["companies"] = tuple(company_filter)
-
-    employee_filter = filters.get("employee")
-    if employee_filter:
-        if isinstance(employee_filter, str):
-            employee_filter = json.loads(employee_filter)
-        if employee_filter:
-            conditions += " AND ss.employee IN %(employees)s"
-            query_params["employees"] = tuple(employee_filter)
-
-    # Category filter via Company Link (same pattern as all other reports)
-    category_join = ""
-    if category:
-        category_join = """
-            INNER JOIN `tabCompany Link` cl
-                ON  cl.name     = ss.employee
-                AND cl.category = %(category)s
-        """
-        query_params["category"] = category
-
-    rows = frappe.db.sql("""
-        SELECT
-            ss.employee      AS employee_id,
-            ss.employee_name AS employee_name,
-            sd.amount        AS retention_amount
-        FROM
-            `tabSalary Slip` ss
-        INNER JOIN
-            `tabSalary Details` sd
-            ON  sd.parent           = ss.name
-            AND sd.parenttype       = 'Salary Slip'
-            AND sd.parentfield      = 'deductions'
-            AND sd.salary_component = %(component)s
+    rows = frappe.db.sql(
+        f"""
+        SELECT ss.employee AS eid, ss.employee_name,
+               sd.amount AS ret
+        FROM `tabSalary Slip` ss
+        INNER JOIN `tabSalary Details` sd
+            ON sd.parent=ss.name
+            AND sd.parenttype='Salary Slip'
+            AND sd.parentfield='deductions'
+            AND sd.salary_component=%(component)s
             AND sd.amount > 0
-        {category_join}
-        WHERE
-            ss.docstatus      = 1
-            AND ss.start_date = %(start_date)s
-            {conditions}
-        ORDER BY
-            ss.employee_name
-    """.format(conditions=conditions, category_join=category_join), query_params, as_dict=1)
+        {catj}
+        WHERE {cond}{divc}
+        ORDER BY ss.employee_name
+        """,
+        p, as_dict=1
+    )
 
     if not rows:
-        return []
+        return cols, []
 
     # Fetch date_of_joining from Company Link
-    employee_ids = list({r.employee_id for r in rows})
+    eids = tuple({r.eid for r in rows})
+    cm = {
+        r["name"]: r["date_of_joining"]
+        for r in frappe.db.sql(
+            "SELECT name, date_of_joining FROM `tabCompany Link` WHERE name IN %(ids)s",
+            {"ids": eids}, as_dict=1
+        )
+    }
 
-    cl_rows = frappe.db.sql("""
-        SELECT name, date_of_joining
-        FROM `tabCompany Link`
-        WHERE name IN %(ids)s
-    """, {"ids": tuple(employee_ids)}, as_dict=1)
+    data = []
+    g    = 0.0
 
-    cl_map = {r["name"]: r["date_of_joining"] for r in cl_rows}
-
-    data            = []
-    total_retention = 0.0
-
-    for idx, row in enumerate(rows, start=1):
-        doj      = cl_map.get(row.employee_id)
-        ded_upto = None
-
+    for row in rows:
+        doj = cm.get(row.eid)
+        du  = None
         if doj:
             try:
-                ded_upto = add_months(getdate(doj), 36)
+                du = add_months(getdate(doj), 36)
             except Exception:
-                ded_upto = None
-
-        retention = flt(row.retention_amount, 2)
-        total_retention += retention
-
+                pass
+        ret = flt(row.ret, 2)
+        g  += ret
         data.append({
-            "sr_no":            idx,
-            "employee_id":      row.employee_id,
+            "employee_id":      row.eid,
             "employee_name":    row.employee_name,
             "date_of_joining":  doj,
-            "ded_upto":         ded_upto,
-            "retention_amount": retention,
+            "ded_upto":         du,
+            "retention_amount": ret,
         })
 
-    # Totals row
-    data.append({
-        "sr_no":            "",
-        "employee_id":      "",
-        "employee_name":    "Total",
-        "date_of_joining":  None,
-        "ded_upto":         None,
-        "retention_amount": flt(total_retention, 2),
-        "bold":             1,
-    })
+    if data:
+        data.append({
+            "employee_id":      "",
+            "employee_name":    "Total",
+            "date_of_joining":  None,
+            "ded_upto":         None,
+            "retention_amount": flt(g, 2),
+            "bold":             1,
+        })
 
-    return data
+    return cols, data
+
+
+# ---------------------------------------------------------------------------
+# Frappe report entry-point
+# ---------------------------------------------------------------------------
+
+def execute(filters=None):
+    return _get_data(filters or {})
+
+
+# ---------------------------------------------------------------------------
+# PDF helpers
+# ---------------------------------------------------------------------------
+
+def _build_html(cols, data, co, mo, yr):
+    hdr = (
+        f'<div class="hdr">'
+        f'<div class="co">{co}</div>'
+        f'<div class="ttl">Retention Deposit Register</div>'
+        f'<div class="per">For the Month of {mo} {yr}</div>'
+        f'</div>'
+    )
+
+    # thead
+    thead = "<tr>"
+    for c in cols:
+        is_n = c.get("fieldtype", "") in _NUMERIC_FT
+        thead += f'<th class="{"r" if is_n else "l"}">{c.get("label", "")}</th>'
+    thead += "</tr>"
+
+    # tbody
+    if not data:
+        ncols = len(cols)
+        tbody = f'<tr><td colspan="{ncols}" class="nd">No data for this period</td></tr>'
+    else:
+        tbody = ""
+        for row in data:
+            is_tot = bool(row.get("bold"))
+            cls    = ' class="tot"' if is_tot else ""
+            tbody += f"<tr{cls}>"
+            for c in cols:
+                fn   = c.get("fieldname", "")
+                val  = row.get(fn, "")
+                is_n = c.get("fieldtype", "") in _NUMERIC_FT
+                if is_tot and fn in _SKIP_ON_TOTAL:
+                    tbody += f'<td class="{"r" if is_n else "l"}"></td>'
+                elif is_n:
+                    tbody += f'<td class="r">{_fmt(val) if val not in ("", None) else ""}</td>'
+                else:
+                    # Format date objects as string
+                    display = str(val) if val else ""
+                    tbody += f'<td class="l">{display}</td>'
+            tbody += "</tr>"
+
+    table = f"<table><thead>{thead}</thead><tbody>{tbody}</tbody></table>"
+    return (
+        f'<!DOCTYPE html><html><head><meta charset="UTF-8">{_CSS}</head>'
+        f'<body>{hdr}{table}{_SIG}</body></html>'
+    )
+
+
+def _save_pdf(html, prefix):
+    pdf = get_pdf(html, options={
+        "page-size":     "A4",
+        "orientation":   "Landscape",
+        "margin-top":    "8mm",
+        "margin-right":  "8mm",
+        "margin-bottom": "8mm",
+        "margin-left":   "8mm",
+        "encoding":      "UTF-8",
+        "no-outline":    None,
+    })
+    ts  = frappe.utils.now_datetime().strftime("%Y%m%d_%H%M%S")
+    fn  = f"{prefix}_{ts}.pdf"
+    with open(frappe.utils.get_files_path(fn, is_private=0), "wb") as fh:
+        fh.write(pdf)
+    doc = frappe.get_doc({
+        "doctype":    "File",
+        "file_name":  fn,
+        "is_private": 0,
+        "file_url":   f"/files/{fn}",
+    })
+    doc.insert(ignore_permissions=True)
+    frappe.db.commit()
+    return doc.file_url
 
 
 @frappe.whitelist()
-def get_retention_employees_for_filter(year=None, month=None, companies=None, category=None, txt=""):
-    """
-    Returns employees who have a Retention deduction in their submitted salary slip
-    for the period, filtered by company and category.
-    Used by the Employee MultiSelectList filter.
-    """
-    if not month or not year:
-        return []
-
-    month_num = MONTH_MAP.get(month)
-    if not month_num:
-        return []
-
-    import json
-    if isinstance(companies, str):
-        try:
-            companies = json.loads(companies)
-        except Exception:
-            companies = []
-
-    start_date = f"{year}-{month_num:02d}-01"
-    txt_filter = f"%{txt}%"
-
-    company_condition = ""
-    category_join     = ""
-    params = {
-        "component":  COMPONENT_NAME,
-        "start_date": start_date,
-        "txt":        txt_filter,
-    }
-
-    if companies:
-        company_condition = "AND ss.company IN %(companies)s"
-        params["companies"] = tuple(companies)
-
-    if category:
-        category_join = """
-            INNER JOIN `tabCompany Link` cl
-                ON  cl.name     = ss.employee
-                AND cl.category = %(category)s
-        """
-        params["category"] = category
-
-    results = frappe.db.sql("""
-        SELECT DISTINCT
-            ss.employee,
-            ss.employee_name
-        FROM
-            `tabSalary Slip` ss
-        INNER JOIN
-            `tabSalary Details` sd
-            ON  sd.parent           = ss.name
-            AND sd.parenttype       = 'Salary Slip'
-            AND sd.parentfield      = 'deductions'
-            AND sd.salary_component = %(component)s
-            AND sd.amount > 0
-        {category_join}
-        WHERE
-            ss.docstatus      = 1
-            AND ss.start_date = %(start_date)s
-            AND (ss.employee LIKE %(txt)s OR ss.employee_name LIKE %(txt)s)
-            {company_condition}
-        ORDER BY ss.employee_name
-        LIMIT 50
-    """.format(category_join=category_join, company_condition=company_condition), params, as_dict=1)
-
-    return results
+def print_report(filters):
+    if isinstance(filters, str):
+        filters = json.loads(filters)
+    cols, data = _get_data(filters)
+    co = _company_label(filters)
+    mo = filters.get("month", "")
+    yr = filters.get("year",  "")
+    html = _build_html(cols, data, co, mo, yr)
+    return _save_pdf(html, "Retention_Deposit_Register")

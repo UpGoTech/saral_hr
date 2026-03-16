@@ -42,6 +42,8 @@ _SIG = '<div class="sig">' + "".join(
     for l in ["Prepared By", "Checked By", "Authorised Signatory"]
 ) + '</div>'
 
+_NUMERIC_FN = {"net_salary"}
+
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -76,7 +78,7 @@ def _fmt(v):
     except (TypeError, ValueError): return str(v)
 
 def _bank_map(cos):
-    """Map company → bank_name (lowercase stripped) for home-bank detection."""
+    """Map company → home bank_name (lowercase stripped)."""
     if not cos: return {}
     return {
         r.name: (r.bank_name or "").strip().lower()
@@ -102,17 +104,17 @@ def _on_hold(f):
 
 
 # ---------------------------------------------------------------------------
-# Core data function  (mode = "home")
+# Core data function  (mode = "other")
 # ---------------------------------------------------------------------------
 
 def _get_data(f):
     cols = [
-        _col("Employee ID",     "employee_id",     w=120),
-        _col("Employee Name",   "employee_name",   w=200),
-        _col("IFSC Code",       "ifsc_code",       w=130),
-        _col("Account Number",  "account_number",  w=160),
-        _col("Net Salary",      "net_salary",      "Data", 120),
-        _col("Bank Name",       "bank_name",       w=150),
+        _col("Employee ID",    "employee_id",    w=120),
+        _col("Employee Name",  "employee_name",  w=200),
+        _col("IFSC Code",      "ifsc_code",      w=130),
+        _col("Account Number", "account_number", w=160),
+        _col("Net Salary",     "net_salary",     "Data", 120),
+        _col("Bank Name",      "bank_name",      w=150),
     ]
 
     if not f.get("company"):
@@ -139,14 +141,12 @@ def _get_data(f):
         p["employees"] = tuple(em)
         cond += " AND ss.employee IN %(employees)s"
 
-    # Category join
     catj = ""
     cat  = f.get("category")
     if cat:
         p["category"] = cat
         catj = "INNER JOIN `tabCompany Link` cl_cat ON cl_cat.name=ss.employee AND cl_cat.category=%(category)s"
 
-    # Division condition
     divc = ""
     divs = _parse_list(f.get("division"))
     if divs:
@@ -175,38 +175,40 @@ def _get_data(f):
         return cols, []
 
     oh  = _on_hold(f)
-    hm  = _bank_map(list({s.company for s in slips if s.company}))
+    hm  = _bank_map(list({sl.company for sl in slips if sl.company}))
 
     data = []
     tot  = 0.0
 
-    for s in slips:
-        eb = (s.bank_name or "").strip().lower()
-        hb = hm.get(s.company, "")
+    for sl in slips:
+        eb = (sl.bank_name or "").strip().lower()
+        hb = hm.get(sl.company, "")
 
-        # Home bank: employee's bank matches company's home bank
-        if not (hb and eb == hb):
+        # Other bank: employee's bank does NOT match company's home bank
+        # (also includes employees with no bank set on company, i.e. hb is empty)
+        is_home = hb and eb == hb
+        if is_home:
             continue
 
-        if s.employee in oh:
+        if sl.employee in oh:
             data.append({
-                "employee_id":    s.employee,
-                "employee_name":  s.employee_name,
+                "employee_id":    sl.employee,
+                "employee_name":  sl.employee_name,
                 "ifsc_code":      "On Hold",
                 "account_number": "On Hold",
                 "net_salary":     "On Hold",
-                "bank_name":      s.bank_name or "-",
+                "bank_name":      sl.bank_name or "-",
             })
         else:
-            n = flt(s.net_salary, 2)
+            n = flt(sl.net_salary, 2)
             tot += n
             data.append({
-                "employee_id":    s.employee,
-                "employee_name":  s.employee_name,
-                "ifsc_code":      s.ifsc_code      or "-",
-                "account_number": s.account_number or "-",
+                "employee_id":    sl.employee,
+                "employee_name":  sl.employee_name,
+                "ifsc_code":      sl.ifsc_code      or "-",
+                "account_number": sl.account_number or "-",
                 "net_salary":     f"{n:,.2f}",
-                "bank_name":      s.bank_name      or "-",
+                "bank_name":      sl.bank_name      or "-",
             })
 
     if data:
@@ -235,12 +237,8 @@ def execute(filters=None):
 # PDF helpers
 # ---------------------------------------------------------------------------
 
-# Columns whose net_salary cell is numeric (right-aligned)
-_NUMERIC_FN = {"net_salary"}
-
-
 def _build_html(cols, data, co, mo, yr):
-    title = "Home Bank Advice"
+    title = "Other Bank Advice"
 
     hdr = (
         f'<div class="hdr">'
@@ -297,7 +295,7 @@ def _build_html(cols, data, co, mo, yr):
             f'</table>{_SIG}</body></html>'
         )
 
-    # Paginate: 30 rows on first page, 35 on subsequent pages
+    # Paginate: 30 rows first page, 35 on subsequent pages
     FIRST, OTHER = 30, 35
     pages, idx, first = [], 0, True
     while idx < len(detail_rows):
@@ -359,4 +357,4 @@ def print_report(filters):
     mo   = filters.get("month", "")
     yr   = filters.get("year",  "")
     html = _build_html(cols, data, co, mo, yr)
-    return _save_pdf(html, "Home_Bank_Advice")
+    return _save_pdf(html, "Other_Bank_Advice")

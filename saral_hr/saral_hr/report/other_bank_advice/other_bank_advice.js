@@ -1,4 +1,4 @@
-frappe.query_reports["Educational Allowance Register"] = {
+frappe.query_reports["Other Bank Advice"] = {
     filters: [
         {
             fieldname: "year",
@@ -18,8 +18,10 @@ frappe.query_reports["Educational Allowance Register"] = {
             fieldtype: "Select",
             reqd: 1,
             default: "",
-            options: ["","January","February","March","April","May","June",
-                      "July","August","September","October","November","December"],
+            options: [
+                "", "January", "February", "March", "April", "May", "June",
+                "July", "August", "September", "October", "November", "December"
+            ],
         },
         {
             fieldname: "company",
@@ -62,7 +64,7 @@ frappe.query_reports["Educational Allowance Register"] = {
             }
             frappe.dom.freeze(__("Generating PDF…"));
             frappe.call({
-                method: "saral_hr.saral_hr.report.educational_allowance_register.educational_allowance_register.print_report",
+                method: "saral_hr.saral_hr.report.other_bank_advice.other_bank_advice.print_report",
                 args: {
                     filters: JSON.stringify({
                         year:     f.year     || "",
@@ -96,8 +98,21 @@ frappe.query_reports["Educational Allowance Register"] = {
 
     formatter(value, row, column, data, default_formatter) {
         if (!data) return default_formatter(value, row, column, data);
+        const fn   = column.fieldname;
         const def  = v => default_formatter(v, row, column, data);
         const bold = v => `<strong>${def(v)}</strong>`;
-        return data.bold ? bold(value) : def(value);
+
+        if (data.bold) {
+            if (fn === "net_salary")     return bold(value);
+            if (fn === "employee_name")  return bold(value);
+            return "";
+        }
+
+        // On-hold rows
+        if (value === "On Hold" && fn === "net_salary") {
+            return `<span style="color:#c0392b;font-style:italic;">On Hold</span>`;
+        }
+
+        return def(value);
     },
 };
