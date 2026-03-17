@@ -563,7 +563,6 @@ def check_variable_pay_assignment(employee, start_date):
 
 
 # ─── Attendance ───────────────────────────────────────────────────────────────
-
 @frappe.whitelist()
 def get_attendance_and_days(employee, start_date, working_days_calculation_method=None):
     start_date = getdate(start_date)
@@ -633,11 +632,15 @@ def get_attendance_and_days(employee, start_date, working_days_calculation_metho
     combined_absent_days = flt(absent_days + lwp_days, 2)
 
     if calculation_method == "Include Weekly Offs":
+        # Include: as it is — koi change nahi
         working_days = total_days
         payment_days = flt(total_days - combined_absent_days, 2)
     else:
+        # Exclude: working days se weekly off ghata
+        # lekin payment days = total_days - weekly_off_count - combined_absent_days + comp_off_days
+        # Comp Off = present day hai, absent mein count nahi hona chahiye
         working_days = total_days - weekly_off_count
-        payment_days = flt(working_days - combined_absent_days, 2)
+        payment_days = flt(working_days - combined_absent_days + comp_off_days, 2)  # ← SIRF YEH BADLA
 
     physical_working_days = flt(
         payment_days - earned_leave_days - casual_leave_days - comp_off_days, 2
@@ -661,7 +664,6 @@ def get_attendance_and_days(employee, start_date, working_days_calculation_metho
         "total_comp_off":        flt(comp_off_days, 2),
         "calculation_method":    calculation_method,
     }
-
 
 # ─── Core Salary Calculation ──────────────────────────────────────────────────
 
