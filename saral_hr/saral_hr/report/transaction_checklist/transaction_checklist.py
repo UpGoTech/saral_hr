@@ -5,10 +5,6 @@ from frappe import _
 from frappe.utils import flt
 from frappe.utils.pdf import get_pdf
 
-# ---------------------------------------------------------------------------
-# Constants
-# ---------------------------------------------------------------------------
-
 MONTH_MAP = {
     "January":1,"February":2,"March":3,"April":4,"May":5,"June":6,
     "July":7,"August":8,"September":9,"October":10,"November":11,"December":12,
@@ -47,21 +43,20 @@ B = "1px solid #000"
 
 _CSS = """<style>
 *{margin:0;padding:0;box-sizing:border-box}
-body{font-family:Arial,sans-serif;font-size:9px;color:#000;background:#fff}
-.hdr{text-align:center;border-bottom:2px solid #000;padding:8px 4px 6px;margin-bottom:6px}
-.hdr .co{font-size:16px;font-weight:900;letter-spacing:1px;text-transform:uppercase}
-.hdr .ttl{font-size:12px;font-weight:700;margin-top:3px}
-.hdr .per{font-size:10px;margin-top:2px}
-.sig{display:flex;justify-content:space-between;margin-top:24px;padding-top:6px}
-.sig-b{text-align:center;width:160px}
-.sig-l{border-top:1px solid #000;margin-bottom:3px}
-.sig-t{font-size:10px;color:#333}
-table{width:100%;border-collapse:collapse;margin-top:6px;table-layout:fixed}
-th{border:1px solid #000;padding:4px 3px;font-size:9px;font-weight:700;background:#f0f0f0;color:#000;white-space:nowrap}
-td{border:1px solid #000;padding:4px 3px;font-size:9px;vertical-align:middle;color:#000}
+body{font-family:Arial,sans-serif;font-size:11px;color:#000;background:#fff}
+.hdr{text-align:center;border-bottom:2px solid #000;padding:10px 6px 6px;margin-bottom:6px}
+.hdr .co{font-size:22px;font-weight:900;letter-spacing:1px;text-transform:uppercase}
+.hdr .ttl{font-size:16px;font-weight:700;margin-top:2px}
+.hdr .per{font-size:13px;margin-top:2px}
+.sig{display:flex;justify-content:space-between;margin-top:16px;padding-top:8px}
+.sig-b{text-align:center;width:180px}
+.sig-l{border-top:1px solid #000;margin-bottom:4px}
+.sig-t{font-size:13px;color:#333}
+table{width:100%;border-collapse:collapse;margin-top:8px;table-layout:fixed}
+th{border:1px solid #000;padding:3px 3px;font-size:10px;font-weight:700;background:#f0f0f0;color:#000;white-space:nowrap}
+td{border:1px solid #000;padding:3px 3px;font-size:11px;vertical-align:middle;color:#000}
 tr.tot td{background:#e8e8e8;font-weight:700}
-.r{text-align:right}.l{text-align:left}.c{text-align:center}
-.nd{text-align:center;padding:18px;color:#888;font-size:10px}
+.nd{text-align:center;padding:10px;color:#888;font-size:11px}
 </style>"""
 
 _SIG = '<div class="sig">' + "".join(
@@ -90,10 +85,6 @@ def _sl(lbl):
 def _sanitize(a):
     return a.strip().lower().replace(" ", "_").replace("-", "_").replace("__", "_")
 
-
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
 
 def _parse_list(v):
     if not v: return []
@@ -137,10 +128,6 @@ def _fetch_comps(sn, pf):
     return r
 
 
-# ---------------------------------------------------------------------------
-# Core data function
-# ---------------------------------------------------------------------------
-
 def _get_data(f):
     cols = [
         _col("Employee",      "employee",      w=110),
@@ -151,7 +138,6 @@ def _get_data(f):
     ]
     for lbl, abbr in EARNING_COMPONENTS:
         fn = f"earn_{_sanitize(abbr)}"
-        # Variable Pay shown as percentage string
         if abbr == "VAR":
             cols.append(_col("Variable Pay (VAR %)", fn, "Data", 120))
         else:
@@ -209,8 +195,7 @@ def _get_data(f):
         f"""
         SELECT ss.name AS slip, ss.employee, ss.employee_name,
                ss.payment_days, ss.absent_days, ss.total_lwp, ss.net_salary
-        FROM `tabSalary Slip` ss
-        {catj}
+        FROM `tabSalary Slip` ss {catj}
         WHERE {w}
         ORDER BY ss.employee_name
         """,
@@ -219,10 +204,9 @@ def _get_data(f):
     if not slips:
         return cols, []
 
-    sn   = [sl["slip"]    for sl in slips]
+    sn   = [sl["slip"]     for sl in slips]
     eids = [sl["employee"] for sl in slips]
 
-    # Variable pay percentage lookup
     mo, yr  = f.get("month", ""), f.get("year", "")
     vpa_key = f"{yr} - {mo}"
     vpm     = {}
@@ -236,7 +220,6 @@ def _get_data(f):
             )
         }
 
-    # Division map
     dm2 = {}
     if eids:
         for r in frappe.db.sql(
@@ -264,10 +247,10 @@ def _get_data(f):
         row = {
             "employee":      sl["employee"],
             "employee_name": sl["employee_name"],
-            "payment_days":  flt(sl["payment_days"],              2),
-            "absent_days":   flt(sl.get("absent_days") or 0,      2),
-            "total_lwp":     flt(sl["total_lwp"] or 0,            2),
-            "net_salary":    flt(sl["net_salary"],                 2),
+            "payment_days":  flt(sl["payment_days"],         2),
+            "absent_days":   flt(sl.get("absent_days") or 0, 2),
+            "total_lwp":     flt(sl["total_lwp"] or 0,       2),
+            "net_salary":    flt(sl["net_salary"],            2),
         }
         te = td = 0.0
 
@@ -301,10 +284,10 @@ def _get_data(f):
         row["total_deductions"]    = flt(td, 2)
         grand["total_deductions"] += td
 
-        grand["net_salary"]    += flt(sl["net_salary"],              2)
-        grand["payment_days"]  += flt(sl["payment_days"],            2)
-        grand["absent_days"]   += flt(sl.get("absent_days") or 0,   2)
-        grand["total_lwp"]     += flt(sl["total_lwp"] or 0,         2)
+        grand["net_salary"]   += flt(sl["net_salary"],           2)
+        grand["payment_days"] += flt(sl["payment_days"],         2)
+        grand["absent_days"]  += flt(sl.get("absent_days") or 0, 2)
+        grand["total_lwp"]    += flt(sl["total_lwp"] or 0,       2)
         data.append(row)
 
     if data:
@@ -318,23 +301,16 @@ def _get_data(f):
     return cols, data
 
 
-# ---------------------------------------------------------------------------
-# Frappe report entry-point
-# ---------------------------------------------------------------------------
-
 def execute(filters=None):
     return _get_data(filters or {})
 
 
-# ---------------------------------------------------------------------------
-# PDF renderer  — same compact paired-column layout as SSI
-# ---------------------------------------------------------------------------
-
-TH_C = f"border:{B};padding:4px 3px;font-size:9px;font-weight:700;text-align:center;background:#f0f0f0;"
-TH_R = f"border:{B};padding:4px 3px;font-size:9px;font-weight:700;text-align:right;background:#f0f0f0;"
-TH_L = f"border:{B};padding:4px 3px;font-size:9px;font-weight:700;text-align:left;background:#f0f0f0;"
-TD_S = f"border:{B};padding:4px 3px;font-size:9px;vertical-align:middle;"
-TS_S = f"border:{B};padding:4px 3px;font-size:9px;font-weight:700;background:#e8e8e8;vertical-align:middle;"
+TH_C = f"border:{B};padding:3px 3px;font-size:11px;font-weight:700;text-align:center;background:#f0f0f0;"
+TH_R = f"border:{B};padding:3px 3px;font-size:11px;font-weight:700;text-align:right;background:#f0f0f0;"
+TH_L = f"border:{B};padding:3px 3px;font-size:11px;font-weight:700;text-align:left;background:#f0f0f0;"
+TD_S = f"border:{B};padding:3px 3px;font-size:11px;vertical-align:middle;"
+TS_S = f"border:{B};padding:3px 3px;font-size:11px;font-weight:700;background:#e8e8e8;vertical-align:middle;"
+SUB  = f"font-size:10px;display:block;margin-top:1px;"
 
 
 def _build_html(cols, data, co, mo, yr):
@@ -349,12 +325,9 @@ def _build_html(cols, data, co, mo, yr):
     if not data:
         return (
             f'<!DOCTYPE html><html><head><meta charset="UTF-8">{_CSS}</head>'
-            f'<body>{hdr}'
-            f'<p style="text-align:center;padding:20px;color:#888;">No data for this period</p>'
-            f'{_SIG}</body></html>'
+            f'<body>{hdr}<p class="nd">No data for this period</p>{_SIG}</body></html>'
         )
 
-    # Columns excluded from the paired section (handled in fixed last cols)
     LAST = {
         "earn_grat", "ded_grat", "ded_loan", "ded_adv", "ded_ret",
         "net_salary", "total_earnings", "total_deductions",
@@ -371,83 +344,98 @@ def _build_html(cols, data, co, mo, yr):
     dc = [c for c in cols if c["fieldname"].startswith("ded_")  and c["fieldname"] not in LAST]
     mp = max(len(ec), len(dc))
 
-    # Table header
-    h  = f'<table style="width:100%;border-collapse:collapse;table-layout:fixed;">'
-    h += f'<thead><tr>'
-    h += f'<th style="{TH_L}width:110px;">Employee<br><span style="font-size:8px;">Name</span></th>'
-    h += f'<th style="{TH_R}width:45px;">Days</th>'
-    h += f'<th style="{TH_R}width:45px;">Abs<br><span style="font-size:8px;">LWP</span></th>'
-
-    for i in range(mp):
-        el = _sl(ec[i]["label"]) if i < len(ec) else "&nbsp;"
-        dl = _sl(dc[i]["label"]) if i < len(dc) else "&nbsp;"
-        h += f'<th style="{TH_R}min-width:55px;">{el}<br><span style="font-size:8px;">{dl}</span></th>'
-
-    h += f'<th style="{TH_R}width:70px;">Grat<br><span style="font-size:8px;">Loan</span></th>'
-    h += f'<th style="{TH_R}width:60px;">Adv<br><span style="font-size:8px;">Ret</span></th>'
-    h += f'<th style="{TH_R}width:70px;">OD-1<br><span style="font-size:8px;">Net Sal</span></th>'
-    h += f'<th style="{TH_R}width:80px;">Earn<br><span style="font-size:8px;">Ded</span></th>'
-    h += f'</tr></thead><tbody>'
-
-    for row in data:
-        is_tot = row.get("bold") == 1
-        td     = TS_S if is_tot else TD_S
-
-        h += "<tr>"
-        emp_sub = "" if is_tot else f'<br><span style="font-size:8px;color:#555;">{row.get("employee","")}</span>'
-        h += f'<td style="{td}text-align:left;"><strong>{row.get("employee_name","")}</strong>{emp_sub}</td>'
-        h += f'<td style="{td}text-align:center;">{row.get("payment_days","")}</td>'
-        h += (
-            f'<td style="{td}text-align:center;">'
-            f'{row.get("absent_days") or "0"}'
-            f'<br><span style="font-size:8px;">{_fmt(row.get("total_lwp")) or "0"}</span>'
-            f'</td>'
-        )
-
+    def _thead():
+        h  = f'<table style="width:100%;border-collapse:collapse;table-layout:fixed;">'
+        h += f'<thead><tr>'
+        h += f'<th style="{TH_L}width:110px;">Employee<br><span style="{SUB}">Name</span></th>'
+        h += f'<th style="{TH_C}width:45px;">Days</th>'
+        h += f'<th style="{TH_C}width:45px;">Abs<br><span style="{SUB}">LWP</span></th>'
         for i in range(mp):
-            ev = _fmt(row.get(ec[i]["fieldname"])) if i < len(ec) else ""
-            dv = _fmt(row.get(dc[i]["fieldname"])) if i < len(dc) else ""
-            # VAR column may be a percentage string
-            if i < len(ec) and ec[i]["fieldname"] == "earn_var":
-                ev = row.get("earn_var") or ""
+            el = _sl(ec[i]["label"]) if i < len(ec) else "&nbsp;"
+            dl = _sl(dc[i]["label"]) if i < len(dc) else "&nbsp;"
+            h += f'<th style="{TH_R}min-width:55px;">{el}<br><span style="{SUB}">{dl}</span></th>'
+        h += f'<th style="{TH_R}width:70px;">Grat<br><span style="{SUB}">Loan</span></th>'
+        h += f'<th style="{TH_R}width:60px;">Adv<br><span style="{SUB}">Ret</span></th>'
+        h += f'<th style="{TH_R}width:70px;">OD-1<br><span style="{SUB}">Net Sal</span></th>'
+        h += f'<th style="{TH_R}width:80px;">Earn<br><span style="{SUB}">Ded</span></th>'
+        h += f'</tr></thead>'
+        return h
+
+    def _build_rows(rows):
+        h = "<tbody>"
+        for row in rows:
+            is_tot = row.get("bold") == 1
+            td     = TS_S if is_tot else TD_S
+            h += "<tr>"
+            emp_sub = "" if is_tot else f'<span style="{SUB}color:#555;">{row.get("employee","")}</span>'
+            h += f'<td style="{td}text-align:left;"><strong>{row.get("employee_name","")}</strong>{emp_sub}</td>'
+            h += f'<td style="{td}text-align:center;">{row.get("payment_days","")}</td>'
             h += (
-                f'<td style="{td}text-align:right;">'
-                f'{ev or "&nbsp;"}'
-                f'<br><span style="font-size:8px;">{dv or "&nbsp;"}</span>'
+                f'<td style="{td}text-align:center;">'
+                f'{row.get("absent_days") or "0"}'
+                f'<span style="{SUB}">{_fmt(row.get("total_lwp")) or "0"}</span>'
                 f'</td>'
             )
+            for i in range(mp):
+                ev = _fmt(row.get(ec[i]["fieldname"])) if i < len(ec) else ""
+                dv = _fmt(row.get(dc[i]["fieldname"])) if i < len(dc) else ""
+                if i < len(ec) and ec[i]["fieldname"] == "earn_var":
+                    ev = row.get("earn_var") or ""
+                h += (
+                    f'<td style="{td}text-align:right;">'
+                    f'{ev or "&nbsp;"}'
+                    f'<span style="{SUB}">{dv or "&nbsp;"}</span>'
+                    f'</td>'
+                )
+            h += (
+                f'<td style="{td}text-align:right;">'
+                f'{_fmt(row.get("earn_grat")) or "&nbsp;"}'
+                f'<span style="{SUB}">{_fmt(row.get("ded_loan")) or "&nbsp;"}</span>'
+                f'</td>'
+            )
+            h += (
+                f'<td style="{td}text-align:right;">'
+                f'{_fmt(row.get("ded_adv")) or "&nbsp;"}'
+                f'<span style="{SUB}">{_fmt(row.get("ded_ret")) or "&nbsp;"}</span>'
+                f'</td>'
+            )
+            h += (
+                f'<td style="{td}text-align:right;">'
+                f'{(_fmt(row.get(od1_fn)) if od1_fn else "") or "&nbsp;"}'
+                f'<span style="{SUB}">{_fmt(row.get("net_salary"))}</span>'
+                f'</td>'
+            )
+            h += (
+                f'<td style="{td}text-align:right;">'
+                f'{_fmt(row.get("total_earnings"))}'
+                f'<span style="{SUB}">{_fmt(row.get("total_deductions"))}</span>'
+                f'</td>'
+            )
+            h += "</tr>"
+        h += "</tbody></table>"
+        return h
 
-        h += (
-            f'<td style="{td}text-align:right;">'
-            f'{_fmt(row.get("earn_grat")) or "&nbsp;"}'
-            f'<br><span style="font-size:8px;">{_fmt(row.get("ded_loan")) or "&nbsp;"}</span>'
-            f'</td>'
-        )
-        h += (
-            f'<td style="{td}text-align:right;">'
-            f'{_fmt(row.get("ded_adv")) or "&nbsp;"}'
-            f'<br><span style="font-size:8px;">{_fmt(row.get("ded_ret")) or "&nbsp;"}</span>'
-            f'</td>'
-        )
-        h += (
-            f'<td style="{td}text-align:right;">'
-            f'{(_fmt(row.get(od1_fn)) if od1_fn else "") or "&nbsp;"}'
-            f'<br><span style="font-size:8px;">{_fmt(row.get("net_salary"))}</span>'
-            f'</td>'
-        )
-        h += (
-            f'<td style="{td}text-align:right;">'
-            f'{_fmt(row.get("total_earnings"))}'
-            f'<br><span style="font-size:8px;">{_fmt(row.get("total_deductions"))}</span>'
-            f'</td>'
-        )
-        h += "</tr>"
+    detail_rows = [r for r in data if not r.get("bold")]
+    total_row   = [r for r in data if r.get("bold")]
 
-    h += "</tbody></table>"
+    FIRST, OTHER = 20, 25
+    pages, idx, first = [], 0, True
+    while idx < len(detail_rows):
+        lim = FIRST if first else OTHER
+        pages.append(detail_rows[idx: idx + lim])
+        idx += lim
+        first = False
+
+    parts = []
+    for pn, pr in enumerate(pages):
+        pb   = '<div style="page-break-before:always;"></div>' if pn > 0 else ""
+        last = (pn == len(pages) - 1)
+        rows = pr + (total_row if last else [])
+        parts.append(pb + hdr + _thead() + _build_rows(rows))
 
     return (
         f'<!DOCTYPE html><html><head><meta charset="UTF-8">{_CSS}</head>'
-        f'<body>{hdr}{h}{_SIG}</body></html>'
+        f'<body>{"".join(parts)}{_SIG}</body></html>'
     )
 
 

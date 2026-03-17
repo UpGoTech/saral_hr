@@ -5,10 +5,6 @@ from frappe import _
 from frappe.utils import flt
 from frappe.utils.pdf import get_pdf
 
-# ---------------------------------------------------------------------------
-# Constants
-# ---------------------------------------------------------------------------
-
 MONTH_MAP = {
     "January":1,"February":2,"March":3,"April":4,"May":5,"June":6,
     "July":7,"August":8,"September":9,"October":10,"November":11,"December":12,
@@ -18,21 +14,20 @@ B = "1px solid #000"
 
 _CSS = """<style>
 *{margin:0;padding:0;box-sizing:border-box}
-body{font-family:Arial,sans-serif;font-size:10px;color:#000;background:#fff}
-.hdr{text-align:center;border-bottom:2px solid #000;padding:8px 4px 6px;margin-bottom:6px}
-.hdr .co{font-size:18px;font-weight:900;letter-spacing:1px;text-transform:uppercase}
-.hdr .ttl{font-size:13px;font-weight:700;margin-top:3px}
-.hdr .per{font-size:11px;margin-top:2px}
-.sig{display:flex;justify-content:space-between;margin-top:24px;padding-top:6px}
-.sig-b{text-align:center;width:160px}
-.sig-l{border-top:1px solid #000;margin-bottom:3px}
-.sig-t{font-size:10px;color:#333}
-table{width:100%;border-collapse:collapse;margin-top:6px}
-th{border:1px solid #000;padding:5px 7px;font-size:10px;font-weight:700;background:#f0f0f0;color:#000;white-space:nowrap}
-td{border:1px solid #000;padding:5px 7px;font-size:10px;vertical-align:middle;color:#000}
+body{font-family:Arial,sans-serif;font-size:16px;color:#000;background:#fff}
+.hdr{text-align:center;border-bottom:2px solid #000;padding:10px 6px 6px;margin-bottom:6px}
+.hdr .co{font-size:28px;font-weight:900;letter-spacing:1px;text-transform:uppercase}
+.hdr .ttl{font-size:20px;font-weight:700;margin-top:2px}
+.hdr .per{font-size:16px;margin-top:2px}
+.sig{display:flex;justify-content:space-between;margin-top:16px;padding-top:8px}
+.sig-b{text-align:center;width:180px}
+.sig-l{border-top:1px solid #000;margin-bottom:4px}
+.sig-t{font-size:15px;color:#333}
+table{width:100%;border-collapse:collapse;margin-top:8px}
+th{border:1px solid #000;padding:10px 12px;font-size:16px;font-weight:700;background:#f0f0f0;color:#000;white-space:nowrap;text-align:left}
+td{border:1px solid #000;padding:10px 12px;font-size:16px;vertical-align:middle;color:#000;text-align:left}
 tr.tot td{background:#e8e8e8;font-weight:700}
-.r{text-align:right}.l{text-align:left}
-.nd{text-align:center;padding:18px;color:#888;font-size:10px}
+.nd{text-align:center;padding:10px;color:#888;font-size:16px}
 </style>"""
 
 _SIG = '<div class="sig">' + "".join(
@@ -43,10 +38,6 @@ _SIG = '<div class="sig">' + "".join(
 _NUMERIC_FT    = ("Float", "Currency", "Int", "Percent")
 _SKIP_ON_TOTAL = {"esic_number", "days_paid", "date_of_joining", "date_of_birth"}
 
-
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
 
 def _parse_list(v):
     if not v: return []
@@ -106,10 +97,6 @@ def _fmt(v):
     try: return f"{float(v):,.2f}"
     except (TypeError, ValueError): return str(v)
 
-
-# ---------------------------------------------------------------------------
-# Core data function
-# ---------------------------------------------------------------------------
 
 def _get_data(f):
     cols = [
@@ -217,17 +204,9 @@ def _get_data(f):
     return cols, data
 
 
-# ---------------------------------------------------------------------------
-# Frappe report entry-point
-# ---------------------------------------------------------------------------
-
 def execute(filters=None):
     return _get_data(filters or {})
 
-
-# ---------------------------------------------------------------------------
-# PDF helpers
-# ---------------------------------------------------------------------------
 
 def _build_html(cols, data, co, mo, yr):
     hdr = (
@@ -238,40 +217,69 @@ def _build_html(cols, data, co, mo, yr):
         f'</div>'
     )
 
-    # thead
-    thead = "<tr>"
-    for c in cols:
-        is_n = c.get("fieldtype", "") in _NUMERIC_FT
-        thead += f'<th class="{"r" if is_n else "l"}">{c.get("label", "")}</th>'
-    thead += "</tr>"
+    def _thead():
+        h = "<tr>"
+        for c in cols:
+            h += f'<th>{c.get("label", "")}</th>'
+        return h + "</tr>"
 
-    # tbody
-    if not data:
-        ncols = len(cols)
-        tbody = f'<tr><td colspan="{ncols}" class="nd">No data for this period</td></tr>'
-    else:
-        tbody = ""
-        for row in data:
+    def _build_rows(rows):
+        h = ""
+        for row in rows:
             is_tot = bool(row.get("bold"))
             cls    = ' class="tot"' if is_tot else ""
-            tbody += f"<tr{cls}>"
+            h += f"<tr{cls}>"
             for c in cols:
                 fn   = c.get("fieldname", "")
                 val  = row.get(fn, "")
                 is_n = c.get("fieldtype", "") in _NUMERIC_FT
                 if is_tot and fn in _SKIP_ON_TOTAL:
-                    tbody += f'<td class="{"r" if is_n else "l"}"></td>'
+                    h += "<td></td>"
                 elif is_n:
-                    tbody += f'<td class="r">{_fmt(val) if val not in ("", None) else ""}</td>'
+                    h += f"<td>{_fmt(val) if val not in ('', None) else ''}</td>"
                 else:
-                    display = str(val) if val else ""
-                    tbody += f'<td class="l">{display}</td>'
-            tbody += "</tr>"
+                    h += f"<td>{str(val) if val else ''}</td>"
+            h += "</tr>"
+        return h
 
-    table = f"<table><thead>{thead}</thead><tbody>{tbody}</tbody></table>"
+    def _make_table(rows):
+        return (
+            f"<table><thead>{_thead()}</thead>"
+            f"<tbody>{rows}</tbody></table>"
+        )
+
+    ncols = len(cols)
+
+    if not data:
+        return (
+            f'<!DOCTYPE html><html><head><meta charset="UTF-8">{_CSS}</head>'
+            f'<body>{hdr}'
+            f'<table><thead>{_thead()}</thead>'
+            f'<tbody><tr><td colspan="{ncols}" class="nd">No data for this period</td></tr></tbody>'
+            f'</table>{_SIG}</body></html>'
+        )
+
+    detail_rows = [r for r in data if not r.get("bold")]
+    total_row   = [r for r in data if r.get("bold")]
+
+    FIRST, OTHER = 20, 25
+    pages, idx, first = [], 0, True
+    while idx < len(detail_rows):
+        lim = FIRST if first else OTHER
+        pages.append(detail_rows[idx: idx + lim])
+        idx += lim
+        first = False
+
+    parts = []
+    for pn, pr in enumerate(pages):
+        pb   = '<div style="page-break-before:always;"></div>' if pn > 0 else ""
+        last = (pn == len(pages) - 1)
+        rows = _build_rows(pr + (total_row if last else []))
+        parts.append(pb + hdr + _make_table(rows))
+
     return (
         f'<!DOCTYPE html><html><head><meta charset="UTF-8">{_CSS}</head>'
-        f'<body>{hdr}{table}{_SIG}</body></html>'
+        f'<body>{"".join(parts)}{_SIG}</body></html>'
     )
 
 

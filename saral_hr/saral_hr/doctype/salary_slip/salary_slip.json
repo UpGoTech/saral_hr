@@ -24,24 +24,19 @@
   "division",
   "payment_days_tab",
   "total_working_days",
-  "absent_days",
-  "total_earned_leaves",
-  "total_holidays",
-  "column_break_puyt",
   "payment_days",
+  "physical_working_days",
+  "present_days",
   "total_half_days",
   "total_comp_off",
-  "column_break_segw",
-  "present_days",
+  "column_break_puyt",
+  "absent_days",
+  "weekly_offs_count",
+  "total_holidays",
   "total_lwp",
+  "total_earned_leaves",
   "total_casual_leaves",
   "total_on_tour",
-  "section_break_jtcq",
-  "weekly_offs_taken",
-  "column_break_glsh",
-  "weekly_offs_count",
-  "column_break_sqgw",
-  "physical_working_days",
   "earnings_and_deductions_tab",
   "earnings_and_deductions_section",
   "earnings",
@@ -102,22 +97,6 @@
    "fieldtype": "Float",
    "label": "Absent Days",
    "precision": "2"
-  },
-  {
-   "description": "Total number of weekly off days in the calendar month (e.g. all Wednesdays).",
-   "fieldname": "weekly_offs_count",
-   "fieldtype": "Float",
-   "label": "Total Weekly Offs (Calendar)",
-   "precision": "2",
-   "read_only": 1
-  },
-  {
-   "description": "Number of weekly offs actually marked in attendance for this employee.",
-   "fieldname": "weekly_offs_taken",
-   "fieldtype": "Float",
-   "label": "Weekly Offs Taken",
-   "precision": "2",
-   "read_only": 1
   },
   {
    "fieldname": "earnings_and_deductions_tab",
@@ -224,6 +203,12 @@
    "fieldname": "present_days",
    "fieldtype": "Float",
    "label": "Present Days",
+   "precision": "2"
+  },
+  {
+   "fieldname": "weekly_offs_count",
+   "fieldtype": "Float",
+   "label": "Weekly Offs Count",
    "precision": "2"
   },
   {
@@ -371,28 +356,12 @@
    "fieldtype": "Float",
    "label": "Total Comp Off",
    "precision": "2"
-  },
-  {
-   "fieldname": "column_break_segw",
-   "fieldtype": "Column Break"
-  },
-  {
-   "fieldname": "section_break_jtcq",
-   "fieldtype": "Section Break"
-  },
-  {
-   "fieldname": "column_break_glsh",
-   "fieldtype": "Column Break"
-  },
-  {
-   "fieldname": "column_break_sqgw",
-   "fieldtype": "Column Break"
   }
  ],
  "index_web_pages_for_search": 1,
  "is_submittable": 1,
  "links": [],
- "modified": "2026-03-17 12:58:31.931756",
+ "modified": "2026-03-13 17:08:24.327508",
  "modified_by": "Administrator",
  "module": "Saral Hr",
  "name": "Salary Slip",

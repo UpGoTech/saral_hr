@@ -15,20 +15,20 @@ B = "1px solid #000"
 
 _CSS = """<style>
 *{margin:0;padding:0;box-sizing:border-box}
-body{font-family:Arial,sans-serif;font-size:9px;color:#000;background:#fff}
-.hdr{text-align:center;border-bottom:2px solid #000;padding:8px 4px 6px;margin-bottom:4px}
-.hdr .co{font-size:16px;font-weight:900;letter-spacing:1px;text-transform:uppercase}
-.hdr .ttl{font-size:12px;font-weight:700;margin-top:3px}
-.hdr .per{font-size:10px;margin-top:2px}
+body{font-family:Arial,sans-serif;font-size:11px;color:#000;background:#fff}
+.hdr{text-align:center;border-bottom:2px solid #000;padding:10px 6px 6px;margin-bottom:4px}
+.hdr .co{font-size:22px;font-weight:900;letter-spacing:1px;text-transform:uppercase}
+.hdr .ttl{font-size:16px;font-weight:700;margin-top:2px}
+.hdr .per{font-size:13px;margin-top:2px}
 .lgd{padding:5px 4px;border-bottom:1px solid #000;margin-bottom:4px}
-.sig{display:flex;justify-content:space-between;margin-top:24px;padding-top:6px}
-.sig-b{text-align:center;width:160px}
-.sig-l{border-top:1px solid #000;margin-bottom:3px}
-.sig-t{font-size:10px;color:#333}
+.sig{display:flex;justify-content:space-between;margin-top:16px;padding-top:8px}
+.sig-b{text-align:center;width:180px}
+.sig-l{border-top:1px solid #000;margin-bottom:4px}
+.sig-t{font-size:13px;color:#333}
 table{width:100%;border-collapse:collapse;table-layout:fixed}
-th{border:1px solid #000;padding:2px 1px;font-size:8px;font-weight:700;background:#f0f0f0;text-align:center}
-td{border:1px solid #000;padding:1px;font-size:9px;vertical-align:middle}
-.nd{text-align:center;padding:18px;color:#888}
+th{border:1px solid #000;padding:3px 2px;font-size:10px;font-weight:700;background:#f0f0f0;text-align:center}
+td{border:1px solid #000;padding:2px;font-size:11px;vertical-align:top}
+.nd{text-align:center;padding:10px;color:#888}
 </style>"""
 
 _SIG = '<div class="sig">' + "".join(
@@ -172,15 +172,18 @@ def _build_html(cols, data, co, mo, yr):
     last = calendar.monthrange(yi, mn)[1] if mn and yi else 31
     dcols = [c for c in cols if c["fieldname"].startswith("day_")]
 
-    SUMM_COLS = [
-        ("P","present_days"), ("A","absent_days"), ("HD","half_days"),
-        ("EL","earned_leave_days"), ("CL","casual_leave_days"),
-        ("CO","comp_off_days"), ("OT","on_tour_days"),
-        ("WD","working_days"), ("WO","weekly_off_days"), ("H","holiday_days"), ("LWP","lwp_days"),
+    # ── Paired summary columns ─────────────────────────────────────────────
+    SUMM_PAIRS = [
+        ("P",  "present_days",      "A",   "absent_days"),
+        ("EL", "earned_leave_days", "CL",  "casual_leave_days"),
+        ("OT", "on_tour_days",      "WD",  "working_days"),
+        ("H",  "holiday_days",      "LWP", "lwp_days"),
+        ("HD", "half_days",         "CO",  "comp_off_days"),
+        ("WO", "weekly_off_days",   "",    ""),
     ]
 
     lgd = "".join(
-        f'<span style="margin-right:10px;font-size:9px;"><b>{k}</b> – {v}</span>'
+        f'<span style="margin-right:10px;font-size:11px;"><b>{k}</b> – {v}</span>'
         for k, v in [("P","Present"),("A","Absent"),("HD","Half Day"),("EL","Earned Leave"),
                      ("CL","Casual Leave"),("CO","Comp Off"),("OT","On Tour"),
                      ("WO","Weekly Off"),("H","Holiday"),("LWP","LWP")]
@@ -193,91 +196,102 @@ def _build_html(cols, data, co, mo, yr):
         f'<div class="lgd">{lgd}</div>'
     )
 
-    nd   = len(dcols)
-    ncols = 1 + nd + len(SUMM_COLS)
+    nd    = len(dcols)
+    ncols = 1 + nd + len(SUMM_PAIRS)
 
     # colgroup
-    name_pct  = 17
-    summ_total = 19
-    day_pct   = f"{(100 - name_pct - summ_total) / nd:.3f}%" if nd else "0%"
-    sc_pct    = f"{summ_total / len(SUMM_COLS):.2f}%"
-    cg = f'<colgroup><col style="width:{name_pct}%;"/>'
+    name_pct   = 17
+    summ_total = 14
+    day_pct    = f"{(100 - name_pct - summ_total) / nd:.3f}%" if nd else "0%"
+    sc_pct     = f"{summ_total / len(SUMM_PAIRS):.2f}%"
+    cg  = f'<colgroup><col style="width:{name_pct}%;"/>'
     cg += "".join(f'<col style="width:{day_pct};"/>' for _ in dcols)
-    cg += "".join(f'<col style="width:{sc_pct};"/>' for _ in SUMM_COLS)
+    cg += "".join(f'<col style="width:{sc_pct};"/>' for _ in SUMM_PAIRS)
     cg += "</colgroup>"
 
     # thead
     ch = (
-        f'<tr><th style="border:{B};padding:4px 6px;font-size:10px;font-weight:700;background:#f0f0f0;text-align:left;">'
-        f'Employee<br><span style="font-size:9px;font-weight:500;color:#444;">ID</span></th>'
+        f'<tr><th style="border:{B};padding:4px 6px;font-size:11px;font-weight:700;'
+        f'background:#f0f0f0;text-align:left;vertical-align:top;">'
+        f'Employee<br><span style="font-size:10px;font-weight:500;color:#444;">ID</span></th>'
     )
     for c in dcols:
-        ch += f'<th style="border:{B};padding:1px 0;font-size:8px;font-weight:700;background:#f0f0f0;text-align:center;">{c["label"]}</th>'
-    for lbl, _ in SUMM_COLS:
-        ch += f'<th style="border:{B};padding:2px 1px;font-size:9px;font-weight:700;background:#d0d8e0;text-align:center;">{lbl}</th>'
+        ch += (
+            f'<th style="border:{B};padding:2px 0;font-size:10px;font-weight:700;'
+            f'background:#f0f0f0;text-align:center;vertical-align:top;">{c["label"]}</th>'
+        )
+    for tl, _, bl, __ in SUMM_PAIRS:
+        ch += (
+            f'<th style="border:{B};padding:2px 1px;font-size:10px;font-weight:700;'
+            f'background:#d0d8e0;text-align:center;vertical-align:top;">'
+            f'{tl}'
+            f'<span style="font-size:9px;display:block;margin-top:2px;">{bl}</span>'
+            f'</th>'
+        )
     ch += "</tr>"
 
-    tbl = f'<table style="width:100%;table-layout:fixed;border-collapse:collapse;margin-top:6px;">{cg}<thead>{ch}</thead><tbody>'
+    COLOR = {
+        "A":"#c0392b","LWP":"#8e44ad","WO":"#2980b9","H":"#27ae60",
+        "EL":"#d35400","CL":"#16a085","CO":"#7f8c8d","OT":"#2c3e50"
+    }
 
-    if not data:
-        tbl += f'<tr><td colspan="{ncols}" class="nd">No data for this period</td></tr>'
-    else:
-        COLOR = {"A":"#c0392b","LWP":"#8e44ad","WO":"#2980b9","H":"#27ae60","EL":"#d35400","CL":"#16a085","CO":"#7f8c8d","OT":"#2c3e50"}
-        for i, row in enumerate(data):
+    def _disp(v):
+        if v is None or v == "" or v == 0 or v == 0.0: return ""
+        return str(int(v)) if isinstance(v, float) and v == int(v) else str(v)
+
+    def _build_rows(page_data):
+        rows_html = ""
+        for i, row in enumerate(page_data):
             bg = "#f9f9f9" if i % 2 else "#ffffff"
-            tbl += f"<tr>"
-            tbl += (
-                f'<td style="border:{B};padding:3px 6px;vertical-align:middle;background:{bg};">'
-                f'<div style="font-size:10px;font-weight:700;">{row.get("employee_name","")}</div>'
-                f'<div style="font-size:9px;color:#555;">{row.get("employee","")}</div></td>'
+            rows_html += "<tr>"
+            rows_html += (
+                f'<td style="border:{B};padding:3px 6px;vertical-align:top;background:{bg};">'
+                f'<div style="font-size:11px;font-weight:700;">{row.get("employee_name","")}</div>'
+                f'<div style="font-size:10px;color:#555;">{row.get("employee","")}</div></td>'
             )
             for c in dcols:
                 v     = row.get(c["fieldname"], "") or ""
                 color = COLOR.get(v, "#000")
-                tbl += f'<td style="border:{B};font-size:9px;font-weight:700;text-align:center;padding:1px;background:{bg};color:{color};">{v}</td>'
-            for _, fn in SUMM_COLS:
-                sv = row.get(fn)
-                disp = "" if (sv is None or sv == "" or sv == 0 or sv == 0.0) else (str(int(sv)) if isinstance(sv, float) and sv == int(sv) else str(sv))
-                tbl += f'<td style="border:{B};font-size:9px;font-weight:700;text-align:center;padding:2px;background:#eef2f7;">{disp}</td>'
-            tbl += "</tr>"
+                rows_html += (
+                    f'<td style="border:{B};font-size:10px;font-weight:700;text-align:center;'
+                    f'padding:2px;background:{bg};color:{color};vertical-align:top;">{v}</td>'
+                )
+            for tl, tfn, bl, bfn in SUMM_PAIRS:
+                tv = _disp(row.get(tfn))
+                bv = _disp(row.get(bfn)) if bfn else ""
+                rows_html += (
+                    f'<td style="border:{B};font-size:10px;font-weight:700;text-align:center;'
+                    f'padding:2px;background:#eef2f7;vertical-align:top;">'
+                    f'{tv}'
+                    f'<span style="font-size:9px;display:block;margin-top:2px;">{bv}</span>'
+                    f'</td>'
+                )
+            rows_html += "</tr>"
+        return rows_html
 
-    tbl += "</tbody></table>"
+    def _make_table(page_data):
+        return (
+            f'<table style="width:100%;table-layout:fixed;border-collapse:collapse;margin-top:6px;">'
+            f'{cg}<thead>{ch}</thead><tbody>'
+            + (_build_rows(page_data) if page_data
+               else f'<tr><td colspan="{ncols}" class="nd">No data for this period</td></tr>')
+            + '</tbody></table>'
+        )
 
-    # Paginate pages (first 32 rows, then 38)
     if not data:
-        body = hdr + tbl
+        body = hdr + _make_table([])
     else:
-        FIRST, OTHER = 32, 38
+        FIRST, OTHER = 26, 32
         pages, idx, first = [], 0, True
         while idx < len(data):
             lim = FIRST if first else OTHER
             pages.append(data[idx: idx + lim])
-            idx += lim; first = False
+            idx += lim
+            first = False
         parts = []
         for pn, pr in enumerate(pages):
             pb = '<div style="page-break-before:always;"></div>' if pn > 0 else ""
-            # rebuild table for this page slice
-            pt = f'<table style="width:100%;table-layout:fixed;border-collapse:collapse;margin-top:6px;">{cg}<thead>{ch}</thead><tbody>'
-            COLOR = {"A":"#c0392b","LWP":"#8e44ad","WO":"#2980b9","H":"#27ae60","EL":"#d35400","CL":"#16a085","CO":"#7f8c8d","OT":"#2c3e50"}
-            for i, row in enumerate(pr):
-                bg = "#f9f9f9" if i % 2 else "#ffffff"
-                pt += "<tr>"
-                pt += (
-                    f'<td style="border:{B};padding:3px 6px;vertical-align:middle;background:{bg};">'
-                    f'<div style="font-size:10px;font-weight:700;">{row.get("employee_name","")}</div>'
-                    f'<div style="font-size:9px;color:#555;">{row.get("employee","")}</div></td>'
-                )
-                for c in dcols:
-                    v = row.get(c["fieldname"], "") or ""
-                    color = COLOR.get(v, "#000")
-                    pt += f'<td style="border:{B};font-size:9px;font-weight:700;text-align:center;padding:1px;background:{bg};color:{color};">{v}</td>'
-                for _, fn in SUMM_COLS:
-                    sv = row.get(fn)
-                    disp = "" if (sv is None or sv == "" or sv == 0 or sv == 0.0) else (str(int(sv)) if isinstance(sv, float) and sv == int(sv) else str(sv))
-                    pt += f'<td style="border:{B};font-size:9px;font-weight:700;text-align:center;padding:2px;background:#eef2f7;">{disp}</td>'
-                pt += "</tr>"
-            pt += "</tbody></table>"
-            parts.append(pb + hdr + pt)
+            parts.append(pb + hdr + _make_table(pr))
         body = "".join(parts)
 
     return (
@@ -287,17 +301,32 @@ def _build_html(cols, data, co, mo, yr):
 
 
 def _save_pdf(html, prefix):
-    pdf = get_pdf(html, options={"page-size":"A4","orientation":"Landscape","margin-top":"8mm","margin-right":"8mm","margin-bottom":"8mm","margin-left":"8mm","encoding":"UTF-8","no-outline":None})
-    ts = frappe.utils.now_datetime().strftime("%Y%m%d_%H%M%S")
-    fn = f"{prefix}_{ts}.pdf"
-    with open(frappe.utils.get_files_path(fn, is_private=0), "wb") as fh: fh.write(pdf)
-    doc = frappe.get_doc({"doctype":"File","file_name":fn,"is_private":0,"file_url":f"/files/{fn}"})
-    doc.insert(ignore_permissions=True); frappe.db.commit()
+    pdf = get_pdf(html, options={
+        "page-size":     "A4",
+        "orientation":   "Landscape",
+        "margin-top":    "8mm",
+        "margin-right":  "8mm",
+        "margin-bottom": "8mm",
+        "margin-left":   "8mm",
+        "encoding":      "UTF-8",
+        "no-outline":    None,
+    })
+    ts  = frappe.utils.now_datetime().strftime("%Y%m%d_%H%M%S")
+    fn  = f"{prefix}_{ts}.pdf"
+    with open(frappe.utils.get_files_path(fn, is_private=0), "wb") as fh:
+        fh.write(pdf)
+    doc = frappe.get_doc({"doctype": "File", "file_name": fn, "is_private": 0, "file_url": f"/files/{fn}"})
+    doc.insert(ignore_permissions=True)
+    frappe.db.commit()
     return doc.file_url
 
 
 @frappe.whitelist()
 def print_report(filters):
-    if isinstance(filters, str): filters = json.loads(filters)
+    if isinstance(filters, str):
+        filters = json.loads(filters)
     cols, data = _get_data(filters)
-    return _save_pdf(_build_html(cols, data, _company_label(filters), filters.get("month",""), filters.get("year","")), "Monthly_Attendance_Report")
+    return _save_pdf(
+        _build_html(cols, data, _company_label(filters), filters.get("month", ""), filters.get("year", "")),
+        "Monthly_Attendance_Report"
+    )

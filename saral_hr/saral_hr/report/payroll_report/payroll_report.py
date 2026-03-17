@@ -4,8 +4,7 @@ from frappe.utils import flt
 from frappe.utils.pdf import get_pdf
 
 # ---------------------------------------------------------------------------
-# Report registry — maps mode key → (report module path, execute function name)
-# Each sub-report is its own standalone script report.
+# Report registry
 # ---------------------------------------------------------------------------
 
 REPORT_MODULE_MAP = {
@@ -22,6 +21,7 @@ REPORT_MODULE_MAP = {
     "salary_summary_individual": "saral_hr.saral_hr.report.salary_summary_individual_employee.salary_summary_individual_employee",
     "transaction_checklist":     "saral_hr.saral_hr.report.transaction_checklist.transaction_checklist",
     "variable_pay":              "saral_hr.saral_hr.report.variable_pay_register.variable_pay_register",
+    "income_tax":                "saral_hr.saral_hr.report.income_tax_report.income_tax_report",  # ← NEW
 }
 
 REPORT_LABELS = {
@@ -38,9 +38,9 @@ REPORT_LABELS = {
     "salary_summary_individual": "Salary Summary — Individual",
     "transaction_checklist":     "Transaction Checklist",
     "variable_pay":              "Variable Pay Register",
+    "income_tax":                "Income Tax Register",  # ← NEW
 }
 
-# Order used for Print All — matches the nav pill sequence
 REPORTS = [
     "salary_summary",
     "transaction_checklist",
@@ -55,8 +55,8 @@ REPORTS = [
     "other_bank_advice",
     "home_bank_advice",
     "monthly_attendance",
+    "income_tax",  # ← NEW
 ]
-
 
 MONTH_MAP = {
     "January":1,"February":2,"March":3,"April":4,"May":5,"June":6,
@@ -82,16 +82,10 @@ def _company_label(f):
     return ", ".join(c) if c else (frappe.defaults.get_global_default("company") or "")
 
 def _load_module(mode):
-    """
-    Load a sub-report module using Frappe's import mechanism.
-    Falls back to importlib if frappe.get_attr is unavailable.
-    """
     mod_path = REPORT_MODULE_MAP.get(mode)
     if not mod_path:
         return None
     try:
-        # frappe.get_attr resolves dotted paths correctly inside apps
-        # We just need the module, so strip the function name if present
         import importlib
         mod = importlib.import_module(mod_path)
         return mod
@@ -99,20 +93,15 @@ def _load_module(mode):
         frappe.log_error(f"_load_module({mode}): {e}", "Payroll Report")
         return None
 
-
 def _import_execute(mode):
-    """Return the execute() function for a sub-report module."""
     mod = _load_module(mode)
     return getattr(mod, "execute", None) if mod else None
 
-
 def _import_print_html(mode):
-    """Return the _build_html() function for a sub-report module."""
     mod = _load_module(mode)
     return getattr(mod, "_build_html", None) if mod else None
 
 def _run_report(mode, filters):
-    """Run a sub-report's execute() and return (cols, data). Safe — never raises."""
     fn = _import_execute(mode)
     if not fn:
         return [], []
@@ -129,7 +118,7 @@ def _run_report(mode, filters):
 
 def execute(filters=None):
     f    = filters or {}
-    mode = f.get("report_mode", "home_bank_advice")
+    mode = f.get("report_mode", "salary_summary")
     fn   = _import_execute(mode)
     if not fn:
         return [], []
@@ -137,7 +126,7 @@ def execute(filters=None):
 
 
 # ---------------------------------------------------------------------------
-# PDF CSS + signature (shared across all sub-report PDFs)
+# PDF helpers
 # ---------------------------------------------------------------------------
 
 _CSS = """<style>
@@ -167,21 +156,14 @@ _SIG = '<div class="sig">' + "".join(
     for l in ["Prepared By", "Checked By", "Authorised Signatory"]
 ) + '</div>'
 
-
 _SIG_MARKER = '<div class="sig">'
 
 
 def _strip_sig(html):
-    """
-    Remove the standalone signature block + outer HTML shell from a sub-report's
-    _build_html() output so the payroll wrapper can add exactly one _SIG per section.
-    """
     import re
-    # Pull body content out of full HTML document if present
     body_match = re.search(r'<body[^>]*>(.*)</body>', html, re.DOTALL | re.IGNORECASE)
     if body_match:
         html = body_match.group(1)
-    # Chop off the last sig block (and everything after it)
     idx = html.rfind(_SIG_MARKER)
     if idx != -1:
         html = html[:idx]
@@ -189,11 +171,19 @@ def _strip_sig(html):
 
 
 def _render_section(mode, cols, data, co, mo, yr):
-    """Delegate rendering to the sub-report's _build_html(), then strip its shell/sig."""
+    """
+    Delegate to sub-report's _build_html().
+    Income tax report's _build_html() takes (cols, data, filters_dict),
+    all others take (cols, data, company, month, year).
+    """
     build_fn = _import_print_html(mode)
     if build_fn:
         try:
-            raw = build_fn(cols, data, co, mo, yr)
+            if mode == "income_tax":
+                # income_tax_report._build_html expects a filters dict as 3rd arg
+                raw = build_fn(cols, data, {"company": co, "month": mo, "year": yr})
+            else:
+                raw = build_fn(cols, data, co, mo, yr)
             return _strip_sig(raw)
         except Exception:
             frappe.log_error(f"payroll_report._render_section: {mode}", "Payroll Report")
@@ -240,15 +230,11 @@ def _save_pdf(html, prefix):
 
 
 # ---------------------------------------------------------------------------
-# Whitelisted API methods called from payroll_report.js
+# Whitelisted API methods
 # ---------------------------------------------------------------------------
 
 @frappe.whitelist()
 def get_all_reports_data(filters):
-    """
-    Pre-fetch data for all sub-reports in parallel (falls back to sequential).
-    Returns dict: { mode: { columns, result } }
-    """
     if isinstance(filters, str):
         filters = json.loads(filters)
 
@@ -271,13 +257,11 @@ def get_all_reports_data(filters):
 
         with ThreadPoolExecutor(max_workers=4) as ex:
             futures = {ex.submit(_run, m): m for m in REPORTS}
-            from concurrent.futures import as_completed
             for fut in as_completed(futures):
                 mode, res = fut.result()
                 out[mode]  = res
 
     except Exception:
-        # Sequential fallback
         for mode in REPORTS:
             fn = _import_execute(mode)
             if not fn:
@@ -295,11 +279,10 @@ def get_all_reports_data(filters):
 
 @frappe.whitelist()
 def print_single_report(filters):
-    """Generate a PDF for the currently active sub-report tab."""
     if isinstance(filters, str):
         filters = json.loads(filters)
 
-    mode = filters.get("report_mode", "home_bank_advice")
+    mode = filters.get("report_mode", "salary_summary")
     fn   = _import_execute(mode)
     if not fn:
         frappe.throw(f"Unknown report mode: {mode}")
@@ -309,7 +292,6 @@ def print_single_report(filters):
     mo = filters.get("month", "")
     yr = filters.get("year",  "")
 
-    # _render_section strips the sub-report shell + its own _SIG
     inner = _render_section(mode, cols, data, co, mo, yr)
     html  = (
         f'<!DOCTYPE html><html>'
@@ -322,7 +304,6 @@ def print_single_report(filters):
 
 @frappe.whitelist()
 def print_selected_reports(filters):
-    """Generate a single PDF for a user-chosen subset of reports."""
     if isinstance(filters, str):
         filters = json.loads(filters)
 
@@ -354,7 +335,6 @@ def print_selected_reports(filters):
 
 @frappe.whitelist()
 def print_all_reports(filters):
-    """Generate a single PDF containing every sub-report, one per page."""
     if isinstance(filters, str):
         filters = json.loads(filters)
 

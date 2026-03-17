@@ -14,7 +14,9 @@ frappe.query_reports["Payroll Report"] = {
     onload(report) {
         frappe.after_ajax(() => {
             _inject_nav(report);
-            _set_print_buttons(report);
+            if (!report.page.wrapper.find(".pr-select-print-btn").length) {
+                _set_print_buttons(report);
+            }
         });
     },
 
@@ -74,6 +76,7 @@ const REPORTS = [
     { key:"other_bank_advice",         label:"Other Bank Advice"         },
     { key:"home_bank_advice",          label:"Home Bank Advice"          },
     { key:"monthly_attendance",        label:"Monthly Attendance"        },
+    { key:"income_tax",                label:"Income Tax"                },
 ];
 
 
@@ -90,7 +93,7 @@ function _filter_key() {
     return JSON.stringify([f.year, f.month, JSON.stringify(f.company || []), f.category || "", JSON.stringify(f.division || [])]);
 }
 
-// ── Validate filters including sensible month/year ────────────────────────────
+// ── Validate filters ──────────────────────────────────────────────────────────
 
 function _validate(forPrint = false) {
     const f = frappe.query_report.get_values() || {};
@@ -226,24 +229,26 @@ function _inject_nav(report) {
     nav.find(".pr-prev").on("click", () => _go(report, (_idx - 1 + REPORTS.length) % REPORTS.length));
     nav.find(".pr-next").on("click", () => _go(report, (_idx + 1) % REPORTS.length));
 
-    // Filter change → invalidate cache only if filters actually changed
+    // ── Filter change handler (fixed timing) ──────────────────────────────────
     report.page.wrapper.on("change.pr", ".frappe-control input, .frappe-control select", () => {
-        const newKey = _filter_key();
-        if (newKey === _last_filter_key) return; // no real change
-        _last_filter_key = newKey;
+        // Wipe cache and reset UI immediately
         _cache       = {};
-        _loading_key = null; // discard any in-flight tab navigation
+        _loading_key = null;
         nav.find(".pr-ready").text("");
         nav.find(".pr-pill").removeClass("no-data");
         if (_prefetch_xhr) { _prefetch_xhr.abort?.(); _prefetch_xhr = null; }
         clearTimeout(_debounce_timer);
-        _debounce_timer = setTimeout(() => _prefetch_all(nav), 1500);
+
+        // Capture the filter key AFTER debounce, not now —
+        // MultiSelectList fires change before value is fully committed
+        _debounce_timer = setTimeout(() => {
+            _last_filter_key = _filter_key();
+            _prefetch_all(nav);
+        }, 1500);
     });
 
-    // Bind the persistent refresh listener (handles ALL tab switches)
     _bind_refresh_listener(report);
 
-    // After first load: kick off background prefetch
     $(frappe.query_report).one("after_refresh.pr_init", () => {
         _last_filter_key = _filter_key();
         _prefetch_all(nav);
@@ -254,6 +259,17 @@ function _inject_nav(report) {
 
 function _mark_no_data(nav, fk) {
     const cached = _cache[fk] || {};
+
+    // If NO report has any data for this period, don't fade anything —
+    // it just means payroll hasn't been processed yet for this month/year
+    const anyHasData = Object.values(cached).some(
+        r => (r.result || []).length > 0
+    );
+    if (!anyHasData) {
+        nav.find(".pr-pill").removeClass("no-data");
+        return;
+    }
+
     nav.find(".pr-pill").each(function () {
         const key = REPORTS[+$(this).data("idx")]?.key;
         if (!key || !cached[key]) return;
@@ -299,7 +315,11 @@ function _prefetch_all(nav) {
         },
         callback(res) {
             _prefetch_xhr = null;
-            if (!res.message || fk !== _filter_key()) return;
+            if (!res.message) return;
+
+            // Discard if filters changed again while request was in-flight
+            if (fk !== _filter_key()) return;
+
             if (!_cache[fk]) _cache[fk] = {};
             Object.assign(_cache[fk], res.message);
             nav.find(".pr-ready").text("✓ All ready");
@@ -313,45 +333,35 @@ function _prefetch_all(nav) {
 
 function _sync(nav, report) {
     nav.find(".pr-pill").removeClass("active");
-    const activePill = nav.find(`.pr-pill[data-idx="${_idx}"]`);
-    activePill.addClass("active");
+    nav.find(`.pr-pill[data-idx="${_idx}"]`).addClass("active");
     nav.find(".pr-current").text(REPORTS[_idx].label);
-
-    // Update page header title
     const label = REPORTS[_idx].label;
     report.page.wrapper.find(".title-text").text(label);
     document.title = label + " — Frappe";
-
-
 }
 
 // ── Navigate to a report tab ──────────────────────────────────────────────────
 
-// Track which tab is actively being loaded so stale callbacks don't apply
 let _loading_key = null;
 
 function _go(report, idx) {
     _idx = idx;
-    const nav    = report.page.wrapper.find(".pr-nav").parent();
+    const nav     = report.page.wrapper.find(".pr-nav").parent();
     const modeKey = REPORTS[idx].key;
     _sync(nav, report);
 
-    // Set the hidden filter — this is what the server uses to decide which report to run
     frappe.query_report.set_filter_value("report_mode", modeKey);
 
     const fk     = _filter_key();
     const cached = _cache[fk]?.[modeKey];
 
     if (cached) {
-        // Serve from cache — no server call needed
         _render_cached(cached, nav, fk);
         _update_on_hold_note(cached.result);
         return;
     }
 
-    // Mark what we are loading so the after_refresh callback can validate
     _loading_key = `${fk}::${modeKey}`;
-
     frappe.query_report.refresh();
 }
 
@@ -372,14 +382,12 @@ function _render_cached(cached, nav, fk) {
     _mark_no_data(nav, fk);
 }
 
-// Single persistent after_refresh listener (not .one() — stays alive for all switches)
 function _bind_refresh_listener(report) {
     $(frappe.query_report).on("after_refresh.pr", () => {
         const fk      = _filter_key();
         const modeKey = frappe.query_report.get_filter_value("report_mode");
         const thisKey = `${fk}::${modeKey}`;
 
-        // Ignore if this refresh is not for the tab we last navigated to
         if (_loading_key && _loading_key !== thisKey) return;
         _loading_key = null;
 
@@ -412,7 +420,6 @@ function _server_filters() {
 // ── Print buttons ─────────────────────────────────────────────────────────────
 
 function _set_print_buttons(report) {
-    // "Select & Print" secondary button
     report.page.wrapper.find(".pr-select-print-btn").remove();
     const btnSel = $(`<button class="btn btn-default btn-sm pr-select-print-btn" style="margin-left:8px;">
         <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24"
@@ -422,8 +429,7 @@ function _set_print_buttons(report) {
         </svg>${__("Select & Print")}</button>`);
     report.page.wrapper.find(".page-actions").prepend(btnSel);
     btnSel.on("click", () => _show_select_print_dialog(btnSel));
-
-    // Print current tab as primary action
+    report.page.wrapper.find(".pr-print-btn").off("click.pr_print");
     report.page.set_primary_action(__("Print"), _print_current, "printer");
 }
 
@@ -456,10 +462,9 @@ function _print_current() {
 function _show_select_print_dialog(triggerBtn) {
     if (!_validate()) return;
 
-    // Build checkbox rows — two columns
-    const half   = Math.ceil(REPORTS.length / 2);
-    const left   = REPORTS.slice(0, half);
-    const right  = REPORTS.slice(half);
+    const half  = Math.ceil(REPORTS.length / 2);
+    const left  = REPORTS.slice(0, half);
+    const right = REPORTS.slice(half);
 
     function _chkRow(r, i) {
         return `
@@ -483,7 +488,6 @@ function _show_select_print_dialog(triggerBtn) {
 
     const body = `
         <div style="padding:4px 0 8px;">
-          <!-- Toolbar -->
           <div style="display:flex;gap:8px;padding:0 8px 10px;border-bottom:1px solid #e2e8f0;margin-bottom:8px;">
             <button class="btn btn-xs btn-default" onclick="
                 document.querySelectorAll('.pr-chk-row input[type=checkbox]').forEach(c=>c.checked=true)
@@ -492,7 +496,6 @@ function _show_select_print_dialog(triggerBtn) {
                 document.querySelectorAll('.pr-chk-row input[type=checkbox]').forEach(c=>c.checked=false)
             ">${__("Unselect All")}</button>
           </div>
-          <!-- Two-column grid -->
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:0 12px;padding:0 4px;">
             <div>${leftHtml}</div>
             <div>${rightHtml}</div>

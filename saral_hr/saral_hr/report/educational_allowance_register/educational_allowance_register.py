@@ -14,21 +14,20 @@ B = "1px solid #000"
 
 _CSS = """<style>
 *{margin:0;padding:0;box-sizing:border-box}
-body{font-family:Arial,sans-serif;font-size:10px;color:#000;background:#fff}
-.hdr{text-align:center;border-bottom:2px solid #000;padding:8px 4px 6px;margin-bottom:6px}
-.hdr .co{font-size:18px;font-weight:900;letter-spacing:1px;text-transform:uppercase}
-.hdr .ttl{font-size:13px;font-weight:700;margin-top:3px}
-.hdr .per{font-size:11px;margin-top:2px}
-.sig{display:flex;justify-content:space-between;margin-top:24px;padding-top:6px}
-.sig-b{text-align:center;width:160px}
-.sig-l{border-top:1px solid #000;margin-bottom:3px}
-.sig-t{font-size:10px;color:#333}
-table{width:100%;border-collapse:collapse;margin-top:6px}
-th{border:1px solid #000;padding:5px 7px;font-size:10px;font-weight:700;background:#f0f0f0;color:#000;white-space:nowrap}
-td{border:1px solid #000;padding:5px 7px;font-size:10px;vertical-align:middle;color:#000}
+body{font-family:Arial,sans-serif;font-size:16px;color:#000;background:#fff}
+.hdr{text-align:center;border-bottom:2px solid #000;padding:10px 6px 6px;margin-bottom:6px}
+.hdr .co{font-size:28px;font-weight:900;letter-spacing:1px;text-transform:uppercase}
+.hdr .ttl{font-size:20px;font-weight:700;margin-top:2px}
+.hdr .per{font-size:16px;margin-top:2px}
+.sig{display:flex;justify-content:space-between;margin-top:16px;padding-top:8px}
+.sig-b{text-align:center;width:180px}
+.sig-l{border-top:1px solid #000;margin-bottom:4px}
+.sig-t{font-size:15px;color:#333}
+table{width:100%;border-collapse:collapse;margin-top:8px}
+th{border:1px solid #000;padding:10px 12px;font-size:16px;font-weight:700;background:#f0f0f0;color:#000;white-space:nowrap;text-align:left}
+td{border:1px solid #000;padding:10px 12px;font-size:16px;vertical-align:middle;color:#000;text-align:left}
 tr.tot td{background:#e8e8e8;font-weight:700}
-.r{text-align:right}.l{text-align:left}
-.nd{text-align:center;padding:18px;color:#888;font-size:10px}
+.nd{text-align:center;padding:10px;color:#888;font-size:16px}
 </style>"""
 
 _SIG = '<div class="sig">' + "".join(
@@ -145,47 +144,93 @@ def _build_html(cols, data, co, mo, yr):
         f'<div class="ttl">Educational Allowance Register</div>'
         f'<div class="per">For the Month of {mo} {yr}</div></div>'
     )
-    thead = "<tr>" + "".join(
-        f'<th class="{"r" if c.get("fieldtype","") in _NUMERIC_FT else "l"}">{c.get("label","")}</th>'
-        for c in cols
-    ) + "</tr>"
 
-    if not data:
-        tbody = f'<tr><td colspan="{len(cols)}" class="nd">No data for this period</td></tr>'
-    else:
-        tbody = ""
-        for row in data:
+    def _thead():
+        return "<tr>" + "".join(
+            f'<th>{c.get("label","")}</th>' for c in cols
+        ) + "</tr>"
+
+    def _build_rows(rows):
+        h = ""
+        for row in rows:
             is_tot = bool(row.get("bold"))
-            cls = ' class="tot"' if is_tot else ""
-            tbody += f"<tr{cls}>"
+            cls    = ' class="tot"' if is_tot else ""
+            h += f"<tr{cls}>"
             for c in cols:
                 fn  = c.get("fieldname", "")
                 val = row.get(fn, "")
-                is_n = c.get("fieldtype", "") in _NUMERIC_FT
-                if is_n:
-                    tbody += f'<td class="r">{_fmt(val) if val not in ("",None) else ""}</td>'
-                else:
-                    tbody += f'<td class="l">{val or ""}</td>'
-            tbody += "</tr>"
+                h += f'<td>{_fmt(val) if c.get("fieldtype","") in _NUMERIC_FT and val not in ("", None) else (val or "")}</td>'
+            h += "</tr>"
+        return h
+
+    def _make_table(rows):
+        return (
+            f"<table><thead>{_thead()}</thead>"
+            f"<tbody>{rows}</tbody></table>"
+        )
+
+    ncols = len(cols)
+
+    if not data:
+        return (
+            f'<!DOCTYPE html><html><head><meta charset="UTF-8">{_CSS}</head>'
+            f'<body>{hdr}'
+            f'<table><thead>{_thead()}</thead>'
+            f'<tbody><tr><td colspan="{ncols}" class="nd">No data for this period</td></tr></tbody>'
+            f'</table>{_SIG}</body></html>'
+        )
+
+    detail_rows = [r for r in data if not r.get("bold")]
+    total_row   = [r for r in data if r.get("bold")]
+
+    FIRST, OTHER = 20, 25
+    pages, idx, first = [], 0, True
+    while idx < len(detail_rows):
+        lim = FIRST if first else OTHER
+        pages.append(detail_rows[idx: idx + lim])
+        idx += lim
+        first = False
+
+    parts = []
+    for pn, pr in enumerate(pages):
+        pb   = '<div style="page-break-before:always;"></div>' if pn > 0 else ""
+        last = (pn == len(pages) - 1)
+        rows = _build_rows(pr + (total_row if last else []))
+        parts.append(pb + hdr + _make_table(rows))
 
     return (
         f'<!DOCTYPE html><html><head><meta charset="UTF-8">{_CSS}</head>'
-        f'<body>{hdr}<table><thead>{thead}</thead><tbody>{tbody}</tbody></table>{_SIG}</body></html>'
+        f'<body>{"".join(parts)}{_SIG}</body></html>'
     )
 
 
 def _save_pdf(html, prefix):
-    pdf = get_pdf(html, options={"page-size":"A4","orientation":"Landscape","margin-top":"8mm","margin-right":"8mm","margin-bottom":"8mm","margin-left":"8mm","encoding":"UTF-8","no-outline":None})
+    pdf = get_pdf(html, options={
+        "page-size":     "A4",
+        "orientation":   "Landscape",
+        "margin-top":    "8mm",
+        "margin-right":  "8mm",
+        "margin-bottom": "8mm",
+        "margin-left":   "8mm",
+        "encoding":      "UTF-8",
+        "no-outline":    None,
+    })
     ts = frappe.utils.now_datetime().strftime("%Y%m%d_%H%M%S")
     fn = f"{prefix}_{ts}.pdf"
-    with open(frappe.utils.get_files_path(fn, is_private=0), "wb") as fh: fh.write(pdf)
-    doc = frappe.get_doc({"doctype":"File","file_name":fn,"is_private":0,"file_url":f"/files/{fn}"})
-    doc.insert(ignore_permissions=True); frappe.db.commit()
+    with open(frappe.utils.get_files_path(fn, is_private=0), "wb") as fh:
+        fh.write(pdf)
+    doc = frappe.get_doc({"doctype": "File", "file_name": fn, "is_private": 0, "file_url": f"/files/{fn}"})
+    doc.insert(ignore_permissions=True)
+    frappe.db.commit()
     return doc.file_url
 
 
 @frappe.whitelist()
 def print_report(filters):
-    if isinstance(filters, str): filters = json.loads(filters)
+    if isinstance(filters, str):
+        filters = json.loads(filters)
     cols, data = _get_data(filters)
-    return _save_pdf(_build_html(cols, data, _company_label(filters), filters.get("month",""), filters.get("year","")), "Educational_Allowance_Register")
+    return _save_pdf(
+        _build_html(cols, data, _company_label(filters), filters.get("month", ""), filters.get("year", "")),
+        "Educational_Allowance_Register"
+    )

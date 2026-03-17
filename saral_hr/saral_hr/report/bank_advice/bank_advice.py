@@ -19,21 +19,20 @@ B = "1px solid #000"
 
 _CSS = """<style>
 *{margin:0;padding:0;box-sizing:border-box}
-body{font-family:Arial,sans-serif;font-size:10px;color:#000;background:#fff}
-.hdr{text-align:center;border-bottom:2px solid #000;padding:8px 4px 6px;margin-bottom:6px}
-.hdr .co{font-size:18px;font-weight:900;letter-spacing:1px;text-transform:uppercase}
-.hdr .ttl{font-size:13px;font-weight:700;margin-top:3px}
-.hdr .per{font-size:11px;margin-top:2px}
-.sig{display:flex;justify-content:space-between;margin-top:24px;padding-top:6px}
-.sig-b{text-align:center;width:160px}
-.sig-l{border-top:1px solid #000;margin-bottom:3px}
-.sig-t{font-size:10px;color:#333}
-table{width:100%;border-collapse:collapse;margin-top:6px}
-th{border:1px solid #000;padding:5px 7px;font-size:10px;font-weight:700;background:#f0f0f0;color:#000;white-space:nowrap}
-td{border:1px solid #000;padding:5px 7px;font-size:10px;vertical-align:middle;color:#000}
+body{font-family:Arial,sans-serif;font-size:16px;color:#000;background:#fff}
+.hdr{text-align:center;border-bottom:2px solid #000;padding:10px 6px 6px;margin-bottom:6px}
+.hdr .co{font-size:28px;font-weight:900;letter-spacing:1px;text-transform:uppercase}
+.hdr .ttl{font-size:20px;font-weight:700;margin-top:2px}
+.hdr .per{font-size:16px;margin-top:2px}
+.sig{display:flex;justify-content:space-between;margin-top:16px;padding-top:8px}
+.sig-b{text-align:center;width:180px}
+.sig-l{border-top:1px solid #000;margin-bottom:4px}
+.sig-t{font-size:15px;color:#333}
+table{width:100%;border-collapse:collapse;margin-top:8px}
+th{border:1px solid #000;padding:10px 12px;font-size:16px;font-weight:700;background:#f0f0f0;color:#000;white-space:nowrap;text-align:left}
+td{border:1px solid #000;padding:10px 12px;font-size:16px;vertical-align:middle;color:#000;text-align:left}
 tr.tot td{background:#e8e8e8;font-weight:700}
-.r{text-align:right}.l{text-align:left}
-.nd{text-align:center;padding:18px;color:#888;font-size:10px}
+.nd{text-align:center;padding:10px;color:#888;font-size:16px}
 .hold{color:#c0392b;font-style:italic}
 </style>"""
 
@@ -76,7 +75,6 @@ def _fmt(v):
     except (TypeError, ValueError): return str(v)
 
 def _bank_map(cos):
-    """Map company → bank_name (lowercase stripped) for home-bank detection."""
     if not cos: return {}
     return {
         r.name: (r.bank_name or "").strip().lower()
@@ -102,7 +100,7 @@ def _on_hold(f):
 
 
 # ---------------------------------------------------------------------------
-# Core data function  (mode = "home")
+# Core data function
 # ---------------------------------------------------------------------------
 
 def _get_data(f):
@@ -139,14 +137,12 @@ def _get_data(f):
         p["employees"] = tuple(em)
         cond += " AND ss.employee IN %(employees)s"
 
-    # Category join
     catj = ""
     cat  = f.get("category")
     if cat:
         p["category"] = cat
         catj = "INNER JOIN `tabCompany Link` cl_cat ON cl_cat.name=ss.employee AND cl_cat.category=%(category)s"
 
-    # Division condition
     divc = ""
     divs = _parse_list(f.get("division"))
     if divs:
@@ -184,7 +180,6 @@ def _get_data(f):
         eb = (s.bank_name or "").strip().lower()
         hb = hm.get(s.company, "")
 
-        # Home bank: employee's bank matches company's home bank
         if not (hb and eb == hb):
             continue
 
@@ -235,10 +230,6 @@ def execute(filters=None):
 # PDF helpers
 # ---------------------------------------------------------------------------
 
-# Columns whose net_salary cell is numeric (right-aligned)
-_NUMERIC_FN = {"net_salary"}
-
-
 def _build_html(cols, data, co, mo, yr):
     title = "Home Bank Advice"
 
@@ -253,8 +244,7 @@ def _build_html(cols, data, co, mo, yr):
     def _th():
         h = "<tr>"
         for c in cols:
-            is_n = c.get("fieldname") in _NUMERIC_FN or c.get("fieldtype", "") in ("Float", "Currency")
-            h += f'<th class="{"r" if is_n else "l"}">{c.get("label", "")}</th>'
+            h += f'<th>{c.get("label", "")}</th>'
         return h + "</tr>"
 
     def _dr(row):
@@ -262,26 +252,22 @@ def _build_html(cols, data, co, mo, yr):
         for c in cols:
             fn  = c.get("fieldname", "")
             val = row.get(fn, "")
-            if fn == "net_salary":
-                if val == "On Hold":
-                    h += '<td class="r hold">On Hold</td>'
-                else:
-                    h += f'<td class="r">{val or ""}</td>'
+            if fn == "net_salary" and val == "On Hold":
+                h += '<td class="hold">On Hold</td>'
             else:
-                h += f'<td class="l">{val or ""}</td>'
+                h += f'<td>{val or ""}</td>'
         return h + "</tr>"
 
     def _tr(row):
         h = '<tr class="tot">'
         for c in cols:
-            fn   = c.get("fieldname", "")
-            is_n = fn in _NUMERIC_FN or c.get("fieldtype", "") in ("Float", "Currency")
-            if is_n:
-                h += f'<td class="r">{_fmt(row.get(fn, ""))}</td>'
-            elif fn == "employee_name":
-                h += '<td class="l">Total</td>'
+            fn = c.get("fieldname", "")
+            if fn == "employee_name":
+                h += '<td>Total</td>'
+            elif fn == "net_salary":
+                h += f'<td>{_fmt(row.get(fn, ""))}</td>'
             else:
-                h += '<td class="l"></td>'
+                h += '<td></td>'
         return h + "</tr>"
 
     detail_rows = [r for r in data if not r.get("bold")]
@@ -297,8 +283,8 @@ def _build_html(cols, data, co, mo, yr):
             f'</table>{_SIG}</body></html>'
         )
 
-    # Paginate: 30 rows on first page, 35 on subsequent pages
-    FIRST, OTHER = 30, 35
+    # Fewer rows per page now due to larger font
+    FIRST, OTHER = 20, 25
     pages, idx, first = [], 0, True
     while idx < len(detail_rows):
         lim = FIRST if first else OTHER

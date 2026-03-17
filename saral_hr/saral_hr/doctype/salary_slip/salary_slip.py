@@ -563,7 +563,6 @@ def check_variable_pay_assignment(employee, start_date):
 
 
 # ─── Attendance ───────────────────────────────────────────────────────────────
-
 @frappe.whitelist()
 def get_attendance_and_days(employee, start_date, working_days_calculation_method=None):
     start_date = getdate(start_date)
@@ -604,8 +603,6 @@ def get_attendance_and_days(employee, start_date, working_days_calculation_metho
     lwp_days = holiday_days = earned_leave_days = casual_leave_days = 0
     on_tour_days = comp_off_days = 0
 
-    weekly_offs_taken = 0
-
     for a in attendance:
         if a.status == "Present":
             present_days += 1
@@ -631,24 +628,19 @@ def get_attendance_and_days(employee, start_date, working_days_calculation_metho
         elif a.status == "Comp Off":
             comp_off_days += 1
             present_days  += 1
-        elif a.status in ("Weekly Off", "Off"):
-            weekly_offs_taken += 1
 
     combined_absent_days = flt(absent_days + lwp_days, 2)
 
     if calculation_method == "Include Weekly Offs":
+        # Include: as it is — koi change nahi
         working_days = total_days
         payment_days = flt(total_days - combined_absent_days, 2)
     else:
-        # ── Exclude Weekly Offs ───────────────────────────────────────────────
-        # working_days = calendar days minus weekly off days.
-        # Absent days must be capped to (working_days - present_days) so that
-        # weekly-off days which appear as Absent (or are simply unrecorded) in
-        # the attendance table are never double-counted as lost pay days.
+        # Exclude: working days se weekly off ghata
+        # lekin payment days = total_days - weekly_off_count - combined_absent_days + comp_off_days
+        # Comp Off = present day hai, absent mein count nahi hona chahiye
         working_days = total_days - weekly_off_count
-        max_possible_absent = flt(working_days - present_days, 2)
-        combined_absent_days = flt(min(combined_absent_days, max_possible_absent), 2)
-        payment_days = flt(working_days - combined_absent_days, 2)
+        payment_days = flt(working_days - combined_absent_days + comp_off_days, 2)  # ← SIRF YEH BADLA
 
     physical_working_days = flt(
         payment_days - earned_leave_days - casual_leave_days - comp_off_days, 2
@@ -658,7 +650,6 @@ def get_attendance_and_days(employee, start_date, working_days_calculation_metho
         "attendance_count":      len(attendance),
         "total_days":            total_days,
         "weekly_offs":           weekly_off_count,
-        "weekly_offs_taken":     weekly_offs_taken,
         "working_days":          working_days,
         "payment_days":          payment_days,
         "physical_working_days": physical_working_days,
@@ -673,7 +664,6 @@ def get_attendance_and_days(employee, start_date, working_days_calculation_metho
         "total_comp_off":        flt(comp_off_days, 2),
         "calculation_method":    calculation_method,
     }
-
 
 # ─── Core Salary Calculation ──────────────────────────────────────────────────
 
@@ -976,7 +966,6 @@ def bulk_generate_salary_slips(employees, year, month):
             salary_slip.present_days          = attendance_data.get('present_days')
             salary_slip.absent_days           = attendance_data.get('absent_days')
             salary_slip.weekly_offs_count     = attendance_data.get('weekly_offs')
-            salary_slip.weekly_offs_taken     = attendance_data.get('weekly_offs_taken', 0)
             salary_slip.total_half_days       = attendance_data.get('total_half_days')
             salary_slip.total_lwp             = attendance_data.get('total_lwp', 0)
             salary_slip.total_holidays        = attendance_data.get('total_holidays', 0)
@@ -1120,6 +1109,10 @@ def bulk_submit_salary_slips(salary_slip_names):
 
 
 # ─── Bulk Print ───────────────────────────────────────────────────────────────
+#
+# Uses the existing "Salary Slip Custom" Jinja print format via frappe.get_print()
+# — identical output to clicking Print on an individual record.
+# Change BULK_PRINT_FORMAT at the top of this file if your format has a different name.
 
 @frappe.whitelist()
 def bulk_print_salary_slips(salary_slip_names):
@@ -1138,12 +1131,14 @@ def bulk_print_salary_slips(salary_slip_names):
 
     try:
         for slip_name in salary_slip_names:
+            # Render using the same print format as the individual Print button.
+            # as_pdf=True returns raw PDF bytes directly — no manual HTML needed.
             pdf_data = frappe.get_print(
                 doctype="Salary Slip",
                 name=slip_name,
                 print_format=BULK_PRINT_FORMAT,
                 as_pdf=True,
-                letterhead=None,
+                letterhead=None,  # set to your letterhead name string if needed
             )
 
             temp_file = frappe.utils.get_files_path(
@@ -1195,7 +1190,7 @@ def bulk_print_salary_slips(salary_slip_names):
         )
 
 
-# ─── Print Summary ────────────────────────────────────────────────────────────
+# ─── Print Summary (for Bulk Print dialog) ────────────────────────────────────
 
 @frappe.whitelist()
 def get_salary_slips_print_summary(company, year, month, category=None):

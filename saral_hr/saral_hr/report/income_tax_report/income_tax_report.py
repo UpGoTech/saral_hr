@@ -11,25 +11,22 @@ MONTH_MAP = {
 
 _NUMERIC_FT = ("Float", "Currency", "Int", "Percent")
 
-# ---------------- CSS + SIGNATURE ---------------- #
-
 _CSS = """<style>
 *{margin:0;padding:0;box-sizing:border-box}
-body{font-family:Arial,sans-serif;font-size:10px;color:#000;background:#fff}
-.hdr{text-align:center;border-bottom:2px solid #000;padding:8px 4px 6px;margin-bottom:6px}
-.hdr .co{font-size:18px;font-weight:900;letter-spacing:1px;text-transform:uppercase}
-.hdr .ttl{font-size:13px;font-weight:700;margin-top:3px}
-.hdr .per{font-size:11px;margin-top:2px}
-.sig{display:flex;justify-content:space-between;margin-top:24px;padding-top:6px}
-.sig-b{text-align:center;width:160px}
-.sig-l{border-top:1px solid #000;margin-bottom:3px}
-.sig-t{font-size:10px;color:#333}
-table{width:100%;border-collapse:collapse;margin-top:6px}
-th{border:1px solid #000;padding:5px 7px;font-size:10px;font-weight:700;background:#f0f0f0}
-td{border:1px solid #000;padding:5px 7px;font-size:10px}
+body{font-family:Arial,sans-serif;font-size:16px;color:#000;background:#fff}
+.hdr{text-align:center;border-bottom:2px solid #000;padding:10px 6px 6px;margin-bottom:6px}
+.hdr .co{font-size:28px;font-weight:900;letter-spacing:1px;text-transform:uppercase}
+.hdr .ttl{font-size:20px;font-weight:700;margin-top:2px}
+.hdr .per{font-size:16px;margin-top:2px}
+.sig{display:flex;justify-content:space-between;margin-top:16px;padding-top:8px}
+.sig-b{text-align:center;width:180px}
+.sig-l{border-top:1px solid #000;margin-bottom:4px}
+.sig-t{font-size:15px;color:#333}
+table{width:100%;border-collapse:collapse;margin-top:8px}
+th{border:1px solid #000;padding:10px 12px;font-size:16px;font-weight:700;background:#f0f0f0;color:#000;white-space:nowrap;text-align:left}
+td{border:1px solid #000;padding:10px 12px;font-size:16px;vertical-align:middle;color:#000;text-align:left}
 tr.tot td{background:#e8e8e8;font-weight:700}
-.r{text-align:right}.l{text-align:left}
-.nd{text-align:center;padding:18px;color:#888}
+.nd{text-align:center;padding:10px;color:#888;font-size:16px}
 </style>"""
 
 _SIG = '<div class="sig">' + "".join(
@@ -37,8 +34,6 @@ _SIG = '<div class="sig">' + "".join(
     for l in ["Prepared By", "Checked By", "Authorised Signatory"]
 ) + '</div>'
 
-
-# ---------------- HELPERS ---------------- #
 
 def _parse_list(v):
     if not v: return []
@@ -55,46 +50,44 @@ def _company_label(f):
     c = _parse_list(f.get("company"))
     return ", ".join(c) if c else (frappe.defaults.get_global_default("company") or "")
 
+def _fmt(v):
+    if v is None or v == "": return ""
+    try: return f"{float(v):,.2f}"
+    except (TypeError, ValueError): return str(v)
 
-# ---------------- REPORT ---------------- #
 
 def execute(filters=None):
     filters = filters or {}
 
     columns = [
-        {"label": "Employee ID", "fieldname": "employee", "width": 140},
+        {"label": "Employee ID",   "fieldname": "employee",      "width": 140},
         {"label": "Employee Name", "fieldname": "employee_name", "width": 200},
-        {"label": "Net Salary", "fieldname": "net_salary", "fieldtype": "Float", "width": 120},
-        {"label": "Income Tax", "fieldname": "income_tax", "fieldtype": "Float", "width": 120},
+        {"label": "Net Salary",    "fieldname": "net_salary",    "fieldtype": "Float", "width": 120},
+        {"label": "Income Tax",    "fieldname": "income_tax",    "fieldtype": "Float", "width": 120},
     ]
 
-    data = []
-
-    companies = _parse_list(filters.get("company"))
-    employees = _parse_list(filters.get("employee"))
+    data       = []
+    companies  = _parse_list(filters.get("company"))
+    employees  = _parse_list(filters.get("employee"))
     start_date = _start_date(filters)
 
     conditions = ["ss.docstatus = 1"]
-    params = {}
+    params     = {}
 
     if start_date:
         conditions.append("ss.start_date = %(start_date)s")
         params["start_date"] = start_date
-
     if companies:
         conditions.append("ss.company IN %(companies)s")
         params["companies"] = tuple(companies)
-
     if employees:
         conditions.append("ss.employee IN %(employees)s")
         params["employees"] = tuple(employees)
 
-    cond = " AND ".join(conditions)
-
+    cond  = " AND ".join(conditions)
     slips = frappe.db.sql(f"""
         SELECT ss.name, ss.employee, ss.employee_name, ss.net_salary
-        FROM `tabSalary Slip` ss
-        WHERE {cond}
+        FROM `tabSalary Slip` ss WHERE {cond}
     """, params, as_dict=1)
 
     if not slips:
@@ -113,8 +106,7 @@ def execute(filters=None):
         GROUP BY parent
     """, {"slips": slip_names}, as_dict=1)
 
-    tax_map = {t.parent: flt(t.tax) for t in tax_data}
-
+    tax_map   = {t.parent: flt(t.tax) for t in tax_data}
     total_net = 0
     total_tax = 0
 
@@ -122,78 +114,120 @@ def execute(filters=None):
         tax = flt(tax_map.get(s.name, 0))
         if tax <= 0:
             continue
-
-        net = flt(s.net_salary)
-
+        net        = flt(s.net_salary)
         total_net += net
         total_tax += tax
-
         data.append({
-            "employee": s.employee,
+            "employee":      s.employee,
             "employee_name": s.employee_name,
-            "net_salary": net,
-            "income_tax": tax
+            "net_salary":    net,
+            "income_tax":    tax,
         })
 
     if data:
         data.append({
-            "employee": "",
+            "employee":      "",
             "employee_name": "Total",
-            "net_salary": total_net,
-            "income_tax": total_tax,
-            "bold": 1
+            "net_salary":    total_net,
+            "income_tax":    total_tax,
+            "bold":          1,
         })
 
     return columns, data
 
 
-# ---------------- PDF ---------------- #
-
 def _build_html(cols, data, f):
-    header = (
-        f'<div class="hdr"><div class="co">{_company_label(f)}</div>'
+    hdr = (
+        f'<div class="hdr">'
+        f'<div class="co">{_company_label(f)}</div>'
         f'<div class="ttl">Income Tax Register</div>'
-        f'<div class="per">For the Month of {f.get("month")} {f.get("year")}</div></div>'
+        f'<div class="per">For the Month of {f.get("month")} {f.get("year")}</div>'
+        f'</div>'
     )
 
-    thead = "<tr>" + "".join(
-        f'<th class="{"r" if c.get("fieldtype") in _NUMERIC_FT else "l"}">{c["label"]}</th>'
-        for c in cols
-    ) + "</tr>"
+    def _thead():
+        return "<tr>" + "".join(
+            f'<th>{c["label"]}</th>' for c in cols
+        ) + "</tr>"
 
-    if not data:
-        tbody = f'<tr><td colspan="{len(cols)}" class="nd">No data</td></tr>'
-    else:
-        tbody = ""
-        for row in data:
-            cls = ' class="tot"' if row.get("bold") else ""
-            tbody += f"<tr{cls}>"
+    def _build_rows(rows):
+        h = ""
+        for row in rows:
+            cls  = ' class="tot"' if row.get("bold") else ""
+            h   += f"<tr{cls}>"
             for c in cols:
                 val = row.get(c["fieldname"], "")
                 if c.get("fieldtype") in _NUMERIC_FT:
-                    val = f"{float(val):,.2f}" if val else ""
-                    tbody += f'<td class="r">{val}</td>'
+                    h += f"<td>{_fmt(val)}</td>"
                 else:
-                    tbody += f'<td class="l">{val}</td>'
-            tbody += "</tr>"
+                    h += f"<td>{val or ''}</td>"
+            h += "</tr>"
+        return h
 
-    return f"""<!DOCTYPE html><html><head>{_CSS}</head>
-    <body>{header}<table><thead>{thead}</thead><tbody>{tbody}</tbody></table>{_SIG}</body></html>"""
+    def _make_table(rows):
+        return (
+            f"<table><thead>{_thead()}</thead>"
+            f"<tbody>{rows}</tbody></table>"
+        )
+
+    ncols = len(cols)
+
+    if not data:
+        return (
+            f'<!DOCTYPE html><html><head><meta charset="UTF-8">{_CSS}</head>'
+            f'<body>{hdr}'
+            f'<table><thead>{_thead()}</thead>'
+            f'<tbody><tr><td colspan="{ncols}" class="nd">No data</td></tr></tbody>'
+            f'</table>{_SIG}</body></html>'
+        )
+
+    detail_rows = [r for r in data if not r.get("bold")]
+    total_row   = [r for r in data if r.get("bold")]
+
+    FIRST, OTHER = 20, 25
+    pages, idx, first = [], 0, True
+    while idx < len(detail_rows):
+        lim = FIRST if first else OTHER
+        pages.append(detail_rows[idx: idx + lim])
+        idx += lim
+        first = False
+
+    parts = []
+    for pn, pr in enumerate(pages):
+        pb   = '<div style="page-break-before:always;"></div>' if pn > 0 else ""
+        last = (pn == len(pages) - 1)
+        rows = _build_rows(pr + (total_row if last else []))
+        parts.append(pb + hdr + _make_table(rows))
+
+    return (
+        f'<!DOCTYPE html><html><head><meta charset="UTF-8">{_CSS}</head>'
+        f'<body>{"".join(parts)}{_SIG}</body></html>'
+    )
 
 
 def _save_pdf(html):
-    pdf = get_pdf(html, options={"page-size":"A4","orientation":"Landscape"})
-    name = "Income_Tax_Report.pdf"
-
+    pdf = get_pdf(html, options={
+        "page-size":     "A4",
+        "orientation":   "Landscape",
+        "margin-top":    "8mm",
+        "margin-right":  "8mm",
+        "margin-bottom": "8mm",
+        "margin-left":   "8mm",
+        "encoding":      "UTF-8",
+        "no-outline":    None,
+    })
+    ts  = frappe.utils.now_datetime().strftime("%Y%m%d_%H%M%S")
+    fn  = f"Income_Tax_Report_{ts}.pdf"
+    with open(frappe.utils.get_files_path(fn, is_private=0), "wb") as fh:
+        fh.write(pdf)
     doc = frappe.get_doc({
-        "doctype": "File",
-        "file_name": name,
-        "content": pdf,
-        "is_private": 0
+        "doctype":    "File",
+        "file_name":  fn,
+        "is_private": 0,
+        "file_url":   f"/files/{fn}",
     })
     doc.insert(ignore_permissions=True)
     frappe.db.commit()
-
     return doc.file_url
 
 
@@ -201,7 +235,6 @@ def _save_pdf(html):
 def print_report(filters):
     if isinstance(filters, str):
         filters = json.loads(filters)
-
     cols, data = execute(filters)
     html = _build_html(cols, data, filters)
     return _save_pdf(html)
