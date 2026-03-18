@@ -1,342 +1,444 @@
 import frappe
+import json
+
 from frappe import _
-import calendar
 from frappe.utils import flt
+from frappe.utils.pdf import get_pdf
+
+# ---------------------------------------------------------------------------
+# Constants
+# ---------------------------------------------------------------------------
 
 MONTH_MAP = {
-    "January": 1, "February": 2, "March": 3, "April": 4,
-    "May": 5, "June": 6, "July": 7, "August": 8,
-    "September": 9, "October": 10, "November": 11, "December": 12
+    "January":1,"February":2,"March":3,"April":4,"May":5,"June":6,
+    "July":7,"August":8,"September":9,"October":10,"November":11,"December":12,
 }
 
 EARNING_COMPONENTS = [
-    ("Basic", "BASIC"),
-    ("Dearness Allowance", "DA"),
-    ("House Rent Allowance", "HRA"),
-    ("Conveyance Allowance", "CONV"),
-    ("Medical Allowance", "MED"),
-    ("Education Allowance", "EDU"),
-    ("Other Allowance", "OA"),
-    ("Variable Pay", "VAR"),
-    ("Arrears", "ARREARS"),
+    ("Basic",                  "BASIC"),
+    ("Dearness Allowance",     "DA"),
+    ("House Rent Allowance",   "HRA"),
+    ("Conveyance Allowance",   "CONV"),
+    ("Medical Allowance",      "MED"),
+    ("Education Allowance",    "EDU"),
+    ("Other Allowance",        "OA"),
+    ("Variable Pay",           "VAR"),
+    ("Arrears",                "ARREARS"),
 ]
 
 DEDUCTION_COMPONENTS = [
-    ("Employee -  PF", "PF"),
-    ("Employer -  PF", "EPF"),
-    ("Employee - ESIC", "ESI"),
-    ("Employer -  ESIC", "EESI"),
-    ("Professional Tax", "PT"),
-    ("Employee -Labour Welfare Fund", "Employee - LWF"),
-    ("Employer - Labour Welfare Fund", "Employer - LWF"),
-    ("Employee -Bonus", "BONUS"),
-    ("Employer - Bonus", "Employer - bonus"),
-    ("Employer - Gratuity", "GRAT"),
-    ("Loan", "Loan"),
-    ("Advance", "ADV"),
-    ("Retention", "RET"),
-    ("Other Deduction - 1", "OD -1"),
+    ("Employee -  PF",                    "PF"),
+    ("Employer -  PF",                    "EPF"),
+    ("Employee - ESIC",                   "ESI"),
+    ("Employer -  ESIC",                  "EESI"),
+    ("Professional Tax",                  "PT"),
+    ("Employee -Labour Welfare Fund",     "Employee - LWF"),
+    ("Employer - Labour Welfare Fund",    "Employer - LWF"),
+    ("Employee -Bonus",                   "BONUS"),
+    ("Employer - Bonus",                  "Employer - bonus"),
+    ("Employer - Gratuity",               "GRAT"),
+    ("Loan",                              "Loan"),
+    ("Advance",                           "ADV"),
+    ("Retention",                         "RET"),
+    ("Other Deduction - 1",               "OD -1"),
 ]
 
+B = "1px solid #000"
 
-def execute(filters=None):
-    filters = filters or {}
-    columns = get_columns()
-    data    = get_data(filters)
-    return columns, data
+_CSS = """<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:Arial,sans-serif;font-size:9px;color:#000;background:#fff}
+.hdr{text-align:center;border-bottom:2px solid #000;padding:8px 4px 6px;margin-bottom:6px}
+.hdr .co{font-size:16px;font-weight:900;letter-spacing:1px;text-transform:uppercase}
+.hdr .ttl{font-size:12px;font-weight:700;margin-top:3px}
+.hdr .per{font-size:10px;margin-top:2px}
+.sig{display:flex;justify-content:space-between;margin-top:24px;padding-top:6px}
+.sig-b{text-align:center;width:160px}
+.sig-l{border-top:1px solid #000;margin-bottom:3px}
+.sig-t{font-size:10px;color:#333}
+table{width:100%;border-collapse:collapse;margin-top:6px;table-layout:fixed}
+th{border:1px solid #000;padding:4px 3px;font-size:9px;font-weight:700;background:#f0f0f0;color:#000;white-space:nowrap}
+td{border:1px solid #000;padding:4px 3px;font-size:9px;vertical-align:middle;color:#000}
+tr.tot td{background:#e8e8e8;font-weight:700}
+.r{text-align:right}.l{text-align:left}.c{text-align:center}
+.nd{text-align:center;padding:18px;color:#888;font-size:10px}
+.sub{font-size:8px;color:#555}
+</style>"""
+
+_SIG = '<div class="sig">' + "".join(
+    f'<div class="sig-b"><div class="sig-l"></div><div class="sig-t">{l}</div></div>'
+    for l in ["Prepared By", "Checked By", "Authorised Signatory"]
+) + '</div>'
+
+# Short label map for column headers
+_SL = {
+    "Basic": "Basic", "Dearness Allowance": "DA", "House Rent Allowance": "HRA",
+    "Conveyance Allowance": "Conv", "Medical Allowance": "Med",
+    "Education Allowance": "Edu", "Other Allowance": "OA",
+    "Variable Pay": "Var Pay", "Arrears": "Arrears",
+    "Employee -  PF": "Emp PF", "Employer -  PF": "Empr PF",
+    "Employee - ESIC": "Emp ESI", "Employer -  ESIC": "Empr ESI",
+    "Professional Tax": "PT",
+    "Employee -Labour Welfare Fund": "Emp LWF",
+    "Employer - Labour Welfare Fund": "Empr LWF",
+    "Employee -Bonus": "Emp Bonus", "Employer - Bonus": "Empr Bonus",
+    "Employer - Gratuity": "Grat", "Loan": "Loan", "Advance": "Adv",
+    "Retention": "Ret", "Other Deduction - 1": "OD-1",
+}
+
+def _sl(lbl):
+    return _SL.get(lbl.split("(")[0].strip(), lbl.split("(")[0].strip()) or "&nbsp;"
+
+def _sanitize(a):
+    return a.strip().lower().replace(" ", "_").replace("-", "_").replace("__", "_")
 
 
-# ---------------------------------------------------------
-# COLUMNS
-# ---------------------------------------------------------
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
 
-def get_columns():
-    columns = [
-        {
-            "label":     _("Employee ID"),
-            "fieldname": "employee",
-            "fieldtype": "Data",
-            "width":     120
-        },
-        {
-            "label":     _("Employee Name"),
-            "fieldname": "employee_name",
-            "fieldtype": "Data",
-            "width":     180
-        },
-        {
-            "label":     _("Payment Days"),
-            "fieldname": "payment_days",
-            "fieldtype": "Float",
-            "precision": 2,
-            "width":     110
-        },
-        {
-            "label":     _("Absent Days"),
-            "fieldname": "absent_days",
-            "fieldtype": "Float",
-            "precision": 2,
-            "width":     110
-        },
-        {
-            "label":     _("LWP"),
-            "fieldname": "total_lwp",
-            "fieldtype": "Float",
-            "precision": 2,
-            "width":     100
-        },
+def _parse_list(v):
+    if not v: return []
+    if isinstance(v, list): return v
+    try:
+        p = json.loads(v)
+        if isinstance(p, list): return p
+    except Exception: pass
+    return [x.strip() for x in v.split(",") if x.strip()]
+
+def _col(label, fn, ft="Data", w=120, **kw):
+    return {"label": _(label), "fieldname": fn, "fieldtype": ft, "width": w, **kw}
+
+def _date_range(f):
+    import calendar
+    m = MONTH_MAP.get(f.get("month", ""))
+    y = int(f.get("year", 0) or 0)
+    if not m or not y:
+        return None, None
+    return f"{y}-{m:02d}-01", f"{y}-{m:02d}-{calendar.monthrange(y, m)[1]:02d}"
+
+def _company_label(f):
+    c = _parse_list(f.get("company"))
+    return ", ".join(c) if c else (frappe.defaults.get_global_default("company") or "")
+
+def _fmt(v):
+    if v is None or v == "": return ""
+    try: return f"{float(v):,.2f}"
+    except (TypeError, ValueError): return str(v)
+
+def _fetch_comps(sn, pf):
+    if not sn: return {}
+    r = {}
+    for x in frappe.db.sql(
+        "SELECT sd.parent AS slip, sd.salary_component AS comp, sd.amount "
+        "FROM `tabSalary Details` sd "
+        "WHERE sd.parent IN %(sn)s AND sd.parentfield=%(pf)s",
+        {"sn": tuple(sn), "pf": pf}, as_dict=1
+    ):
+        r.setdefault(x["slip"], {})[x["comp"]] = x["amount"]
+    return r
+
+
+# ---------------------------------------------------------------------------
+# Core data function
+# ---------------------------------------------------------------------------
+
+def _get_data(f):
+    # Build columns
+    cols = [
+        _col("Employee Name", "employee_name", w=160),
+        _col("Days",          "payment_days",  "Float", 55, precision=2),
+        _col("Absent",        "absent_days",   "Float", 55, precision=2),
+        _col("LWP",           "total_lwp",     "Float", 55, precision=2),
+    ]
+    for lbl, abbr in EARNING_COMPONENTS:
+        cols.append(_col(f"{lbl} ({abbr})", f"earn_{_sanitize(abbr)}", "Float", 130, precision=2))
+    for lbl, abbr in DEDUCTION_COMPONENTS:
+        cols.append(_col(f"{lbl} ({abbr})", f"ded_{_sanitize(abbr)}", "Float", 130, precision=2))
+    cols += [
+        _col("Total Earnings",    "total_earnings",    "Float", 120, precision=2),
+        _col("Total Deductions",  "total_deductions",  "Float", 120, precision=2),
+        _col("Net Salary",        "net_salary",        "Float", 120, precision=2),
     ]
 
-    for label, abbr in EARNING_COMPONENTS:
-        columns.append({
-            "label":     _(f"{label} ({abbr})"),
-            "fieldname": f"earn_{sanitize(abbr)}",
-            "fieldtype": "Float",
-            "precision": 2,
-            "width":     150
-        })
+    if not f.get("company"):
+        return cols, []
 
-    for label, abbr in DEDUCTION_COMPONENTS:
-        columns.append({
-            "label":     _(f"{label} ({abbr})"),
-            "fieldname": f"ded_{sanitize(abbr)}",
-            "fieldtype": "Float",
-            "precision": 2,
-            "width":     150
-        })
+    p = {}
+    s, e = _date_range(f)
+    if not s:
+        return cols, []
 
-    columns.append({
-        "label":     _("Total Earnings"),
-        "fieldname": "total_earnings",
-        "fieldtype": "Float",
-        "precision": 2,
-        "width":     140
-    })
-    columns.append({
-        "label":     _("Total Deductions"),
-        "fieldname": "total_deductions",
-        "fieldtype": "Float",
-        "precision": 2,
-        "width":     140
-    })
-    columns.append({
-        "label":     _("Net Salary"),
-        "fieldname": "net_salary",
-        "fieldtype": "Float",
-        "precision": 2,
-        "width":     140
-    })
+    p.update(start_date=s, end_date=e)
+    conds = [
+        "ss.docstatus=1",
+        "ss.start_date>=%(start_date)s",
+        "ss.end_date<=%(end_date)s",
+    ]
 
-    return columns
+    co = _parse_list(f.get("company"))
+    if co:
+        p["companies"] = tuple(co)
+        conds.append("ss.company IN %(companies)s")
 
+    em_filter = _parse_list(f.get("employee"))
+    if em_filter:
+        p["employees"] = tuple(em_filter)
+        conds.append("ss.employee IN %(employees)s")
 
-# ---------------------------------------------------------
-# DATA
-# ---------------------------------------------------------
+    catj = ""
+    cat  = f.get("category")
+    if cat:
+        p["category"] = cat
+        catj = "INNER JOIN `tabCompany Link` cc ON cc.name=ss.employee AND cc.category=%(category)s"
 
-def get_data(filters):
-    year  = filters.get("year")
-    month = filters.get("month")
+    divs = _parse_list(f.get("division"))
+    if divs:
+        p["divisions"] = tuple(divs)
+        conds.append(
+            "ss.employee IN (SELECT name FROM `tabCompany Link` "
+            "WHERE division IN %(divisions)s OR department IN %(divisions)s)"
+        )
 
-    if not year or not month:
-        return []
+    w = " AND ".join(conds)
 
-    year  = int(year)
-    month = MONTH_MAP.get(month)
-    if not month:
-        return []
+    slips = frappe.db.sql(
+        f"""
+        SELECT ss.name AS slip, ss.employee, ss.employee_name,
+               ss.payment_days, ss.absent_days, ss.total_lwp, ss.net_salary
+        FROM `tabSalary Slip` ss
+        {catj}
+        WHERE {w}
+        ORDER BY ss.employee_name
+        """,
+        p, as_dict=1
+    )
+    if not slips:
+        return cols, []
 
-    last_day   = calendar.monthrange(year, month)[1]
-    start_date = f"{year}-{str(month).zfill(2)}-01"
-    end_date   = f"{year}-{str(month).zfill(2)}-{str(last_day).zfill(2)}"
-
-    conditions  = "ss.docstatus = 1 AND ss.start_date >= %(start_date)s AND ss.end_date <= %(end_date)s"
-    sql_filters = {"start_date": start_date, "end_date": end_date}
-
-    # Company filter (mandatory)
-    companies = frappe.parse_json(filters.get("company") or "[]")
-    if companies:
-        sql_filters["companies"] = tuple(companies)
-        conditions += " AND ss.company IN %(companies)s"
-
-    # Employee filter (optional)
-    employees = frappe.parse_json(filters.get("employee") or "[]")
-    if employees:
-        sql_filters["employees"] = tuple(employees)
-        conditions += " AND ss.employee IN %(employees)s"
-
-    # Category filter — mandatory MultiSelectList via Company Link
-    category_join = ""
-    categories = frappe.parse_json(filters.get("category") or "[]")
-    if categories:
-        category_join = "INNER JOIN `tabCompany Link` cl_cat ON cl_cat.employee = ss.employee"
-        sql_filters["categories"] = tuple(categories)
-        conditions += " AND cl_cat.category IN %(categories)s"
-
-    salary_slips = frappe.db.sql(f"""
-        SELECT
-            ss.name          AS salary_slip,
-            ss.employee      AS employee,
-            ss.employee_name AS employee_name,
-            ss.payment_days  AS payment_days,
-            ss.absent_days   AS absent_days,
-            ss.total_lwp     AS total_lwp,
-            ss.net_salary    AS net_salary
-        FROM
-            `tabSalary Slip` ss
-            {category_join}
-        WHERE
-            {conditions}
-        ORDER BY
-            ss.employee_name ASC
-    """, sql_filters, as_dict=True)
-
-    if not salary_slips:
-        return []
-
-    slip_names = [d["salary_slip"] for d in salary_slips]
-
-    earnings_rows = frappe.db.sql("""
-        SELECT
-            sd.parent           AS salary_slip,
-            sd.salary_component AS salary_component,
-            sd.amount           AS amount
-        FROM
-            `tabSalary Details` sd
-        WHERE
-            sd.parent IN %(slips)s
-            AND sd.parentfield = 'earnings'
-    """, {"slips": slip_names}, as_dict=True)
-
-    deductions_rows = frappe.db.sql("""
-        SELECT
-            sd.parent           AS salary_slip,
-            sd.salary_component AS salary_component,
-            sd.amount           AS amount
-        FROM
-            `tabSalary Details` sd
-        WHERE
-            sd.parent IN %(slips)s
-            AND sd.parentfield = 'deductions'
-    """, {"slips": slip_names}, as_dict=True)
-
-    earnings_map   = {}
-    deductions_map = {}
-
-    for row in earnings_rows:
-        earnings_map.setdefault(row["salary_slip"], {})[row["salary_component"]] = row["amount"]
-
-    for row in deductions_rows:
-        deductions_map.setdefault(row["salary_slip"], {})[row["salary_component"]] = row["amount"]
+    sn  = [s["slip"]    for s in slips]
+    em  = _fetch_comps(sn, "earnings")
+    dm  = _fetch_comps(sn, "deductions")
 
     data  = []
-    grand = {
-        "total_earnings":   0,
-        "total_deductions": 0,
-        "net_salary":       0,
-        "absent_days":      0,
-        "total_lwp":        0,
-    }
-    for _, abbr in EARNING_COMPONENTS:
-        grand[f"earn_{sanitize(abbr)}"] = 0
-    for _, abbr in DEDUCTION_COMPONENTS:
-        grand[f"ded_{sanitize(abbr)}"] = 0
+    grand = {f"earn_{_sanitize(a)}": 0.0 for _, a in EARNING_COMPONENTS}
+    grand.update({f"ded_{_sanitize(a)}": 0.0 for _, a in DEDUCTION_COMPONENTS})
+    grand.update(total_earnings=0.0, total_deductions=0.0, net_salary=0.0,
+                 absent_days=0.0, total_lwp=0.0)
 
-    for slip in salary_slips:
-        slip_earnings   = earnings_map.get(slip["salary_slip"], {})
-        slip_deductions = deductions_map.get(slip["salary_slip"], {})
-
+    for sl in slips:
+        se  = em.get(sl["slip"], {})
+        sd  = dm.get(sl["slip"], {})
         row = {
-            "salary_slip":   slip["salary_slip"],
-            "employee":      slip["employee"],
-            "employee_name": slip["employee_name"],
-            "payment_days":  flt(slip["payment_days"], 2),
-            "absent_days":   flt(slip["absent_days"], 2),
-            "total_lwp":     flt(slip["total_lwp"], 2),
-            "net_salary":    flt(slip["net_salary"], 2),
+            "employee":      sl["employee"],
+            "employee_name": sl["employee_name"],
+            "payment_days":  flt(sl["payment_days"], 2),
+            "absent_days":   flt(sl["absent_days"],  2),
+            "total_lwp":     flt(sl["total_lwp"],    2),
+            "net_salary":    flt(sl["net_salary"],   2),
         }
+        te = td = 0.0
+        for lbl, abbr in EARNING_COMPONENTS:
+            amt = se.get(lbl)
+            if amt is not None:
+                v = flt(amt, 2)
+                row[f"earn_{_sanitize(abbr)}"] = v
+                te += v
+                grand[f"earn_{_sanitize(abbr)}"] += v
+        row["total_earnings"]    = flt(te, 2)
+        grand["total_earnings"] += te
 
-        grand["absent_days"] += flt(slip["absent_days"], 2)
-        grand["total_lwp"]   += flt(slip["total_lwp"], 2)
+        for lbl, abbr in DEDUCTION_COMPONENTS:
+            amt = sd.get(lbl)
+            if amt is not None:
+                v = flt(amt, 2)
+                row[f"ded_{_sanitize(abbr)}"] = v
+                td += v
+                grand[f"ded_{_sanitize(abbr)}"] += v
+        row["total_deductions"]    = flt(td, 2)
+        grand["total_deductions"] += td
 
-        total_earn = 0
-        for label, abbr in EARNING_COMPONENTS:
-            amount = slip_earnings.get(label)
-            if amount is not None:
-                val = flt(amount, 2)
-                row[f"earn_{sanitize(abbr)}"] = val
-                total_earn += val
-                grand[f"earn_{sanitize(abbr)}"] += val
-
-        row["total_earnings"] = flt(total_earn, 2)
-        grand["total_earnings"] += flt(total_earn, 2)
-
-        total_ded = 0
-        for label, abbr in DEDUCTION_COMPONENTS:
-            amount = slip_deductions.get(label)
-            if amount is not None:
-                val = flt(amount, 2)
-                row[f"ded_{sanitize(abbr)}"] = val
-                total_ded += val
-                grand[f"ded_{sanitize(abbr)}"] += val
-
-        row["total_deductions"] = flt(total_ded, 2)
-        grand["total_deductions"] += flt(total_ded, 2)
-        grand["net_salary"] += flt(slip["net_salary"], 2)
-
+        grand["net_salary"]    += flt(sl["net_salary"],  2)
+        grand["absent_days"]   += flt(sl["absent_days"], 2)
+        grand["total_lwp"]     += flt(sl["total_lwp"],   2)
         data.append(row)
 
-    # Grand Total row
-    total_row = {
+    data.append({
         "employee":      "",
         "employee_name": "Total",
         "payment_days":  "",
         "bold":          1,
+        **grand,
+    })
+
+    return cols, data
+
+
+# ---------------------------------------------------------------------------
+# Frappe report entry-point
+# ---------------------------------------------------------------------------
+
+def execute(filters=None):
+    return _get_data(filters or {})
+
+
+# ---------------------------------------------------------------------------
+# PDF renderer — compact paired-column layout (earn/ded stacked per column)
+# ---------------------------------------------------------------------------
+
+TH_C = f"border:{B};padding:4px 3px;font-size:9px;font-weight:700;text-align:center;background:#f0f0f0;"
+TH_R = f"border:{B};padding:4px 3px;font-size:9px;font-weight:700;text-align:right;background:#f0f0f0;"
+TH_L = f"border:{B};padding:4px 3px;font-size:9px;font-weight:700;text-align:left;background:#f0f0f0;"
+TD_S = f"border:{B};padding:4px 3px;font-size:9px;vertical-align:middle;"
+TS_S = f"border:{B};padding:4px 3px;font-size:9px;font-weight:700;background:#e8e8e8;vertical-align:middle;"
+
+
+def _build_html(cols, data, co, mo, yr):
+    hdr = (
+        f'<div class="hdr">'
+        f'<div class="co">{co}</div>'
+        f'<div class="ttl">Salary Summary — Individual Employee</div>'
+        f'<div class="per">For the Month of {mo} {yr}</div>'
+        f'</div>'
+    )
+
+    if not data:
+        return (
+            f'<!DOCTYPE html><html><head><meta charset="UTF-8">{_CSS}</head>'
+            f'<body>{hdr}'
+            f'<table><thead><tr><th>No data for this period</th></tr></thead></table>'
+            f'{_SIG}</body></html>'
+        )
+
+    # Identify earn/ded columns (exclude grand total helpers)
+    hide = {
+        "earn_grat", "ded_grat", "ded_loan", "ded_adv", "ded_ret",
+        "net_salary", "total_earnings", "total_deductions", "absent_days",
     }
-    total_row.update(grand)
-    data.append(total_row)
+    od1_fn = next(
+        (c["fieldname"] for c in cols
+         if c["fieldname"].startswith("ded_") and "od" in c["fieldname"]),
+        None
+    )
+    if od1_fn:
+        hide.add(od1_fn)
 
-    return data
+    fil = [c for c in cols if c["fieldname"] not in hide]
+    ec  = [c for c in fil if c["fieldname"].startswith("earn_")]
+    dc  = [c for c in fil if c["fieldname"].startswith("ded_")]
+    mp  = max(len(ec), len(dc))
+
+    # Table header
+    h  = f'<table style="width:100%;border-collapse:collapse;table-layout:fixed;">'
+    h += f'<thead><tr>'
+    h += f'<th style="{TH_L}width:140px;">Employee<br><span style="font-size:8px;">ID</span></th>'
+    h += f'<th style="{TH_R}width:45px;">Days</th>'
+    h += f'<th style="{TH_R}width:45px;">Abs<br><span style="font-size:8px;">LWP</span></th>'
+
+    for i in range(mp):
+        el = _sl(ec[i]["label"]) if i < len(ec) else "&nbsp;"
+        dl = _sl(dc[i]["label"]) if i < len(dc) else "&nbsp;"
+        h += f'<th style="{TH_R}min-width:55px;">{el}<br><span style="font-size:8px;">{dl}</span></th>'
+
+    h += f'<th style="{TH_R}width:70px;">Grat<br><span style="font-size:8px;">Loan</span></th>'
+    h += f'<th style="{TH_R}width:60px;">Adv<br><span style="font-size:8px;">Ret</span></th>'
+    h += f'<th style="{TH_R}width:70px;">OD-1<br><span style="font-size:8px;">Net Sal</span></th>'
+    h += f'<th style="{TH_R}width:80px;">Earn<br><span style="font-size:8px;">Ded</span></th>'
+    h += f'</tr></thead><tbody>'
+
+    # Rows
+    for row in data:
+        is_tot = row.get("bold") == 1
+        td     = TS_S if is_tot else TD_S
+
+        h += "<tr>"
+        eid_span = "" if is_tot else f'<br><span style="font-size:8px;color:#555;">{row.get("employee","")}</span>'
+        h += f'<td style="{td}text-align:left;"><strong>{row.get("employee_name","")}</strong>{eid_span}</td>'
+        h += f'<td style="{td}text-align:center;">{row.get("payment_days","")}</td>'
+        h += (
+            f'<td style="{td}text-align:center;">'
+            f'{row.get("absent_days") or "0"}'
+            f'<br><span style="font-size:8px;">{_fmt(row.get("total_lwp")) or "0"}</span>'
+            f'</td>'
+        )
+
+        for i in range(mp):
+            ev = _fmt(row.get(ec[i]["fieldname"])) if i < len(ec) else ""
+            dv = _fmt(row.get(dc[i]["fieldname"])) if i < len(dc) else ""
+            h += (
+                f'<td style="{td}text-align:right;">'
+                f'{ev or "&nbsp;"}'
+                f'<br><span style="font-size:8px;">{dv or "&nbsp;"}</span>'
+                f'</td>'
+            )
+
+        h += (
+            f'<td style="{td}text-align:right;">'
+            f'{_fmt(row.get("earn_grat")) or "&nbsp;"}'
+            f'<br><span style="font-size:8px;">{_fmt(row.get("ded_loan")) or "&nbsp;"}</span>'
+            f'</td>'
+        )
+        h += (
+            f'<td style="{td}text-align:right;">'
+            f'{_fmt(row.get("ded_adv")) or "&nbsp;"}'
+            f'<br><span style="font-size:8px;">{_fmt(row.get("ded_ret")) or "&nbsp;"}</span>'
+            f'</td>'
+        )
+        h += (
+            f'<td style="{td}text-align:right;">'
+            f'{(_fmt(row.get(od1_fn)) if od1_fn else "") or "&nbsp;"}'
+            f'<br><span style="font-size:8px;">{_fmt(row.get("net_salary"))}</span>'
+            f'</td>'
+        )
+        h += (
+            f'<td style="{td}text-align:right;">'
+            f'{_fmt(row.get("total_earnings"))}'
+            f'<br><span style="font-size:8px;">{_fmt(row.get("total_deductions"))}</span>'
+            f'</td>'
+        )
+        h += "</tr>"
+
+    h += "</tbody></table>"
+
+    return (
+        f'<!DOCTYPE html><html><head><meta charset="UTF-8">{_CSS}</head>'
+        f'<body>{hdr}{h}{_SIG}</body></html>'
+    )
 
 
-# ---------------------------------------------------------
-# EMPLOYEE FILTER  (called from JS MultiSelectList)
-# ---------------------------------------------------------
+def _save_pdf(html, prefix):
+    pdf = get_pdf(html, options={
+        "page-size":     "A4",
+        "orientation":   "Landscape",
+        "margin-top":    "8mm",
+        "margin-right":  "8mm",
+        "margin-bottom": "8mm",
+        "margin-left":   "8mm",
+        "encoding":      "UTF-8",
+        "no-outline":    None,
+    })
+    ts  = frappe.utils.now_datetime().strftime("%Y%m%d_%H%M%S")
+    fn  = f"{prefix}_{ts}.pdf"
+    with open(frappe.utils.get_files_path(fn, is_private=0), "wb") as fh:
+        fh.write(pdf)
+    doc = frappe.get_doc({
+        "doctype":    "File",
+        "file_name":  fn,
+        "is_private": 0,
+        "file_url":   f"/files/{fn}",
+    })
+    doc.insert(ignore_permissions=True)
+    frappe.db.commit()
+    return doc.file_url
+
 
 @frappe.whitelist()
-def get_employees_for_filter(companies=None, categories=None, txt=""):
-    companies  = frappe.parse_json(companies)  if companies  else []
-    categories = frappe.parse_json(categories) if categories else []
-
-    conditions = "ss.docstatus = 1 AND (ss.employee LIKE %(txt)s OR ss.employee_name LIKE %(txt)s)"
-    params     = {"txt": f"%{txt}%"}
-
-    category_join = ""
-
-    if companies:
-        params["companies"] = tuple(companies)
-        conditions += " AND ss.company IN %(companies)s"
-
-    if categories:
-        category_join = "INNER JOIN `tabCompany Link` cl_cat ON cl_cat.employee = ss.employee"
-        params["categories"] = tuple(categories)
-        conditions += " AND cl_cat.category IN %(categories)s"
-
-    results = frappe.db.sql(f"""
-        SELECT DISTINCT
-            ss.employee      AS employee,
-            ss.employee_name AS employee_name
-        FROM
-            `tabSalary Slip` ss
-            {category_join}
-        WHERE
-            {conditions}
-        ORDER BY ss.employee_name
-        LIMIT 50
-    """, params, as_dict=True)
-
-    return results
-
-
-def sanitize(abbr):
-    return abbr.strip().lower().replace(" ", "_").replace("-", "_").replace("__", "_")
+def print_report(filters):
+    if isinstance(filters, str):
+        filters = json.loads(filters)
+    cols, data = _get_data(filters)
+    co   = _company_label(filters)
+    mo   = filters.get("month", "")
+    yr   = filters.get("year",  "")
+    html = _build_html(cols, data, co, mo, yr)
+    return _save_pdf(html, "Salary_Summary_Individual")

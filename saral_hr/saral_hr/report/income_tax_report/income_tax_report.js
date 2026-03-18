@@ -1,4 +1,4 @@
-frappe.query_reports["Educational Allowance Register"] = {
+frappe.query_reports["Income Tax Report"] = {
     filters: [
         {
             fieldname: "year",
@@ -17,7 +17,6 @@ frappe.query_reports["Educational Allowance Register"] = {
             label: __("Month"),
             fieldtype: "Select",
             reqd: 1,
-            default: "",
             options: ["","January","February","March","April","May","June",
                       "July","August","September","October","November","December"],
         },
@@ -29,57 +28,39 @@ frappe.query_reports["Educational Allowance Register"] = {
             get_data: txt => frappe.db.get_link_options("Company", txt),
         },
         {
-            fieldname: "category",
-            label: __("Category"),
-            fieldtype: "Link",
-            options: "Category",
-            default: "",
-        },
-        {
-            fieldname: "division",
-            label: __("Division"),
-            fieldtype: "MultiSelectList",
-            get_data: txt => frappe.db.get_link_options("Division", txt),
-        },
-        {
             fieldname: "employee",
             label: __("Employee"),
             fieldtype: "MultiSelectList",
-            get_data: txt => frappe.db.get_link_options("Company Link", txt),
+            get_data: txt => frappe.db.get_link_options("Employee", txt),
         },
     ],
 
     onload(report) {
         report.page.set_primary_action(__("Print"), function () {
             const f = report.get_values();
+
             if (!f.year || !f.month || !f.company?.length) {
                 frappe.msgprint({
                     title: __("Missing Filters"),
-                    message: __("Please select Year, Month and Company before printing."),
+                    message: __("Please select Year, Month and Company."),
                     indicator: "orange",
                 });
                 return;
             }
-            frappe.dom.freeze(__("Generating PDF…"));
+
+            frappe.dom.freeze(__("Generating PDF..."));
+
             frappe.call({
-                method: "saral_hr.saral_hr.report.educational_allowance_register.educational_allowance_register.print_report",
+                method: "saral_hr.saral_hr.report.income_tax_report.income_tax_report.print_report",
                 args: {
-                    filters: JSON.stringify({
-                        year:     f.year     || "",
-                        month:    f.month    || "",
-                        company:  JSON.stringify(f.company  || []),
-                        category: f.category || "",
-                        division: JSON.stringify(f.division || []),
-                        employee: JSON.stringify(f.employee || []),
-                    }),
+                    filters: JSON.stringify(f),
                 },
                 callback(r) {
                     frappe.dom.unfreeze();
                     if (r.message) {
                         const a = Object.assign(document.createElement("a"), {
-                            href:   frappe.urllib.get_full_url(r.message),
+                            href: frappe.urllib.get_full_url(r.message),
                             target: "_blank",
-                            rel:    "noopener noreferrer",
                         });
                         document.body.appendChild(a);
                         a.click();
@@ -88,16 +69,15 @@ frappe.query_reports["Educational Allowance Register"] = {
                 },
                 error() {
                     frappe.dom.unfreeze();
-                    frappe.msgprint({ title: __("Error"), message: __("Failed to generate PDF."), indicator: "red" });
-                },
+                    frappe.msgprint(__("Failed to generate PDF"));
+                }
             });
         }, "printer");
     },
 
     formatter(value, row, column, data, default_formatter) {
         if (!data) return default_formatter(value, row, column, data);
-        const def  = v => default_formatter(v, row, column, data);
-        const bold = v => `<strong>${def(v)}</strong>`;
-        return data.bold ? bold(value) : def(value);
-    },
+        const def = v => default_formatter(v, row, column, data);
+        return data.bold ? `<strong>${def(value)}</strong>` : def(value);
+    }
 };

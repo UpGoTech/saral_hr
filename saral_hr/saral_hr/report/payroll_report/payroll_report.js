@@ -1,7 +1,7 @@
 frappe.query_reports["Payroll Report"] = {
     filters: [
-        { fieldname:"report_mode", label:__("Report"), fieldtype:"Data", hidden:1, default:"home_bank_advice" },
-        { fieldname:"year",    label:__("Year"),    fieldtype:"Select", options:_get_year_options(), reqd:1, default:"" },
+        { fieldname:"report_mode", label:__("Report"), fieldtype:"Data", hidden:1, default:"salary_summary" },
+        { fieldname:"year",    label:__("Year"),    fieldtype:"Select", options:_get_year_options(), reqd:1, default:String(new Date().getFullYear()) },
         { fieldname:"month",   label:__("Month"),   fieldtype:"Select", reqd:1, default:"",
           options:["","January","February","March","April","May","June","July","August","September","October","November","December"] },
         { fieldname:"company", label:__("Company"), fieldtype:"MultiSelectList", reqd:1,
@@ -14,7 +14,9 @@ frappe.query_reports["Payroll Report"] = {
     onload(report) {
         frappe.after_ajax(() => {
             _inject_nav(report);
-            _set_print_buttons(report);
+            if (!report.page.wrapper.find(".pr-select-print-btn").length) {
+                _set_print_buttons(report);
+            }
         });
     },
 
@@ -28,50 +30,57 @@ frappe.query_reports["Payroll Report"] = {
         if (mode === "professional_tax" && rt === "total")
             return fn === "pt_rate" ? "" : bold(value);
 
-        if (mode === "provident_fund") {
-            if (rt === "total")
-                return ["pf_no","uan_no","days","absent","date_of_joining","date_of_birth"].includes(fn) ? "" : bold(value);
-            if (fn === "vol_pf" && (value === null || value === undefined || value === "")) return "";
-        }
+        if (mode === "provident_fund" && rt === "total")
+            return ["pf_no","uan_no","days","absent","date_of_joining","date_of_birth"].includes(fn) ? "" : bold(value);
 
         if (mode === "salary_summary") {
-            if (rt === "grand_total")    return fn === "spacer" ? "" : bold(value);
-            if (rt === "section_header" && fn === "description")
-                return `<strong style="font-size:12px;border-bottom:2px solid #333;padding-bottom:2px;display:block;">${value || ""}</strong>`;
-            if (rt === "other") {
-                if (fn === "description") return `<span style="font-weight:600;">${value || ""}</span>`;
-                if (fn === "amount")      return `<span style="font-weight:600;">${frappe.format(value, {fieldtype:"Float", precision:2})}</span>`;
-                return "";
-            }
-            if (rt === "separator") return "";
-            if ((fn === "amount" || fn === "ded_amount") && (value === null || value === undefined || value === "")) return "";
-            if (fn === "spacer") return "";
+            if (fn === "spacer" || fn === "spacer2") return "";
+            if (rt === "grand_total") return bold(value);
+            if ((fn === "amount" || fn === "ded_amount" || fn === "oth_amount") && (value === null || value === undefined || value === "")) return "";
         }
+
+        if ((mode === "home_bank_advice" || mode === "other_bank_advice") && data.bold) {
+            if (fn === "net_salary" || fn === "employee_name") return bold(value);
+            return "";
+        }
+
+        if (mode === "esi_register" && data.bold)
+            return ["esic_number","days_paid","date_of_joining","date_of_birth"].includes(fn) ? "" : bold(value);
+
+        if (mode === "retention_deposit" && data.bold)
+            return ["date_of_joining","ded_upto"].includes(fn) ? "" : bold(value);
+
+        if (mode === "variable_pay" && data.bold)
+            return ["division","variable_pay_percentage"].includes(fn) ? "" : bold(value);
+
+        if ((mode === "home_bank_advice" || mode === "other_bank_advice") && value === "On Hold" && fn === "net_salary")
+            return `<span style="color:#c0392b;font-style:italic;">On Hold</span>`;
+
         return data.bold ? bold(value) : def(value);
     }
 };
 
-// ── REPORT DEFINITIONS ──────────────────────────────────────────────────────
+// ─── Report definitions ───────────────────────────────────────────────────────
+
 const REPORTS = [
-    { key:"home_bank_advice",          label:"Home Bank Advice"               },
-    { key:"other_bank_advice",         label:"Other Bank Advice"              },
-    { key:"educational_allowance",     label:"Educational Allowance Register" },
-    { key:"esi_register",              label:"ESI Register"                   },
-    { key:"labour_welfare_fund",       label:"Labour Welfare Fund Register"   },
-    { key:"professional_tax",          label:"Professional Tax Register"      },
-    { key:"provident_fund",            label:"Provident Fund Register"        },
-    { key:"retention_deposit",         label:"Retention Deposit Register"     },
-    { key:"salary_summary",            label:"Salary Summary"                 },
-    { key:"salary_summary_individual", label:"Salary Summary Individual"      },
-    { key:"transaction_checklist",     label:"Transaction Checklist"          },
-    { key:"variable_pay",              label:"Variable Pay Register"          },
-    { key:"monthly_attendance",        label:"Monthly Attendance Report"      },
+    { key:"salary_summary",            label:"Salary Summary"            },
+    { key:"transaction_checklist",     label:"Transaction Checklist"     },
+    { key:"salary_summary_individual", label:"Salary Summary Individual" },
+    { key:"provident_fund",            label:"Provident Fund Register"   },
+    { key:"esi_register",              label:"ESI Register"              },
+    { key:"professional_tax",          label:"Professional Tax Register" },
+    { key:"retention_deposit",         label:"Retention Deposit"         },
+    { key:"educational_allowance",     label:"Educational Allowance"     },
+    { key:"variable_pay",              label:"Variable Pay Register"     },
+    { key:"labour_welfare_fund",       label:"Labour Welfare Fund"       },
+    { key:"other_bank_advice",         label:"Other Bank Advice"         },
+    { key:"home_bank_advice",          label:"Home Bank Advice"          },
+    { key:"monthly_attendance",        label:"Monthly Attendance"        },
+    { key:"income_tax",                label:"Income Tax"                },
 ];
 
-let _idx            = 0;
-let _cache          = {};
-let _debounce_timer = null;
-let _prefetch_xhr   = null;
+
+let _idx = 0, _cache = {}, _debounce_timer = null, _prefetch_xhr = null, _last_filter_key = null;
 
 function _get_year_options() {
     const y = new Date().getFullYear(), opts = [""];
@@ -84,125 +93,214 @@ function _filter_key() {
     return JSON.stringify([f.year, f.month, JSON.stringify(f.company || []), f.category || "", JSON.stringify(f.division || [])]);
 }
 
+// ── Validate filters ──────────────────────────────────────────────────────────
+
+function _validate(forPrint = false) {
+    const f = frappe.query_report.get_values() || {};
+    if (!f.year) {
+        frappe.msgprint({ title:__("Missing Filters"), message:__("Please select a Year."), indicator:"orange" });
+        return false;
+    }
+    if (!f.month) {
+        frappe.msgprint({ title:__("Missing Filters"), message:__("Please select a Month."), indicator:"orange" });
+        return false;
+    }
+    if (!f.company?.length) {
+        frappe.msgprint({ title:__("Missing Filters"), message:__("Please select at least one Company."), indicator:"orange" });
+        return false;
+    }
+    const yr = parseInt(f.year);
+    if (isNaN(yr) || yr < 2000 || yr > 2100) {
+        frappe.msgprint({ title:__("Invalid Year"), message:__("Please select a valid year between 2000 and 2100."), indicator:"orange" });
+        return false;
+    }
+    return true;
+}
+
+// ── Styles ────────────────────────────────────────────────────────────────────
+
 function _ensure_styles() {
     if (document.getElementById("pr-style")) return;
     const s = document.createElement("style");
     s.id = "pr-style";
     s.textContent = `
-        .pr-bar{display:flex;align-items:center;justify-content:center;gap:12px;
-            padding:10px 0 6px;border-bottom:1px solid #e0e4e8;margin:0 15px 4px;}
-        .pr-sel{position:relative;display:flex;align-items:center;min-width:280px;}
-        .pr-input{width:100%;font-size:12px;font-weight:600;color:#2c3e50;
-            border:1px solid #d1d5db;border-radius:5px;padding:5px 28px 5px 10px;
-            outline:none;background:#fff;cursor:pointer;text-align:center;transition:border-color .15s;}
-        .pr-input:focus{border-color:#5c7cfa;box-shadow:0 0 0 2px rgba(92,124,250,.15);}
-        .pr-caret{position:absolute;right:8px;top:50%;transform:translateY(-50%);
-            pointer-events:none;color:#888;font-size:10px;}
-        .pr-drop{position:absolute;top:calc(100% + 4px);left:0;right:0;background:#fff;
-            border:1px solid #d1d5db;border-radius:6px;box-shadow:0 6px 20px rgba(0,0,0,.12);
-            z-index:9999;max-height:300px;overflow-y:auto;
-            opacity:0;transform:translateY(-4px);pointer-events:none;
-            transition:opacity .12s,transform .12s;}
-        .pr-drop.open{opacity:1;transform:translateY(0);pointer-events:all;}
-        .pr-item{padding:7px 12px;font-size:12px;color:#2c3e50;cursor:pointer;
-            white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
-        .pr-item:hover,.pr-item:focus{background:#f0f4ff;outline:none;}
-        .pr-item.active{background:#e8eeff;font-weight:600;color:#3b5bdb;}
-        .pr-item.hide{display:none;}
-        .pr-empty{padding:8px 12px;font-size:12px;color:#aaa;text-align:center;display:none;}
-        .pr-status{font-size:10px;color:#16a34a;margin-left:4px;white-space:nowrap;}
+        .pr-nav {
+            padding: 8px 14px 10px;
+            background: #f8fafc;
+            border-top: 1px solid #e2e8f0;
+            border-bottom: 1px solid #e2e8f0;
+        }
+        .pr-scroll {
+            display: grid;
+            grid-template-columns: repeat(7, 1fr);
+            gap: 6px;
+        }
+        .pr-pill {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            text-align: center;
+            padding: 7px 10px;
+            font-size: 11.5px;
+            font-weight: 500;
+            color: #4a5568;
+            background: #fff;
+            border: 1.5px solid #e2e8f0;
+            border-radius: 6px;
+            cursor: pointer;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            transition: all .15s;
+            user-select: none;
+            line-height: 1.3;
+        }
+        .pr-pill:hover { border-color:#93c5fd; color:#1d4ed8; background:#eff6ff; }
+        .pr-pill.active {
+            background: #2563eb;
+            border-color: #2563eb;
+            color: #fff;
+            font-weight: 700;
+            box-shadow: 0 2px 6px rgba(37,99,235,.35);
+        }
+        .pr-pill.no-data {
+            opacity: 0.45;
+        }
+        .pr-status-bar {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 4px 14px;
+            background: #fff;
+            border-bottom: 1px solid #e2e8f0;
+            font-size: 11px;
+        }
+        .pr-current { font-weight: 600; color: #1a202c; font-size: 12px; }
+        .pr-ready   { color: #16a34a; font-size: 10px; margin-left: 8px; }
+        .pr-nav-btns { display: flex; gap: 4px; }
+        .pr-on-hold-note {
+            font-size: 11px;
+            color: #c0392b;
+            padding: 4px 14px;
+            background: #fff5f5;
+            border-bottom: 1px solid #fecaca;
+            display: none;
+        }
     `;
     document.head.appendChild(s);
 }
 
+// ── Nav injection ─────────────────────────────────────────────────────────────
+
 function _inject_nav(report) {
-    if (report.page.wrapper.find(".pr-bar").length) return;
+    if (report.page.wrapper.find(".pr-nav").length) return;
     _ensure_styles();
 
-    const items = REPORTS.map((r, i) =>
-        `<div class="pr-item${i === 0 ? " active" : ""}" data-i="${i}" tabindex="0">${r.label}</div>`
+    const pillsHtml = REPORTS.map((r, i) =>
+        `<button class="pr-pill${i === 0 ? " active" : ""}" data-idx="${i}" title="${r.label}">${r.label}</button>`
     ).join("");
 
-    const bar = $(`
-        <div class="pr-bar">
-            <button class="btn btn-xs btn-default pr-prev" style="font-size:16px;padding:2px 10px;">&lsaquo;</button>
-            <div class="pr-sel">
-                <input class="pr-input" type="text" autocomplete="off"
-                    value="${REPORTS[0].label}" placeholder="Search…"/>
-                <span class="pr-caret">▾</span>
-                <div class="pr-drop">
-                    ${items}
-                    <div class="pr-empty">No results</div>
-                </div>
-            </div>
-            <button class="btn btn-xs btn-default pr-next" style="font-size:16px;padding:2px 10px;">&rsaquo;</button>
-            <span class="pr-status"></span>
+    const nav = $(`
+        <div class="pr-nav">
+            <div class="pr-scroll">${pillsHtml}</div>
         </div>
+        <div class="pr-status-bar">
+            <span>
+                <span class="pr-current">${REPORTS[0].label}</span>
+                <span class="pr-ready"></span>
+            </span>
+            <div class="pr-nav-btns">
+                <button class="btn btn-xs btn-default pr-prev" title="Previous">&#8249;</button>
+                <button class="btn btn-xs btn-default pr-next" title="Next">&#8250;</button>
+            </div>
+        </div>
+        <div class="pr-on-hold-note" id="pr-on-hold-note"></div>
     `);
 
-    const targets = [".frappe-report-filters-section", ".filter-section", ".standard-filter-section", ".page-form"];
+    const targets = [".frappe-report-filters-section",".filter-section",".standard-filter-section",".page-form"];
     let inserted = false;
     for (const sel of targets) {
         const el = report.page.wrapper.find(sel).first();
-        if (el.length) { el.before(bar); inserted = true; break; }
+        if (el.length) { el.after(nav); inserted = true; break; }
     }
-    if (!inserted) report.page.wrapper.find(".report-wrapper").prepend(bar);
+    if (!inserted) report.page.wrapper.find(".report-wrapper").prepend(nav);
 
-    const inp  = bar.find(".pr-input");
-    const drop = bar.find(".pr-drop");
+    nav.on("click", ".pr-pill", function () { _go(report, +$(this).data("idx")); });
+    nav.find(".pr-prev").on("click", () => _go(report, (_idx - 1 + REPORTS.length) % REPORTS.length));
+    nav.find(".pr-next").on("click", () => _go(report, (_idx + 1) % REPORTS.length));
 
-    inp.on("focus click", () => { inp.select(); _filt(bar, ""); drop.addClass("open"); });
-    inp.on("input",       () => { _filt(bar, inp.val()); drop.addClass("open"); });
-
-    bar.on("click", ".pr-item", function () { _go(report, +$(this).data("i")); drop.removeClass("open"); });
-
-    $(document).on("click.pr", e => {
-        if (!bar[0].contains(e.target)) {
-            drop.removeClass("open");
-            inp.val(REPORTS[_idx].label);
-        }
-    });
-
-    inp.on("keydown", function (e) {
-        const vis = bar.find(".pr-item:not(.hide)");
-        if      (e.key === "Escape")    { drop.removeClass("open"); inp.val(REPORTS[_idx].label); }
-        else if (e.key === "Enter")     { const f = vis.first(); if (f.length) { _go(report, +f.data("i")); drop.removeClass("open"); } }
-        else if (e.key === "ArrowDown") { e.preventDefault(); drop.addClass("open"); vis.first().focus(); }
-    });
-
-    drop.on("keydown", ".pr-item", function (e) {
-        const vis = bar.find(".pr-item:not(.hide)"), i = vis.index($(this));
-        if      (e.key === "ArrowDown") { e.preventDefault(); vis.eq(i + 1).focus(); }
-        else if (e.key === "ArrowUp")   { e.preventDefault(); i === 0 ? inp.focus() : vis.eq(i - 1).focus(); }
-        else if (e.key === "Enter")     { _go(report, +$(this).data("i")); drop.removeClass("open"); inp.focus(); }
-        else if (e.key === "Escape")    { drop.removeClass("open"); inp.val(REPORTS[_idx].label); inp.focus(); }
-    });
-
-    bar.find(".pr-prev").on("click", () => _go(report, (_idx - 1 + REPORTS.length) % REPORTS.length));
-    bar.find(".pr-next").on("click", () => _go(report, (_idx + 1) % REPORTS.length));
-
+    // ── Filter change handler (fixed timing) ──────────────────────────────────
     report.page.wrapper.on("change.pr", ".frappe-control input, .frappe-control select", () => {
-        _cache = {};
-        bar.find(".pr-status").text("");
+        // Wipe cache and reset UI immediately
+        _cache       = {};
+        _loading_key = null;
+        nav.find(".pr-ready").text("");
+        nav.find(".pr-pill").removeClass("no-data");
         if (_prefetch_xhr) { _prefetch_xhr.abort?.(); _prefetch_xhr = null; }
         clearTimeout(_debounce_timer);
-        _debounce_timer = setTimeout(() => _prefetch_all(bar), 1500);
+
+        // Capture the filter key AFTER debounce, not now —
+        // MultiSelectList fires change before value is fully committed
+        _debounce_timer = setTimeout(() => {
+            _last_filter_key = _filter_key();
+            _prefetch_all(nav);
+        }, 1500);
     });
 
-    $(frappe.query_report).one("after_refresh", () => {
-        const fk = _filter_key();
-        if (!_cache[fk]) _cache[fk] = {};
-        _cache[fk][REPORTS[_idx].key] = {
-            columns: frappe.query_report.columns,
-            result:  frappe.query_report.data
-        };
-        _prefetch_all(bar);
+    _bind_refresh_listener(report);
+
+    $(frappe.query_report).one("after_refresh.pr_init", () => {
+        _last_filter_key = _filter_key();
+        _prefetch_all(nav);
     });
 }
 
-function _prefetch_all(bar) {
+// ── Mark pills with no data ───────────────────────────────────────────────────
+
+function _mark_no_data(nav, fk) {
+    const cached = _cache[fk] || {};
+
+    // If NO report has any data for this period, don't fade anything —
+    // it just means payroll hasn't been processed yet for this month/year
+    const anyHasData = Object.values(cached).some(
+        r => (r.result || []).length > 0
+    );
+    if (!anyHasData) {
+        nav.find(".pr-pill").removeClass("no-data");
+        return;
+    }
+
+    nav.find(".pr-pill").each(function () {
+        const key = REPORTS[+$(this).data("idx")]?.key;
+        if (!key || !cached[key]) return;
+        const hasData = (cached[key].result || []).length > 0;
+        $(this).toggleClass("no-data", !hasData);
+    });
+}
+
+// ── On Hold footnote ──────────────────────────────────────────────────────────
+
+function _update_on_hold_note(data) {
+    const note = $("#pr-on-hold-note");
+    if (!note.length) return;
+    const mode = frappe.query_report.get_filter_value("report_mode");
+    if (mode !== "home_bank_advice" && mode !== "other_bank_advice") {
+        note.hide().text(""); return;
+    }
+    const holdCount = (data || []).filter(r => r.net_salary === "On Hold").length;
+    if (holdCount > 0) {
+        note.text(`⚠ ${holdCount} employee${holdCount > 1 ? "s are" : " is"} On Hold and excluded from the total.`).show();
+    } else {
+        note.hide().text("");
+    }
+}
+
+// ── Prefetch all reports lazily ───────────────────────────────────────────────
+
+function _prefetch_all(nav) {
     const fk = _filter_key();
     const f  = frappe.query_report.get_values() || {};
+    if (!f.year || !f.month || !f.company?.length) return;
 
     _prefetch_xhr = frappe.call({
         method: "saral_hr.saral_hr.report.payroll_report.payroll_report.get_all_reports_data",
@@ -217,138 +315,248 @@ function _prefetch_all(bar) {
         },
         callback(res) {
             _prefetch_xhr = null;
-            if (!res.message || fk !== _filter_key()) return;
+            if (!res.message) return;
+
+            // Discard if filters changed again while request was in-flight
+            if (fk !== _filter_key()) return;
+
             if (!_cache[fk]) _cache[fk] = {};
             Object.assign(_cache[fk], res.message);
-            bar.find(".pr-status").text("✓ All ready");
+            nav.find(".pr-ready").text("✓ All ready");
+            _mark_no_data(nav, fk);
         },
         error() { _prefetch_xhr = null; }
     });
 }
 
-function _filt(bar, q) {
-    q = q.trim().toLowerCase();
-    let n = 0;
-    bar.find(".pr-item").each(function () {
-        const match = !q || $(this).text().toLowerCase().includes(q);
-        $(this).toggleClass("hide", !match);
-        if (match) n++;
-    });
-    bar.find(".pr-empty").toggle(n === 0);
+// ── Sync pill + page title ────────────────────────────────────────────────────
+
+function _sync(nav, report) {
+    nav.find(".pr-pill").removeClass("active");
+    nav.find(`.pr-pill[data-idx="${_idx}"]`).addClass("active");
+    nav.find(".pr-current").text(REPORTS[_idx].label);
+    const label = REPORTS[_idx].label;
+    report.page.wrapper.find(".title-text").text(label);
+    document.title = label + " — Frappe";
 }
 
-function _sync(report) {
-    const r = REPORTS[_idx], bar = report.page.wrapper.find(".pr-bar");
-    bar.find(".pr-input").val(r.label);
-    bar.find(".pr-item").removeClass("active").filter(`[data-i="${_idx}"]`).addClass("active");
-}
+// ── Navigate to a report tab ──────────────────────────────────────────────────
+
+let _loading_key = null;
 
 function _go(report, idx) {
     _idx = idx;
-    _sync(report);
-    frappe.query_report.set_filter_value("report_mode", REPORTS[idx].key);
+    const nav     = report.page.wrapper.find(".pr-nav").parent();
+    const modeKey = REPORTS[idx].key;
+    _sync(nav, report);
+
+    frappe.query_report.set_filter_value("report_mode", modeKey);
 
     const fk     = _filter_key();
-    const cached = _cache[fk]?.[REPORTS[idx].key];
+    const cached = _cache[fk]?.[modeKey];
 
     if (cached) {
-        const qr = frappe.query_report;
-        qr.columns = cached.columns;
-        qr.data    = cached.result;
-        try {
-            qr.render_datatable();
-        } catch (_) {
-            if (qr.datatable) qr.datatable.refresh(cached.result, cached.columns);
-            else frappe.query_report.refresh();
-        }
+        _render_cached(cached, nav, fk);
+        _update_on_hold_note(cached.result);
         return;
     }
 
+    _loading_key = `${fk}::${modeKey}`;
     frappe.query_report.refresh();
+}
 
-    $(frappe.query_report).one("after_refresh", () => {
-        const fk2 = _filter_key();
-        if (!_cache[fk2]) _cache[fk2] = {};
-        _cache[fk2][REPORTS[idx].key] = {
+function _render_cached(cached, nav, fk) {
+    const qr = frappe.query_report;
+    qr.columns = cached.columns;
+    qr.data    = cached.result;
+    try {
+        qr.render_datatable();
+    } catch (_) {
+        try {
+            if (qr.datatable) qr.datatable.refresh(cached.result, cached.columns);
+            else qr.refresh();
+        } catch (__) {
+            qr.refresh();
+        }
+    }
+    _mark_no_data(nav, fk);
+}
+
+function _bind_refresh_listener(report) {
+    $(frappe.query_report).on("after_refresh.pr", () => {
+        const fk      = _filter_key();
+        const modeKey = frappe.query_report.get_filter_value("report_mode");
+        const thisKey = `${fk}::${modeKey}`;
+
+        if (_loading_key && _loading_key !== thisKey) return;
+        _loading_key = null;
+
+        if (!_cache[fk]) _cache[fk] = {};
+        _cache[fk][modeKey] = {
             columns: frappe.query_report.columns,
-            result:  frappe.query_report.data
+            result:  frappe.query_report.data,
         };
+
+        const nav = report.page.wrapper.find(".pr-nav").parent();
+        _update_on_hold_note(frappe.query_report.data);
+        _mark_no_data(nav, fk);
     });
 }
 
-function _set_print_buttons(report) {
-    report.page.set_primary_action(__("Print"), _print_current, "printer");
-    report.page.wrapper.find(".pr-print-all-btn").remove();
-    const btn = $(`<button class="btn btn-default btn-sm pr-print-all-btn" style="margin-left:8px;">${__("Print All")}</button>`);
-    report.page.wrapper.find(".page-actions").prepend(btn);
-    btn.on("click", () => _print_all(btn));
-}
+// ── Server filter builder ─────────────────────────────────────────────────────
 
 function _server_filters() {
     const f = frappe.query_report.get_values() || {};
     return {
-        year:        f.year      || "",
-        month:       f.month     || "",
-        company:     JSON.stringify(f.company   || []),
-        category:    f.category  || "",
-        division:    JSON.stringify(f.division  || []),
-        report_mode: frappe.query_report.get_filter_value("report_mode") || "home_bank_advice",
+        year:        f.year     || "",
+        month:       f.month    || "",
+        company:     JSON.stringify(f.company  || []),
+        category:    f.category || "",
+        division:    JSON.stringify(f.division || []),
+        report_mode: frappe.query_report.get_filter_value("report_mode") || "salary_summary",
     };
 }
 
-function _validate() {
-    const f = frappe.query_report.get_values() || {};
-    if (!f.year || !f.month || !f.company?.length) {
-        frappe.msgprint({
-            title:   __("Missing Filters"),
-            message: __("Please select Year, Month and Company before printing."),
-            indicator: "orange"
-        });
-        return false;
-    }
-    return true;
+// ── Print buttons ─────────────────────────────────────────────────────────────
+
+function _set_print_buttons(report) {
+    report.page.wrapper.find(".pr-select-print-btn").remove();
+    const btnSel = $(`<button class="btn btn-default btn-sm pr-select-print-btn" style="margin-left:8px;">
+        <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24"
+             fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"
+             stroke-linejoin="round" style="margin-right:4px;vertical-align:-1px;">
+          <polyline points="9 11 12 14 22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/>
+        </svg>${__("Select & Print")}</button>`);
+    report.page.wrapper.find(".page-actions").prepend(btnSel);
+    btnSel.on("click", () => _show_select_print_dialog(btnSel));
+    report.page.wrapper.find(".pr-print-btn").off("click.pr_print");
+    report.page.set_primary_action(__("Print"), _print_current, "printer");
 }
+
+// ── Print current tab ─────────────────────────────────────────────────────────
 
 function _print_current() {
     if (!_validate()) return;
-    frappe.dom.freeze(__("Generating PDF..."));
+    const label = REPORTS[_idx]?.label || "Report";
+    frappe.show_progress(__("Generating PDF"), 0, 100, `${label}…`);
     frappe.call({
-        method:   "saral_hr.saral_hr.report.payroll_report.payroll_report.print_single_report",
-        args:     { filters: JSON.stringify(_server_filters()) },
-        callback: r => { frappe.dom.unfreeze(); if (r.message) _open_pdf(r.message); },
-        error:    () => {
-            frappe.dom.unfreeze();
-            frappe.msgprint({ title: __("Error"), message: __("Failed to generate PDF."), indicator: "red" });
+        method: "saral_hr.saral_hr.report.payroll_report.payroll_report.print_single_report",
+        args: { filters: JSON.stringify(_server_filters()) },
+        callback: r => {
+            frappe.show_progress(__("Generating PDF"), 100, 100, __("Done!"));
+            setTimeout(() => {
+                frappe.hide_progress();
+                if (r.message) _open_pdf(r.message);
+                else frappe.msgprint({ title:__("Error"), message:__("Failed to generate PDF."), indicator:"red" });
+            }, 500);
+        },
+        error: () => {
+            frappe.hide_progress();
+            frappe.msgprint({ title:__("Error"), message:__("Failed to generate PDF."), indicator:"red" });
         }
     });
 }
 
-function _print_all(btn) {
+// ── Select & Print dialog ─────────────────────────────────────────────────────
+
+function _show_select_print_dialog(triggerBtn) {
     if (!_validate()) return;
+
+    const half  = Math.ceil(REPORTS.length / 2);
+    const left  = REPORTS.slice(0, half);
+    const right = REPORTS.slice(half);
+
+    function _chkRow(r, i) {
+        return `
+        <div class="pr-chk-row" style="display:flex;align-items:center;gap:8px;
+             padding:6px 8px;border-radius:6px;cursor:pointer;transition:background .1s;"
+             onmouseenter="this.style.background='#f1f5f9'"
+             onmouseleave="this.style.background='transparent'"
+             onclick="document.getElementById('pr-chk-${i}').click()">
+          <input type="checkbox" id="pr-chk-${i}" data-key="${r.key}" checked
+                 style="width:15px;height:15px;flex-shrink:0;cursor:pointer;accent-color:#2563eb;"
+                 onclick="event.stopPropagation()">
+          <label for="pr-chk-${i}"
+                 style="cursor:pointer;font-size:12.5px;color:#1e293b;margin:0;font-weight:500;line-height:1.3;">
+            ${r.label}
+          </label>
+        </div>`;
+    }
+
+    const leftHtml  = left.map((r, i) => _chkRow(r, i)).join("");
+    const rightHtml = right.map((r, i) => _chkRow(r, i + half)).join("");
+
+    const body = `
+        <div style="padding:4px 0 8px;">
+          <div style="display:flex;gap:8px;padding:0 8px 10px;border-bottom:1px solid #e2e8f0;margin-bottom:8px;">
+            <button class="btn btn-xs btn-default" onclick="
+                document.querySelectorAll('.pr-chk-row input[type=checkbox]').forEach(c=>c.checked=true)
+            ">${__("Select All")}</button>
+            <button class="btn btn-xs btn-default" onclick="
+                document.querySelectorAll('.pr-chk-row input[type=checkbox]').forEach(c=>c.checked=false)
+            ">${__("Unselect All")}</button>
+          </div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:0 12px;padding:0 4px;">
+            <div>${leftHtml}</div>
+            <div>${rightHtml}</div>
+          </div>
+        </div>
+    `;
+
+    const d = new frappe.ui.Dialog({
+        title: __("Select Reports to Print"),
+        fields: [{ fieldtype: "HTML", fieldname: "report_list", options: body }],
+        primary_action_label: __("Generate PDF"),
+        primary_action() {
+            const selected = [];
+            document.querySelectorAll(".pr-chk-row input[type=checkbox]").forEach(chk => {
+                if (chk.checked) selected.push(chk.dataset.key);
+            });
+            if (!selected.length) {
+                frappe.msgprint({ title:__("Nothing Selected"), message:__("Please select at least one report."), indicator:"orange" });
+                return;
+            }
+            d.hide();
+            _print_selected(selected, triggerBtn);
+        },
+    });
+    d.show();
+}
+
+function _print_selected(selectedKeys, btn) {
     const orig = btn.text();
-    btn.prop("disabled", true).text(__("Generating..."));
-    frappe.dom.freeze(__("Generating all reports PDF…"));
-    const f = _server_filters();
-    delete f.report_mode;
+    btn.prop("disabled", true);
+    const count = selectedKeys.length;
+    frappe.show_progress(
+        __("Generating PDF"),
+        0, 100,
+        `${__("Compiling")} ${count} ${count === 1 ? __("report") : __("reports")}…`
+    );
+    const f = _server_filters(); delete f.report_mode;
+    f.selected_reports = JSON.stringify(selectedKeys);
     frappe.call({
-        method:   "saral_hr.saral_hr.report.payroll_report.payroll_report.print_all_reports",
-        args:     { filters: JSON.stringify(f) },
-        callback: r => { frappe.dom.unfreeze(); btn.prop("disabled", false).text(orig); if (r.message) _open_pdf(r.message); },
-        error:    () => {
-            frappe.dom.unfreeze();
+        method: "saral_hr.saral_hr.report.payroll_report.payroll_report.print_selected_reports",
+        args: { filters: JSON.stringify(f) },
+        callback: r => {
+            frappe.show_progress(__("Generating PDF"), 100, 100, __("Done!"));
+            setTimeout(() => {
+                frappe.hide_progress();
+                btn.prop("disabled", false).text(orig);
+                if (r.message) _open_pdf(r.message);
+                else frappe.msgprint({ title:__("Error"), message:__("Failed to generate PDF."), indicator:"red" });
+            }, 500);
+        },
+        error: () => {
+            frappe.hide_progress();
             btn.prop("disabled", false).text(orig);
-            frappe.msgprint({ title: __("Error"), message: __("Failed to generate PDF."), indicator: "red" });
+            frappe.msgprint({ title:__("Error"), message:__("Failed to generate PDF."), indicator:"red" });
         }
     });
 }
 
 function _open_pdf(url) {
     const a = Object.assign(document.createElement("a"), {
-        href:   frappe.urllib.get_full_url(url),
-        target: "_blank",
-        rel:    "noopener noreferrer"
+        href: frappe.urllib.get_full_url(url), target:"_blank", rel:"noopener noreferrer"
     });
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
+    document.body.appendChild(a); a.click(); document.body.removeChild(a);
 }

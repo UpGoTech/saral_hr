@@ -19,20 +19,21 @@ B = "1px solid #000"
 
 _CSS = """<style>
 *{margin:0;padding:0;box-sizing:border-box}
-body{font-family:Arial,sans-serif;font-size:16px;color:#000;background:#fff}
-.hdr{text-align:center;border-bottom:2px solid #000;padding:10px 6px 6px;margin-bottom:6px}
-.hdr .co{font-size:28px;font-weight:900;letter-spacing:1px;text-transform:uppercase}
-.hdr .ttl{font-size:20px;font-weight:700;margin-top:2px}
-.hdr .per{font-size:16px;margin-top:2px}
-.sig{display:flex;justify-content:space-between;margin-top:16px;padding-top:8px}
-.sig-b{text-align:center;width:180px}
-.sig-l{border-top:1px solid #000;margin-bottom:4px}
-.sig-t{font-size:15px;color:#333}
-table{width:100%;border-collapse:collapse;margin-top:8px}
-th{border:1px solid #000;padding:10px 12px;font-size:16px;font-weight:700;background:#f0f0f0;color:#000;white-space:nowrap;text-align:left}
-td{border:1px solid #000;padding:10px 12px;font-size:16px;vertical-align:middle;color:#000;text-align:left}
+body{font-family:Arial,sans-serif;font-size:10px;color:#000;background:#fff}
+.hdr{text-align:center;border-bottom:2px solid #000;padding:8px 4px 6px;margin-bottom:6px}
+.hdr .co{font-size:18px;font-weight:900;letter-spacing:1px;text-transform:uppercase}
+.hdr .ttl{font-size:13px;font-weight:700;margin-top:3px}
+.hdr .per{font-size:11px;margin-top:2px}
+.sig{display:flex;justify-content:space-between;margin-top:24px;padding-top:6px}
+.sig-b{text-align:center;width:160px}
+.sig-l{border-top:1px solid #000;margin-bottom:3px}
+.sig-t{font-size:10px;color:#333}
+table{width:100%;border-collapse:collapse;margin-top:6px}
+th{border:1px solid #000;padding:5px 7px;font-size:10px;font-weight:700;background:#f0f0f0;color:#000;white-space:nowrap}
+td{border:1px solid #000;padding:5px 7px;font-size:10px;vertical-align:middle;color:#000}
 tr.tot td{background:#e8e8e8;font-weight:700}
-.nd{text-align:center;padding:10px;color:#888;font-size:16px}
+.r{text-align:right}.l{text-align:left}
+.nd{text-align:center;padding:18px;color:#888;font-size:10px}
 .hold{color:#c0392b;font-style:italic}
 </style>"""
 
@@ -40,6 +41,8 @@ _SIG = '<div class="sig">' + "".join(
     f'<div class="sig-b"><div class="sig-l"></div><div class="sig-t">{l}</div></div>'
     for l in ["Prepared By", "Checked By", "Authorised Signatory"]
 ) + '</div>'
+
+_NUMERIC_FN = {"net_salary"}
 
 
 # ---------------------------------------------------------------------------
@@ -75,6 +78,7 @@ def _fmt(v):
     except (TypeError, ValueError): return str(v)
 
 def _bank_map(cos):
+    """Map company → home bank_name (lowercase stripped)."""
     if not cos: return {}
     return {
         r.name: (r.bank_name or "").strip().lower()
@@ -100,17 +104,17 @@ def _on_hold(f):
 
 
 # ---------------------------------------------------------------------------
-# Core data function
+# Core data function  (mode = "other")
 # ---------------------------------------------------------------------------
 
 def _get_data(f):
     cols = [
-        _col("Employee ID",     "employee_id",     w=120),
-        _col("Employee Name",   "employee_name",   w=200),
-        _col("IFSC Code",       "ifsc_code",       w=130),
-        _col("Account Number",  "account_number",  w=160),
-        _col("Net Salary",      "net_salary",      "Data", 120),
-        _col("Bank Name",       "bank_name",       w=150),
+        _col("Employee ID",    "employee_id",    w=120),
+        _col("Employee Name",  "employee_name",  w=200),
+        _col("IFSC Code",      "ifsc_code",      w=130),
+        _col("Account Number", "account_number", w=160),
+        _col("Net Salary",     "net_salary",     "Data", 120),
+        _col("Bank Name",      "bank_name",      w=150),
     ]
 
     if not f.get("company"):
@@ -171,37 +175,40 @@ def _get_data(f):
         return cols, []
 
     oh  = _on_hold(f)
-    hm  = _bank_map(list({s.company for s in slips if s.company}))
+    hm  = _bank_map(list({sl.company for sl in slips if sl.company}))
 
     data = []
     tot  = 0.0
 
-    for s in slips:
-        eb = (s.bank_name or "").strip().lower()
-        hb = hm.get(s.company, "")
+    for sl in slips:
+        eb = (sl.bank_name or "").strip().lower()
+        hb = hm.get(sl.company, "")
 
-        if not (hb and eb == hb):
+        # Other bank: employee's bank does NOT match company's home bank
+        # (also includes employees with no bank set on company, i.e. hb is empty)
+        is_home = hb and eb == hb
+        if is_home:
             continue
 
-        if s.employee in oh:
+        if sl.employee in oh:
             data.append({
-                "employee_id":    s.employee,
-                "employee_name":  s.employee_name,
+                "employee_id":    sl.employee,
+                "employee_name":  sl.employee_name,
                 "ifsc_code":      "On Hold",
                 "account_number": "On Hold",
                 "net_salary":     "On Hold",
-                "bank_name":      s.bank_name or "-",
+                "bank_name":      sl.bank_name or "-",
             })
         else:
-            n = flt(s.net_salary, 2)
+            n = flt(sl.net_salary, 2)
             tot += n
             data.append({
-                "employee_id":    s.employee,
-                "employee_name":  s.employee_name,
-                "ifsc_code":      s.ifsc_code      or "-",
-                "account_number": s.account_number or "-",
+                "employee_id":    sl.employee,
+                "employee_name":  sl.employee_name,
+                "ifsc_code":      sl.ifsc_code      or "-",
+                "account_number": sl.account_number or "-",
                 "net_salary":     f"{n:,.2f}",
-                "bank_name":      s.bank_name      or "-",
+                "bank_name":      sl.bank_name      or "-",
             })
 
     if data:
@@ -231,7 +238,7 @@ def execute(filters=None):
 # ---------------------------------------------------------------------------
 
 def _build_html(cols, data, co, mo, yr):
-    title = "Home Bank Advice"
+    title = "Other Bank Advice"
 
     hdr = (
         f'<div class="hdr">'
@@ -244,7 +251,8 @@ def _build_html(cols, data, co, mo, yr):
     def _th():
         h = "<tr>"
         for c in cols:
-            h += f'<th>{c.get("label", "")}</th>'
+            is_n = c.get("fieldname") in _NUMERIC_FN or c.get("fieldtype", "") in ("Float", "Currency")
+            h += f'<th class="{"r" if is_n else "l"}">{c.get("label", "")}</th>'
         return h + "</tr>"
 
     def _dr(row):
@@ -252,22 +260,26 @@ def _build_html(cols, data, co, mo, yr):
         for c in cols:
             fn  = c.get("fieldname", "")
             val = row.get(fn, "")
-            if fn == "net_salary" and val == "On Hold":
-                h += '<td class="hold">On Hold</td>'
+            if fn == "net_salary":
+                if val == "On Hold":
+                    h += '<td class="r hold">On Hold</td>'
+                else:
+                    h += f'<td class="r">{val or ""}</td>'
             else:
-                h += f'<td>{val or ""}</td>'
+                h += f'<td class="l">{val or ""}</td>'
         return h + "</tr>"
 
     def _tr(row):
         h = '<tr class="tot">'
         for c in cols:
-            fn = c.get("fieldname", "")
-            if fn == "employee_name":
-                h += '<td>Total</td>'
-            elif fn == "net_salary":
-                h += f'<td>{_fmt(row.get(fn, ""))}</td>'
+            fn   = c.get("fieldname", "")
+            is_n = fn in _NUMERIC_FN or c.get("fieldtype", "") in ("Float", "Currency")
+            if is_n:
+                h += f'<td class="r">{_fmt(row.get(fn, ""))}</td>'
+            elif fn == "employee_name":
+                h += '<td class="l">Total</td>'
             else:
-                h += '<td></td>'
+                h += '<td class="l"></td>'
         return h + "</tr>"
 
     detail_rows = [r for r in data if not r.get("bold")]
@@ -283,8 +295,8 @@ def _build_html(cols, data, co, mo, yr):
             f'</table>{_SIG}</body></html>'
         )
 
-    # Fewer rows per page now due to larger font
-    FIRST, OTHER = 20, 25
+    # Paginate: 30 rows first page, 35 on subsequent pages
+    FIRST, OTHER = 30, 35
     pages, idx, first = [], 0, True
     while idx < len(detail_rows):
         lim = FIRST if first else OTHER
@@ -345,4 +357,4 @@ def print_report(filters):
     mo   = filters.get("month", "")
     yr   = filters.get("year",  "")
     html = _build_html(cols, data, co, mo, yr)
-    return _save_pdf(html, "Home_Bank_Advice")
+    return _save_pdf(html, "Other_Bank_Advice")
