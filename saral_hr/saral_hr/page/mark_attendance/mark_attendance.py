@@ -132,10 +132,12 @@ UI_TO_DB_STATUS = {
     "Regular": "Present",
 }
 
+# "Earned Comp Off" saves directly as "Earned Comp Off" in DB
 VALID_UI_STATUSES = {
     "Present",
     "Regular",
     "On Tour",
+    "Earned Comp Off",
     "Absent",
     "Half Day",
     "Holiday",
@@ -260,6 +262,86 @@ def get_holidays_between_dates(company, start_date, end_date):
     )
 
     return [str(h) for h in holidays]
+
+
+@frappe.whitelist()
+def get_comp_off_balance(employee, year=None, month=None):
+    import datetime
+
+    # If year/month provided and valid, calculate month boundaries
+    try:
+        year_int  = int(year)  if year  not in (None, "", "None") else None
+        month_int = int(month) if month not in (None, "", "None") else None
+    except (ValueError, TypeError):
+        year_int  = None
+        month_int = None
+
+    if year_int is not None and month_int is not None:
+        # month_int is 0-based from JS (0=Jan … 11=Dec)
+        month_1based = month_int + 1
+        month_start  = datetime.date(year_int, month_1based, 1)
+        if month_1based == 12:
+            month_end = datetime.date(year_int + 1, 1, 1) - datetime.timedelta(days=1)
+        else:
+            month_end = datetime.date(year_int, month_1based + 1, 1) - datetime.timedelta(days=1)
+
+        # Available = all earned before this month − all used before this month
+        earned_before = frappe.db.count("Attendance", filters={
+            "employee": employee, "status": "Earned Comp Off",
+            "attendance_date": ["<", month_start], "docstatus": ["<", 2],
+        })
+        used_before = frappe.db.count("Attendance", filters={
+            "employee": employee, "status": "Comp Off",
+            "attendance_date": ["<", month_start], "docstatus": ["<", 2],
+        })
+        available = max(0, earned_before - used_before)
+
+        earned = frappe.db.count("Attendance", filters={
+            "employee": employee, "status": "Earned Comp Off",
+            "attendance_date": ["between", [month_start, month_end]], "docstatus": ["<", 2],
+        })
+        used = frappe.db.count("Attendance", filters={
+            "employee": employee, "status": "Comp Off",
+            "attendance_date": ["between", [month_start, month_end]], "docstatus": ["<", 2],
+        })
+        # Earned Leave taken this month
+        el_taken = frappe.db.count("Attendance", filters={
+            "employee": employee, "status": "Earned Leave",
+            "attendance_date": ["between", [month_start, month_end]], "docstatus": ["<", 2],
+        })
+        # Casual Leave taken this month
+        cl_taken = frappe.db.count("Attendance", filters={
+            "employee": employee, "status": "Casual Leave",
+            "attendance_date": ["between", [month_start, month_end]], "docstatus": ["<", 2],
+        })
+
+        balance = max(0, available + earned - used)
+
+    else:
+        # No month selected — show all-time totals
+        available = 0
+        earned = frappe.db.count("Attendance", filters={
+            "employee": employee, "status": "Earned Comp Off", "docstatus": ["<", 2],
+        })
+        used = frappe.db.count("Attendance", filters={
+            "employee": employee, "status": "Comp Off", "docstatus": ["<", 2],
+        })
+        el_taken = frappe.db.count("Attendance", filters={
+            "employee": employee, "status": "Earned Leave", "docstatus": ["<", 2],
+        })
+        cl_taken = frappe.db.count("Attendance", filters={
+            "employee": employee, "status": "Casual Leave", "docstatus": ["<", 2],
+        })
+        balance = max(0, earned - used)
+
+    return {
+        "available": available,
+        "earned":    earned,
+        "used":      used,
+        "balance":   balance,
+        "el_taken":  el_taken,
+        "cl_taken":  cl_taken,
+    }
 
 
 # ── fetch joining date AND left date from Company Link ─────────────────────

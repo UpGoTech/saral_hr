@@ -24,20 +24,10 @@ class Attendance(Document):
 		self.validate_duplicate_record()
 		self.validate_employee_active()
 
-	# ------------------------------------------------------------------
-	# Attendance Date Validation
-	# ------------------------------------------------------------------
 	def validate_attendance_date(self):
-		"""
-		Validate that attendance date is:
-		- Not in the future (except statuses that are pre-known/leave types)
-		- Not before employee joining date
-		"""
-
 		if not self.employee or not self.attendance_date:
 			return
 
-		# Statuses allowed on future dates (leaves, offs, tours planned ahead)
 		FUTURE_ALLOWED = {
 			"On Leave",
 			"Holiday",
@@ -47,6 +37,7 @@ class Attendance(Document):
 			"Casual Leave",
 			"Comp Off",
 			"On Tour",
+			"Earned Comp Off",  # allowed — it's a worked Weekly Off, may be pre-planned
 		}
 
 		date_of_joining = frappe.db.get_value(
@@ -55,7 +46,6 @@ class Attendance(Document):
 			"date_of_joining"
 		)
 
-		# Future date check
 		if (
 			self.status not in FUTURE_ALLOWED
 			and getdate(self.attendance_date) > getdate(nowdate())
@@ -66,7 +56,6 @@ class Attendance(Document):
 				)
 			)
 
-		# Before joining date check
 		if date_of_joining and getdate(self.attendance_date) < getdate(date_of_joining):
 			frappe.throw(
 				_(
@@ -77,14 +66,7 @@ class Attendance(Document):
 				)
 			)
 
-	# ------------------------------------------------------------------
-	# Duplicate Attendance Validation
-	# ------------------------------------------------------------------
 	def validate_duplicate_record(self):
-		"""
-		Ensure only one attendance record per employee per date
-		"""
-
 		if not self.employee or not self.attendance_date:
 			return
 
@@ -110,14 +92,7 @@ class Attendance(Document):
 				exc=DuplicateAttendanceError,
 			)
 
-	# ------------------------------------------------------------------
-	# Active Employee Validation (Company Link)
-	# ------------------------------------------------------------------
 	def validate_employee_active(self):
-		"""
-		Ensure attendance is marked only for active Company Link records
-		"""
-
 		if not self.employee:
 			return
 
