@@ -632,13 +632,12 @@ def get_attendance_and_days(employee, start_date, working_days_calculation_metho
     combined_absent_days = flt(absent_days + lwp_days, 2)
 
     if calculation_method == "Include Weekly Offs":
-    
+        
         working_days = total_days
         payment_days = flt(total_days - combined_absent_days, 2)
     else:
-       
         working_days = total_days - weekly_off_count
-        payment_days = flt(working_days - combined_absent_days + comp_off_days, 2)  
+        payment_days = flt(working_days - combined_absent_days + comp_off_days, 2) 
 
     physical_working_days = flt(
         payment_days - earned_leave_days - casual_leave_days - comp_off_days, 2
