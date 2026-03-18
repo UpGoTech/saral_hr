@@ -10,6 +10,43 @@
   "javascript": null,
   "json": null,
   "letter_head": null,
+  "modified": "2026-03-17 14:12:56.693650",
+  "module": "Saral Hr",
+  "name": "Income Tax Report",
+  "prepared_report": 0,
+  "query": null,
+  "ref_doctype": "Salary Slip",
+  "reference_report": null,
+  "report_name": "Income Tax Report",
+  "report_script": null,
+  "report_type": "Script Report",
+  "roles": [
+   {
+    "parent": "Income Tax Report",
+    "parentfield": "roles",
+    "parenttype": "Report",
+    "role": "Saral HR Manager"
+   },
+   {
+    "parent": "Income Tax Report",
+    "parentfield": "roles",
+    "parenttype": "Report",
+    "role": "Saral HR User"
+   }
+  ],
+  "timeout": 0
+ },
+ {
+  "add_total_row": 0,
+  "columns": [],
+  "disabled": 0,
+  "docstatus": 0,
+  "doctype": "Report",
+  "filters": [],
+  "is_standard": "Yes",
+  "javascript": null,
+  "json": null,
+  "letter_head": null,
   "modified": "2026-02-19 12:54:47.455820",
   "module": "Saral Hr",
   "name": "Transaction Checklist",
