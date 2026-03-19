@@ -21,38 +21,7 @@ PF_EPS_COMP   = "Employer EPS"
 PF_EDLI_COMP  = "Employer EDLI"
 PF_ADMIN_COMP = "Employer PF Admin Charges"
 
-B     = "1px solid #000"
-TH_L  = f"border:{B};padding:5px 7px;font-size:10px;font-weight:700;background:#f0f0f0;color:#000;text-align:left;white-space:nowrap;"
-TH_R  = f"border:{B};padding:5px 7px;font-size:10px;font-weight:700;background:#f0f0f0;color:#000;text-align:right;white-space:nowrap;"
-TD_L  = f"border:{B};padding:5px 7px;font-size:10px;vertical-align:middle;color:#000;text-align:left;"
-TD_R  = f"border:{B};padding:5px 7px;font-size:10px;vertical-align:middle;color:#000;text-align:right;"
-TS_L  = f"border:{B};padding:5px 7px;font-size:10px;font-weight:700;background:#e8e8e8;color:#000;text-align:left;"
-TS_R  = f"border:{B};padding:5px 7px;font-size:10px;font-weight:700;background:#e8e8e8;color:#000;text-align:right;"
-
-_CSS = """<style>
-*{margin:0;padding:0;box-sizing:border-box}
-body{font-family:Arial,sans-serif;font-size:10px;color:#000;background:#fff}
-.hdr{text-align:center;border-bottom:2px solid #000;padding:8px 4px 6px;margin-bottom:6px}
-.hdr .co{font-size:18px;font-weight:900;letter-spacing:1px;text-transform:uppercase}
-.hdr .ttl{font-size:13px;font-weight:700;margin-top:3px}
-.hdr .per{font-size:11px;margin-top:2px}
-.sig{display:flex;justify-content:space-between;margin-top:24px;padding-top:6px}
-.sig-b{text-align:center;width:160px}
-.sig-l{border-top:1px solid #000;margin-bottom:3px}
-.sig-t{font-size:10px;color:#333}
-table{width:100%;border-collapse:collapse;margin-top:6px}
-th{border:1px solid #000;padding:5px 7px;font-size:10px;font-weight:700;background:#f0f0f0;color:#000;white-space:nowrap}
-td{border:1px solid #000;padding:5px 7px;font-size:10px;vertical-align:middle;color:#000}
-tr.tot td{background:#e8e8e8;font-weight:700}
-.r{text-align:right}.l{text-align:left}.c{text-align:center}
-.nd{text-align:center;padding:18px;color:#888;font-size:10px}
-</style>"""
-
-_SIG = '<div class="sig">' + "".join(
-    f'<div class="sig-b"><div class="sig-l"></div><div class="sig-t">{l}</div></div>'
-    for l in ["Prepared By", "Checked By", "Authorised Signatory"]
-) + '</div>'
-
+B = "1px solid #000"
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -113,7 +82,8 @@ def _fmt(v):
 
 def _get_data(f):
     cols = [
-        _col("PF No.",          "pf_no",          w=100),
+        _col("Sr",              "sr",              w=40),
+        _col("PF No.",          "pf_no",           w=100),
         _col("UAN No.",         "uan_no",          w=100),
         _col("Employee Name",   "employee_name",   w=180),
         _col("Employee ID",     "employee_id",     w=110),
@@ -204,10 +174,10 @@ def _get_data(f):
             )
         }
 
-    erpf  = _fe(PF_EMPR_COMP)
-    ereps = _fe(PF_EPS_COMP)
-    eredli= _fe(PF_EDLI_COMP)
-    eradm = _fe(PF_ADMIN_COMP)
+    erpf   = _fe(PF_EMPR_COMP)
+    ereps  = _fe(PF_EPS_COMP)
+    eredli = _fe(PF_EDLI_COMP)
+    eradm  = _fe(PF_ADMIN_COMP)
 
     em = {
         r.name: r
@@ -224,15 +194,16 @@ def _get_data(f):
 
     data = []
     tot  = {k: 0.0 for k in ["gross","basic_da","emp_pf","employer_eps","employer_pf","employer_edli","employer_admin","total_amount"]}
+    sr_counter = 1
 
     for s in slips:
         emp  = em.get(s.eid, frappe._dict())
         sn_  = s.slip_name
-        g    = flt(s.gross,   2)
-        b    = flt(bda.get(sn_, 0), 2)
-        epf  = flt(ep.get(sn_,  0), 2)
+        g    = flt(s.gross,    2)
+        b    = flt(bda.get(sn_, 0),  2)
+        epf  = flt(ep.get(sn_,  0),  2)
         erp  = flt(erpf.get(sn_, 0), 2)
-        ere  = flt(ereps.get(sn_,0), 2)
+        ere  = flt(ereps.get(sn_, 0),2)
         erd  = flt(eredli.get(sn_,0),2)
         era  = flt(eradm.get(sn_,0), 2)
         tol  = flt(epf + erp + ere + erd + era, 2)
@@ -243,6 +214,7 @@ def _get_data(f):
             tot[k] += v
 
         data.append({
+            "sr":              sr_counter,
             "pf_no":           emp.get("pf_no")  or "",
             "uan_no":          emp.get("uan_no") or "",
             "employee_name":   s.employee_name,
@@ -261,9 +233,11 @@ def _get_data(f):
             "date_of_birth":   emp.get("date_of_birth")   or "",
             "_row_type":       "detail",
         })
+        sr_counter += 1
 
     data.append({
-        "pf_no": "", "uan_no": "", "employee_name": "Total", "employee_id": "",
+        "sr": "", "pf_no": "", "uan_no": "",
+        "employee_name": "Total", "employee_id": "",
         "days": None, "absent": None,
         **{k: flt(v, 2) for k, v in tot.items()},
         "date_of_joining": "", "date_of_birth": "",
@@ -282,14 +256,37 @@ def execute(filters=None):
 
 
 # ---------------------------------------------------------------------------
-# PDF helpers
+# PDF — Transaction Checklist style
 # ---------------------------------------------------------------------------
 
-# Columns whose cells are blanked on the total row
-_SKIP_ON_TOTAL = {"pf_no", "uan_no", "days", "absent", "date_of_joining", "date_of_birth"}
+_CSS = """<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:Arial,sans-serif;font-size:13px;color:#000;background:#fff}
+.hdr{text-align:center;border-bottom:2px solid #000;padding:10px 4px 8px;margin-bottom:8px}
+.hdr .co{font-size:24px;font-weight:900;letter-spacing:1px;text-transform:uppercase}
+.hdr .ttl{font-size:17px;font-weight:700;margin-top:5px}
+.hdr .per{font-size:14px;margin-top:4px}
+.sig{display:flex;justify-content:space-between;margin-top:32px;padding-top:8px}
+.sig-b{text-align:center;width:180px}
+.sig-l{border-top:1px solid #000;margin-bottom:4px}
+.sig-t{font-size:13px;color:#333}
+</style>"""
 
-# Columns that are right-aligned (numeric)
-_NUMERIC_FT = ("Float", "Currency", "Int", "Percent")
+_SIG = '<div class="sig">' + "".join(
+    f'<div class="sig-b"><div class="sig-l"></div><div class="sig-t">{l}</div></div>'
+    for l in ["Prepared By", "Checked By", "Authorised Signatory"]
+) + '</div>'
+
+HDR_BG      = "#e8e8e8"
+ROW_COLOURS = ["#ffffff", "#f0f0f0"]
+PAD         = "padding:7px 9px;"
+FS          = "font-size:13px;"
+
+# Columns blanked on total row
+_SKIP_ON_TOTAL = {"sr", "pf_no", "uan_no", "days", "absent", "date_of_joining", "date_of_birth"}
+_NUMERIC_FT    = ("Float", "Currency", "Int", "Percent")
+_RIGHT_FIELDS  = {"sr", "days", "absent", "gross", "basic_da", "emp_pf",
+                  "employer_eps", "employer_pf", "employer_edli", "employer_admin", "total_amount"}
 
 
 def _build_html(cols, data, co, mo, yr):
@@ -301,39 +298,76 @@ def _build_html(cols, data, co, mo, yr):
         f'</div>'
     )
 
-    # thead
-    thead = "<tr>"
-    for c in cols:
-        is_n = c.get("fieldtype", "") in _NUMERIC_FT
-        thead += f'<th class="{"r" if is_n else "l"}">{c.get("label","")}</th>'
-    thead += "</tr>"
-
-    # tbody
     if not data:
-        ncols = len(cols)
-        tbody = f'<tr><td colspan="{ncols}" class="nd">No data for this period</td></tr>'
-    else:
-        tbody = ""
-        for row in data:
-            is_tot = bool(row.get("bold") or row.get("_row_type") == "total")
-            cls    = ' class="tot"' if is_tot else ""
-            tbody += f"<tr{cls}>"
-            for c in cols:
-                fn   = c.get("fieldname", "")
-                val  = row.get(fn, "")
-                is_n = c.get("fieldtype", "") in _NUMERIC_FT
-                if is_tot and fn in _SKIP_ON_TOTAL:
-                    tbody += f'<td class="{"r" if is_n else "l"}"></td>'
-                elif is_n:
-                    tbody += f'<td class="r">{_fmt(val) if val not in ("", None) else ""}</td>'
-                else:
-                    tbody += f'<td class="l">{val or ""}</td>'
-            tbody += "</tr>"
+        return (
+            f'<!DOCTYPE html><html><head><meta charset="UTF-8">{_CSS}</head>'
+            f'<body>{hdr}'
+            f'<p style="text-align:center;{PAD}{FS}color:#888;">No data for this period</p>'
+            f'{_SIG}</body></html>'
+        )
 
-    table = f"<table><thead>{thead}</thead><tbody>{tbody}</tbody></table>"
+    detail_rows = [r for r in data if r.get("_row_type") == "detail"]
+    total_row   = next((r for r in data if r.get("bold")), None)
+
+    # ── thead ──────────────────────────────────────────────────────────
+    def _thead():
+        h = '<thead><tr>'
+        for c in cols:
+            fn    = c["fieldname"]
+            align = "right" if fn in _RIGHT_FIELDS else "left"
+            h += (
+                f'<th style="border:{B};{PAD}{FS}font-weight:700;'
+                f'background:{HDR_BG};text-align:{align};'
+                f'white-space:normal;vertical-align:middle;">'
+                f'{c["label"]}</th>'
+            )
+        h += '</tr></thead>'
+        return h
+
+    # ── row builder ────────────────────────────────────────────────────
+    def _row(row, row_idx, is_total=False):
+        bg = HDR_BG if is_total else ROW_COLOURS[row_idx % 2]
+        fw = "font-weight:700;" if is_total else ""
+        h  = '<tr>'
+        for c in cols:
+            fn    = c["fieldname"]
+            val   = row.get(fn, "")
+            align = "right" if fn in _RIGHT_FIELDS else "left"
+            if is_total and fn in _SKIP_ON_TOTAL:
+                disp = ""
+            elif c.get("fieldtype", "") in _NUMERIC_FT:
+                disp = _fmt(val) if val not in ("", None) else ""
+            else:
+                disp = str(val) if val not in ("", None) else ""
+            h += (
+                f'<td style="border:{B};{PAD}{FS}{fw}'
+                f'background:{bg};text-align:{align};vertical-align:middle;">'
+                f'{disp}</td>'
+            )
+        h += '</tr>'
+        return h
+
+    # ── table ──────────────────────────────────────────────────────────
+    body = '<tbody>'
+    for ri, row in enumerate(detail_rows):
+        body += _row(row, ri)
+    if total_row:
+        body += _row(total_row, 0, is_total=True)
+    body += '</tbody>'
+
+    pg_footer = (
+        '<div style="text-align:right;font-size:12px;color:#444;'
+        'margin-top:6px;padding-right:2px;">Page 1 of 1</div>'
+    )
+
+    table = (
+        f'<table style="width:100%;border-collapse:collapse;margin-top:8px;">'
+        f'{_thead()}{body}</table>'
+    )
+
     return (
         f'<!DOCTYPE html><html><head><meta charset="UTF-8">{_CSS}</head>'
-        f'<body>{hdr}{table}{_SIG}</body></html>'
+        f'<body>{hdr}{table}{pg_footer}{_SIG}</body></html>'
     )
 
 

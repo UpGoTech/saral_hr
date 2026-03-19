@@ -7,7 +7,7 @@ from frappe.utils import flt
 from frappe.utils.pdf import get_pdf
 
 # ---------------------------------------------------------------------------
-# Helpers shared with the main payroll report (duplicated here for standalone use)
+# Helpers
 # ---------------------------------------------------------------------------
 
 MONTH_MAP = {
@@ -97,13 +97,12 @@ def _div_cond(f, p):
 # ---------------------------------------------------------------------------
 
 def _get_data(f):
-    """Return (columns, data) for the Professional Tax Register."""
-
     cols = [
-        _col("Employee ID",      "employee_id",  w=140),
-        _col("Employee Name",    "employee_name", w=220),
-        _col("Gross Salary",     "gross_salary",  "Float", 150, precision=2),
-        _col("PT Amount (Rs.)",  "pt_amount",     "Float", 140, precision=2),
+        _col("Sr",            "sr",            w=50),
+        _col("Employee ID",   "employee_id",   w=140),
+        _col("Employee Name", "employee_name", w=220),
+        _col("Gross Salary",  "gross_salary",  "Float", 150, precision=2),
+        _col("PT Amount (Rs.)", "pt_amount",   "Float", 140, precision=2),
     ]
 
     if not f.get("company"):
@@ -148,6 +147,7 @@ def _get_data(f):
 
     data = []
     gg = gp = 0.0
+    sr_counter = 1
 
     for s in slips:
         pt = flt(pm.get(s.slip, 0))
@@ -157,14 +157,17 @@ def _get_data(f):
         gg += gross
         gp += pt
         data.append({
+            "sr":            sr_counter,
             "employee_id":   s.employee,
             "employee_name": s.employee_name,
             "gross_salary":  gross,
             "pt_amount":     pt,
         })
+        sr_counter += 1
 
     if data:
         data.append({
+            "sr":            "",
             "employee_id":   "",
             "employee_name": "Total",
             "gross_salary":  flt(gg, 2),
@@ -181,39 +184,26 @@ def _get_data(f):
 # ---------------------------------------------------------------------------
 
 def execute(filters=None):
-    f = filters or {}
-    return _get_data(f)
+    return _get_data(filters or {})
 
 
 # ---------------------------------------------------------------------------
-# PDF print helpers
+# PDF — matches Transaction Checklist style
 # ---------------------------------------------------------------------------
 
-B    = "1px solid #000"
-TH_L = f"border:{B};padding:5px 7px;font-size:10px;font-weight:700;background:#f0f0f0;color:#000;text-align:left;white-space:nowrap;"
-TH_R = f"border:{B};padding:5px 7px;font-size:10px;font-weight:700;background:#f0f0f0;color:#000;text-align:right;white-space:nowrap;"
-TD_L = f"border:{B};padding:5px 7px;font-size:10px;vertical-align:middle;color:#000;text-align:left;"
-TD_R = f"border:{B};padding:5px 7px;font-size:10px;vertical-align:middle;color:#000;text-align:right;"
-TS_L = f"border:{B};padding:5px 7px;font-size:10px;font-weight:700;background:#e8e8e8;color:#000;text-align:left;"
-TS_R = f"border:{B};padding:5px 7px;font-size:10px;font-weight:700;background:#e8e8e8;color:#000;text-align:right;"
+B = "1px solid #000"
 
 _CSS = """<style>
-* { margin: 0; padding: 0; box-sizing: border-box; }
-body { font-family: Arial, sans-serif; font-size: 10px; color: #000; background: #fff; }
-.hdr { text-align: center; border-bottom: 2px solid #000; padding: 8px 4px 6px; margin-bottom: 6px; }
-.hdr .co  { font-size: 18px; font-weight: 900; letter-spacing: 1px; text-transform: uppercase; }
-.hdr .ttl { font-size: 13px; font-weight: 700; margin-top: 3px; }
-.hdr .per { font-size: 11px; margin-top: 2px; }
-table { width: 100%; border-collapse: collapse; margin-top: 6px; }
-th { border: 1px solid #000; padding: 5px 7px; font-size: 10px; font-weight: 700; background: #f0f0f0; white-space: nowrap; }
-td { border: 1px solid #000; padding: 5px 7px; font-size: 10px; vertical-align: middle; }
-tr.tot td { background: #e8e8e8; font-weight: 700; }
-.r { text-align: right; } .l { text-align: left; }
-.nd { text-align: center; padding: 18px; color: #888; font-size: 10px; }
-.sig { display: flex; justify-content: space-between; margin-top: 32px; padding-top: 6px; }
-.sig-b { text-align: center; width: 160px; }
-.sig-l { border-top: 1px solid #000; margin-bottom: 3px; }
-.sig-t { font-size: 10px; color: #333; }
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:Arial,sans-serif;font-size:13px;color:#000;background:#fff}
+.hdr{text-align:center;border-bottom:2px solid #000;padding:10px 4px 8px;margin-bottom:8px}
+.hdr .co{font-size:24px;font-weight:900;letter-spacing:1px;text-transform:uppercase}
+.hdr .ttl{font-size:17px;font-weight:700;margin-top:5px}
+.hdr .per{font-size:17px;margin-top:4px}
+.sig{display:flex;justify-content:space-between;margin-top:32px;padding-top:8px}
+.sig-b{text-align:center;width:180px}
+.sig-l{border-top:1px solid #000;margin-bottom:4px}
+.sig-t{font-size:13px;color:#333}
 </style>"""
 
 _SIG = (
@@ -225,10 +215,13 @@ _SIG = (
     + "</div>"
 )
 
+HDR_BG      = "#e8e8e8"
+ROW_COLOURS = ["#ffffff", "#f0f0f0"]
+PAD         = "padding:7px 9px;"
+FS          = "font-size:13px;"
+
 
 def _build_html(cols, data, co, mo, yr):
-    """Render the full printable HTML for the Professional Tax Register."""
-
     hdr = (
         f'<div class="hdr">'
         f'<div class="co">{co}</div>'
@@ -237,37 +230,77 @@ def _build_html(cols, data, co, mo, yr):
         f'</div>'
     )
 
-    # Table header
-    thead = "<tr>"
-    for c in cols:
-        is_n = c.get("fieldtype", "") in ("Float", "Currency", "Int", "Percent")
-        thead += f'<th class="{"r" if is_n else "l"}">{c.get("label", "")}</th>'
-    thead += "</tr>"
-
-    # Table body
-    tbody = ""
     if not data:
-        tbody = f'<tr><td colspan="{len(cols)}" class="nd">No data for this period</td></tr>'
-    else:
-        for row in data:
-            is_tot = bool(row.get("bold") or row.get("_row_type") == "total")
-            cls = ' class="tot"' if is_tot else ""
-            tbody += f"<tr{cls}>"
-            for c in cols:
-                fn  = c.get("fieldname", "")
-                val = row.get(fn, "")
-                is_n = c.get("fieldtype", "") in ("Float", "Currency", "Int", "Percent")
-                # On total row, suppress pt_rate (not present here, but kept for safety)
-                if is_tot and fn == "pt_rate":
-                    tbody += f'<td class="{"r" if is_n else "l"}"></td>'
-                elif is_n:
-                    tbody += f'<td class="r">{_fmt(val) if val not in ("", None) else ""}</td>'
-                else:
-                    tbody += f'<td class="l">{val or ""}</td>'
-            tbody += "</tr>"
+        return (
+            f'<!DOCTYPE html><html><head><meta charset="UTF-8">{_CSS}</head>'
+            f'<body>{hdr}'
+            f'<p style="text-align:center;{PAD}{FS}color:#888;">No data for this period</p>'
+            f'{_SIG}</body></html>'
+        )
 
-    table = f"<table><thead>{thead}</thead><tbody>{tbody}</tbody></table>"
-    return f"<!DOCTYPE html><html><head><meta charset='UTF-8'>{_CSS}</head><body>{hdr}{table}{_SIG}</body></html>"
+    detail_rows = [r for r in data if not r.get("bold")]
+    total_row   = next((r for r in data if r.get("bold")), None)
+
+    # Column field types for alignment
+    NUM_FIELDS = {"gross_salary", "pt_amount"}
+    RIGHT_FIELDS = {"sr"} | NUM_FIELDS
+
+    # ── thead ──────────────────────────────────────────────────────────
+    def _thead():
+        h = '<thead><tr>'
+        for c in cols:
+            fn    = c["fieldname"]
+            align = "right" if fn in RIGHT_FIELDS else "left"
+            h += (
+                f'<th style="border:{B};{PAD}{FS}font-weight:700;'
+                f'background:{HDR_BG};text-align:{align};'
+                f'white-space:normal;vertical-align:middle;">'
+                f'{c["label"]}</th>'
+            )
+        h += '</tr></thead>'
+        return h
+
+    # ── row builder ────────────────────────────────────────────────────
+    def _row(row, row_idx, is_total=False):
+        bg  = HDR_BG if is_total else ROW_COLOURS[row_idx % 2]
+        fw  = "font-weight:700;" if is_total else ""
+        h   = '<tr>'
+        for c in cols:
+            fn    = c["fieldname"]
+            val   = row.get(fn, "")
+            align = "right" if fn in RIGHT_FIELDS else "left"
+            if fn in NUM_FIELDS:
+                disp = _fmt(val) if val not in ("", None) else ""
+            else:
+                disp = str(val) if val not in ("", None) else ""
+            h += (
+                f'<td style="border:{B};{PAD}{FS}{fw}'
+                f'background:{bg};text-align:{align};vertical-align:middle;">'
+                f'{disp}</td>'
+            )
+        h += '</tr>'
+        return h
+
+    # ── table ──────────────────────────────────────────────────────────
+    body = '<tbody>'
+    for ri, row in enumerate(detail_rows):
+        body += _row(row, ri)
+    if total_row:
+        body += _row(total_row, 0, is_total=True)
+    body += '</tbody>'
+
+    # ── page footer ────────────────────────────────────────────────────
+    pg_footer = (
+        '<div style="text-align:right;font-size:12px;color:#444;'
+        'margin-top:6px;padding-right:2px;">Page 1 of 1</div>'
+    )
+
+    table = f'<table style="width:100%;border-collapse:collapse;margin-top:8px;">{_thead()}{body}</table>'
+
+    return (
+        f'<!DOCTYPE html><html><head><meta charset="UTF-8">{_CSS}</head>'
+        f'<body>{hdr}{table}{pg_footer}{_SIG}</body></html>'
+    )
 
 
 def _save_pdf(html, prefix):
@@ -275,11 +308,11 @@ def _save_pdf(html, prefix):
         html,
         options={
             "page-size":     "A4",
-            "orientation":   "Landscape",
-            "margin-top":    "8mm",
-            "margin-right":  "8mm",
-            "margin-bottom": "8mm",
-            "margin-left":   "8mm",
+            "orientation":   "Portrait",
+            "margin-top":    "10mm",
+            "margin-right":  "10mm",
+            "margin-bottom": "10mm",
+            "margin-left":   "10mm",
             "encoding":      "UTF-8",
             "no-outline":    None,
         }
@@ -289,10 +322,10 @@ def _save_pdf(html, prefix):
     with open(frappe.utils.get_files_path(fn, is_private=0), "wb") as fh:
         fh.write(pdf)
     doc = frappe.get_doc({
-        "doctype":   "File",
-        "file_name": fn,
+        "doctype":    "File",
+        "file_name":  fn,
         "is_private": 0,
-        "file_url":  f"/files/{fn}",
+        "file_url":   f"/files/{fn}",
     })
     doc.insert(ignore_permissions=True)
     frappe.db.commit()

@@ -18,15 +18,15 @@ B = "1px solid #000"
 
 _CSS = """<style>
 *{margin:0;padding:0;box-sizing:border-box}
-body{font-family:Arial,sans-serif;font-size:10px;color:#000;background:#fff}
-.hdr{text-align:center;border-bottom:2px solid #000;padding:8px 4px 6px;margin-bottom:6px}
-.hdr .co{font-size:18px;font-weight:900;letter-spacing:1px;text-transform:uppercase}
-.hdr .ttl{font-size:13px;font-weight:700;margin-top:3px}
-.hdr .per{font-size:11px;margin-top:2px}
-.sig{display:flex;justify-content:space-between;margin-top:24px;padding-top:6px}
-.sig-b{text-align:center;width:160px}
-.sig-l{border-top:1px solid #000;margin-bottom:3px}
-.sig-t{font-size:10px;color:#333}
+body{font-family:Arial,sans-serif;font-size:13px;color:#000;background:#fff}
+.hdr{text-align:center;border-bottom:2px solid #000;padding:10px 4px 8px;margin-bottom:8px}
+.hdr .co{font-size:22px;font-weight:900;letter-spacing:1px;text-transform:uppercase}
+.hdr .ttl{font-size:16px;font-weight:700;margin-top:4px}
+.hdr .per{font-size:14px;margin-top:3px}
+.sig{display:flex;justify-content:space-between;margin-top:28px;padding-top:8px}
+.sig-b{text-align:center;width:180px}
+.sig-l{border-top:1px solid #000;margin-bottom:4px}
+.sig-t{font-size:12px;color:#333}
 </style>"""
 
 _SIG = '<div class="sig">' + "".join(
@@ -153,22 +153,29 @@ def _get_data(f):
     ge = sum(v for _, v in er)
     gd = sum(v for _, v in dr)
 
-    # Aggregate stats
+    # Aggregate stats — added el, cl, comp_off, physical_working_days, present_days
     st = (frappe.db.sql(
         f"SELECT COUNT(DISTINCT ss.employee) AS te, SUM(ss.net_salary) AS ns, "
         f"SUM(ss.total_lwp) AS tl, SUM(ss.absent_days) AS ta, "
-        f"SUM(ss.total_holidays) AS th, SUM(ss.payment_days) AS tp "
+        f"SUM(ss.total_holidays) AS th, SUM(ss.payment_days) AS tp, "
+        f"SUM(ss.total_earned_leaves) AS tel, SUM(ss.total_casual_leaves) AS tcl, "
+        f"SUM(ss.total_comp_off) AS tco, SUM(ss.physical_working_days) AS tpwd, "
+        f"SUM(ss.present_days) AS tpd "
         f"FROM `tabSalary Slip` ss WHERE {w}",
         p, as_dict=1
     ) or [{}])[0]
 
     oth_pairs = [
-        ("Total Net Salary",   flt(st.get("ns"), 2)),
-        ("Total Employees",    int(st.get("te") or 0)),
-        ("Total Payment Days", flt(st.get("tp"), 2)),
-        ("Total Absent Days",  flt(st.get("ta"), 2)),
-        ("Total LWP Days",     flt(st.get("tl"), 2)),
-        ("Total Holidays",     flt(st.get("th"), 2)),
+        ("Total Net Salary",            flt(st.get("ns"), 2)),
+        ("Total Employees",             int(st.get("te") or 0)),
+        ("Total Payment Days",          flt(st.get("tp"), 2)),
+        ("Total Present Days",          flt(st.get("tpd"), 2)),
+        ("Total Physical Working Days", flt(st.get("tpwd"), 2)),
+        ("Total Absent Days",           flt(st.get("ta"), 2)),
+        ("Total LWP Days",              flt(st.get("tl"), 2)),
+        ("Total Earned Leaves",         flt(st.get("tel"), 2)),
+        ("Total Casual Leaves",         flt(st.get("tcl"), 2)),
+        ("Total Comp Off",              flt(st.get("tco"), 2)),
     ]
 
     n_rows = max(len(er), len(dr), len(oth_pairs), 1)
@@ -232,20 +239,21 @@ def _build_html(cols, data, co, mo, yr):
     gt   = next((r for r in data if r.get("_row_type") == "grand_total"), {})
     oth  = [r for r in data if r.get("_row_type") == "component" and r.get("oth_description")]
 
-    # Style tokens
-    HD  = f"border:{B};padding:6px 8px;font-size:11px;font-weight:700;background:#e8edf2;color:#000;text-align:center;letter-spacing:0.5px;"
-    THL = f"border:{B};padding:5px 8px;font-size:10px;font-weight:700;background:#f5f7fa;color:#000;text-align:left;"
-    THR = f"border:{B};padding:5px 8px;font-size:10px;font-weight:700;background:#f5f7fa;color:#000;text-align:right;"
-    TDL = f"border:{B};padding:5px 8px;font-size:11px;color:#000;text-align:left;"
-    TDR = f"border:{B};padding:5px 8px;font-size:11px;color:#000;text-align:right;"
-    GTL = f"border:{B};border-top:2px solid #000;padding:6px 8px;font-size:11px;font-weight:700;background:#e8edf2;color:#000;text-align:left;"
-    GTR = f"border:{B};border-top:2px solid #000;padding:6px 8px;font-size:11px;font-weight:700;background:#e8edf2;color:#000;text-align:right;"
-    GAP = f"width:14px;border:none;padding:0;background:transparent;"
+    # Bigger fonts, more padding, no colour — grey alternating rows
+    ROW_COLOURS = ["#ffffff", "#f0f0f0"]
 
-    # Other-details ordered list
+    HD  = f"border:{B};padding:8px 10px;font-size:14px;font-weight:700;background:#e8e8e8;color:#000;text-align:center;letter-spacing:0.5px;"
+    THL = f"border:{B};padding:7px 10px;font-size:13px;font-weight:700;background:#e8e8e8;color:#000;text-align:left;"
+    THR = f"border:{B};padding:7px 10px;font-size:13px;font-weight:700;background:#e8e8e8;color:#000;text-align:right;"
+    GTL = f"border:{B};border-top:2px solid #000;padding:8px 10px;font-size:13px;font-weight:700;background:#e8e8e8;color:#000;text-align:left;"
+    GTR = f"border:{B};border-top:2px solid #000;padding:8px 10px;font-size:13px;font-weight:700;background:#e8e8e8;color:#000;text-align:right;"
+    GAP = f"width:16px;border:none;padding:0;background:transparent;"
+
     oth_order = [
         "Total Net Salary", "Total Employees", "Total Payment Days",
-        "Total Absent Days", "Total LWP Days", "Total Holidays",
+        "Total Present Days", "Total Physical Working Days",
+        "Total Absent Days", "Total LWP Days",
+        "Total Earned Leaves", "Total Casual Leaves", "Total Comp Off",
     ]
     oth_map  = {r.get("oth_description"): r for r in oth}
     oth_list = []
@@ -263,35 +271,46 @@ def _build_html(cols, data, co, mo, yr):
     net_payable = flt(gt.get("amount", 0)) - flt(gt.get("ded_amount", 0))
     nrows       = max(len(earn), len(ded), len(oth_list))
 
-    def _ec(i):
+    def _tdl(row_idx):
+        bg = ROW_COLOURS[row_idx % 2]
+        return f"border:{B};padding:7px 10px;font-size:13px;color:#000;text-align:left;background:{bg};"
+
+    def _tdr(row_idx):
+        bg = ROW_COLOURS[row_idx % 2]
+        return f"border:{B};padding:7px 10px;font-size:13px;color:#000;text-align:right;background:{bg};"
+
+    def _ec(i, row_idx):
+        tdl, tdr = _tdl(row_idx), _tdr(row_idx)
         if i < len(earn):
             r = earn[i]
             return (
-                f'<td style="{TDL}">{r.get("description") or ""}</td>'
-                f'<td style="{TDR}">{_fmt(r.get("amount")) if r.get("amount") is not None else ""}</td>'
+                f'<td style="{tdl}">{r.get("description") or ""}</td>'
+                f'<td style="{tdr}">{_fmt(r.get("amount")) if r.get("amount") is not None else ""}</td>'
             )
-        return f'<td style="{TDL}"></td><td style="{TDR}"></td>'
+        bg = ROW_COLOURS[row_idx % 2]
+        return f'<td style="{tdl}"></td><td style="{tdr}"></td>'
 
-    def _dc(i):
+    def _dc(i, row_idx):
+        tdl, tdr = _tdl(row_idx), _tdr(row_idx)
         if i < len(ded):
             r = ded[i]
             return (
-                f'<td style="{TDL}">{r.get("ded_description") or ""}</td>'
-                f'<td style="{TDR}">{_fmt(r.get("ded_amount")) if r.get("ded_amount") is not None else ""}</td>'
+                f'<td style="{tdl}">{r.get("ded_description") or ""}</td>'
+                f'<td style="{tdr}">{_fmt(r.get("ded_amount")) if r.get("ded_amount") is not None else ""}</td>'
             )
-        return f'<td style="{TDL}"></td><td style="{TDR}"></td>'
+        return f'<td style="{tdl}"></td><td style="{tdr}"></td>'
 
-    def _oc(i):
+    def _oc(i, row_idx):
+        tdl, tdr = _tdl(row_idx), _tdr(row_idx)
         if i < len(oth_list):
             lbl, disp = oth_list[i]
-            return f'<td style="{TDL}">{lbl}</td><td style="{TDR}">{disp}</td>'
-        return f'<td style="{TDL}"></td><td style="{TDR}"></td>'
+            return f'<td style="{tdl}">{lbl}</td><td style="{tdr}">{disp}</td>'
+        return f'<td style="{tdl}"></td><td style="{tdr}"></td>'
 
     rows_html = ""
     for i in range(nrows):
-        rows_html += f"<tr>{_ec(i)}<td style='{GAP}'></td>{_dc(i)}<td style='{GAP}'></td>{_oc(i)}</tr>"
+        rows_html += f"<tr>{_ec(i, i)}<td style='{GAP}'></td>{_dc(i, i)}<td style='{GAP}'></td>{_oc(i, i)}</tr>"
 
-    # Grand-total row
     rows_html += (
         f"<tr>"
         f'<td style="{GTL}">Grand Total</td><td style="{GTR}">{_fmt(gt.get("amount"))}</td>'
@@ -303,7 +322,7 @@ def _build_html(cols, data, co, mo, yr):
     )
 
     table = (
-        f'<table style="width:100%;border-collapse:collapse;margin-top:6px;">'
+        f'<table style="width:100%;border-collapse:collapse;margin-top:8px;">'
         f'<thead><tr>'
         f'<th colspan="2" style="{HD}">EARNINGS</th>'
         f'<th style="{GAP}"></th>'
