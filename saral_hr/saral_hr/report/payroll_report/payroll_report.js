@@ -1,17 +1,66 @@
 frappe.query_reports["Payroll Report"] = {
     filters: [
-        { fieldname:"report_mode", label:__("Report"), fieldtype:"Data", hidden:1, default:"salary_summary" },
-        { fieldname:"year",    label:__("Year"),    fieldtype:"Select", options:_get_year_options(), reqd:1, default:String(new Date().getFullYear()) },
-        { fieldname:"month",   label:__("Month"),   fieldtype:"Select", reqd:1, default:"",
-          options:["","January","February","March","April","May","June","July","August","September","October","November","December"] },
-        { fieldname:"company", label:__("Company"), fieldtype:"MultiSelectList", reqd:1,
-          get_data: txt => frappe.db.get_link_options("Company", txt) },
-        { fieldname:"category", label:__("Category"), fieldtype:"Link", options:"Category", default:"" },
-        { fieldname:"division", label:__("Division"), fieldtype:"MultiSelectList",
-          get_data: txt => frappe.db.get_link_options("Division", txt) },
+        // ── 1. Company first ─────────────────────────────────────────────
+        {
+            fieldname: "company",
+            label:     __("Company"),
+            fieldtype: "Link",
+            options:   "Company",
+            reqd:      1,
+        },
+        // ── 2. Year second ───────────────────────────────────────────────
+        {
+            fieldname: "year",
+            label:     __("Year"),
+            fieldtype: "Select",
+            reqd:      1,
+            default:   String(new Date().getFullYear()),
+            options:   (function () {
+                const y = new Date().getFullYear(), opts = [""];
+                for (let i = y - 2; i <= y + 2; i++) opts.push(String(i));
+                return opts;
+            })(),
+        },
+        // ── 3. Month third ───────────────────────────────────────────────
+        {
+            fieldname: "month",
+            label:     __("Month"),
+            fieldtype: "Select",
+            reqd:      1,
+            default:   "",
+            options:   ["","January","February","March","April","May","June",
+                        "July","August","September","October","November","December"],
+        },
+        // ── Other optional filters ───────────────────────────────────────
+        { fieldname: "report_mode", label: __("Report"), fieldtype: "Data", hidden: 1, default: "salary_summary" },
+        { fieldname: "category",    label: __("Category"), fieldtype: "Link", options: "Category", default: "" },
+        {
+            fieldname: "division",
+            label:     __("Division"),
+            fieldtype: "MultiSelectList",
+            get_data:  txt => frappe.db.get_link_options("Division", txt),
+        },
     ],
 
+    // ── Block auto-run until Company + Year + Month are all filled ───────
     onload(report) {
+        // Override the default refresh so it only runs when all 3 are filled
+        const _originalRefresh = report.refresh.bind(report);
+        report.refresh = function () {
+            const f = report.get_values() || {};
+            if (!f.company || !f.year || !f.month) {
+                // Clear the table and show a prompt instead
+                report.page.wrapper.find(".report-wrapper").html(
+                    `<div style="text-align:center;padding:40px;color:#888;font-size:13px;">
+                        Please select <strong>Company</strong>, <strong>Year</strong>, and
+                        <strong>Month</strong> to load the report.
+                    </div>`
+                );
+                return;
+            }
+            _originalRefresh();
+        };
+
         frappe.after_ajax(() => {
             _inject_nav(report);
             if (!report.page.wrapper.find(".pr-select-print-btn").length) {
@@ -60,7 +109,7 @@ frappe.query_reports["Payroll Report"] = {
     }
 };
 
-// ─── Report definitions ───────────────────────────────────────────────────────
+// ─── Report definitions ────────────────────────────────────────────────────────
 
 const REPORTS = [
     { key:"salary_summary",            label:"Salary Summary"            },
@@ -79,7 +128,6 @@ const REPORTS = [
     { key:"income_tax",                label:"Income Tax"                },
 ];
 
-
 let _idx = 0, _cache = {}, _debounce_timer = null, _prefetch_xhr = null, _last_filter_key = null;
 
 function _get_year_options() {
@@ -93,20 +141,20 @@ function _filter_key() {
     return JSON.stringify([f.year, f.month, JSON.stringify(f.company || []), f.category || "", JSON.stringify(f.division || [])]);
 }
 
-// ── Validate filters ──────────────────────────────────────────────────────────
+// ── Validate all 3 required filters ──────────────────────────────────────────
 
 function _validate(forPrint = false) {
     const f = frappe.query_report.get_values() || {};
+    if (!f.company) {
+        frappe.msgprint({ title:__("Missing Filters"), message:__("Please select a Company."), indicator:"orange" });
+        return false;
+    }
     if (!f.year) {
         frappe.msgprint({ title:__("Missing Filters"), message:__("Please select a Year."), indicator:"orange" });
         return false;
     }
     if (!f.month) {
         frappe.msgprint({ title:__("Missing Filters"), message:__("Please select a Month."), indicator:"orange" });
-        return false;
-    }
-    if (!f.company?.length) {
-        frappe.msgprint({ title:__("Missing Filters"), message:__("Please select at least one Company."), indicator:"orange" });
         return false;
     }
     const yr = parseInt(f.year);
@@ -163,9 +211,7 @@ function _ensure_styles() {
             font-weight: 700;
             box-shadow: 0 2px 6px rgba(37,99,235,.35);
         }
-        .pr-pill.no-data {
-            opacity: 0.45;
-        }
+        .pr-pill.no-data { opacity: 0.45; }
         .pr-status-bar {
             display: flex;
             align-items: center;
@@ -229,9 +275,8 @@ function _inject_nav(report) {
     nav.find(".pr-prev").on("click", () => _go(report, (_idx - 1 + REPORTS.length) % REPORTS.length));
     nav.find(".pr-next").on("click", () => _go(report, (_idx + 1) % REPORTS.length));
 
-    // ── Filter change handler (fixed timing) ──────────────────────────────────
+    // Filter change — wipe cache, wait for all 3 to be filled before prefetching
     report.page.wrapper.on("change.pr", ".frappe-control input, .frappe-control select", () => {
-        // Wipe cache and reset UI immediately
         _cache       = {};
         _loading_key = null;
         nav.find(".pr-ready").text("");
@@ -239,9 +284,10 @@ function _inject_nav(report) {
         if (_prefetch_xhr) { _prefetch_xhr.abort?.(); _prefetch_xhr = null; }
         clearTimeout(_debounce_timer);
 
-        // Capture the filter key AFTER debounce, not now —
-        // MultiSelectList fires change before value is fully committed
         _debounce_timer = setTimeout(() => {
+            const f = frappe.query_report.get_values() || {};
+            // Only prefetch once all 3 required filters are filled
+            if (!f.company || !f.year || !f.month) return;
             _last_filter_key = _filter_key();
             _prefetch_all(nav);
         }, 1500);
@@ -259,22 +305,12 @@ function _inject_nav(report) {
 
 function _mark_no_data(nav, fk) {
     const cached = _cache[fk] || {};
-
-    // If NO report has any data for this period, don't fade anything —
-    // it just means payroll hasn't been processed yet for this month/year
-    const anyHasData = Object.values(cached).some(
-        r => (r.result || []).length > 0
-    );
-    if (!anyHasData) {
-        nav.find(".pr-pill").removeClass("no-data");
-        return;
-    }
-
+    const anyHasData = Object.values(cached).some(r => (r.result || []).length > 0);
+    if (!anyHasData) { nav.find(".pr-pill").removeClass("no-data"); return; }
     nav.find(".pr-pill").each(function () {
         const key = REPORTS[+$(this).data("idx")]?.key;
         if (!key || !cached[key]) return;
-        const hasData = (cached[key].result || []).length > 0;
-        $(this).toggleClass("no-data", !hasData);
+        $(this).toggleClass("no-data", (cached[key].result || []).length === 0);
     });
 }
 
@@ -284,23 +320,19 @@ function _update_on_hold_note(data) {
     const note = $("#pr-on-hold-note");
     if (!note.length) return;
     const mode = frappe.query_report.get_filter_value("report_mode");
-    if (mode !== "home_bank_advice" && mode !== "other_bank_advice") {
-        note.hide().text(""); return;
-    }
+    if (mode !== "home_bank_advice" && mode !== "other_bank_advice") { note.hide().text(""); return; }
     const holdCount = (data || []).filter(r => r.net_salary === "On Hold").length;
-    if (holdCount > 0) {
-        note.text(`⚠ ${holdCount} employee${holdCount > 1 ? "s are" : " is"} On Hold and excluded from the total.`).show();
-    } else {
-        note.hide().text("");
-    }
+    holdCount > 0
+        ? note.text(`⚠ ${holdCount} employee${holdCount > 1 ? "s are" : " is"} On Hold and excluded from the total.`).show()
+        : note.hide().text("");
 }
 
-// ── Prefetch all reports lazily ───────────────────────────────────────────────
+// ── Prefetch all reports ──────────────────────────────────────────────────────
 
 function _prefetch_all(nav) {
     const fk = _filter_key();
     const f  = frappe.query_report.get_values() || {};
-    if (!f.year || !f.month || !f.company?.length) return;
+    if (!f.company || !f.year || !f.month) return;  // guard
 
     _prefetch_xhr = frappe.call({
         method: "saral_hr.saral_hr.report.payroll_report.payroll_report.get_all_reports_data",
@@ -308,7 +340,7 @@ function _prefetch_all(nav) {
             filters: JSON.stringify({
                 year:     f.year     || "",
                 month:    f.month    || "",
-                company:  JSON.stringify(f.company  || []),
+                company:  f.company || "",
                 category: f.category || "",
                 division: JSON.stringify(f.division || []),
             })
@@ -316,10 +348,7 @@ function _prefetch_all(nav) {
         callback(res) {
             _prefetch_xhr = null;
             if (!res.message) return;
-
-            // Discard if filters changed again while request was in-flight
             if (fk !== _filter_key()) return;
-
             if (!_cache[fk]) _cache[fk] = {};
             Object.assign(_cache[fk], res.message);
             nav.find(".pr-ready").text("✓ All ready");
@@ -335,26 +364,34 @@ function _sync(nav, report) {
     nav.find(".pr-pill").removeClass("active");
     nav.find(`.pr-pill[data-idx="${_idx}"]`).addClass("active");
     nav.find(".pr-current").text(REPORTS[_idx].label);
-    const label = REPORTS[_idx].label;
-    report.page.wrapper.find(".title-text").text(label);
-    document.title = label + " — Frappe";
+    report.page.wrapper.find(".title-text").text(REPORTS[_idx].label);
+    document.title = REPORTS[_idx].label + " — Frappe";
 }
 
-// ── Navigate to a report tab ──────────────────────────────────────────────────
+// ── Navigate ──────────────────────────────────────────────────────────────────
 
 let _loading_key = null;
 
 function _go(report, idx) {
+    // Block navigation if required filters not filled
+    const f = frappe.query_report.get_values() || {};
+    if (!f.company || !f.year || !f.month) {
+        frappe.msgprint({
+            title:     __("Missing Filters"),
+            message:   __("Please select Company, Year and Month first."),
+            indicator: "orange",
+        });
+        return;
+    }
+
     _idx = idx;
     const nav     = report.page.wrapper.find(".pr-nav").parent();
     const modeKey = REPORTS[idx].key;
     _sync(nav, report);
-
     frappe.query_report.set_filter_value("report_mode", modeKey);
 
     const fk     = _filter_key();
     const cached = _cache[fk]?.[modeKey];
-
     if (cached) {
         _render_cached(cached, nav, fk);
         _update_on_hold_note(cached.result);
@@ -375,9 +412,7 @@ function _render_cached(cached, nav, fk) {
         try {
             if (qr.datatable) qr.datatable.refresh(cached.result, cached.columns);
             else qr.refresh();
-        } catch (__) {
-            qr.refresh();
-        }
+        } catch (__) { qr.refresh(); }
     }
     _mark_no_data(nav, fk);
 }
@@ -387,16 +422,13 @@ function _bind_refresh_listener(report) {
         const fk      = _filter_key();
         const modeKey = frappe.query_report.get_filter_value("report_mode");
         const thisKey = `${fk}::${modeKey}`;
-
         if (_loading_key && _loading_key !== thisKey) return;
         _loading_key = null;
-
         if (!_cache[fk]) _cache[fk] = {};
         _cache[fk][modeKey] = {
             columns: frappe.query_report.columns,
             result:  frappe.query_report.data,
         };
-
         const nav = report.page.wrapper.find(".pr-nav").parent();
         _update_on_hold_note(frappe.query_report.data);
         _mark_no_data(nav, fk);
@@ -410,7 +442,7 @@ function _server_filters() {
     return {
         year:        f.year     || "",
         month:       f.month    || "",
-        company:     JSON.stringify(f.company  || []),
+        company:     f.company || "",
         category:    f.category || "",
         division:    JSON.stringify(f.division || []),
         report_mode: frappe.query_report.get_filter_value("report_mode") || "salary_summary",
@@ -433,28 +465,16 @@ function _set_print_buttons(report) {
     report.page.set_primary_action(__("Print"), _print_current, "printer");
 }
 
-// ── Print current tab ─────────────────────────────────────────────────────────
+// ── Print current ─────────────────────────────────────────────────────────────
 
 function _print_current() {
     if (!_validate()) return;
     const label = REPORTS[_idx]?.label || "Report";
-    frappe.show_progress(__("Generating PDF"), 0, 100, `${label}…`);
-    frappe.call({
-        method: "saral_hr.saral_hr.report.payroll_report.payroll_report.print_single_report",
-        args: { filters: JSON.stringify(_server_filters()) },
-        callback: r => {
-            frappe.show_progress(__("Generating PDF"), 100, 100, __("Done!"));
-            setTimeout(() => {
-                frappe.hide_progress();
-                if (r.message) _open_pdf(r.message);
-                else frappe.msgprint({ title:__("Error"), message:__("Failed to generate PDF."), indicator:"red" });
-            }, 500);
-        },
-        error: () => {
-            frappe.hide_progress();
-            frappe.msgprint({ title:__("Error"), message:__("Failed to generate PDF."), indicator:"red" });
-        }
-    });
+    _run_with_progress(
+        "saral_hr.saral_hr.report.payroll_report.payroll_report.print_single_report",
+        { filters: JSON.stringify(_server_filters()) },
+        `Generating PDF: ${label}`
+    );
 }
 
 // ── Select & Print dialog ─────────────────────────────────────────────────────
@@ -524,31 +544,84 @@ function _show_select_print_dialog(triggerBtn) {
 }
 
 function _print_selected(selectedKeys, btn) {
-    const orig = btn.text();
+    const orig = btn.html();
     btn.prop("disabled", true);
     const count = selectedKeys.length;
-    frappe.show_progress(
-        __("Generating PDF"),
-        0, 100,
-        `${__("Compiling")} ${count} ${count === 1 ? __("report") : __("reports")}…`
-    );
     const f = _server_filters(); delete f.report_mode;
     f.selected_reports = JSON.stringify(selectedKeys);
+    _run_with_progress(
+        "saral_hr.saral_hr.report.payroll_report.payroll_report.print_selected_reports",
+        { filters: JSON.stringify(f) },
+        `Compiling ${count} ${count === 1 ? "report" : "reports"}`,
+        () => { btn.prop("disabled", false).html(orig); }
+    );
+}
+
+// ── Progress-aware PDF call ───────────────────────────────────────────────
+// Smoothly animates the progress bar while the server is working.
+// The bar crawls from 0 → 85% during the call, then snaps to 100% on done.
+
+function _run_with_progress(method, args, label, onDone) {
+    let pct = 0;
+    let done = false;
+
+    // Phase timings (ms): how long each segment takes to fill
+    const PHASES = [
+        { target: 15, duration: 400  },   // 0→15%  fast start
+        { target: 40, duration: 1200 },   // 15→40% medium
+        { target: 65, duration: 2000 },   // 40→65% slower
+        { target: 82, duration: 4000 },   // 65→82% crawl
+        { target: 88, duration: 6000 },   // 82→88% very slow (waiting for server)
+    ];
+
+    let phaseIdx = 0;
+    let phaseStart = Date.now();
+    let rafId = null;
+
+    frappe.show_progress(__("Generating PDF"), 0, 100, `${__(label)}…`);
+
+    function _tick() {
+        if (done) return;
+        const phase = PHASES[phaseIdx];
+        if (!phase) { rafId = requestAnimationFrame(_tick); return; }
+
+        const elapsed  = Date.now() - phaseStart;
+        const progress = Math.min(elapsed / phase.duration, 1);
+        // ease-out curve so it decelerates as it approaches the target
+        const eased    = 1 - Math.pow(1 - progress, 2);
+        const prevTarget = phaseIdx === 0 ? 0 : PHASES[phaseIdx - 1].target;
+        pct = prevTarget + eased * (phase.target - prevTarget);
+
+        frappe.show_progress(__("Generating PDF"), Math.round(pct), 100, `${__(label)}…`);
+
+        if (progress >= 1) {
+            phaseIdx++;
+            phaseStart = Date.now();
+        }
+        rafId = requestAnimationFrame(_tick);
+    }
+
+    rafId = requestAnimationFrame(_tick);
+
     frappe.call({
-        method: "saral_hr.saral_hr.report.payroll_report.payroll_report.print_selected_reports",
-        args: { filters: JSON.stringify(f) },
-        callback: r => {
+        method,
+        args,
+        callback(r) {
+            done = true;
+            if (rafId) cancelAnimationFrame(rafId);
             frappe.show_progress(__("Generating PDF"), 100, 100, __("Done!"));
             setTimeout(() => {
                 frappe.hide_progress();
-                btn.prop("disabled", false).text(orig);
+                if (onDone) onDone();
                 if (r.message) _open_pdf(r.message);
                 else frappe.msgprint({ title:__("Error"), message:__("Failed to generate PDF."), indicator:"red" });
-            }, 500);
+            }, 600);
         },
-        error: () => {
+        error() {
+            done = true;
+            if (rafId) cancelAnimationFrame(rafId);
             frappe.hide_progress();
-            btn.prop("disabled", false).text(orig);
+            if (onDone) onDone();
             frappe.msgprint({ title:__("Error"), message:__("Failed to generate PDF."), indicator:"red" });
         }
     });
@@ -556,7 +629,7 @@ function _print_selected(selectedKeys, btn) {
 
 function _open_pdf(url) {
     const a = Object.assign(document.createElement("a"), {
-        href: frappe.urllib.get_full_url(url), target:"_blank", rel:"noopener noreferrer"
+        href: frappe.urllib.get_full_url(url), target: "_blank", rel: "noopener noreferrer"
     });
     document.body.appendChild(a); a.click(); document.body.removeChild(a);
 }

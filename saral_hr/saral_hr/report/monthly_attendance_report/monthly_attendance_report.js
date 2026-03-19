@@ -18,8 +18,10 @@ frappe.query_reports["Monthly Attendance Report"] = {
             fieldtype: "Select",
             reqd: 1,
             default: "",
-            options: ["","January","February","March","April","May","June",
-                      "July","August","September","October","November","December"],
+            options: [
+                "", "January", "February", "March", "April", "May", "June",
+                "July", "August", "September", "October", "November", "December",
+            ],
         },
         {
             fieldname: "company",
@@ -104,15 +106,25 @@ frappe.query_reports["Monthly Attendance Report"] = {
         const fn  = column.fieldname;
         const def = v => default_formatter(v, row, column, data);
 
-        // Colour-code day cells on screen too
+        // Colour-code day cells — only statuses that exist in your doctype
         if (fn && fn.startsWith("day_")) {
+            if (!value || value === "-") {
+                return '<span style="color:#ccc;">-</span>';
+            }
             const colors = {
-                A:   "#c0392b", LWP: "#8e44ad", WO: "#2980b9",
-                H:   "#27ae60", EL:  "#d35400", CL: "#16a085",
-                CO:  "#7f8c8d", OT:  "#2c3e50",
+                P:   "#1a6b1a",   // Present       – dark green
+                A:   "#c0392b",   // Absent        – red
+                HD:  "#e67e22",   // Half Day      – orange
+                T:   "#2c3e50",   // On Tour       – dark slate
+                H:   "#27ae60",   // Holiday       – green
+                WO:  "#2980b9",   // Weekly Off    – blue
+                LWP: "#8e44ad",   // LWP           – purple
+                EL:  "#d35400",   // Earned Leave  – burnt orange
+                CL:  "#16a085",   // Casual Leave  – teal
+                CO:  "#7f8c8d",   // Comp Off      – grey
+                ECO: "#c0392b",   // Earned Comp Off – dark red
             };
             const color = colors[value] || "#1a202c";
-            if (!value || value === "-") return '<span style="color:#ccc;">-</span>';
             return `<span style="font-weight:700;color:${color};">${value}</span>`;
         }
 
