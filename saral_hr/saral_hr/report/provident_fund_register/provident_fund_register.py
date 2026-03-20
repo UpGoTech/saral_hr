@@ -87,8 +87,8 @@ def _get_data(f):
         _col("UAN No.",         "uan_no",          w=100),
         _col("Employee Name",   "employee_name",   w=180),
         _col("Employee ID",     "employee_id",     w=110),
-        _col("Days (LWP+ABS)",  "days",    "Float", 75,  precision=1),
-        _col("Absent",          "absent",  "Float", 60,  precision=1),
+        _col("Working Days",    "working_days",    "Float", 75, precision=1),
+        _col("Payment Days",    "payment_days",    "Float", 75, precision=1),
         _col("Gross Salary",    "gross",   "Float", 110, precision=2),
         _col("Basic + DA",      "basic_da","Float", 110, precision=2),
         _col("Emp PF",          "emp_pf",  "Float", 90,  precision=2),
@@ -112,7 +112,7 @@ def _get_data(f):
     slips = frappe.db.sql(
         f"""
         SELECT ss.name AS slip_name, ss.employee AS eid, ss.employee_name,
-               ss.payment_days AS days, ss.absent_days AS absent,
+               ss.total_working_days AS working_days, ss.payment_days AS payment_days,
                ss.total_earnings AS gross
         FROM `tabSalary Slip` ss
         {catj}
@@ -219,8 +219,8 @@ def _get_data(f):
             "uan_no":          emp.get("uan_no") or "",
             "employee_name":   s.employee_name,
             "employee_id":     s.eid,
-            "days":            flt(s.days,   1),
-            "absent":          flt(s.absent, 1),
+            "working_days":    flt(s.working_days, 1),
+            "payment_days":    flt(s.payment_days, 1),
             "gross":           g,
             "basic_da":        b,
             "emp_pf":          epf,
@@ -238,7 +238,7 @@ def _get_data(f):
     data.append({
         "sr": "", "pf_no": "", "uan_no": "",
         "employee_name": "Total", "employee_id": "",
-        "days": None, "absent": None,
+        "working_days": None, "payment_days": None,
         **{k: flt(v, 2) for k, v in tot.items()},
         "date_of_joining": "", "date_of_birth": "",
         "bold": 1, "_row_type": "total",
@@ -264,8 +264,8 @@ _CSS = """<style>
 body{font-family:Arial,sans-serif;font-size:13px;color:#000;background:#fff}
 .hdr{text-align:center;border-bottom:2px solid #000;padding:10px 4px 8px;margin-bottom:8px}
 .hdr .co{font-size:24px;font-weight:900;letter-spacing:1px;text-transform:uppercase}
-.hdr .ttl{font-size:17px;font-weight:700;margin-top:5px}
-.hdr .per{font-size:14px;margin-top:4px}
+.hdr .ttl{font-size:18px;font-weight:700;margin-top:5px}
+.hdr .per{font-size:17px;margin-top:4px}
 .sig{display:flex;justify-content:space-between;margin-top:32px;padding-top:8px}
 .sig-b{text-align:center;width:180px}
 .sig-l{border-top:1px solid #000;margin-bottom:4px}
@@ -283,9 +283,9 @@ PAD         = "padding:7px 9px;"
 FS          = "font-size:13px;"
 
 # Columns blanked on total row
-_SKIP_ON_TOTAL = {"sr", "pf_no", "uan_no", "days", "absent", "date_of_joining", "date_of_birth"}
+_SKIP_ON_TOTAL = {"sr", "pf_no", "uan_no", "working_days", "payment_days", "date_of_joining", "date_of_birth"}
 _NUMERIC_FT    = ("Float", "Currency", "Int", "Percent")
-_RIGHT_FIELDS  = {"sr", "days", "absent", "gross", "basic_da", "emp_pf",
+_RIGHT_FIELDS  = {"sr", "working_days", "payment_days", "gross", "basic_da", "emp_pf",
                   "employer_eps", "employer_pf", "employer_edli", "employer_admin", "total_amount"}
 
 
@@ -309,50 +309,145 @@ def _build_html(cols, data, co, mo, yr):
     detail_rows = [r for r in data if r.get("_row_type") == "detail"]
     total_row   = next((r for r in data if r.get("bold")), None)
 
-    # ── thead ──────────────────────────────────────────────────────────
+    # ── thead — 2 rows per header cell ─────────────────────────────────
+    # Row 1: PF No | Emp ID       | Working Days | Gross | B+DA | Emp PF | EPS | Empr PF | EDLI | Admin | Total | DOJ
+    # Row 2: UAN   | Emp Name     | Present/Abs  |       |      |        |     |         |      |       |       | DOB
+
+    TH  = f"border:{B};{PAD}{FS}font-weight:700;background:{HDR_BG};white-space:normal;vertical-align:middle;"
+    THL = TH + "text-align:left;"
+    THR = TH + "text-align:right;"
+
+    # Column widths
+    W_ID    = 110
+    W_DAYS  = 52
+    W_NUM   = 80
+    W_GROSS = 90
+    W_BDA   = 90
+    W_COMP  = 78
+
     def _thead():
-        h = '<thead><tr>'
-        for c in cols:
-            fn    = c["fieldname"]
-            align = "right" if fn in _RIGHT_FIELDS else "left"
-            h += (
-                f'<th style="border:{B};{PAD}{FS}font-weight:700;'
-                f'background:{HDR_BG};text-align:{align};'
-                f'white-space:normal;vertical-align:middle;">'
-                f'{c["label"]}</th>'
-            )
-        h += '</tr></thead>'
+        h = '<thead>'
+
+        # Row 1
+        h += '<tr>'
+        h += f'<th style="{THL}width:{W_ID}px;">PF No.<br><span style="font-size:11px;font-weight:400;">UAN No.</span></th>'
+        h += f'<th style="{THL}width:{W_ID}px;">Employee Name<br><span style="font-size:11px;font-weight:400;">Employee ID</span></th>'
+        h += f'<th style="{THR}width:{W_DAYS}px;">Working Days<br><span style="font-size:11px;font-weight:400;">Payment Days</span></th>'
+        h += f'<th style="{THR}width:{W_GROSS}px;">Gross<br>Salary</th>'
+        h += f'<th style="{THR}width:{W_BDA}px;">Basic<br>+ DA</th>'
+        h += f'<th style="{THR}width:{W_COMP}px;">Emp<br>PF</th>'
+        h += f'<th style="{THR}width:{W_COMP}px;">Empr<br>EPS</th>'
+        h += f'<th style="{THR}width:{W_COMP}px;">Empr<br>PF</th>'
+        h += f'<th style="{THR}width:{W_COMP}px;">Empr<br>EDLI</th>'
+        h += f'<th style="{THR}width:{W_COMP}px;">PF<br>Admin</th>'
+        h += f'<th style="{THR}width:{W_COMP}px;">Total</th>'
+        h += f'<th style="{THL}width:82px;">DOJ<br><span style="font-size:11px;font-weight:400;">DOB</span></th>'
+        h += '</tr>'
+        h += '</thead>'
         return h
 
-    # ── row builder ────────────────────────────────────────────────────
-    def _row(row, row_idx, is_total=False):
-        bg = HDR_BG if is_total else ROW_COLOURS[row_idx % 2]
-        fw = "font-weight:700;" if is_total else ""
-        h  = '<tr>'
-        for c in cols:
-            fn    = c["fieldname"]
-            val   = row.get(fn, "")
-            align = "right" if fn in _RIGHT_FIELDS else "left"
-            if is_total and fn in _SKIP_ON_TOTAL:
-                disp = ""
-            elif c.get("fieldtype", "") in _NUMERIC_FT:
-                disp = _fmt(val) if val not in ("", None) else ""
-            else:
-                disp = str(val) if val not in ("", None) else ""
-            h += (
-                f'<td style="border:{B};{PAD}{FS}{fw}'
-                f'background:{bg};text-align:{align};vertical-align:middle;">'
-                f'{disp}</td>'
-            )
-        h += '</tr>'
-        return h
+    # ── row builder — 2 rows per employee ──────────────────────────────
+    def _td(val, align="right", bg="#fff", bold=False, bt=B, bb=B):
+        fw = "font-weight:700;" if bold else ""
+        return (
+            f'<td style="border-left:{B};border-right:{B};'
+            f'border-top:{bt};border-bottom:{bb};'
+            f'{PAD}{FS}{fw}background:{bg};'
+            f'text-align:{align};vertical-align:middle;">{val}</td>'
+        )
+
+    def _emp_rows(row, row_idx, is_total=False):
+        bg   = HDR_BG if is_total else ROW_COLOURS[row_idx % 2]
+        bold = is_total
+        fw   = "font-weight:700;" if bold else ""
+
+        pf_no   = row.get("pf_no",   "") or ""
+        uan_no  = row.get("uan_no",  "") or ""
+        emp_id  = row.get("employee_id",   "") or ""
+        emp_nm  = row.get("employee_name", "") or ""
+        wdays   = _fmt(row.get("working_days"))  or "0"
+        pdays   = _fmt(row.get("payment_days")) or "0"
+        gross   = _fmt(row.get("gross"))  or "—"
+        bda     = _fmt(row.get("basic_da"))       or "—"
+        emp_pf  = _fmt(row.get("emp_pf"))         or "—"
+        ereps   = _fmt(row.get("employer_eps"))    or "—"
+        erpf    = _fmt(row.get("employer_pf"))     or "—"
+        eredli  = _fmt(row.get("employer_edli"))   or "—"
+        eradm   = _fmt(row.get("employer_admin"))  or "—"
+        total   = _fmt(row.get("total_amount"))    or "—"
+        doj     = str(row.get("date_of_joining") or "")
+        dob     = str(row.get("date_of_birth")   or "")
+
+        # Row 1 — top values
+        r1 = '<tr>'
+        # PF No cell — top border, no bottom
+        r1 += (
+            f'<td style="border-left:{B};border-right:{B};border-top:{B};border-bottom:none;'
+            f'{PAD}{FS}{fw}background:{bg};text-align:left;vertical-align:middle;'
+            f'white-space:normal;word-wrap:break-word;">'
+            f'<strong>{pf_no or "&nbsp;"}</strong></td>'
+        )
+        # Emp Name cell row 1 — top border, no bottom
+        r1 += (
+            f'<td style="border-left:{B};border-right:{B};border-top:{B};border-bottom:none;'
+            f'{PAD}{FS}{fw}background:{bg};text-align:left;vertical-align:middle;'
+            f'white-space:normal;word-wrap:break-word;">'
+            f'<strong>{emp_nm or "&nbsp;"}</strong></td>'
+        )
+        r1 += _td(wdays,  "right", bg, bold, bt=B, bb="none")  # working days - top border only
+        r1 += _td(gross,  "right", bg, bold, bt=B, bb="none")
+        r1 += _td(bda,    "right", bg, bold, bt=B, bb="none")
+        r1 += _td(emp_pf, "right", bg, bold, bt=B, bb="none")
+        r1 += _td(ereps,  "right", bg, bold, bt=B, bb="none")
+        r1 += _td(erpf,   "right", bg, bold, bt=B, bb="none")
+        r1 += _td(eredli, "right", bg, bold, bt=B, bb="none")
+        r1 += _td(eradm,  "right", bg, bold, bt=B, bb="none")
+        r1 += _td(total,  "right", bg, bold, bt=B, bb="none")
+        # DOJ cell — top border, no bottom
+        r1 += (
+            f'<td style="border-left:{B};border-right:{B};border-top:{B};border-bottom:none;'
+            f'{PAD}font-size:12px;{fw}background:{bg};text-align:left;vertical-align:middle;">'
+            f'{doj or "&nbsp;"}</td>'
+        )
+        r1 += '</tr>'
+
+        # Row 2 — bottom values (UAN, Emp Name, Absent, -, -, ...)
+        r2 = '<tr>'
+        # UAN No cell — no top, bottom border
+        r2 += (
+            f'<td style="border-left:{B};border-right:{B};border-top:none;border-bottom:{B};'
+            f'{PAD}font-size:12px;{fw}background:{bg};text-align:left;vertical-align:middle;'
+            f'white-space:normal;word-wrap:break-word;">'
+            f'{uan_no or "&nbsp;"}</td>'
+        )
+        # Emp ID — no top, bottom border
+        r2 += (
+            f'<td style="border-left:{B};border-right:{B};border-top:none;border-bottom:{B};'
+            f'{PAD}font-size:12px;{fw}background:{bg};text-align:left;vertical-align:middle;">'
+            f'{emp_id or "&nbsp;"}</td>'
+        )
+        pdays_disp = pdays if not is_total else "&nbsp;"
+        r2 += _td(pdays_disp, "right", bg, bold, bt=B, bb=B)
+        # Blank cells for numeric columns row 2
+        for _ in range(7):   # gross, bda, emp_pf, ereps, erpf, eredli, eradm
+            r2 += _td("&nbsp;", "right", bg, bold, bt="none", bb=B)
+        r2 += _td("&nbsp;", "right", bg, bold, bt="none", bb=B)  # total blank
+        # DOB cell
+        r2 += (
+            f'<td style="border-left:{B};border-right:{B};border-top:none;border-bottom:{B};'
+            f'{PAD}font-size:12px;{fw}background:{bg};text-align:left;vertical-align:middle;">'
+            f'{dob or "&nbsp;"}</td>'
+        )
+        r2 += '</tr>'
+
+        return r1 + r2
 
     # ── table ──────────────────────────────────────────────────────────
     body = '<tbody>'
     for ri, row in enumerate(detail_rows):
-        body += _row(row, ri)
+        body += _emp_rows(row, ri)
     if total_row:
-        body += _row(total_row, 0, is_total=True)
+        body += _emp_rows(total_row, 0, is_total=True)
     body += '</tbody>'
 
     pg_footer = (

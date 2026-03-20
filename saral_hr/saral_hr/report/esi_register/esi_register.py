@@ -14,20 +14,15 @@ B = "1px solid #000"
 
 _CSS = """<style>
 *{margin:0;padding:0;box-sizing:border-box}
-body{font-family:Arial,sans-serif;font-size:16px;color:#000;background:#fff}
-.hdr{text-align:center;border-bottom:2px solid #000;padding:10px 6px 6px;margin-bottom:6px}
-.hdr .co{font-size:28px;font-weight:900;letter-spacing:1px;text-transform:uppercase}
-.hdr .ttl{font-size:20px;font-weight:700;margin-top:2px}
-.hdr .per{font-size:16px;margin-top:2px}
-.sig{display:flex;justify-content:space-between;margin-top:16px;padding-top:8px}
+body{font-family:Arial,sans-serif;font-size:13px;color:#000;background:#fff}
+.hdr{text-align:center;border-bottom:2px solid #000;padding:10px 4px 8px;margin-bottom:8px}
+.hdr .co{font-size:24px;font-weight:900;letter-spacing:1px;text-transform:uppercase}
+.hdr .ttl{font-size:17px;font-weight:700;margin-top:5px}
+.hdr .per{font-size:14px;margin-top:4px}
+.sig{display:flex;justify-content:space-between;margin-top:32px;padding-top:8px}
 .sig-b{text-align:center;width:180px}
 .sig-l{border-top:1px solid #000;margin-bottom:4px}
-.sig-t{font-size:15px;color:#333}
-table{width:100%;border-collapse:collapse;margin-top:8px}
-th{border:1px solid #000;padding:10px 12px;font-size:16px;font-weight:700;background:#f0f0f0;color:#000;white-space:nowrap;text-align:left}
-td{border:1px solid #000;padding:10px 12px;font-size:16px;vertical-align:middle;color:#000;text-align:left}
-tr.tot td{background:#e8e8e8;font-weight:700}
-.nd{text-align:center;padding:10px;color:#888;font-size:16px}
+.sig-t{font-size:13px;color:#333}
 </style>"""
 
 _SIG = '<div class="sig">' + "".join(
@@ -37,6 +32,11 @@ _SIG = '<div class="sig">' + "".join(
 
 _NUMERIC_FT    = ("Float", "Currency", "Int", "Percent")
 _SKIP_ON_TOTAL = {"esic_number", "days_paid", "date_of_joining", "date_of_birth"}
+
+HDR_BG      = "#e8e8e8"
+ROW_COLOURS = ["#ffffff", "#f0f0f0"]
+PAD         = "padding:7px 9px;"
+FS          = "font-size:13px;"
 
 
 def _parse_list(v):
@@ -100,9 +100,10 @@ def _fmt(v):
 
 def _get_data(f):
     cols = [
-        _col("ESI No.",         "esic_number",     w=130),
-        _col("Employee ID",     "employee_id",     w=110),
+        _col("Sr",              "sr",              w=40),
+        _col("ESI No.",         "esic_number",     w=150),
         _col("Employee Name",   "employee_name",   w=180),
+        _col("Employee ID",     "employee_id",     w=110),
         _col("Days Paid",       "days_paid",       "Float", 80,  precision=2),
         _col("Gross Salary",    "gross_salary",    "Float", 120, precision=2),
         _col("Emp ESIC",        "emp_esi",         "Float", 110, precision=2),
@@ -161,8 +162,9 @@ def _get_data(f):
     emp_m  = _em("%%esic%%", "deductions")
     empr_m = _em("%%esic%%", "employer_share")
 
-    data = []
+    data      = []
     gg = ge = gr = 0.0
+    sr_counter = 1
 
     for s in slips:
         ei  = flt(emp_m.get(s.slip,  0))
@@ -174,6 +176,7 @@ def _get_data(f):
         ge += ei
         gr += eri
         data.append({
+            "sr":              sr_counter,
             "esic_number":     s.esic_number      or "-",
             "employee_id":     s.eid              or s.employee,
             "employee_name":   s.employee_name,
@@ -185,11 +188,11 @@ def _get_data(f):
             "date_of_joining": s.date_of_joining,
             "date_of_birth":   s.date_of_birth,
         })
+        sr_counter += 1
 
     if data:
         data.append({
-            "esic_number":     "",
-            "employee_id":     "",
+            "sr": "", "esic_number": "", "employee_id": "",
             "employee_name":   "Total",
             "days_paid":       "",
             "gross_salary":    flt(gg, 2),
@@ -208,6 +211,14 @@ def execute(filters=None):
     return _get_data(filters or {})
 
 
+# ---------------------------------------------------------------------------
+# PDF — Transaction Checklist style, 2-row merged employee cell
+# ---------------------------------------------------------------------------
+
+# Numeric fields (right-aligned)
+_RIGHT_FIELDS = {"sr", "days_paid", "gross_salary", "emp_esi", "empr_esi", "total_esi"}
+
+
 def _build_html(cols, data, co, mo, yr):
     hdr = (
         f'<div class="hdr">'
@@ -217,65 +228,144 @@ def _build_html(cols, data, co, mo, yr):
         f'</div>'
     )
 
-    def _thead():
-        h = "<tr>"
-        for c in cols:
-            h += f'<th>{c.get("label", "")}</th>'
-        return h + "</tr>"
-
-    def _build_rows(rows):
-        h = ""
-        for row in rows:
-            is_tot = bool(row.get("bold"))
-            cls    = ' class="tot"' if is_tot else ""
-            h += f"<tr{cls}>"
-            for c in cols:
-                fn   = c.get("fieldname", "")
-                val  = row.get(fn, "")
-                is_n = c.get("fieldtype", "") in _NUMERIC_FT
-                if is_tot and fn in _SKIP_ON_TOTAL:
-                    h += "<td></td>"
-                elif is_n:
-                    h += f"<td>{_fmt(val) if val not in ('', None) else ''}</td>"
-                else:
-                    h += f"<td>{str(val) if val else ''}</td>"
-            h += "</tr>"
-        return h
-
-    def _make_table(rows):
-        return (
-            f"<table><thead>{_thead()}</thead>"
-            f"<tbody>{rows}</tbody></table>"
-        )
-
-    ncols = len(cols)
-
     if not data:
         return (
             f'<!DOCTYPE html><html><head><meta charset="UTF-8">{_CSS}</head>'
             f'<body>{hdr}'
-            f'<table><thead>{_thead()}</thead>'
-            f'<tbody><tr><td colspan="{ncols}" class="nd">No data for this period</td></tr></tbody>'
-            f'</table>{_SIG}</body></html>'
+            f'<p style="text-align:center;{PAD}{FS}color:#888;">No data for this period</p>'
+            f'{_SIG}</body></html>'
         )
 
     detail_rows = [r for r in data if not r.get("bold")]
-    total_row   = [r for r in data if r.get("bold")]
+    total_row   = next((r for r in data if r.get("bold")), None)
 
+    # ── thead — employee name/id stacked, all others flat ──────────────
+    TH  = f"border:{B};{PAD}{FS}font-weight:700;background:{HDR_BG};white-space:normal;vertical-align:middle;"
+    THL = TH + "text-align:left;"
+    THR = TH + "text-align:right;"
+
+    def _thead():
+        h = '<thead><tr>'
+        for c in cols:
+            fn = c["fieldname"]
+            if fn == "employee_id":
+                # Skip — merged into employee_name cell
+                continue
+            align = "right" if fn in _RIGHT_FIELDS else "left"
+            ts    = THR if align == "right" else THL
+            if fn == "employee_name":
+                lbl = f'Employee Name<br><span style="font-size:11px;font-weight:400;">Employee ID</span>'
+            elif fn == "date_of_joining":
+                lbl = f'DOJ<br><span style="font-size:11px;font-weight:400;">DOB</span>'
+            elif fn == "date_of_birth":
+                continue   # merged into DOJ cell
+            else:
+                lbl = c["label"]
+            h += f'<th style="{ts}width:{c["width"]}px;">{lbl}</th>'
+        h += '</tr></thead>'
+        return h
+
+    # ── row builder — 2 rows per employee for name/id and doj/dob ──────
+    def _td_flat(val, fn, bg, bold):
+        fw    = "font-weight:700;" if bold else ""
+        align = "right" if fn in _RIGHT_FIELDS else "left"
+        return (
+            f'<td style="border:{B};{PAD}{FS}{fw}background:{bg};'
+            f'text-align:{align};vertical-align:middle;">{val}</td>'
+        )
+
+    def _emp_rows(row, row_idx, is_total=False):
+        bg   = HDR_BG if is_total else ROW_COLOURS[row_idx % 2]
+        bold = is_total
+        fw   = "font-weight:700;" if bold else ""
+
+        emp_nm = row.get("employee_name", "") or ""
+        emp_id = row.get("employee_id",   "") or ""
+        doj    = str(row.get("date_of_joining") or "")
+        dob    = str(row.get("date_of_birth")   or "")
+
+        h = '<tr>'
+        for c in cols:
+            fn  = c["fieldname"]
+            val = row.get(fn, "")
+
+            if fn == "employee_id" or fn == "date_of_birth":
+                # Skip — handled inside employee_name / date_of_joining cells
+                continue
+
+            if fn == "employee_name":
+                # 2-line cell: Name on top, ID below
+                h += (
+                    f'<td style="border:{B};{PAD}{FS}{fw}background:{bg};'
+                    f'text-align:left;vertical-align:middle;'
+                    f'white-space:normal;word-wrap:break-word;">'
+                    f'<strong>{emp_nm}</strong>'
+                )
+                if not is_total and emp_id:
+                    h += f'<br><span style="font-size:11px;color:#333;">{emp_id}</span>'
+                h += '</td>'
+
+            elif fn == "date_of_joining":
+                # 2-line cell: DOJ on top, DOB below
+                h += (
+                    f'<td style="border:{B};{PAD}font-size:12px;{fw}background:{bg};'
+                    f'text-align:left;vertical-align:middle;">'
+                    f'{doj or "&nbsp;"}'
+                )
+                if not is_total and dob:
+                    h += f'<br><span style="font-size:11px;color:#333;">{dob}</span>'
+                h += '</td>'
+
+            elif fn in _SKIP_ON_TOTAL and is_total:
+                h += f'<td style="border:{B};{PAD}{FS}background:{bg};"></td>'
+
+            else:
+                if c.get("fieldtype", "") in _NUMERIC_FT:
+                    disp = _fmt(val) if val not in ("", None) else ""
+                else:
+                    disp = str(val) if val not in ("", None) else ""
+                h += _td_flat(disp, fn, bg, bold)
+
+        h += '</tr>'
+        return h
+
+    # ── pagination ──────────────────────────────────────────────────────
     FIRST, OTHER = 20, 25
     pages, idx, first = [], 0, True
     while idx < len(detail_rows):
         lim = FIRST if first else OTHER
         pages.append(detail_rows[idx: idx + lim])
-        idx += lim
+        idx  += lim
         first = False
+    if not pages:
+        pages = [[]]
 
-    parts = []
+    total_pages = len(pages)
+    parts       = []
+
     for pn, pr in enumerate(pages):
         pb   = '<div style="page-break-before:always;"></div>' if pn > 0 else ""
         last = (pn == len(pages) - 1)
-        rows = _build_rows(pr + (total_row if last else []))
-        parts.append(pb + hdr + _make_table(rows))
+
+        pg_footer = (
+            f'<div style="text-align:right;font-size:12px;color:#444;'
+            f'margin-top:6px;padding-right:2px;">'
+            f'Page {pn + 1} of {total_pages}</div>'
+        )
+
+        body = '<tbody>'
+        for ri, row in enumerate(pr):
+            body += _emp_rows(row, ri)
+        if last and total_row:
+            body += _emp_rows(total_row, 0, is_total=True)
+        body += '</tbody>'
+
+        parts.append(
+            f'{pb}{hdr}'
+            f'<table style="width:100%;border-collapse:collapse;margin-top:8px;">'
+            f'{_thead()}{body}</table>'
+            f'{pg_footer}'
+        )
 
     return (
         f'<!DOCTYPE html><html><head><meta charset="UTF-8">{_CSS}</head>'

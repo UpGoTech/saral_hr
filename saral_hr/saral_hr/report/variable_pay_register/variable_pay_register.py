@@ -21,8 +21,8 @@ _CSS = """<style>
 body{font-family:Arial,sans-serif;font-size:10px;color:#000;background:#fff}
 .hdr{text-align:center;border-bottom:2px solid #000;padding:8px 4px 6px;margin-bottom:6px}
 .hdr .co{font-size:18px;font-weight:900;letter-spacing:1px;text-transform:uppercase}
-.hdr .ttl{font-size:13px;font-weight:700;margin-top:3px}
-.hdr .per{font-size:11px;margin-top:2px}
+.hdr .ttl{font-size:18px;font-weight:700;margin-top:3px}
+.hdr .per{font-size:16px;margin-top:2px}
 .sig{display:flex;justify-content:space-between;margin-top:24px;padding-top:6px}
 .sig-b{text-align:center;width:160px}
 .sig-l{border-top:1px solid #000;margin-bottom:3px}
