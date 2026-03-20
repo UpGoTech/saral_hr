@@ -9,7 +9,9 @@
  "field_order": [
   "category",
   "column_break_ifpd",
-  "requires_variable_pay"
+  "requires_variable_pay",
+  "section_break_subtype",
+  "has_subtype"
  ],
  "fields": [
   {
@@ -33,11 +35,24 @@
    "fieldtype": "Check",
    "in_list_view": 1,
    "label": "Requires Variable Pay"
+  },
+  {
+   "fieldname": "section_break_subtype",
+   "fieldtype": "Section Break",
+   "label": "Sub-types"
+  },
+  {
+   "default": "0",
+   "description": "Enable for categories where employees are classified as Skilled / Semi-skilled / Unskilled (e.g. Workers).",
+   "fieldname": "has_subtype",
+   "fieldtype": "Check",
+   "in_list_view": 1,
+   "label": "Has Skill Sub-type"
   }
  ],
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-03-12 00:00:00.000000",
+ "modified": "2026-03-20 00:00:00.000000",
  "modified_by": "Administrator",
  "module": "Saral Hr",
  "name": "Category",

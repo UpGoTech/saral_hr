@@ -1,0 +1,241 @@
+{
+ "actions": [],
+ "allow_import": 1,
+ "autoname": "format:{from_month}-{from_year}-{to_month}-{to_year}",
+ "creation": "2026-03-20 00:00:00",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "notification_number",
+  "currency",
+  "section_break_sdqg",
+  "from_year",
+  "to_year",
+  "column_break_top",
+  "from_month",
+  "to_month",
+  "section_break_rates",
+  "vbasic_section_label",
+  "vbasic_skilled",
+  "vbasic_semi_skilled",
+  "vbasic_unskilled",
+  "column_break_rates",
+  "vda_section_label",
+  "vda_skilled",
+  "vda_semi_skilled",
+  "vda_unskilled",
+  "column_break_uafm",
+  "total_vb_and_da",
+  "total_skilled",
+  "total_semi_skilled",
+  "total_unskilled",
+  "amended_from"
+ ],
+ "fields": [
+  {
+   "fieldname": "notification_number",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Notification Number",
+   "reqd": 1
+  },
+  {
+   "default": "INR",
+   "fieldname": "currency",
+   "fieldtype": "Link",
+   "label": "Currency",
+   "options": "Currency",
+   "print_hide": 1,
+   "read_only": 1
+  },
+  {
+   "fieldname": "section_break_sdqg",
+   "fieldtype": "Section Break"
+  },
+  {
+   "fieldname": "column_break_top",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "from_month",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "label": "From Month",
+   "options": "\nJanuary\nFebruary\nMarch\nApril\nMay\nJune\nJuly\nAugust\nSeptember\nOctober\nNovember\nDecember",
+   "reqd": 1
+  },
+  {
+   "fieldname": "from_year",
+   "fieldtype": "Select",
+   "label": "From Year",
+   "reqd": 1
+  },
+  {
+   "fieldname": "to_month",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "label": "To Month",
+   "options": "\nJanuary\nFebruary\nMarch\nApril\nMay\nJune\nJuly\nAugust\nSeptember\nOctober\nNovember\nDecember",
+   "reqd": 1
+  },
+  {
+   "fieldname": "to_year",
+   "fieldtype": "Select",
+   "label": "To Year",
+   "reqd": 1
+  },
+  {
+   "fieldname": "section_break_rates",
+   "fieldtype": "Section Break",
+   "label": "Rates by Skill Type"
+  },
+  {
+   "fieldname": "vbasic_section_label",
+   "fieldtype": "HTML",
+   "label": "V-Basic Header",
+   "options": "<div style=\"font-size:13px;font-weight:700;color:var(--text-color);padding:4px 0 8px;\">Variable - Basic</div>"
+  },
+  {
+   "fieldname": "vbasic_skilled",
+   "fieldtype": "Currency",
+   "label": "Skilled",
+   "options": "currency",
+   "precision": "2",
+   "reqd": 1
+  },
+  {
+   "fieldname": "vbasic_semi_skilled",
+   "fieldtype": "Currency",
+   "label": "Semi-skilled",
+   "options": "currency",
+   "precision": "2",
+   "reqd": 1
+  },
+  {
+   "fieldname": "vbasic_unskilled",
+   "fieldtype": "Currency",
+   "label": "Unskilled",
+   "options": "currency",
+   "precision": "2",
+   "reqd": 1
+  },
+  {
+   "fieldname": "column_break_rates",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "vda_section_label",
+   "fieldtype": "HTML",
+   "label": "V-DA Header",
+   "options": "<div style=\"font-size:13px;font-weight:700;color:var(--text-color);padding:4px 0 8px;\">Variable - Dearness Allowance</div>"
+  },
+  {
+   "fieldname": "vda_skilled",
+   "fieldtype": "Currency",
+   "label": "Skilled",
+   "options": "currency",
+   "precision": "2",
+   "reqd": 1
+  },
+  {
+   "fieldname": "vda_semi_skilled",
+   "fieldtype": "Currency",
+   "label": "Semi-skilled",
+   "options": "currency",
+   "precision": "2",
+   "reqd": 1
+  },
+  {
+   "fieldname": "vda_unskilled",
+   "fieldtype": "Currency",
+   "label": "Unskilled",
+   "options": "currency",
+   "precision": "2",
+   "reqd": 1
+  },
+  {
+   "fieldname": "total_skilled",
+   "fieldtype": "Currency",
+   "label": "Skilled Total",
+   "options": "currency",
+   "precision": "2",
+   "read_only": 1
+  },
+  {
+   "fieldname": "total_semi_skilled",
+   "fieldtype": "Currency",
+   "label": "Semi-skilled Total",
+   "options": "currency",
+   "precision": "2",
+   "read_only": 1
+  },
+  {
+   "fieldname": "total_unskilled",
+   "fieldtype": "Currency",
+   "label": "Unskilled Total",
+   "options": "currency",
+   "precision": "2",
+   "read_only": 1
+  },
+  {
+   "fieldname": "amended_from",
+   "fieldtype": "Link",
+   "label": "Amended From",
+   "no_copy": 1,
+   "options": "Skill Rate Revision",
+   "print_hide": 1,
+   "read_only": 1,
+   "search_index": 1
+  },
+  {
+   "fieldname": "column_break_uafm",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "total_vb_and_da",
+   "fieldtype": "HTML",
+   "label": "Total vb and da",
+   "options": "<div style=\"font-size:13px;font-weight:700;color:var(--text-color);padding:4px 0 8px;\">Total (Variable Basic + Variable DA)</div>"
+  }
+ ],
+ "index_web_pages_for_search": 1,
+ "is_submittable": 1,
+ "links": [],
+ "modified": "2026-03-20 17:11:47.074532",
+ "modified_by": "Administrator",
+ "module": "Saral Hr",
+ "name": "Skill Rate Revision",
+ "naming_rule": "Expression",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "amend": 1,
+   "cancel": 1,
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "Saral HR Manager",
+   "share": 1,
+   "submit": 1,
+   "write": 1
+  },
+  {
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "Saral HR User",
+   "select": 1,
+   "share": 1
+  }
+ ],
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": [],
+ "title_field": "notification_number"
+}

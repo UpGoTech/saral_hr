@@ -22,6 +22,8 @@
   "branch",
   "column_break_mhdz",
   "department",
+  "category",
+  "skill_type",
   "statutory_section_bar",
   "statutory_info_html",
   "is_esic_applicable",
@@ -145,6 +147,21 @@
    "fieldname": "department",
    "fieldtype": "Data",
    "label": "Department",
+   "read_only": 1
+  },
+  {
+   "fetch_from": "employee.category",
+   "fieldname": "category",
+   "fieldtype": "Data",
+   "label": "Category",
+   "read_only": 1
+  },
+  {
+   "depends_on": "eval:frappe.db.get_value('Category', doc.category, 'has_subtype')",
+   "fetch_from": "employee.skill_type",
+   "fieldname": "skill_type",
+   "fieldtype": "Data",
+   "label": "Skill Type",
    "read_only": 1
   },
   {
@@ -294,7 +311,7 @@
  "index_web_pages_for_search": 1,
  "is_submittable": 1,
  "links": [],
- "modified": "2026-03-12 00:00:00.000000",
+ "modified": "2026-03-20 00:00:00.000000",
  "modified_by": "Administrator",
  "module": "Saral Hr",
  "name": "Salary Structure Assignment",

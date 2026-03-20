@@ -43,10 +43,6 @@ class SalaryStructureAssignment(Document):
         pass
 
 
-# ─────────────────────────────────────────────────────────────
-#  Statutory computation — called from JS
-# ─────────────────────────────────────────────────────────────
-
 @frappe.whitelist()
 def get_statutory_components(company, gross_salary, from_date,
                               is_esic_applicable=0, is_pf_applicable=0,
@@ -84,39 +80,32 @@ def get_statutory_components(company, gross_salary, from_date,
             "employer_contribution": employer,
         }
 
-    # ── ESIC ─────────────────────────────────────────────────
     if is_esic_applicable and comp_doc:
         esic_cfg = comp_doc.get_esic_config()
         if esic_cfg:
             esic_components = comp_doc._get_child_components("esic_dependent_component")
             wage = _sum_components(esic_components, gross_salary, earnings_map)
-
             emp_pct  = flt(esic_cfg.get("employee_percent", 0))
             empr_pct = flt(esic_cfg.get("employer_percent", 0))
-
             if emp_pct:
                 deductions.append(row(SC_EMP_ESIC, wage * emp_pct / 100))
             if empr_pct:
                 employer_share.append(row(SC_EMPR_ESIC, wage * empr_pct / 100, employer=1))
 
-    # ── PF ───────────────────────────────────────────────────
     if is_pf_applicable and comp_doc:
         pf_cfg = comp_doc.get_pf_config()
         if pf_cfg:
             pf_components = comp_doc._get_child_components("pf_dependent_component")
             raw_wage = _sum_components(pf_components, gross_salary, earnings_map)
-
             if pf_type == "Limited PF" and pf_cfg.get("wage_limit"):
                 wage = min(raw_wage, flt(pf_cfg["wage_limit"]))
             else:
                 wage = raw_wage
-
             emp_pct  = flt(pf_cfg.get("employee_percent", 0))
             epf_pct  = flt(pf_cfg.get("employer_epf",    0))
             eps_pct  = flt(pf_cfg.get("employer_eps",    0))
             edli_pct = flt(pf_cfg.get("edli_insurance",  0))
             adm_pct  = flt(pf_cfg.get("admin_charges",   0))
-
             if emp_pct:
                 deductions.append(row(SC_EMP_PF,     wage * emp_pct  / 100))
             if epf_pct:
@@ -128,13 +117,11 @@ def get_statutory_components(company, gross_salary, from_date,
             if adm_pct:
                 employer_share.append(row(SC_EMPR_PFADM, wage * adm_pct  / 100, employer=1))
 
-    # ── PT ───────────────────────────────────────────────────
     if is_pt_applicable and from_date:
         month_name = MONTHS[getdate(from_date).month - 1]
         pt_amt     = _special_component_amount(SC_PT, month_name)
         deductions.append(row(SC_PT, pt_amt))
 
-    # ── LWF ──────────────────────────────────────────────────
     if is_lwf_applicable:
         emp_lwf_amt  = _special_component_constant_amount(SC_EMP_LWF)
         empr_lwf_amt = _special_component_constant_amount(SC_EMPR_LWF)
@@ -146,14 +133,20 @@ def get_statutory_components(company, gross_salary, from_date,
 
 def _sum_components(components, gross_salary, earnings_map):
     VIRTUAL = {"Gross", "Gross Including Additional Salary"}
-    total = 0.0
+    total       = 0.0
+    matched_any = False
+
     for comp in components:
         if comp in VIRTUAL:
             total += flt(gross_salary)
+            matched_any = True
         elif comp in earnings_map:
             total += flt(earnings_map[comp])
-        else:
-            total += 0.0
+            matched_any = True
+
+    if not matched_any:
+        return flt(gross_salary)
+
     return max(total, 0.0)
 
 
@@ -183,6 +176,59 @@ def _special_component_constant_amount(component_name):
     except frappe.DoesNotExistError:
         pass
     return 0.0
+
+
+# ─────────────────────────────────────────────────────────────
+#  NEW: SRR lookup for Salary Structure Assignment
+# ─────────────────────────────────────────────────────────────
+
+@frappe.whitelist()
+def get_srr_for_ssa(start_date, skill_type):
+    """
+    Finds submitted Skill Rate Revision covering start_date.
+    Returns vbasic + vda for the given skill_type, or None if not found.
+    """
+    MONTH_NUM = {
+        "January": 1, "February": 2, "March": 3,  "April": 4,
+        "May": 5,     "June": 6,     "July": 7,    "August": 8,
+        "September": 9, "October": 10, "November": 11, "December": 12,
+    }
+
+    SKILL_FIELD_MAP = {
+        "Skilled":      ("vbasic_skilled",      "vda_skilled"),
+        "Semi-skilled": ("vbasic_semi_skilled",  "vda_semi_skilled"),
+        "Unskilled":    ("vbasic_unskilled",     "vda_unskilled"),
+    }
+
+    fields = SKILL_FIELD_MAP.get(skill_type)
+    if not fields:
+        return None
+
+    vbasic_field, vda_field = fields
+
+    d          = getdate(start_date)
+    month_name = MONTHS[d.month - 1]
+    target     = d.year * 100 + MONTH_NUM[month_name]
+
+    records = frappe.db.get_all(
+        "Skill Rate Revision",
+        filters={"docstatus": 1},
+        fields=["from_month", "from_year", "to_month", "to_year",
+                vbasic_field, vda_field]
+    )
+
+    for r in records:
+        if not all([r.from_month, r.from_year, r.to_month, r.to_year]):
+            continue
+        from_val = int(r.from_year) * 100 + MONTH_NUM[r.from_month]
+        to_val   = int(r.to_year)   * 100 + MONTH_NUM[r.to_month]
+        if from_val <= target <= to_val:
+            return {
+                "vbasic": flt(r[vbasic_field], 2),
+                "vda":    flt(r[vda_field],    2),
+            }
+
+    return None
 
 
 # ─────────────────────────────────────────────────────────────

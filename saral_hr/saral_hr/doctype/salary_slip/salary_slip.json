@@ -21,22 +21,38 @@
   "column_break_alvo",
   "branch",
   "category",
+  "skill_type",
   "division",
   "payment_days_tab",
+  "payment_summary_section",
   "total_working_days",
+  "column_break_yach",
   "payment_days",
+  "column_break_yuda",
   "physical_working_days",
+  "column_break_niqc",
+  "total_unpaid_days",
+  "attendance_breakdown_section",
   "present_days",
+  "total_earned_leaves",
+  "total_earned_comp_off",
+  "column_break_clpc",
+  "absent_days",
+  "total_casual_leaves",
+  "column_break_tjxo",
   "total_half_days",
   "total_comp_off",
-  "column_break_puyt",
-  "absent_days",
-  "weekly_offs_count",
-  "total_holidays",
+  "column_break_gqsw",
   "total_lwp",
-  "total_earned_leaves",
-  "total_casual_leaves",
   "total_on_tour",
+  "days_col1_section",
+  "month_days",
+  "column_break_nhux",
+  "weekly_off_day",
+  "column_break_zjlq",
+  "weekly_offs_count",
+  "column_break_hflw",
+  "total_holidays",
   "earnings_and_deductions_tab",
   "earnings_and_deductions_section",
   "earnings",
@@ -83,20 +99,122 @@
    "label": "Days Calculations"
   },
   {
-   "fieldname": "total_working_days",
+   "fieldname": "days_col1_section",
+   "fieldtype": "Section Break",
+   "label": "Month Reference"
+  },
+  {
+   "description": "Total calendar days in this payroll month.",
+   "fieldname": "month_days",
    "fieldtype": "Float",
-   "label": "Working Days",
+   "label": "Total Calendar Days",
+   "precision": "0",
+   "read_only": 1
+  },
+  {
+   "description": "Employee's configured weekly off day.",
+   "fetch_from": "employee.weekly_off",
+   "fieldname": "weekly_off_day",
+   "fieldtype": "Data",
+   "label": "Weekly Off Day",
+   "read_only": 1
+  },
+  {
+   "fieldname": "weekly_offs_count",
+   "fieldtype": "Float",
+   "label": "Weekly Offs Count",
+   "precision": "0",
+   "read_only": 1
+  },
+  {
+   "fieldname": "total_holidays",
+   "fieldtype": "Float",
+   "label": "Holidays",
    "precision": "2"
   },
   {
-   "fieldname": "column_break_puyt",
-   "fieldtype": "Column Break"
+   "fieldname": "present_days",
+   "fieldtype": "Float",
+   "label": "Present Days",
+   "precision": "2"
+  },
+  {
+   "fieldname": "total_on_tour",
+   "fieldtype": "Float",
+   "label": "On Tour",
+   "precision": "2"
+  },
+  {
+   "fieldname": "total_half_days",
+   "fieldtype": "Float",
+   "label": "Half Days",
+   "precision": "2"
+  },
+  {
+   "fieldname": "total_earned_leaves",
+   "fieldtype": "Float",
+   "label": "Earned Leave",
+   "precision": "2"
+  },
+  {
+   "fieldname": "total_casual_leaves",
+   "fieldtype": "Float",
+   "label": "Casual Leave",
+   "precision": "2"
+  },
+  {
+   "fieldname": "total_comp_off",
+   "fieldtype": "Float",
+   "label": "Comp Off Taken",
+   "precision": "2"
+  },
+  {
+   "description": "Days where emp worked on a weekly off or holiday",
+   "fieldname": "total_earned_comp_off",
+   "fieldtype": "Float",
+   "label": "Earned Comp Off",
+   "precision": "2",
+   "read_only": 1
   },
   {
    "fieldname": "absent_days",
    "fieldtype": "Float",
    "label": "Absent Days",
    "precision": "2"
+  },
+  {
+   "fieldname": "total_lwp",
+   "fieldtype": "Float",
+   "label": "LWP",
+   "precision": "2"
+  },
+  {
+   "fieldname": "total_working_days",
+   "fieldtype": "Float",
+   "label": "Working Days",
+   "precision": "2"
+  },
+  {
+   "fieldname": "payment_days",
+   "fieldtype": "Float",
+   "label": "Payment Days",
+   "precision": "2"
+  },
+  {
+   "description": "Pay days - (EL/CL/Compoff)",
+   "fieldname": "physical_working_days",
+   "fieldtype": "Float",
+   "label": "Physical Working Days",
+   "precision": "2",
+   "read_only": 1
+  },
+  {
+   "description": "Absent + LWP (only for view)",
+   "fieldname": "total_unpaid_days",
+   "fieldtype": "Float",
+   "label": "Total Unpaid Days",
+   "precision": "2",
+   "read_only": 1
   },
   {
    "fieldname": "earnings_and_deductions_tab",
@@ -186,32 +304,6 @@
    "search_index": 1
   },
   {
-   "fieldname": "payment_days",
-   "fieldtype": "Float",
-   "label": "Payment Days",
-   "precision": "2"
-  },
-  {
-   "description": "Payment Days minus Earned Leaves, Casual Leaves and Comp Off.",
-   "fieldname": "physical_working_days",
-   "fieldtype": "Float",
-   "label": "Physical Working Days",
-   "precision": "2",
-   "read_only": 1
-  },
-  {
-   "fieldname": "present_days",
-   "fieldtype": "Float",
-   "label": "Present Days",
-   "precision": "2"
-  },
-  {
-   "fieldname": "weekly_offs_count",
-   "fieldtype": "Float",
-   "label": "Weekly Offs Count",
-   "precision": "2"
-  },
-  {
    "fieldname": "employee_company_details_section",
    "fieldtype": "Section Break",
    "label": "Employee Company Details"
@@ -249,6 +341,13 @@
    "read_only": 1
   },
   {
+   "fetch_from": "employee.skill_type",
+   "fieldname": "skill_type",
+   "fieldtype": "Data",
+   "label": "Skill Type",
+   "read_only": 1
+  },
+  {
    "fetch_from": "employee.division",
    "fieldname": "division",
    "fieldtype": "Data",
@@ -261,12 +360,6 @@
    "in_list_view": 1,
    "label": "Salary Calculation Based on",
    "read_only": 1
-  },
-  {
-   "fieldname": "total_half_days",
-   "fieldtype": "Float",
-   "label": "Total Half Days",
-   "precision": "2"
   },
   {
    "bold": 1,
@@ -322,46 +415,56 @@
    "read_only": 1
   },
   {
-   "fieldname": "total_lwp",
-   "fieldtype": "Float",
-   "label": "Total LWP",
-   "precision": "2"
+   "fieldname": "payment_summary_section",
+   "fieldtype": "Section Break",
+   "label": "Payment Summary"
   },
   {
-   "fieldname": "total_holidays",
-   "fieldtype": "Float",
-   "label": "Total Holidays",
-   "precision": "2"
+   "fieldname": "column_break_yach",
+   "fieldtype": "Column Break"
   },
   {
-   "fieldname": "total_earned_leaves",
-   "fieldtype": "Float",
-   "label": "Total Earned Leaves",
-   "precision": "2"
+   "fieldname": "column_break_yuda",
+   "fieldtype": "Column Break"
   },
   {
-   "fieldname": "total_casual_leaves",
-   "fieldtype": "Float",
-   "label": "Total Casual Leaves",
-   "precision": "2"
+   "fieldname": "column_break_niqc",
+   "fieldtype": "Column Break"
   },
   {
-   "fieldname": "total_on_tour",
-   "fieldtype": "Float",
-   "label": "On Tour Days",
-   "precision": "2"
+   "fieldname": "attendance_breakdown_section",
+   "fieldtype": "Section Break",
+   "label": "Attendance Breakdown"
   },
   {
-   "fieldname": "total_comp_off",
-   "fieldtype": "Float",
-   "label": "Total Comp Off",
-   "precision": "2"
+   "fieldname": "column_break_clpc",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "column_break_tjxo",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "column_break_gqsw",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "column_break_nhux",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "column_break_zjlq",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "column_break_hflw",
+   "fieldtype": "Column Break"
   }
  ],
  "index_web_pages_for_search": 1,
  "is_submittable": 1,
  "links": [],
- "modified": "2026-03-13 17:08:24.327508",
+ "modified": "2026-03-20 16:09:07.156917",
  "modified_by": "Administrator",
  "module": "Saral Hr",
  "name": "Salary Slip",

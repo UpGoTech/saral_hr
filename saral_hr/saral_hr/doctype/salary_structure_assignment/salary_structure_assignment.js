@@ -6,21 +6,14 @@
 // ─────────────────────────────────────────────────────────────
 
 const SC = {
-    // ESIC
     EMP_ESIC:   "Employee ESIC",
     EMPR_ESIC:  "Employer ESIC",
-
-    // PF
     EMP_PF:     "Employee PF",
     EMPR_PF:    "Employer PF",
     EMPR_EPS:   "Employer EPS",
     EMPR_EDLI:  "Employer EDLI",
     EMPR_PFADM: "Employer PF Admin Charges",
-
-    // PT
     PT:         "Professional Tax",
-
-    // LWF
     EMP_LWF:    "Employee Labour Welfare Fund",
     EMPR_LWF:   "Employer Labour Welfare Fund",
 };
@@ -38,6 +31,7 @@ frappe.ui.form.on("Salary Structure Assignment", {
     refresh(frm) {
         toggle_fields(frm);
         render_statutory_controls(frm);
+        toggle_skill_type(frm);
         if (frm.doc.salary_structure) {
             toggle_salary_sections(frm);
             calculate_salary(frm);
@@ -77,6 +71,8 @@ frappe.ui.form.on("Salary Structure Assignment", {
                 }
                 toggle_fields(frm);
                 render_statutory_controls(frm);
+                toggle_skill_type(frm);
+                check_srr_and_apply(frm);
             }
         });
     },
@@ -85,6 +81,7 @@ frappe.ui.form.on("Salary Structure Assignment", {
         toggle_fields(frm);
         if (frm.doc.from_date && frm.doc.to_date) check_overlap(frm);
         if (frm.doc.salary_structure) refresh_statutory_rows(frm);
+        check_srr_and_apply(frm);
     },
 
     to_date(frm) {
@@ -101,6 +98,10 @@ frappe.ui.form.on("Salary Structure Assignment", {
         }
         load_salary_structure(frm);
     },
+
+    category(frm) {
+        toggle_skill_type(frm);
+    },
 });
 
 // ─────────────────────────────────────────────────────────────
@@ -110,6 +111,21 @@ frappe.ui.form.on("Salary Structure Assignment", {
 frappe.ui.form.on("Salary Details", {
     amount(frm, cdt, cdn) {
         const row = frappe.get_doc(cdt, cdn);
+
+        // ── Revert V-DA if user tries to edit it ──────────────────────────
+        if (frm._locked_vda_row
+            && row
+            && row.name === frm._locked_vda_row
+            && row.parentfield === "earnings") {
+            frappe.show_alert({
+                message:   __("V-DA amount is controlled by Skill Rate Revision and cannot be edited."),
+                indicator: "orange"
+            });
+            frappe.model.set_value(cdt, cdn, "amount",      frm._locked_vda_amount || 0);
+            frappe.model.set_value(cdt, cdn, "base_amount", frm._locked_vda_amount || 0);
+            return;
+        }
+
         if (row && row.parentfield === "earnings") {
             refresh_statutory_rows(frm);
         } else {
@@ -122,7 +138,7 @@ frappe.ui.form.on("Salary Details", {
 });
 
 // ─────────────────────────────────────────────────────────────
-//  Statutory controls — plain Frappe-style, no colours
+//  Statutory controls
 // ─────────────────────────────────────────────────────────────
 
 function render_statutory_controls(frm) {
@@ -154,7 +170,6 @@ function render_statutory_controls(frm) {
             </label>
         </div>`;
 
-    // PF dropdown — only visible when PF is checked
     const pf_select = pf ? `
         <select id="ssa-pf-type" ${editable ? "" : "disabled"}
             style="margin-left:4px;margin-right:14px;
@@ -195,7 +210,6 @@ function render_statutory_controls(frm) {
     f.$wrapper.find("#ssa-pf-type").on("change", function () {
         frm.set_value("pf_applicable", this.value);
         refresh_statutory_rows(frm);
-        // No re-render needed — dropdown already shows correct value
     });
 
     f.$wrapper.find("#ssa-pt").on("change", function () {
@@ -211,7 +225,123 @@ function render_statutory_controls(frm) {
     });
 }
 
+// ─────────────────────────────────────────────────────────────
+//  Show/hide skill_type based on category's has_subtype
+// ─────────────────────────────────────────────────────────────
 
+function toggle_skill_type(frm) {
+    if (!frm.doc.category) {
+        frm.set_df_property('skill_type', 'hidden', 1);
+        frm.refresh_field('skill_type');
+        return;
+    }
+    frappe.db.get_value('Category', frm.doc.category, 'has_subtype', (r) => {
+        const show = r && !!r.has_subtype;
+        frm.set_df_property('skill_type', 'hidden', show ? 0 : 1);
+        frm.refresh_field('skill_type');
+    });
+}
+
+// ─────────────────────────────────────────────────────────────
+//  SRR check and apply for skill-subtype employees
+// ─────────────────────────────────────────────────────────────
+
+function check_srr_and_apply(frm) {
+    if (!frm.doc.employee || !frm.doc.from_date) return;
+
+    frappe.db.get_value(
+        "Company Link", frm.doc.employee,
+        ["category", "skill_type"],
+        (emp) => {
+            const category   = (emp && emp.category)   || frm.doc.category;
+            const skill_type = (emp && emp.skill_type) || frm.doc.skill_type;
+
+            if (!category || !skill_type) return;
+
+            frappe.db.get_value('Category', category, 'has_subtype', (r) => {
+                if (!r || !r.has_subtype) return;
+
+                frappe.call({
+                    method: "saral_hr.saral_hr.doctype.salary_structure_assignment.salary_structure_assignment.get_srr_for_ssa",
+                    args: {
+                        start_date: frm.doc.from_date,
+                        skill_type: skill_type
+                    },
+                    callback(res) {
+                        if (!res.message) {
+                            frappe.msgprint({
+                                title:     __("Skill Rate Revision Not Found"),
+                                message:   __(
+                                    `Employee <strong>${frm.doc.employee_name || frm.doc.employee}</strong> `
+                                    + `belongs to category <strong>${category}</strong> `
+                                    + `with skill type <strong>${skill_type}</strong>.<br><br>`
+                                    + `No submitted Skill Rate Revision found covering <strong>${frm.doc.from_date}</strong>. `
+                                    + `Please create and submit a Skill Rate Revision for this period `
+                                    + `before creating this assignment.`
+                                ),
+                                indicator: "red"
+                            });
+                            frm.set_value("from_date", "");
+                            return;
+                        }
+
+                        apply_srr_to_earnings(frm, res.message);
+                    }
+                });
+            });
+        }
+    );
+}
+
+function apply_srr_to_earnings(frm, srr) {
+    if (!frm.doc.earnings || !frm.doc.earnings.length) return;
+
+    // ── Check if Basic or V-DA components actually exist in earnings ──────
+    const has_basic = frm.doc.earnings.some(row => {
+        const comp = (row.salary_component || "").toLowerCase();
+        const abbr = (row.abbr || "").toLowerCase().trim();
+        return comp.includes("basic") || abbr === "basic";
+    });
+
+    const has_vda = frm.doc.earnings.some(row => {
+        const comp = (row.salary_component || "").toLowerCase();
+        const abbr = (row.abbr || "").toLowerCase().trim();
+        return comp.includes("dearness") || abbr === "v-da" || abbr === "vda";
+    });
+
+    // If neither component exists in this salary structure, skip entirely
+    if (!has_basic && !has_vda) return;
+
+    let vda_row_name = null;
+
+    frm.doc.earnings.forEach(row => {
+        const comp = (row.salary_component || "").toLowerCase();
+        const abbr = (row.abbr || "").toLowerCase().trim();
+
+        const is_basic = comp.includes("basic") || abbr === "basic";
+        const is_vda   = comp.includes("dearness") || abbr === "v-da" || abbr === "vda";
+
+        if (is_basic) {
+            frappe.model.set_value(row.doctype, row.name, "amount",      flt(srr.vbasic, 2));
+            frappe.model.set_value(row.doctype, row.name, "base_amount", flt(srr.vbasic, 2));
+        }
+
+        if (is_vda) {
+            frappe.model.set_value(row.doctype, row.name, "amount",      flt(srr.vda, 2));
+            frappe.model.set_value(row.doctype, row.name, "base_amount", flt(srr.vda, 2));
+            vda_row_name           = row.name;
+            frm._locked_vda_amount = flt(srr.vda, 2);
+        }
+    });
+
+    frm.refresh_field("earnings");
+
+    if (vda_row_name) {
+        frm._locked_vda_row = vda_row_name;
+    }
+
+    refresh_statutory_rows(frm);
+}
 
 // ─────────────────────────────────────────────────────────────
 //  Load salary structure rows
@@ -227,10 +357,8 @@ function load_salary_structure(frm) {
 
             clear_all_tables(frm);
 
-            // Copy earnings
             (structure.earnings || []).forEach(row => copy_row(frm.add_child("earnings"), row));
 
-            // Copy deductions — skip statutory, split by employer_contribution
             (structure.deductions || []).forEach(row => {
                 const name = (row.salary_component || "").trim();
                 if (ALL_STATUTORY.includes(name)) return;
@@ -246,6 +374,9 @@ function load_salary_structure(frm) {
 
             render_statutory_controls(frm);
             refresh_statutory_rows(frm);
+
+            // After loading structure, apply SRR if applicable
+            setTimeout(() => check_srr_and_apply(frm), 500);
         }
     });
 }
@@ -257,7 +388,6 @@ function load_salary_structure(frm) {
 function refresh_statutory_rows(frm) {
     if (!frm.doc.salary_structure || !frm.doc.company) return;
 
-    // Strip existing statutory rows from both tables
     frm.doc.deductions = (frm.doc.deductions || [])
         .filter(r => !ALL_STATUTORY.includes((r.salary_component || "").trim()));
     frm.doc.employer_share = (frm.doc.employer_share || [])
@@ -272,7 +402,6 @@ function refresh_statutory_rows(frm) {
         return;
     }
 
-    // Build {component_name: amount} map from actual SSA earnings rows.
     const earnings_map = _earnings_map(frm);
 
     frappe.call({

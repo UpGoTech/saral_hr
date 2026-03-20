@@ -27,6 +27,7 @@
   "branch",
   "division",
   "category",
+  "skill_type",
   "requires_variable_pay",
   "section_break_reporting",
   "immediate_reporting",
@@ -151,15 +152,28 @@
   {
    "fieldname": "category",
    "fieldtype": "Link",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
    "label": "Category",
    "options": "Category",
    "reqd": 1
+  },
+  {
+   "depends_on": "eval:frappe.db.get_value('Category', doc.category, 'has_subtype')",
+   "description": "Applicable only for categories with skill sub-types enabled (e.g. Workers).",
+   "fieldname": "skill_type",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Skill Type",
+   "options": "\nSkilled\nSemi-skilled\nUnskilled"
   },
   {
    "default": "0",
    "fetch_from": "category.requires_variable_pay",
    "fieldname": "requires_variable_pay",
    "fieldtype": "Check",
+   "hidden": 1,
    "label": "Requires Variable Pay",
    "read_only": 1
   },
@@ -187,7 +201,7 @@
  ],
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-03-09 00:00:00.000000",
+ "modified": "2026-03-20 00:00:00.000000",
  "modified_by": "Administrator",
  "module": "Saral Hr",
  "name": "Company Link",
