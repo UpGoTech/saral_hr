@@ -33,12 +33,10 @@ frappe.pages["attendance-dashboard"].on_page_load = function (wrapper) {
 		activeDept:   null,
 	};
 
-	// ── STYLES ─────────────────────────────────────────────────────────────────
 	if (!document.getElementById("ap-styles")) {
 		$(`<style id="ap-styles">
 		.ap-wrap * { box-sizing: border-box; }
 
-		/* ── Filter bar ── */
 		.ap-filterbar {
 			background: var(--card-bg);
 			border-bottom: 1px solid var(--border-color);
@@ -64,7 +62,6 @@ frappe.pages["attendance-dashboard"].on_page_load = function (wrapper) {
 		select.ap-ctrl { cursor: pointer; min-width: 120px; }
 		input[type=date].ap-ctrl { min-width: 150px; cursor: pointer; }
 
-		/* View toggle */
 		.ap-view-grp { display: flex; border: 1px solid var(--border-color); border-radius: 6px; overflow: hidden; height: 34px; }
 		.ap-vtab {
 			padding: 0 16px; font-size: 12px; font-weight: 700;
@@ -76,7 +73,6 @@ frappe.pages["attendance-dashboard"].on_page_load = function (wrapper) {
 		.ap-vtab:hover { background: var(--highlight-color); color: var(--text-color); }
 		.ap-vtab.active { background: var(--primary); color: #fff; }
 
-		/* Year pills */
 		.ap-yr-grp { display: flex; gap: 4px; height: 34px; align-items: center; }
 		.ap-yr-pill {
 			padding: 4px 12px; border-radius: 6px; font-size: 13px; font-weight: 700;
@@ -86,7 +82,6 @@ frappe.pages["attendance-dashboard"].on_page_load = function (wrapper) {
 		.ap-yr-pill:hover { border-color: var(--primary); color: var(--primary); }
 		.ap-yr-pill.active { background: var(--primary); border-color: var(--primary); color: #fff; }
 
-		/* Nav arrows */
 		.ap-nav-grp { display: flex; align-items: center; gap: 5px; height: 34px; }
 		.ap-nav-btn {
 			width: 34px; height: 34px; border: 1px solid var(--border-color);
@@ -97,7 +92,6 @@ frappe.pages["attendance-dashboard"].on_page_load = function (wrapper) {
 		}
 		.ap-nav-btn:hover { background: var(--primary); color: #fff; border-color: var(--primary); }
 
-		/* ── Info strip ── */
 		.ap-infostrip {
 			padding: 7px 20px; font-size: 12px; color: var(--text-muted);
 			background: var(--subtle-fg); border-bottom: 1px solid var(--border-color);
@@ -110,10 +104,8 @@ frappe.pages["attendance-dashboard"].on_page_load = function (wrapper) {
 		}
 		@keyframes ap-pulse { 0%,100%{opacity:1} 50%{opacity:.4} }
 
-		/* ── Main ── */
 		.ap-main { padding: 18px 20px 40px; }
 
-		/* ── Stat cards ── */
 		.ap-cards {
 			display: grid;
 			grid-template-columns: repeat(auto-fill, minmax(140px,1fr));
@@ -136,11 +128,9 @@ frappe.pages["attendance-dashboard"].on_page_load = function (wrapper) {
 		.ap-card-num   { font-size: 30px; font-weight: 900; line-height: 1; margin-bottom: 3px; }
 		.ap-card-label { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .4px; opacity: .85; }
 
-		/* ── Two col grid ── */
 		.ap-two-col { display: grid; grid-template-columns: 1.1fr 1fr; gap: 14px; margin-bottom: 14px; }
 		@media(max-width:800px){ .ap-two-col { grid-template-columns: 1fr; } }
 
-		/* ── Panel ── */
 		.ap-panel {
 			background: var(--card-bg); border: 1px solid var(--border-color);
 			border-radius: 10px; overflow: hidden;
@@ -153,12 +143,10 @@ frappe.pages["attendance-dashboard"].on_page_load = function (wrapper) {
 		.ap-panel-title { font-size: 13px; font-weight: 700; color: var(--text-color); }
 		.ap-badge { font-size: 11px; font-weight: 700; padding: 2px 9px; border-radius: 10px; color: #fff; }
 
-		/* Not Marked hero */
 		.ap-nm { border-color: #fed7aa; }
 		.ap-nm .ap-panel-hd { background: #fff7ed; border-bottom-color: #fed7aa; }
 		.ap-nm .ap-panel-title { color: #c2410c; }
 
-		/* ── Search ── */
 		.ap-search-wrap { padding: 8px 14px; border-bottom: 1px solid var(--border-color); position: relative; }
 		.ap-search-ico { position:absolute; left:22px; top:50%; transform:translateY(-50%); color:var(--text-muted); pointer-events:none; }
 		.ap-search {
@@ -168,7 +156,6 @@ frappe.pages["attendance-dashboard"].on_page_load = function (wrapper) {
 		}
 		.ap-search:focus { border-color:var(--primary); }
 
-		/* ── Employee rows ── */
 		.ap-emp-row {
 			display:flex; align-items:center; gap:10px; padding:10px 16px;
 			border-bottom:1px solid var(--border-color); cursor:pointer; transition:background .1s;
@@ -184,7 +171,6 @@ frappe.pages["attendance-dashboard"].on_page_load = function (wrapper) {
 		.ap-emp-name { font-size:13px; font-weight:600; color:var(--text-color); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
 		.ap-emp-meta { font-size:11px; color:var(--text-muted); }
 
-		/* ── Dept pills ── */
 		.ap-dept-strip { display:flex; gap:5px; flex-wrap:wrap; padding:8px 14px; border-bottom:1px solid var(--border-color); }
 		.ap-dpill {
 			padding:3px 10px; border-radius:14px; font-size:11px; font-weight:600;
@@ -194,14 +180,12 @@ frappe.pages["attendance-dashboard"].on_page_load = function (wrapper) {
 		.ap-dpill:hover { border-color:var(--primary); color:var(--primary); }
 		.ap-dpill.active { background:var(--primary); border-color:var(--primary); color:#fff; }
 
-		/* ── Breakdown chips ── */
 		.ap-bk-wrap { display:flex; flex-wrap:wrap; gap:7px; padding:12px 14px; }
 		.ap-bk-chip { display:flex; align-items:center; gap:6px; padding:6px 11px; border-radius:7px; }
 		.ap-bk-dot  { width:8px; height:8px; border-radius:50%; flex-shrink:0; }
 		.ap-bk-cnt  { font-size:14px; font-weight:800; }
 		.ap-bk-lbl  { font-size:11px; font-weight:600; }
 
-		/* ── Bar chart ── */
 		.ap-chart { padding:14px 16px; }
 		.ap-bars { display:flex; align-items:flex-end; gap:3px; height:90px; overflow-x:auto; padding-bottom:2px; }
 		.ap-bc { display:flex; flex-direction:column; align-items:center; gap:2px; flex-shrink:0; width:20px; }
@@ -212,7 +196,6 @@ frappe.pages["attendance-dashboard"].on_page_load = function (wrapper) {
 		.ap-cl-item { display:flex; align-items:center; gap:4px; font-size:11px; color:var(--text-muted); }
 		.ap-cl-dot { width:9px; height:9px; border-radius:2px; }
 
-		/* ── Holiday ── */
 		.ap-hol-row {
 			display:flex; align-items:center; gap:10px; padding:9px 16px;
 			border-bottom:1px solid var(--border-color);
@@ -223,11 +206,9 @@ frappe.pages["attendance-dashboard"].on_page_load = function (wrapper) {
 		.ap-hol-day  { font-size:11px; color:var(--text-muted); }
 		.ap-hol-date { font-size:11px; color:var(--text-muted); white-space:nowrap; }
 
-		/* ── Pct bar ── */
 		.ap-pct-bg   { height:5px; background:var(--border-color); border-radius:3px; overflow:hidden; flex:1; }
 		.ap-pct-fill { height:100%; border-radius:3px; transition:width .5s; }
 
-		/* ── Yearly table ── */
 		.ap-yr-tbl { width:100%; border-collapse:collapse; font-size:13px; }
 		.ap-yr-tbl thead th {
 			padding:8px 14px; text-align:left; font-size:10px; font-weight:800;
@@ -240,7 +221,6 @@ frappe.pages["attendance-dashboard"].on_page_load = function (wrapper) {
 		.ap-yr-tbl tbody td { padding:10px 14px; }
 		.ap-yr-tbl tbody td:not(:first-child):not(:last-child) { text-align:center; }
 
-		/* ── Drawer ── */
 		.ap-overlay {
 			position:fixed; inset:0; background:rgba(0,0,0,.45);
 			z-index:1000; display:flex; align-items:center; justify-content:center;
@@ -272,24 +252,24 @@ frappe.pages["attendance-dashboard"].on_page_load = function (wrapper) {
 		}
 		.ap-ds-val   { font-size:20px; font-weight:800; line-height:1; }
 		.ap-ds-lbl   { font-size:9px; font-weight:700; text-transform:uppercase; color:var(--text-muted); margin-top:3px; }
-		.ap-cal      { display:grid; grid-template-columns:repeat(7,1fr); gap:4px; }
-		.ap-cal-lbl  { text-align:center; font-size:10px; font-weight:700; color:var(--text-muted); padding:2px 0; }
+
+		/* ── HEATMAP CALENDAR — fixed 32px cells ── */
+		.ap-cal      { display:grid; grid-template-columns:repeat(7,32px); gap:3px; width:fit-content; margin:0 auto; }
+		.ap-cal-lbl  { text-align:center; font-size:10px; font-weight:700; color:var(--text-muted); padding:2px 0; width:32px; }
 		.ap-cal-cell {
-			aspect-ratio:1; border-radius:5px; display:flex; align-items:center;
+			width:32px; height:32px; border-radius:5px; display:flex; align-items:center;
 			justify-content:center; font-size:11px; font-weight:700;
 			cursor:default; transition:transform .1s;
 		}
 		.ap-cal-cell:hover { transform:scale(1.1); z-index:1; position:relative; }
 		.ap-cal-today { box-shadow:0 0 0 2px #fff, 0 0 0 3px var(--primary); }
 
-		/* ── Skeleton ── */
 		.ap-sk {
 			background:linear-gradient(90deg,var(--subtle-fg) 25%,var(--border-color) 50%,var(--subtle-fg) 75%);
 			background-size:200% 100%; animation:apsh 1.4s infinite; border-radius:5px;
 		}
 		@keyframes apsh{0%{background-position:200% 0}100%{background-position:-200% 0}}
 
-		/* Month-Year picker popup — fixed to body to avoid clipping */
 		.ap-mypicker-body {
 			position: absolute; background: var(--card-bg);
 			border: 1px solid var(--border-color);
@@ -329,7 +309,6 @@ frappe.pages["attendance-dashboard"].on_page_load = function (wrapper) {
 		.ap-myp-month:hover { border-color: var(--primary); color: var(--primary); }
 		.ap-myp-month.active { background: var(--primary); border-color: var(--primary); color: #fff; }
 
-		/* Monthly summary cards */
 		.ap-monthly-summary {
 			display: grid;
 			grid-template-columns: repeat(3, 1fr);
@@ -357,13 +336,9 @@ frappe.pages["attendance-dashboard"].on_page_load = function (wrapper) {
 	const tip     = (txt,e) => $(".ap-tip").text(txt).css({display:"block",left:e.clientX+12,top:e.clientY-30});
 	const hideTip = () => $(".ap-tip").hide();
 
-	// ══════════════════════════════════════════════════════════════════════════
-	// FILTER BAR — clean single row, each fi shows/hides based on view
-	// ══════════════════════════════════════════════════════════════════════════
 	const $wrap = $(`<div class="ap-wrap"></div>`).appendTo(page.main);
 	const $fb   = $(`<div class="ap-filterbar"></div>`).appendTo($wrap);
 
-	// Company
 	const $coFi = $(`<div class="ap-fi ap-fi-grow"><span class="ap-label">Company</span><select class="ap-ctrl ap-co"></select></div>`).appendTo($fb);
 	const $co   = $coFi.find(".ap-co");
 	$co.append(`<option value="">— Select Company —</option>`);
@@ -372,7 +347,6 @@ frappe.pages["attendance-dashboard"].on_page_load = function (wrapper) {
 	});
 	$co.on("change",()=>{ state.company=$co.val(); state.department=""; state.activeDept=null; if(state.company){ loadDepts(); autoLoad(); } });
 
-	// View toggle
 	const $vFi = $(`<div class="ap-fi"><span class="ap-label">View</span>
 		<div class="ap-view-grp">
 			<button class="ap-vtab active" data-v="daily">Daily</button>
@@ -389,14 +363,12 @@ frappe.pages["attendance-dashboard"].on_page_load = function (wrapper) {
 		if(state.company) autoLoad();
 	});
 
-	// Period fields container — contents change per view
 	const $pFi = $(`<div class="ap-fi" id="ap-period-fi"><span class="ap-label">Period</span><div class="ap-period-fields" style="display:flex;align-items:center;gap:6px;height:34px;"></div></div>`).appendTo($fb);
 	const $pf  = $pFi.find(".ap-period-fields");
 
 	function renderPeriodFields(){
 		$pf.empty();
 		if(state.view==="daily"){
-			// Direct date input with prev/next
 			const $prev=$(`<button class="ap-nav-btn">‹</button>`);
 			const $inp =$(`<input type="date" class="ap-ctrl" value="${state.date}">`);
 			const $next=$(`<button class="ap-nav-btn">›</button>`);
@@ -404,21 +376,16 @@ frappe.pages["attendance-dashboard"].on_page_load = function (wrapper) {
 			$next.on("click",()=>{ shiftDate(+1); $inp.val(state.date); if(state.company) autoLoad(); });
 			$inp.on("change",function(){ state.date=$(this).val(); if(state.company) autoLoad(); });
 			$pf.append($prev,$inp,$next);
-
 		} else if(state.view==="monthly"){
-			// Prev | [Month Year ▼] | Next  — popup appended to body to avoid clipping
 			const $prev=$(`<button class="ap-nav-btn">‹</button>`);
 			const $next=$(`<button class="ap-nav-btn">›</button>`);
 			const $trigger=$(`<button class="ap-myp-trigger">
 				<span class="ap-myp-lbl">${state.month} ${state.year}</span>
 				<span class="ap-myp-arrow">▼</span>
 			</button>`);
-
-			// Remove any existing popup
 			$(".ap-mypicker-body").remove();
 			const $pop=$(`<div class="ap-mypicker-body"></div>`).appendTo("body");
 			let mpYear=state.year;
-
 			function buildMonthPicker(){
 				$pop.empty();
 				const $yr=$(`<div class="ap-myp-yr-row">
@@ -441,12 +408,10 @@ frappe.pages["attendance-dashboard"].on_page_load = function (wrapper) {
 					$mg.append($mb);
 				});
 			}
-
 			function positionPop(){
 				const r=$trigger[0].getBoundingClientRect();
 				$pop.css({ top: r.bottom+window.scrollY+6, left: r.left+window.scrollX });
 			}
-
 			$trigger.on("click",(e)=>{
 				e.stopPropagation();
 				if($pop.is(":visible")){ $pop.hide(); return; }
@@ -455,13 +420,10 @@ frappe.pages["attendance-dashboard"].on_page_load = function (wrapper) {
 			$(document).off("mousedown.mypicker").on("mousedown.mypicker",(e)=>{
 				if(!$(e.target).closest($pop).length && !$(e.target).closest($trigger).length) $pop.hide();
 			});
-
 			$prev.on("click",()=>{ shiftMonth(-1); $trigger.find(".ap-myp-lbl").text(`${state.month} ${state.year}`); if(state.company) autoLoad(); });
 			$next.on("click",()=>{ shiftMonth(+1); $trigger.find(".ap-myp-lbl").text(`${state.month} ${state.year}`); if(state.company) autoLoad(); });
 			$pf.append($prev,$trigger,$next);
-
 		} else {
-			// Year pills only + prev/next
 			const $prev=$(`<button class="ap-nav-btn">‹</button>`);
 			const $yrGrp=$(`<div class="ap-yr-grp"></div>`);
 			const $next=$(`<button class="ap-nav-btn">›</button>`);
@@ -477,16 +439,10 @@ frappe.pages["attendance-dashboard"].on_page_load = function (wrapper) {
 		const cur=parseInt(state.year);
 		[cur-1,cur,cur+1].forEach(y=>{
 			const $p=$(`<span class="ap-yr-pill ${String(y)===state.year?"active":""}">${y}</span>`);
-			$p.on("click",()=>{
-				state.year=String(y);
-				buildYrPills($grp);
-				if(state.company) autoLoad();
-			});
+			$p.on("click",()=>{ state.year=String(y); buildYrPills($grp); if(state.company) autoLoad(); });
 			$grp.append($p);
 		});
 	}
-
-
 
 	function shiftDate(d){
 		const dt=new Date(state.date); dt.setDate(dt.getDate()+d);
@@ -499,7 +455,6 @@ frappe.pages["attendance-dashboard"].on_page_load = function (wrapper) {
 		state.month=MONTHS[mi];
 	}
 
-	// Department
 	const $dFi = $(`<div class="ap-fi"><span class="ap-label">Department</span><select class="ap-ctrl ap-dept"><option value="">All Departments</option></select></div>`).appendTo($fb);
 	const $dept = $dFi.find(".ap-dept");
 	$dept.on("change",()=>{ state.department=$dept.val(); state.activeDept=$dept.val()||null; if(state.company) autoLoad(); });
@@ -514,7 +469,6 @@ frappe.pages["attendance-dashboard"].on_page_load = function (wrapper) {
 				if(depts.length){
 					depts.forEach(d=>$dept.append(`<option value="${d}">${d}</option>`));
 				} else {
-					// Fallback: load all departments from Department doctype
 					frappe.db.get_list("Department",{fields:["name"],limit:200,order_by:"name asc"}).then(rows=>{
 						rows.forEach(r=>$dept.append(`<option value="${r.name}">${r.name}</option>`));
 					});
@@ -529,10 +483,7 @@ frappe.pages["attendance-dashboard"].on_page_load = function (wrapper) {
 		});
 	}
 
-	// Info strip
 	const $info = $(`<div class="ap-infostrip"><div class="ap-live-dot"></div><span class="ap-info-txt">Select a company to get started.</span></div>`).appendTo($wrap);
-
-	// Main
 	const $main = $(`<div class="ap-main"></div>`).appendTo($wrap);
 	$main.html(`<div style="text-align:center;padding:60px 20px;color:var(--text-muted);">
 		<div style="font-size:48px;margin-bottom:14px;">📋</div>
@@ -540,7 +491,6 @@ frappe.pages["attendance-dashboard"].on_page_load = function (wrapper) {
 		<div style="font-size:13px;">Select a company above — today's data loads automatically.</div>
 	</div>`);
 
-	// Init period fields
 	renderPeriodFields();
 
 	function autoLoad(){
@@ -550,13 +500,8 @@ frappe.pages["attendance-dashboard"].on_page_load = function (wrapper) {
 		if(state.view==="yearly")  loadYearly();
 	}
 
-	function setInfo(txt){
-		$info.find(".ap-info-txt").html(txt);
-	}
+	function setInfo(txt){ $info.find(".ap-info-txt").html(txt); }
 
-	// ══════════════════════════════════════════════════════════════════════════
-	// DAILY
-	// ══════════════════════════════════════════════════════════════════════════
 	function loadDaily(){
 		$main.html(skelCards()+`<div class="ap-two-col">${skelPanel()}${skelPanel()}</div>`);
 		frappe.call({
@@ -571,8 +516,6 @@ frappe.pages["attendance-dashboard"].on_page_load = function (wrapper) {
 		$main.empty();
 		const isToday=d.date===frappe.datetime.get_today();
 		setInfo(`<strong>${state.company}</strong> &nbsp;·&nbsp; ${frappe.datetime.str_to_user(d.date)}${isToday?" &nbsp;<strong style='color:#16a34a;'>Today</strong>":""} &nbsp;·&nbsp; ${d.total_active} active employees`);
-
-		// Cards
 		const defs=[
 			{icon:"👥",val:d.total_active,     label:"Total Active",  bg:"#1e40af", f:null},
 			{icon:"✔️",val:d.marked,           label:"Marked",        bg:"#0f766e", f:"marked"},
@@ -594,10 +537,7 @@ frappe.pages["attendance-dashboard"].on_page_load = function (wrapper) {
 				$c.on("click",()=>{
 					activeF=activeF===c.f?null:c.f;
 					$cards.find(".ap-card").removeClass("active dim");
-					if(activeF){
-						$cards.find(".ap-card").addClass("dim");
-						$c.removeClass("dim").addClass("active");
-					}
+					if(activeF){ $cards.find(".ap-card").addClass("dim"); $c.removeClass("dim").addClass("active"); }
 					renderDailyPanels(d,activeF);
 				});
 			}
@@ -609,11 +549,7 @@ frappe.pages["attendance-dashboard"].on_page_load = function (wrapper) {
 
 	function renderDailyPanels(d,activeF){
 		$main.find(".ap-daily-panels").remove();
-
-		// ── Top row: Not Marked | Marked — full width two col ──
 		const $topRow=$(`<div class="ap-two-col ap-daily-panels"></div>`).appendTo($main);
-
-		// Helper to build an employee list panel
 		function buildEmpPanel(title, badgeColor, badgeNum, empList, emptyMsg, emptyColor){
 			const $panel=$(`<div class="ap-panel ${badgeColor==="#c2410c"?"ap-nm":""}"></div>`);
 			$(`<div class="ap-panel-hd">
@@ -625,7 +561,6 @@ frappe.pages["attendance-dashboard"].on_page_load = function (wrapper) {
 				$body.html(`<div class="ap-empty" style="color:${emptyColor||"var(--text-muted)"};">${emptyMsg}</div>`);
 				return $panel;
 			}
-			// Dept pills
 			const depts=[...new Set(empList.map(e=>e.department).filter(Boolean))];
 			if(depts.length>1){
 				const $ds=$(`<div class="ap-dept-strip"></div>`).appendTo($body);
@@ -663,28 +598,15 @@ frappe.pages["attendance-dashboard"].on_page_load = function (wrapper) {
 			});
 			return $panel;
 		}
-
-		// NOT MARKED panel
 		const nmList=d.not_marked_list||[];
-		$topRow.append(buildEmpPanel(
-			"⚠️ Not Marked", "#c2410c", nmList.length,
-			nmList, "✅ All employees marked for this date!", "#16a34a"
-		));
-
-		// MARKED panel — build from status_breakdown + records
+		$topRow.append(buildEmpPanel("⚠️ Not Marked","#c2410c",nmList.length,nmList,"✅ All employees marked for this date!","#16a34a"));
 		const markedList=d.marked_list||[];
-		$topRow.append(buildEmpPanel(
-			"✔️ Marked", "#0f766e", markedList.length,
-			markedList, "No employees marked yet.", ""
-		));
-
-		// ── Bottom row: Status Breakdown ──
+		$topRow.append(buildEmpPanel("✔️ Marked","#0f766e",markedList.length,markedList,"No employees marked yet.",""));
 		const $bd=$(`<div class="ap-panel ap-daily-panels"></div>`).appendTo($main);
 		$(`<div class="ap-panel-hd"><span class="ap-panel-title">📊 Status Breakdown</span></div>`).appendTo($bd);
 		const bk=d.status_breakdown||{};
-		if(!Object.keys(bk).length){
-			$bd.append(`<div class="ap-empty">No attendance records yet.</div>`);
-		} else {
+		if(!Object.keys(bk).length){ $bd.append(`<div class="ap-empty">No attendance records yet.</div>`); }
+		else {
 			const $bw=$(`<div class="ap-bk-wrap"></div>`).appendTo($bd);
 			Object.entries(bk).sort((a,b)=>b[1]-a[1]).forEach(([st,cnt])=>{
 				const m=STATUS_META[st]||{color:"#94a3b8",bg:"#f8fafc",border:"#e2e8f0",text:"#475569"};
@@ -697,9 +619,6 @@ frappe.pages["attendance-dashboard"].on_page_load = function (wrapper) {
 		}
 	}
 
-	// ══════════════════════════════════════════════════════════════════════════
-	// MONTHLY
-	// ══════════════════════════════════════════════════════════════════════════
 	function loadMonthly(){
 		$main.html(skelCards()+`<div class="ap-two-col">${skelPanel()}${skelPanel()}</div>${skelPanel()}`);
 		let p=2;
@@ -720,33 +639,15 @@ frappe.pages["attendance-dashboard"].on_page_load = function (wrapper) {
 		$main.empty();
 		if(!d){ $main.html(`<div class="ap-empty">⚠️ Failed to load.</div>`); return; }
 		setInfo(`<strong>${state.company}</strong> &nbsp;·&nbsp; ${d.month} ${d.year} &nbsp;·&nbsp; ${d.total_active} active employees &nbsp;·&nbsp; ${d.days_so_far} of ${d.total_days} days elapsed`);
-
 		const ov=d.overall||{};
 		const tp=["Present","On Tour","Earned Leave","Casual Leave","Comp Off","Earned Comp Off","Half Day"].reduce((s,k)=>s+(ov[k]||0),0);
 		const ta=(ov["Absent"]||0)+(ov["LWP"]||0);
-
-		// ── Attendance Coverage Summary ──
 		const nmColor = d.employees_never_marked > 0 ? "#b91c1c" : "#16a34a";
 		const $summary = $(`<div class="ap-monthly-summary"></div>`).appendTo($main);
-
 		[
-			{
-				icon:"👥", label:"Total Active",
-				value: d.total_active, sub:"Employees in company",
-				bg:"#eff6ff", border:"#bfdbfe", valColor:"#1d4ed8"
-			},
-			{
-				icon:"✔️", label:"Attendance Marked",
-				value: d.employees_with_records, sub:"Have records this month",
-				bg:"#f0fdf4", border:"#bbf7d0", valColor:"#15803d"
-			},
-			{
-				icon:"⚠️", label:"Never Marked",
-				value: d.employees_never_marked, sub:"No record at all this month",
-				bg: d.employees_never_marked > 0 ? "#fef2f2" : "#f0fdf4",
-				border: d.employees_never_marked > 0 ? "#fecaca" : "#bbf7d0",
-				valColor: nmColor
-			},
+			{icon:"👥",label:"Total Active",value:d.total_active,sub:"Employees in company",bg:"#eff6ff",border:"#bfdbfe",valColor:"#1d4ed8"},
+			{icon:"✔️",label:"Attendance Marked",value:d.employees_with_records,sub:"Have records this month",bg:"#f0fdf4",border:"#bbf7d0",valColor:"#15803d"},
+			{icon:"⚠️",label:"Never Marked",value:d.employees_never_marked,sub:"No record at all this month",bg:d.employees_never_marked>0?"#fef2f2":"#f0fdf4",border:d.employees_never_marked>0?"#fecaca":"#bbf7d0",valColor:nmColor},
 		].forEach(s=>{
 			$summary.append(`<div class="ap-ms-card" style="background:${s.bg};border-color:${s.border};">
 				<div class="ap-ms-icon">${s.icon}</div>
@@ -755,8 +656,6 @@ frappe.pages["attendance-dashboard"].on_page_load = function (wrapper) {
 				<div class="ap-ms-sub">${s.sub}</div>
 			</div>`);
 		});
-
-		// ── Stat cards ──
 		const $cards=$(`<div class="ap-cards"></div>`).appendTo($main);
 		[{icon:"✅",val:tp,label:"Present Records",bg:"#15803d"},
 		 {icon:"❌",val:ta,label:"Absent / LWP",bg:"#b91c1c"},
@@ -770,44 +669,24 @@ frappe.pages["attendance-dashboard"].on_page_load = function (wrapper) {
 			<div class="ap-card-label">${c.label}</div>
 		</div>`).appendTo($cards));
 		animNums($cards);
-
-		// Chart + Holidays
 		const $g=$(`<div class="ap-two-col"></div>`).appendTo($main);
 		const $cp=$(`<div class="ap-panel"></div>`);
 		$(`<div class="ap-panel-hd"><span class="ap-panel-title">📈 Daily Trend</span></div>`).appendTo($cp);
-		const $cw=$(`<div class="ap-chart"></div>`).appendTo($cp);
-		renderChart($cw,d.day_trend);
+		renderChart($(`<div class="ap-chart"></div>`).appendTo($cp),d.day_trend);
 		$g.append($cp);
-
 		const $hp=$(`<div class="ap-panel"></div>`);
-		$(`<div class="ap-panel-hd">
-			<span class="ap-panel-title">🎉 Holidays</span>
-			${hd&&hd.total?`<span class="ap-badge" style="background:#0e7490;">${hd.total}</span>`:""}
-		</div>`).appendTo($hp);
+		$(`<div class="ap-panel-hd"><span class="ap-panel-title">🎉 Holidays</span>${hd&&hd.total?`<span class="ap-badge" style="background:#0e7490;">${hd.total}</span>`:""}</div>`).appendTo($hp);
 		if(!hd||!hd.holidays.length){ $hp.append(`<div class="ap-empty">No holidays this month.</div>`); }
-		else hd.holidays.forEach(h=>$hp.append(`<div class="ap-hol-row">
-			<div class="ap-hol-dot"></div>
-			<div class="ap-hol-name">${h.description}</div>
-			<div class="ap-hol-day">${h.day}</div>
-			<div class="ap-hol-date">${frappe.datetime.str_to_user(h.date)}</div>
-		</div>`));
+		else hd.holidays.forEach(h=>$hp.append(`<div class="ap-hol-row"><div class="ap-hol-dot"></div><div class="ap-hol-name">${h.description}</div><div class="ap-hol-day">${h.day}</div><div class="ap-hol-date">${frappe.datetime.str_to_user(h.date)}</div></div>`));
 		$g.append($hp);
-
-		// Breakdown
 		const $bp=$(`<div class="ap-panel"></div>`);
 		$(`<div class="ap-panel-hd"><span class="ap-panel-title">📊 Breakdown</span></div>`).appendTo($bp);
 		const $bw=$(`<div class="ap-bk-wrap"></div>`).appendTo($bp);
 		Object.entries(ov).sort((a,b)=>b[1]-a[1]).forEach(([st,cnt])=>{
 			const m=STATUS_META[st]||{color:"#94a3b8",bg:"#f8fafc",border:"#e2e8f0",text:"#475569"};
-			$bw.append(`<div class="ap-bk-chip" style="background:${m.bg};border:1px solid ${m.border};">
-				<span class="ap-bk-dot" style="background:${m.color};"></span>
-				<span class="ap-bk-cnt" style="color:${m.color};">${cnt}</span>
-				<span class="ap-bk-lbl" style="color:${m.text};">${st}</span>
-			</div>`);
+			$bw.append(`<div class="ap-bk-chip" style="background:${m.bg};border:1px solid ${m.border};"><span class="ap-bk-dot" style="background:${m.color};"></span><span class="ap-bk-cnt" style="color:${m.color};">${cnt}</span><span class="ap-bk-lbl" style="color:${m.text};">${st}</span></div>`);
 		});
 		$main.append($bp);
-
-		// Employee table
 		const $ep=$(`<div class="ap-panel"></div>`);
 		$(`<div class="ap-panel-hd"><span class="ap-panel-title">👤 Employee Attendance</span></div>`).appendTo($ep);
 		const $ebody=$(`<div></div>`).appendTo($ep);
@@ -822,7 +701,6 @@ frappe.pages["attendance-dashboard"].on_page_load = function (wrapper) {
 				$p.on("click",()=>{ buildRows(emps.filter(e=>e.department===dept)); $ds.find(".ap-dpill").removeClass("active"); $p.addClass("active"); });
 			});
 		}
-		// Search — NO department filter
 		const $sw=buildSearch($ebody);
 		const $el=$(`<div></div>`).appendTo($ebody);
 		function buildRows(list){
@@ -833,19 +711,13 @@ frappe.pages["attendance-dashboard"].on_page_load = function (wrapper) {
 				const ini=initials(e.name), hue=hueFor(e.employee||"A");
 				const $r=$(`<div class="ap-emp-row">
 					<div class="ap-av" style="background:hsl(${hue},62%,44%);">${ini}</div>
-					<div class="ap-emp-info">
-						<div class="ap-emp-name">${e.name}</div>
-						<div class="ap-emp-meta">${e.department||"—"} · ${e.designation||"—"}</div>
-					</div>
+					<div class="ap-emp-info"><div class="ap-emp-name">${e.name}</div><div class="ap-emp-meta">${e.department||"—"} · ${e.designation||"—"}</div></div>
 					<div style="text-align:right;min-width:90px;">
 						<div style="display:flex;align-items:center;gap:5px;margin-bottom:2px;">
 							<div class="ap-pct-bg"><div class="ap-pct-fill" style="width:${pct}%;background:${bc};"></div></div>
 							<span style="font-size:11px;font-weight:700;color:${bc};min-width:30px;">${pct}%</span>
 						</div>
-						<div style="font-size:10px;color:var(--text-muted);">
-							<span style="color:#16a34a;font-weight:700;">${e.present}</span> Present &nbsp;
-							<span style="color:#dc2626;font-weight:700;">${e.absent}</span> Absent
-						</div>
+						<div style="font-size:10px;color:var(--text-muted);"><span style="color:#16a34a;font-weight:700;">${e.present}</span> Present &nbsp;<span style="color:#dc2626;font-weight:700;">${e.absent}</span> Absent</div>
 					</div>
 				</div>`);
 				$r.on("click",()=>openDrawer(e.employee,e.name,d.month,d.year));
@@ -860,9 +732,6 @@ frappe.pages["attendance-dashboard"].on_page_load = function (wrapper) {
 		$main.append($ep);
 	}
 
-	// ══════════════════════════════════════════════════════════════════════════
-	// YEARLY
-	// ══════════════════════════════════════════════════════════════════════════
 	function loadYearly(){
 		$main.html(skelCards()+skelPanel());
 		let p=12, res={};
@@ -895,12 +764,9 @@ frappe.pages["attendance-dashboard"].on_page_load = function (wrapper) {
 			<div class="ap-card-label">${c.label}</div>
 		</div>`).appendTo($cards));
 		animNums($cards);
-
 		const $p=$(`<div class="ap-panel"></div>`);
 		$(`<div class="ap-panel-hd"><span class="ap-panel-title">📅 ${state.year} — Month Summary</span></div>`).appendTo($p);
-		const $tbl=$(`<table class="ap-yr-tbl">
-			<thead><tr><th>Month</th><th>Present</th><th>Absent</th><th>Leave</th><th>Holiday</th><th>Attendance %</th></tr></thead>
-			<tbody></tbody></table>`).appendTo($p);
+		const $tbl=$(`<table class="ap-yr-tbl"><thead><tr><th>Month</th><th>Present</th><th>Absent</th><th>Leave</th><th>Holiday</th><th>Attendance %</th></tr></thead><tbody></tbody></table>`).appendTo($p);
 		const $tb=$tbl.find("tbody");
 		MONTHS.forEach(m=>{
 			const d=res[m]; const ov=d?d.overall||{}:{};
@@ -912,33 +778,19 @@ frappe.pages["attendance-dashboard"].on_page_load = function (wrapper) {
 			const bc=pct>=80?"#22c55e":pct>=60?"#f59e0b":"#ef4444";
 			const isCur=m===MONTHS[TODAY.getMonth()]&&state.year===String(TODAY.getFullYear());
 			const $tr=$(`<tr ${isCur?'style="background:var(--primary-light);"':""}>
-				<td style="font-weight:${isCur?"700":"600"};">
-					${m}${isCur?` <span style="font-size:9px;background:var(--primary);color:#fff;padding:1px 6px;border-radius:6px;margin-left:4px;">Now</span>`:""}
-				</td>
+				<td style="font-weight:${isCur?"700":"600"};">${m}${isCur?` <span style="font-size:9px;background:var(--primary);color:#fff;padding:1px 6px;border-radius:6px;margin-left:4px;">Now</span>`:""}</td>
 				<td style="color:#16a34a;font-weight:700;">${pres}</td>
 				<td style="color:#dc2626;font-weight:700;">${abs}</td>
 				<td style="color:#7c3aed;font-weight:600;">${lv}</td>
 				<td style="color:#0e7490;font-weight:600;">${hol}</td>
-				<td><div style="display:flex;align-items:center;gap:7px;">
-					<div class="ap-pct-bg" style="flex:1;"><div class="ap-pct-fill" style="width:${pct}%;background:${bc};"></div></div>
-					<span style="font-size:11px;font-weight:700;color:${bc};min-width:32px;">${pct}%</span>
-				</div></td>
+				<td><div style="display:flex;align-items:center;gap:7px;"><div class="ap-pct-bg" style="flex:1;"><div class="ap-pct-fill" style="width:${pct}%;background:${bc};"></div></div><span style="font-size:11px;font-weight:700;color:${bc};min-width:32px;">${pct}%</span></div></td>
 			</tr>`);
-			$tr.on("click",()=>{
-				state.month=m; state.view="monthly";
-				$vFi.find(".ap-vtab").removeClass("active");
-				$vFi.find("[data-v='monthly']").addClass("active");
-				renderPeriodFields();
-				loadMonthly();
-			});
+			$tr.on("click",()=>{ state.month=m; state.view="monthly"; $vFi.find(".ap-vtab").removeClass("active"); $vFi.find("[data-v='monthly']").addClass("active"); renderPeriodFields(); loadMonthly(); });
 			$tb.append($tr);
 		});
 		$main.append($p);
 	}
 
-	// ══════════════════════════════════════════════════════════════════════════
-	// DRAWER
-	// ══════════════════════════════════════════════════════════════════════════
 	function openDrawer(employee,empName,month,year){
 		const $ov=$(`<div class="ap-overlay"></div>`).appendTo("body");
 		const $dr=$(`<div class="ap-drawer"></div>`).appendTo($ov);
@@ -974,9 +826,7 @@ frappe.pages["attendance-dashboard"].on_page_load = function (wrapper) {
 				d.days.forEach(day=>{
 					const m=STATUS_META[day.status]||{color:"#d1d5db"};
 					const isNR=day.status==="Not Marked", isTod=day.date===tod;
-					const $c=$(`<div class="ap-cal-cell ${isTod?"ap-cal-today":""}"
-						style="background:${isNR?"var(--subtle-fg)":m.color};color:${isNR?"var(--text-muted)":"#fff"};"
-					>${day.day}</div>`);
+					const $c=$(`<div class="ap-cal-cell ${isTod?"ap-cal-today":""}" style="background:${isNR?"var(--subtle-fg)":m.color};color:${isNR?"var(--text-muted)":"#fff"};">${day.day}</div>`);
 					$c.on("mouseenter",e=>tip(`${frappe.datetime.str_to_user(day.date)} · ${day.status}`,e))
 					  .on("mousemove",e=>tip(`${frappe.datetime.str_to_user(day.date)} · ${day.status}`,e))
 					  .on("mouseleave",hideTip);
@@ -985,13 +835,11 @@ frappe.pages["attendance-dashboard"].on_page_load = function (wrapper) {
 				const seen=[...new Set(d.days.map(x=>x.status))].filter(s=>s!=="Not Marked");
 				const $leg=$(`<div style="display:flex;flex-wrap:wrap;gap:7px;margin-top:12px;"></div>`).appendTo($b);
 				seen.forEach(st=>{ const m=STATUS_META[st]||{color:"#94a3b8"};
-					$leg.append(`<div style="display:flex;align-items:center;gap:4px;font-size:11px;color:var(--text-muted);">
-						<div style="width:9px;height:9px;border-radius:2px;background:${m.color};"></div>${st}</div>`); });
+					$leg.append(`<div style="display:flex;align-items:center;gap:4px;font-size:11px;color:var(--text-muted);"><div style="width:9px;height:9px;border-radius:2px;background:${m.color};"></div>${st}</div>`); });
 			}
 		});
 	}
 
-	// ── HELPERS ────────────────────────────────────────────────────────────────
 	function renderChart($container, trend){
 		const mx=Math.max(...trend.map(d=>d.present+d.absent),1);
 		const $bars=$(`<div class="ap-bars"></div>`).appendTo($container);
@@ -1003,10 +851,7 @@ frappe.pages["attendance-dashboard"].on_page_load = function (wrapper) {
 			if(ph>0) $c.append($(`<div class="ap-bs" style="height:${ph}px;background:#22c55e;"></div>`).on("mouseenter",e=>tip(txt,e)).on("mousemove",e=>tip(txt,e)).on("mouseleave",hideTip));
 			$c.append(`<div class="ap-bd">${d.day}</div>`); $bars.append($c);
 		});
-		$(`<div class="ap-chart-leg">
-			<div class="ap-cl-item"><div class="ap-cl-dot" style="background:#22c55e;"></div>Present</div>
-			<div class="ap-cl-item"><div class="ap-cl-dot" style="background:#ef4444;"></div>Absent</div>
-		</div>`).appendTo($container);
+		$(`<div class="ap-chart-leg"><div class="ap-cl-item"><div class="ap-cl-dot" style="background:#22c55e;"></div>Present</div><div class="ap-cl-item"><div class="ap-cl-dot" style="background:#ef4444;"></div>Absent</div></div>`).appendTo($container);
 	}
 
 	function buildSearch($container){
@@ -1029,16 +874,9 @@ frappe.pages["attendance-dashboard"].on_page_load = function (wrapper) {
 	}
 
 	function skelCards(){
-		return `<div class="ap-cards">${[1,2,3,4].map(()=>`<div class="ap-card" style="background:var(--subtle-fg);">
-			<div class="ap-sk" style="height:18px;width:18px;border-radius:50%;margin-bottom:8px;"></div>
-			<div class="ap-sk" style="height:28px;width:48px;margin-bottom:4px;"></div>
-			<div class="ap-sk" style="height:9px;width:64px;"></div>
-		</div>`).join("")}</div>`;
+		return `<div class="ap-cards">${[1,2,3,4].map(()=>`<div class="ap-card" style="background:var(--subtle-fg);"><div class="ap-sk" style="height:18px;width:18px;border-radius:50%;margin-bottom:8px;"></div><div class="ap-sk" style="height:28px;width:48px;margin-bottom:4px;"></div><div class="ap-sk" style="height:9px;width:64px;"></div></div>`).join("")}</div>`;
 	}
 	function skelPanel(){
-		return `<div class="ap-panel" style="margin-bottom:14px;">
-			<div class="ap-panel-hd"><div class="ap-sk" style="width:130px;height:13px;"></div></div>
-			<div style="padding:14px;">${[1,2,3].map(()=>`<div class="ap-sk" style="height:38px;margin-bottom:7px;border-radius:7px;"></div>`).join("")}</div>
-		</div>`;
+		return `<div class="ap-panel" style="margin-bottom:14px;"><div class="ap-panel-hd"><div class="ap-sk" style="width:130px;height:13px;"></div></div><div style="padding:14px;">${[1,2,3].map(()=>`<div class="ap-sk" style="height:38px;margin-bottom:7px;border-radius:7px;"></div>`).join("")}</div></div>`;
 	}
 };
