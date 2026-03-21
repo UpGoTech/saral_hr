@@ -1,0 +1,16 @@
+{
+ "doctype": "Page",
+ "module": "Saral Hr",
+ "name": "saral-hr-overview",
+ "page_name": "saral-hr-overview",
+ "standard": "Yes",
+ "title": "HR Workforce & Payroll Overview",
+ "roles": [
+  {
+   "role": "Saral HR Manager"
+  },
+  {
+   "role": "Saral HR User"
+  }
+ ]
+}
