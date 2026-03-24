@@ -1,14 +1,21 @@
 {
  "actions": [],
+ "allow_import": 1,
  "allow_rename": 1,
  "autoname": "LAL-.#####",
- "creation": "2026-02-02 16:46:42.551222",
+ "creation": "2026-03-23 00:00:00.000000",
  "doctype": "DocType",
  "engine": "InnoDB",
  "field_order": [
   "employee",
+  "employee_name",
+  "column_break_emp",
   "leave_type",
-  "total_allocated",
+  "section_break_period",
+  "from_date",
+  "to_date",
+  "column_break_balance",
+  "new_leaves_allocated",
   "used_leaves",
   "remaining_leaves"
  ],
@@ -17,23 +24,60 @@
    "fieldname": "employee",
    "fieldtype": "Link",
    "in_list_view": 1,
+   "in_standard_filter": 1,
    "label": "Employee",
    "options": "Employee",
    "reqd": 1
   },
   {
+   "fetch_from": "employee.employee",
+   "fieldname": "employee_name",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Employee Name",
+   "read_only": 1
+  },
+  {
+   "fieldname": "column_break_emp",
+   "fieldtype": "Column Break"
+  },
+  {
    "fieldname": "leave_type",
    "fieldtype": "Link",
    "in_list_view": 1,
+   "in_standard_filter": 1,
    "label": "Leave Type",
    "options": "Leave Types",
    "reqd": 1
   },
   {
-   "fieldname": "total_allocated",
+   "fieldname": "section_break_period",
+   "fieldtype": "Section Break",
+   "label": "Period & Balance"
+  },
+  {
+   "fieldname": "from_date",
+   "fieldtype": "Date",
+   "in_list_view": 1,
+   "label": "From Date",
+   "reqd": 1
+  },
+  {
+   "fieldname": "to_date",
+   "fieldtype": "Date",
+   "label": "To Date",
+   "reqd": 1
+  },
+  {
+   "fieldname": "column_break_balance",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "new_leaves_allocated",
    "fieldtype": "Float",
    "in_list_view": 1,
-   "label": "Total Allocated",
+   "label": "Leaves Allocated",
+   "precision": "2",
    "reqd": 1
   },
   {
@@ -41,7 +85,9 @@
    "fieldname": "used_leaves",
    "fieldtype": "Float",
    "in_list_view": 1,
-   "label": "Used Leaves"
+   "label": "Used Leaves",
+   "precision": "2",
+   "read_only": 1
   },
   {
    "fieldname": "remaining_leaves",
@@ -54,7 +100,7 @@
  ],
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-03-06 00:59:01.702226",
+ "modified": "2026-03-23 00:00:00.000000",
  "modified_by": "Administrator",
  "module": "Saral Hr",
  "name": "Leave Allocation",
@@ -86,6 +132,16 @@
    "select": 1,
    "share": 1,
    "write": 1
+  },
+  {
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "Saral HR User",
+   "select": 1,
+   "share": 1
   }
  ],
  "sort_field": "modified",

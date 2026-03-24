@@ -64,12 +64,6 @@ def _fn(prefix, abbr):
 # ---------------------------------------------------------------------------
 
 def _get_components(w, p):
-    """
-    Returns:
-      earn_comps  : [(name, abbr), ...]   — Earning type
-      emp_ded_comps : [(name, abbr), ...]  — Deduction, employer_contribution=0
-      empr_comps  : [(name, abbr), ...]   — Deduction, employer_contribution=1
-    """
     rows = frappe.db.sql(
         """
         SELECT DISTINCT sd.salary_component, sc.type, sc.employer_contribution,
@@ -84,11 +78,11 @@ def _get_components(w, p):
         p, as_dict=1
     )
 
-    earn_comps   = []
+    earn_comps    = []
     emp_ded_comps = []
-    empr_comps   = []
-
+    empr_comps    = []
     seen = set()
+
     for r in rows:
         key = r["salary_component"]
         if key in seen:
@@ -106,7 +100,6 @@ def _get_components(w, p):
 
 
 def _fetch_slip_comps(sn):
-    """Returns {slip_name: {component: amount}}"""
     if not sn:
         return {}
     r = {}
@@ -121,7 +114,7 @@ def _fetch_slip_comps(sn):
 
 
 # ---------------------------------------------------------------------------
-# Core data function  (flat rows for screen display)
+# Core data function
 # ---------------------------------------------------------------------------
 
 def _get_data(f):
@@ -150,7 +143,7 @@ def _get_data(f):
         p["employees"] = tuple(em_filter)
         conds.append("ss.employee IN %(employees)s")
 
-    cat = f.get("category")
+    cat  = f.get("category")
     catj = ""
     if cat:
         p["category"] = cat
@@ -166,10 +159,8 @@ def _get_data(f):
 
     w = " AND ".join(conds)
 
-    # Fetch dynamic components
     earn_comps, emp_ded_comps, empr_comps = _get_components(w, p)
 
-    # Build columns for screen
     cols = [
         _col("Employee",      "employee",      w=110),
         _col("Employee Name", "employee_name", w=160),
@@ -188,10 +179,8 @@ def _get_data(f):
     for name, abbr in empr_comps:
         cols.append(_col(f"{name} ({abbr})", _fn("r", abbr), "Float", 110, precision=2))
     cols.append(_col("Employer Total", "employer_total", "Float", 110, precision=2))
-
     cols.append(_col("Net Salary", "net_salary", "Float", 110, precision=2))
 
-    # Fetch slips
     slips = frappe.db.sql(
         f"""
         SELECT ss.name AS slip, ss.employee, ss.employee_name,
@@ -205,7 +194,7 @@ def _get_data(f):
     if not slips:
         return cols, []
 
-    sn      = [sl["slip"] for sl in slips]
+    sn       = [sl["slip"] for sl in slips]
     comp_map = _fetch_slip_comps(sn)
 
     data  = []
@@ -222,7 +211,7 @@ def _get_data(f):
         grand[_fn("r", abbr)] = 0.0
 
     for sl in slips:
-        sc = comp_map.get(sl["slip"], {})
+        sc  = comp_map.get(sl["slip"], {})
         row = {
             "employee":      sl["employee"],
             "employee_name": sl["employee_name"],
@@ -259,10 +248,10 @@ def _get_data(f):
         row["employer_total"] = flt(et, 2)
         grand["employer_total"] += et
 
-        grand["net_salary"]    += flt(sl["net_salary"], 2)
-        grand["payment_days"]  += flt(sl["payment_days"], 2)
-        grand["absent_days"]   += flt(sl.get("absent_days") or 0, 2)
-        grand["total_lwp"]     += flt(sl["total_lwp"] or 0, 2)
+        grand["net_salary"]   += flt(sl["net_salary"], 2)
+        grand["payment_days"] += flt(sl["payment_days"], 2)
+        grand["absent_days"]  += flt(sl.get("absent_days") or 0, 2)
+        grand["total_lwp"]    += flt(sl["total_lwp"] or 0, 2)
 
         data.append(row)
 
@@ -283,47 +272,45 @@ def execute(filters=None):
 
 
 # ---------------------------------------------------------------------------
-# PDF — 3 rows per employee: Earnings / Deductions / Employer
+# PDF
 # ---------------------------------------------------------------------------
 
+# FIX 3: body has width:100% so flex containers span full page width
 _CSS = """<style>
 *{margin:0;padding:0;box-sizing:border-box}
-body{font-family:Arial,sans-serif;font-size:13px;color:#000;background:#fff}
+body{font-family:Arial,sans-serif;font-size:13px;color:#000;background:#fff;width:100%;}
 .hdr{text-align:center;border-bottom:2px solid #000;padding:8px 4px 6px;margin-bottom:6px}
 .hdr .co{font-size:24px;font-weight:900;letter-spacing:1px;text-transform:uppercase}
 .hdr .ttl{font-size:17px;font-weight:700;margin-top:5px}
 .hdr .per{font-size:14px;margin-top:4px}
-.sig{display:flex;justify-content:space-between;margin-top:20px;padding-top:6px}
-.sig-b{text-align:center;width:160px}
-.sig-l{border-top:1px solid #000;margin-bottom:3px}
-.sig-t{font-size:13px;color:#333}
 table{width:100%;border-collapse:collapse;table-layout:fixed;}
 </style>"""
 
-_SIG = '<div class="sig">' + "".join(
-    f'<div class="sig-b"><div class="sig-l"></div><div class="sig-t">{l}</div></div>'
-    for l in ["Prepared By", "Checked By", "Authorised Signatory"]
-) + '</div>'
-
-# Cell style constants
-def _th(bg="#dce6f0", align="center", extra=""):
-    return f"border:{B};padding:7px 9px;font-size:13px;font-weight:700;background:{bg};text-align:{align};white-space:nowrap;{extra}"
-
-def _td(align="right", bg="#fff", bold=False, extra=""):
-    fw = "font-weight:700;" if bold else ""
-    return f"border:{B};padding:7px 9px;font-size:13px;{fw}background:{bg};text-align:{align};vertical-align:middle;{extra}"
-
-# Section colours
-C_EARN  = "#dff0d8"   # green tint  — earnings header
-C_DED   = "#fce8e6"   # red tint    — deductions header
-C_EMPR  = "#fef9e7"   # yellow tint — employer header
-C_TOT   = "#e8edf2"   # grey        — totals
-C_GRAND = "#d0d8e4"   # darker grey — grand total row
+# FIX 3: inline width:100% on the sig container so wkhtmltopdf
+# doesn't collapse it to content width
+_SIG = """
+<!--SIG_START-->
+<div style="display:flex;justify-content:space-between;
+            width:100%;margin-top:30px;padding-top:10px;
+            box-sizing:border-box;">
+    <div style="text-align:center;width:180px;">
+        <div style="border-top:1px solid #000;margin-bottom:4px;"></div>
+        <div style="font-size:13px;color:#333;">Prepared By</div>
+    </div>
+    <div style="text-align:center;width:180px;">
+        <div style="border-top:1px solid #000;margin-bottom:4px;"></div>
+        <div style="font-size:13px;color:#333;">Checked By</div>
+    </div>
+    <div style="text-align:center;width:180px;">
+        <div style="border-top:1px solid #000;margin-bottom:4px;"></div>
+        <div style="font-size:13px;color:#333;">Authorised Signatory</div>
+    </div>
+</div>
+<!--SIG_END-->
+"""
 
 
 def _comps_from_cols(cols):
-    """Reconstruct (earn_comps, emp_ded_comps, empr_comps) from the cols list.
-    Used when _build_html is called generically (e.g. from payroll_report)."""
     earn_comps, emp_ded_comps, empr_comps = [], [], []
     SKIP = {
         "employee", "employee_name", "payment_days", "absent_days", "total_lwp",
@@ -350,10 +337,10 @@ def _comps_from_cols(cols):
 
 
 def _build_html(cols, data, co, mo, yr, earn_comps=None, emp_ded_comps=None, empr_comps=None):
-    # Derive component lists from cols if not supplied (called generically from payroll_report)
     if earn_comps is None or emp_ded_comps is None or empr_comps is None:
         earn_comps, emp_ded_comps, empr_comps = _comps_from_cols(cols)
 
+    # Company/title header — only used on page 1
     hdr_html = (
         f'<div class="hdr">'
         f'<div class="co">{co}</div>'
@@ -365,21 +352,19 @@ def _build_html(cols, data, co, mo, yr, earn_comps=None, emp_ded_comps=None, emp
     if not data:
         return (
             f'<!DOCTYPE html><html><head><meta charset="UTF-8">{_CSS}</head>'
-            f'<body>{hdr_html}<p style="text-align:center;padding:20px;color:#888;">No data for this period</p>'
+            f'<body>{hdr_html}'
+            f'<p style="text-align:center;padding:20px;color:#888;">No data for this period</p>'
             f'{_SIG}</body></html>'
         )
 
     detail_rows = [r for r in data if not r.get("bold")]
     grand_row   = next((r for r in data if r.get("bold")), {})
 
-    ne = len(earn_comps)
-    nd = len(emp_ded_comps)
-    nr = len(empr_comps)
-
-    # total shared columns = widest of the three sections
+    ne     = len(earn_comps)
+    nd     = len(emp_ded_comps)
+    nr     = len(empr_comps)
     n_cols = max(ne, nd, nr)
 
-    # Column widths
     W_SR   = 20
     W_EMP  = 115
     W_DAYS = 40
@@ -387,16 +372,16 @@ def _build_html(cols, data, co, mo, yr, earn_comps=None, emp_ded_comps=None, emp
     W_TOT  = 64
     W_NET  = 68
 
-    ROW_BG  = "#fffde7"
-    SEP_CLR = "#000"
-
-    # ── thead ──────────────────────────────────────────────────────────
+    # ── thead (repeats on every page — correct behaviour) ──────────────
     def _thead():
-        THL = f"border:{B};padding:6px 8px;font-size:13px;font-weight:700;background:#f0f0f0;text-align:left;white-space:normal;vertical-align:middle;"
-        THR = f"border:{B};padding:6px 8px;font-size:13px;font-weight:700;background:#f0f0f0;text-align:right;white-space:normal;vertical-align:middle;"
-        THT = f"border:{B};padding:7px 9px;font-size:13px;font-weight:700;background:#f0f0f0;text-align:right;white-space:normal;vertical-align:middle;"
+        THL = (f"border:{B};padding:6px 8px;font-size:13px;font-weight:700;"
+               f"background:#f0f0f0;text-align:left;white-space:normal;vertical-align:middle;")
+        THR = (f"border:{B};padding:6px 8px;font-size:13px;font-weight:700;"
+               f"background:#f0f0f0;text-align:right;white-space:normal;vertical-align:middle;")
+        THT = (f"border:{B};padding:7px 9px;font-size:13px;font-weight:700;"
+               f"background:#f0f0f0;text-align:right;white-space:normal;vertical-align:middle;")
 
-        h = '<thead>'
+        h  = '<thead>'
 
         # Row 1 — Earnings names
         h += '<tr>'
@@ -432,32 +417,16 @@ def _build_html(cols, data, co, mo, yr, earn_comps=None, emp_ded_comps=None, emp
         h += '</thead>'
         return h
 
-
-    # ── helpers ────────────────────────────────────────────────────────
+    # ── Row builder ─────────────────────────────────────────────────────
     ROW_COLOURS = ["#ffffff", "#f5f5f5"]
     HDR_BG      = "#f0f0f0"
     FS          = "font-size:13px;"
-    FS_SM       = "font-size:12px;"
     FS_NET      = "font-size:15px;"
     PAD         = "padding:7px 9px;"
 
-    def _td_style(bg, bold=False, align="right", fs="font-size:13px;",
-                  bt=B, bb=B, bl=B, br=B):
-        fw = "font-weight:700;" if bold else ""
-        return (
-            f"border-top:{bt};border-bottom:{bb};"
-            f"border-left:{bl};border-right:{br};"
-            f"padding:7px 9px;{fs}{fw}background:{bg};"
-            f"text-align:{align};vertical-align:middle;"
-        )
-
-    def _sep_row():
-        return ""
-
     def _emp_rows(row, sr, is_grand=False, row_idx=0):
         bg   = HDR_BG if is_grand else ROW_COLOURS[row_idx % 2]
-        bold = is_grand
-        fw   = "font-weight:700;" if bold else ""
+        fw   = "font-weight:700;" if is_grand else ""
 
         name = row.get("employee_name", "")
         code = row.get("employee", "")
@@ -469,12 +438,7 @@ def _build_html(cols, data, co, mo, yr, earn_comps=None, emp_ded_comps=None, emp
         et2  = _fmt(row.get("employer_total"))   or "—"
         ns   = _fmt(row.get("net_salary"))       or "—"
 
-        # borders: top only on row1, bottom only on row3, no top/bottom on row2
-        # left+right always present
-        # This makes the 3 rows look like one merged cell visually
-
-        def _fixed(val, w, row_num, align="center", color="", fs="font-size:13px;", force_border=False):
-            col = f"color:{color};" if color else ""
+        def _fixed(val, w, row_num, align="center", force_border=False):
             if force_border:
                 bt, bb = B, B
             elif row_num == 1:
@@ -484,50 +448,33 @@ def _build_html(cols, data, co, mo, yr, earn_comps=None, emp_ded_comps=None, emp
             else:
                 bt, bb = "none", B
             return (
-                f'<td style="border-top:{bt};border-bottom:{bb};border-left:{B};border-right:{B};'
-                f'width:{w}px;{PAD}{fs}{fw}{col}background:{bg};'
+                f'<td style="border-top:{bt};border-bottom:{bb};'
+                f'border-left:{B};border-right:{B};'
+                f'width:{w}px;{PAD}{FS}{fw}background:{bg};'
                 f'text-align:{align};vertical-align:middle;">{val}</td>'
             )
 
-        def _comp(val, row_num, color=""):
-            col = f"color:{color};" if (color and not bold) else ""
-            if row_num == 1:
-                bt, bb = B, B
-            elif row_num == 2:
-                bt, bb = B, B
-            else:
-                bt, bb = B, B
+        def _comp(val, _row_num):
             return (
-                f'<td style="border:{B};'
-                f'{PAD}{FS}{fw}{col}background:{bg};'
+                f'<td style="border:{B};{PAD}{FS}{fw}background:{bg};'
                 f'text-align:right;vertical-align:middle;">{val}</td>'
             )
 
-        def _tot(val, row_num, color=""):
-            col = f"color:{color};" if (color and not bold) else ""
-            if row_num == 1:
-                bt, bb = B, B
-            elif row_num == 2:
-                bt, bb = B, B
-            else:
-                bt, bb = B, B
+        def _tot(val, _row_num):
             return (
-                f'<td style="border:{B};width:{W_TOT}px;'
-                f'{PAD}{FS}{fw}{col}background:{bg};'
+                f'<td style="border:{B};width:{W_TOT}px;{PAD}{FS}{fw}background:{bg};'
                 f'text-align:right;vertical-align:middle;">{val}</td>'
             )
 
-        # Employee name cell — row1 has top+left+right, row2 has left+right only,
-        # row3 has bottom+left+right — simulates merged cell
         def _emp_cell(row_num):
             if row_num == 1:
-                bt, bb = B, "none"
+                bt, bb  = B, "none"
                 content = f'<strong style="{FS}font-weight:700;">{name}</strong>'
             elif row_num == 2:
-                bt, bb = "none", "none"
+                bt, bb  = "none", "none"
                 content = "&nbsp;"
             else:
-                bt, bb = "none", B
+                bt, bb  = "none", B
                 content = (
                     f'<span style="font-size:13px;color:#222;">{code}</span>'
                     if not is_grand else "&nbsp;"
@@ -540,16 +487,15 @@ def _build_html(cols, data, co, mo, yr, earn_comps=None, emp_ded_comps=None, emp
                 f'white-space:normal;word-wrap:break-word;">{content}</td>'
             )
 
-        # Net salary — centred vertically = shown on row2 only
         def _net_cell(row_num):
             if row_num == 1:
-                bt, bb = B, "none"
+                bt, bb  = B, "none"
                 content = "&nbsp;"
             elif row_num == 2:
-                bt, bb = "none", "none"
+                bt, bb  = "none", "none"
                 content = f'<span style="{FS_NET}font-weight:700;">{ns}</span>'
             else:
-                bt, bb = "none", B
+                bt, bb  = "none", B
                 content = "&nbsp;"
             return (
                 f'<td style="border-top:{bt};border-bottom:{bb};'
@@ -559,46 +505,49 @@ def _build_html(cols, data, co, mo, yr, earn_comps=None, emp_ded_comps=None, emp
             )
 
         # Row 1 — Earnings
-        r1 = '<tr>'
+        r1  = '<tr>'
         r1 += _fixed(sr if not is_grand else "", W_SR, 1, align="center")
         r1 += _emp_cell(1)
-        r1 += _fixed(pd, W_DAYS, 1, align="right", color="", force_border=True)
+        r1 += _fixed(pd, W_DAYS, 1, align="right", force_border=True)
         for i in range(n_cols):
-            v = (_fmt(row.get(_fn("e", earn_comps[i][1]))) or "—") if i < ne else "&nbsp;"
-            r1 += _comp(v, 1, "")
-        r1 += _tot(ge, 1, "")
+            v   = (_fmt(row.get(_fn("e", earn_comps[i][1]))) or "—") if i < ne else "&nbsp;"
+            r1 += _comp(v, 1)
+        r1 += _tot(ge, 1)
         r1 += _net_cell(1)
         r1 += '</tr>'
 
         # Row 2 — Deductions
-        r2 = '<tr>'
+        r2  = '<tr>'
         r2 += _fixed("", W_SR, 2, align="center")
         r2 += _emp_cell(2)
-        r2 += _fixed(ab, W_DAYS, 2, align="right", color="", force_border=True)
+        r2 += _fixed(ab, W_DAYS, 2, align="right", force_border=True)
         for i in range(n_cols):
-            v = (_fmt(row.get(_fn("d", emp_ded_comps[i][1]))) or "—") if i < nd else "&nbsp;"
-            r2 += _comp(v, 2, "")
-        r2 += _tot(td2, 2, "")
+            v   = (_fmt(row.get(_fn("d", emp_ded_comps[i][1]))) or "—") if i < nd else "&nbsp;"
+            r2 += _comp(v, 2)
+        r2 += _tot(td2, 2)
         r2 += _net_cell(2)
         r2 += '</tr>'
 
         # Row 3 — Employer
-        r3 = '<tr>'
+        r3  = '<tr>'
         r3 += _fixed("", W_SR, 3, align="center")
         r3 += _emp_cell(3)
-        r3 += _fixed(lwp, W_DAYS, 3, align="right", color="", force_border=True)
+        r3 += _fixed(lwp, W_DAYS, 3, align="right", force_border=True)
         for i in range(n_cols):
-            v = (_fmt(row.get(_fn("r", empr_comps[i][1]))) or "—") if i < nr else "&nbsp;"
-            r3 += _comp(v, 3, "")
-        r3 += _tot(et2, 3, "")
+            v   = (_fmt(row.get(_fn("r", empr_comps[i][1]))) or "—") if i < nr else "&nbsp;"
+            r3 += _comp(v, 3)
+        r3 += _tot(et2, 3)
         r3 += _net_cell(3)
         r3 += '</tr>'
 
         return r1 + r2 + r3
 
-
     # ── Pagination ──────────────────────────────────────────────────────
-    FIRST, OTHER = 12, 18
+    # Each employee = 3 HTML rows.
+    # FIX 2: reduced limits to prevent employee rows splitting across pages.
+    # Page 1 has the title header so fewer employees fit (9).
+    # Subsequent pages have more room (14).
+    FIRST, OTHER = 9, 14
     pages, idx, first = [], 0, True
     while idx < len(detail_rows):
         lim = FIRST if first else OTHER
@@ -616,6 +565,10 @@ def _build_html(cols, data, co, mo, yr, earn_comps=None, emp_ded_comps=None, emp
         pb   = '<div style="page-break-before:always;"></div>' if pn > 0 else ""
         last = (pn == len(pages) - 1)
 
+        # FIX 1: company title header only on page 1;
+        # column headers (_thead) still repeat on every page
+        page_hdr = hdr_html if pn == 0 else ""
+
         pg_footer = (
             f'<div style="text-align:right;font-size:13px;color:#222;'
             f'margin-top:4px;padding-right:2px;">'
@@ -631,7 +584,7 @@ def _build_html(cols, data, co, mo, yr, earn_comps=None, emp_ded_comps=None, emp
         body += '</tbody>'
 
         parts.append(
-            f'{pb}{hdr_html}'
+            f'{pb}{page_hdr}'
             f'<table>{_thead()}{body}</table>'
             f'{pg_footer}'
         )
@@ -673,7 +626,6 @@ def print_report(filters):
     if isinstance(filters, str):
         filters = json.loads(filters)
 
-    # We need the component lists for the print builder
     p = {}
     s, e = _date_range(filters)
     if not s:
@@ -689,15 +641,18 @@ def print_report(filters):
     if co:
         p["companies"] = tuple(co)
         conds.append("ss.company IN %(companies)s")
+
     em_filter = _parse_list(filters.get("employee"))
     if em_filter:
         p["employees"] = tuple(em_filter)
         conds.append("ss.employee IN %(employees)s")
-    cat = filters.get("category")
+
+    cat  = filters.get("category")
     catj = ""
     if cat:
         p["category"] = cat
         catj = "INNER JOIN `tabCompany Link` cl_cat ON cl_cat.name=ss.employee AND cl_cat.category=%(category)s"
+
     divs = _parse_list(filters.get("division"))
     if divs:
         p["divisions"] = tuple(divs)
@@ -705,6 +660,7 @@ def print_report(filters):
             "ss.employee IN (SELECT name FROM `tabCompany Link` "
             "WHERE division IN %(divisions)s OR department IN %(divisions)s)"
         )
+
     w = " AND ".join(conds)
 
     earn_comps, emp_ded_comps, empr_comps = _get_components(w, p)
