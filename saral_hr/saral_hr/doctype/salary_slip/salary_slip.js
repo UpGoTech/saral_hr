@@ -113,7 +113,17 @@ function fetch_and_validate_all(frm) {
     let vpa_status      = null;
     let vpa_percentage  = 0;
     let additional_data = { earnings: [], deductions: [] };
-    let pending         = 3;
+
+    // Loan/advance deduction rows fetched in parallel with other data.
+    // Each item: { salary_component, abbr, amount, is_deferred,
+    //              loan_advance_name, schedule_row_name }
+    // is_deferred=1 means the month was deferred — amount will be 0,
+    // Is Deferred checkbox will be checked in the deductions table.
+    // is_deducted is updated only on salary slip SUBMIT/CANCEL.
+    let loan_advance_data = [];
+
+    // 4 parallel calls (VPA check + attendance + additional + loan/advance)
+    let pending = 4;
 
     function try_finalize() {
         if (--pending > 0) return;
@@ -159,6 +169,7 @@ function fetch_and_validate_all(frm) {
 
                 apply_salary_structure(frm, salary_data);
 
+                // Add additional salary earnings (arrears etc.)
                 (additional_data.earnings || []).forEach(row => {
                     const e = frm.add_child("earnings");
                     e.salary_component                 = row.salary_component;
@@ -170,6 +181,7 @@ function fetch_and_validate_all(frm) {
                     e._is_additional                   = true;
                 });
 
+                // Add additional deductions (manual deductions)
                 (additional_data.deductions || []).forEach(row => {
                     const d = frm.add_child("deductions");
                     d.salary_component                 = row.salary_component;
@@ -180,6 +192,24 @@ function fetch_and_validate_all(frm) {
                     d.depends_on_payment_days          = 0;
                     d.depends_on_physical_working_days = 0;
                     d._is_additional                   = true;
+                });
+
+                // Add Loan-I / Loan-II / Advance deduction rows.
+                // Amount is fixed — never prorated by payment days.
+                // is_deferred=1 means the month was deferred in the loan schedule:
+                //   - amount will be 0
+                //   - Is Deferred checkbox will be checked in the deductions table
+                // is_deducted on the loan doc is updated only on slip SUBMIT/CANCEL.
+                (loan_advance_data || []).forEach(item => {
+                    const d = frm.add_child("deductions");
+                    d.salary_component                 = item.salary_component; // "Loan-I" / "Loan-II" / "Advance"
+                    d.abbr                             = item.abbr;             // "LI" / "LII" / "ADV"
+                    d.amount                           = flt(item.amount);
+                    d.base_amount                      = flt(item.amount);
+                    d.employer_contribution            = 0;
+                    d.depends_on_payment_days          = 0;                     // Never prorate loan/advance
+                    d.depends_on_physical_working_days = 0;                     // Never prorate loan/advance
+                    d.is_deferred                      = item.is_deferred || 0; // Show Is Deferred checkbox if deferred
                 });
 
                 frm.refresh_fields(["earnings", "deductions", "employer_share"]);
@@ -225,12 +255,22 @@ function fetch_and_validate_all(frm) {
         error()     { attendance_data = null;              try_finalize(); }
     });
 
-    // ── Additional components ─────────────────────────────────────────────
+    // ── Additional components (arrears / manual deductions) ───────────────
     frappe.call({
         method: "saral_hr.saral_hr.doctype.salary_slip.salary_slip.get_additional_components_api",
         args:   { employee: frm.doc.employee, start_date: frm.doc.start_date },
         callback(r) { additional_data = r.message || { earnings: [], deductions: [] }; try_finalize(); },
         error()     { additional_data = { earnings: [], deductions: [] };               try_finalize(); }
+    });
+
+    // ── Loan & Advance deductions ─────────────────────────────────────────
+    // Returns pending (is_deducted=0) rows including is_deferred flag.
+    // Safe to call always — returns empty array if no loans exist.
+    frappe.call({
+        method: "saral_hr.saral_hr.doctype.salary_slip.salary_slip.get_loan_advance_deductions",
+        args:   { employee: frm.doc.employee, start_date: frm.doc.start_date },
+        callback(r) { loan_advance_data = r.message || []; try_finalize(); },
+        error()     { loan_advance_data = [];              try_finalize(); }
     });
 }
 
@@ -294,6 +334,9 @@ function apply_attendance(frm, d, variable_pay_pct) {
 }
 
 // ─── Salary Calculation ───────────────────────────────────────────────────────
+// NOTE: Loan-I / Loan-II / Advance rows have depends_on_payment_days = 0
+// so they fall into the final `else` branch and are returned as-is.
+// No special handling needed here — calculation is untouched.
 
 function recalculate_salary(frm, wd_override, pd_override, phd_override) {
     const wd           = flt(wd_override  !== undefined ? wd_override  : frm.doc.total_working_days);
@@ -346,14 +389,19 @@ function recalculate_salary(frm, wd_override, pd_override, phd_override) {
 
         let amount;
         if (pt) {
+            // Professional Tax: fixed slab per month
             amount = slip_month === 2 ? 300 : 200;
         } else if (statutory) {
+            // Statutory components (PF, ESIC etc.): use base as-is
             amount = base;
         } else if (row.depends_on_physical_working_days && wd > 0 && base > 0) {
             amount = (base / wd) * phd;
         } else if (row.depends_on_payment_days && wd > 0 && base > 0) {
             amount = (base / wd) * pd;
         } else {
+            // Loan-I, Loan-II, Advance and all other fixed deductions:
+            // depends_on_payment_days = 0, so they land here — amount unchanged.
+            // Deferred rows have amount=0 naturally — no special case needed.
             amount = base;
         }
 

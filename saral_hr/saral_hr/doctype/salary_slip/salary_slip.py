@@ -1,6 +1,3 @@
-# Copyright (c) 2026, sj and contributors
-# For license information, please see license.txt
-
 import frappe
 from frappe.model.document import Document
 from frappe.utils import getdate, get_last_day, flt
@@ -10,13 +7,119 @@ import json
 from PyPDF2 import PdfMerger
 import os
 
+# ─── Print Format ─────────────────────────────────────────────────────────────
+# Must exactly match the Print Format name in Frappe (Setup > Print Format)
 BULK_PRINT_FORMAT = "Salary Slip Custom"
+
+# ─── Month names list (used across multiple functions) ────────────────────────
+MONTHS_LIST = [
+    "January", "February", "March", "April",
+    "May", "June", "July", "August",
+    "September", "October", "November", "December"
+]
 
 
 class SalarySlip(Document):
     def validate(self):
         if self.start_date:
             self.end_date = get_last_day(getdate(self.start_date))
+
+    # ── Called when Salary Slip is submitted ──────────────────────────────────
+    def on_submit(self):
+        """
+        When salary slip is submitted:
+        - Mark matching loan schedule rows as deducted (is_deducted = 1)
+        - Mark advance as deducted (is_deducted = 1)
+        - Update outstanding amount on the loan/advance doc via db.set_value
+        """
+        self._sync_loan_advance_deducted(deducted=True)
+
+    # ── Called when Salary Slip is cancelled ──────────────────────────────────
+    def on_cancel(self):
+        """
+        When salary slip is cancelled:
+        - Reverse deduction flag back to 0 on loan schedule rows
+        - Reverse is_deducted = 0 on advance docs
+        - Update outstanding amount on the loan/advance doc via db.set_value
+        """
+        self._sync_loan_advance_deducted(deducted=False)
+
+    # ── Core helper: sync is_deducted on loan/advance docs ───────────────────
+    def _sync_loan_advance_deducted(self, deducted):
+        """
+        Loop through deductions table on this salary slip.
+        For every row that is Loan-I / Loan-II / Advance,
+        find the matching Employee Loan Advance doc and update is_deducted.
+
+        Uses frappe.db.set_value instead of doc.save() so that submitted
+        Employee Loan Advance docs can be updated without triggering the
+        "cannot change field after submission" validation error.
+        """
+        d                = getdate(self.start_date)
+        slip_month_label = f"{MONTHS_LIST[d.month - 1]} {d.year}"  # e.g. "March 2026"
+        flag             = 1 if deducted else 0
+
+        for row in self.deductions:
+            comp = (row.salary_component or "").strip()
+
+            # Only process our loan/advance components — skip everything else
+            if comp not in ("Loan-I", "Loan-II", "Advance"):
+                continue
+
+            # Find all submitted loan/advance docs for this employee + type
+            loan_docs = frappe.db.get_all(
+                "Employee Loan Advance",
+                filters={
+                    "employee":  self.employee,
+                    "type":      comp,
+                    "docstatus": 1,
+                },
+                fields=["name", "type"]
+            )
+
+            for loan_rec in loan_docs:
+                doc = frappe.get_doc("Employee Loan Advance", loan_rec.name)
+
+                if comp in ("Loan-I", "Loan-II"):
+                    # Find the schedule row for this month with matching amount
+                    changed = False
+                    for srow in doc.schedule:
+                        if (srow.month == slip_month_label
+                                and flt(srow.deduction_amount) == flt(row.amount)):
+                            # Use db.set_value directly on the child row —
+                            # this bypasses the submitted-doc restriction
+                            frappe.db.set_value(
+                                srow.doctype,
+                                srow.name,
+                                "is_deducted",
+                                flag,
+                                update_modified=False
+                            )
+                            changed = True
+                            break  # Only update one row per slip
+
+                    if changed:
+                        # Reload doc to get updated schedule, then recalculate
+                        doc.reload()
+                        doc.calculate_outstanding()
+                        # Update outstanding_amount directly — no save() needed
+                        frappe.db.set_value(
+                            "Employee Loan Advance",
+                            doc.name,
+                            "outstanding_amount",
+                            doc.outstanding_amount,
+                            update_modified=False
+                        )
+
+                elif comp == "Advance":
+                    # Advance has no schedule — just flip the flag directly
+                    frappe.db.set_value(
+                        "Employee Loan Advance",
+                        loan_rec.name,
+                        "is_deducted",
+                        flag,
+                        update_modified=False
+                    )
 
 
 # ─── Duplicate Check ──────────────────────────────────────────────────────────
@@ -45,69 +148,6 @@ def check_duplicate_salary_slip(employee, start_date, current_doc=""):
     }
 
 
-# ─── SRR lookup helper ────────────────────────────────────────────────────────
-
-def _get_srr_amounts_for_employee(employee, start_date):
-    """
-    If the employee belongs to a category with has_subtype,
-    fetch V-DA (and Basic) from the matching submitted Skill Rate Revision.
-    Returns dict {vbasic, vda} or None.
-    """
-    MONTH_NUM = {
-        "January": 1, "February": 2, "March": 3,  "April": 4,
-        "May": 5,     "June": 6,     "July": 7,    "August": 8,
-        "September": 9, "October": 10, "November": 11, "December": 12,
-    }
-    SKILL_FIELD_MAP = {
-        "Skilled":      ("vbasic_skilled",      "vda_skilled"),
-        "Semi-skilled": ("vbasic_semi_skilled",  "vda_semi_skilled"),
-        "Unskilled":    ("vbasic_unskilled",     "vda_unskilled"),
-    }
-
-    cl = frappe.db.get_value(
-        "Company Link", employee, ["category", "skill_type"], as_dict=True
-    )
-    if not cl or not cl.category or not cl.skill_type:
-        return None
-
-    has_subtype = frappe.db.get_value("Category", cl.category, "has_subtype")
-    if not has_subtype:
-        return None
-
-    fields = SKILL_FIELD_MAP.get(cl.skill_type)
-    if not fields:
-        return None
-
-    vbasic_field, vda_field = fields
-
-    d          = getdate(start_date)
-    month_name = [
-        "January","February","March","April","May","June",
-        "July","August","September","October","November","December"
-    ][d.month - 1]
-    target = d.year * 100 + MONTH_NUM[month_name]
-
-    records = frappe.db.get_all(
-        "Skill Rate Revision",
-        filters={"docstatus": 1},
-        fields=["from_month", "from_year", "to_month", "to_year",
-                vbasic_field, vda_field]
-    )
-
-    for r in records:
-        if not all([r.from_month, r.from_year, r.to_month, r.to_year]):
-            continue
-        from_val = int(r.from_year) * 100 + MONTH_NUM[r.from_month]
-        to_val   = int(r.to_year)   * 100 + MONTH_NUM[r.to_month]
-        if from_val <= target <= to_val:
-            return {
-                "vbasic": flt(r[vbasic_field], 2),
-                "vda":    flt(r[vda_field],    2),
-            }
-
-    return None
-
-
 # ─── Additional Salary wage-basis helpers ─────────────────────────────────────
 
 _ADDITIONAL_SALARY_KEY     = "Additional Salary"
@@ -115,10 +155,16 @@ _ADDITIONAL_SALARY_ALIASES = {"Additional Salary", "Arrears"}
 
 
 def _get_additional_salary_total(employee, year_str, month_str):
+    """Sum all component amounts across all submitted Additional Salary docs."""
     total = 0.0
     records = frappe.db.get_all(
         "Additional Salary",
-        filters={"employee": employee, "year": year_str, "month": month_str, "docstatus": 1},
+        filters={
+            "employee":  employee,
+            "year":      year_str,
+            "month":     month_str,
+            "docstatus": 1,
+        },
         fields=["name"],
     )
     for rec in records:
@@ -176,16 +222,12 @@ def get_salary_structure_for_employee(employee, start_date=None,
 
     ssa_doc = frappe.get_doc("Salary Structure Assignment", ssa_name)
 
-    month_names = [
-        "January","February","March","April","May","June",
-        "July","August","September","October","November","December"
-    ]
     current_month = None
     year_str      = None
     month_str     = None
     if start_date:
         d             = getdate(start_date)
-        current_month = month_names[d.month - 1]
+        current_month = MONTHS_LIST[d.month - 1]
         year_str      = str(d.year)
         month_str     = current_month
 
@@ -198,8 +240,13 @@ def get_salary_structure_for_employee(employee, start_date=None,
     def _comp_meta(comp_name):
         return frappe.db.get_value(
             "Salary Component", comp_name,
-            ["salary_component_abbr", "depends_on_payment_days",
-             "depends_on_physical_working_days", "employer_contribution", "type"],
+            [
+                "salary_component_abbr",
+                "depends_on_payment_days",
+                "depends_on_physical_working_days",
+                "employer_contribution",
+                "type",
+            ],
             as_dict=True
         ) or {}
 
@@ -215,30 +262,15 @@ def get_salary_structure_for_employee(employee, start_date=None,
     earnings       = []
     deductions     = []
     employer_share = []
+
     actual_earnings_map = {}
 
-    # ── Fetch SRR amounts if this employee has a skill subtype ────────────────
-    srr = _get_srr_amounts_for_employee(employee, start_date) if start_date else None
-
     for row in (ssa_doc.earnings or []):
-        meta       = _comp_meta(row.salary_component)
-        base       = flt(row.amount, 2)
-        dep_pd     = int(meta.get("depends_on_payment_days") or 0)
-        dep_phd    = int(meta.get("depends_on_physical_working_days") or 0)
+        meta      = _comp_meta(row.salary_component)
+        base      = flt(row.amount, 2)
+        dep_pd    = int(meta.get("depends_on_payment_days") or 0)
+        dep_phd   = int(meta.get("depends_on_physical_working_days") or 0)
         comp_lower = (row.salary_component or "").lower()
-        abbr_lower = (meta.get("salary_component_abbr") or row.abbr or "").lower().strip()
-
-        # ── Override base from SRR if applicable ──────────────────────────────
-        if srr:
-            is_vda = (
-                "dearness" in comp_lower
-                or abbr_lower in ("v-da", "vda")
-                or abbr_lower.startswith("v-da")
-            )
-            
-            if is_vda:
-                base = flt(srr["vda"], 2)
-            
 
         if has_att_data and "variable" in comp_lower:
             if dep_pd and wd > 0:
@@ -264,6 +296,7 @@ def get_salary_structure_for_employee(employee, start_date=None,
         additional_total_for_check = _get_additional_salary_total(employee, year_str, month_str)
 
     statutory_needs_recompute = False
+
     if has_att_data:
         statutory_needs_recompute = True
     elif additional_total_for_check > 0 and ssa_doc.company:
@@ -276,10 +309,17 @@ def get_salary_structure_for_employee(employee, start_date=None,
     for row in (ssa_doc.deductions or []):
         if statutory_needs_recompute and _is_statutory_component(row.salary_component):
             continue
+
+        # Skip PT entirely for senior citizens (age >= 65)
+        if _is_pt_component(row.salary_component) and _is_pt_exempt(employee, start_date):
+            continue
+
         meta   = _comp_meta(row.salary_component)
         amount = flt(row.amount, 2)
+
         if _is_pt_component(row.salary_component):
             amount = 300.0 if current_month == "February" else 200.0
+
         deductions.append({
             "salary_component":                 row.salary_component,
             "abbr":                             meta.get("salary_component_abbr") or row.abbr or "",
@@ -293,6 +333,7 @@ def get_salary_structure_for_employee(employee, start_date=None,
     for row in (ssa_doc.employer_share or []):
         if statutory_needs_recompute and _is_statutory_component(row.salary_component):
             continue
+
         meta = _comp_meta(row.salary_component)
         employer_share.append({
             "salary_component":                 row.salary_component,
@@ -326,6 +367,9 @@ def get_salary_structure_for_employee(employee, start_date=None,
         )
 
         for d in (recomputed.get("deductions") or []):
+            # Skip PT entirely for senior citizens (age >= 65)
+            if _is_pt_component(d["salary_component"]) and _is_pt_exempt(employee, start_date):
+                continue
             amount = flt(d["amount"], 2)
             if _is_pt_component(d["salary_component"]):
                 amount = 300.0 if current_month == "February" else 200.0
@@ -381,13 +425,33 @@ def _is_pt_component(comp_name):
     return (comp_name or "").strip() == PT_COMPONENT_NAME
 
 
-# ─── Statutory computation (internal) ────────────────────────────────────────
+def _is_pt_exempt(employee, start_date):
+    """
+    Returns True if the employee is exempt from Professional Tax.
+    Exemption rule: Senior citizens aged 65 years or above as of the
+    first day of the payroll month are fully exempt from PT regardless
+    of their Salary Structure Assignment setting.
+    """
+    if not employee or not start_date:
+        return False
+    try:
+        dob = frappe.db.get_value("Employee", employee, "date_of_birth")
+        if not dob:
+            dob = frappe.db.get_value("Company Link", employee, "date_of_birth") or \
+                  frappe.db.get_value("Employee",
+                      frappe.db.get_value("Company Link", employee, "employee"),
+                      "date_of_birth")
+        if not dob:
+            return False
+        from dateutil.relativedelta import relativedelta
+        slip_date = getdate(start_date)
+        age = relativedelta(slip_date, getdate(dob)).years
+        return age >= 65
+    except Exception:
+        return False
 
-MONTHS_LIST = [
-    "January", "February", "March", "April",
-    "May", "June", "July", "August",
-    "September", "October", "November", "December"
-]
+
+# ─── Statutory computation (internal, non-whitelisted) ───────────────────────
 
 SC_EMP_ESIC   = "Employee ESIC"
 SC_EMPR_ESIC  = "Employer ESIC"
@@ -408,17 +472,12 @@ def get_statutory_components_internal(company, gross_salary, earnings_map,
     VIRTUAL = {"Gross", "Gross Including Additional Salary"}
 
     def _sum_components(components, gross, emap):
-        total       = 0.0
-        matched_any = False
+        total = 0.0
         for comp in components:
             if comp in VIRTUAL:
                 total += flt(gross)
-                matched_any = True
             elif comp in emap:
                 total += flt(emap[comp])
-                matched_any = True
-        if not matched_any:
-            return flt(gross)
         return max(total, 0.0)
 
     def abbr(name):
@@ -435,35 +494,43 @@ def get_statutory_components_internal(company, gross_salary, earnings_map,
     deductions     = []
     employer_share = []
 
-    comp_doc   = frappe.get_doc("Company", company) if company else None
+    comp_doc = frappe.get_doc("Company", company) if company else None
+
     month_name = MONTHS_LIST[getdate(from_date).month - 1] if from_date else None
 
+    # ── ESIC ──────────────────────────────────────────────────
     if is_esic_applicable and comp_doc:
         esic_cfg = comp_doc.get_esic_config()
         if esic_cfg:
             esic_components = comp_doc._get_child_components("esic_dependent_component")
-            wage     = _sum_components(esic_components, gross_salary, earnings_map)
+            wage = _sum_components(esic_components, gross_salary, earnings_map)
+
             emp_pct  = flt(esic_cfg.get("employee_percent", 0))
             empr_pct = flt(esic_cfg.get("employer_percent", 0))
+
             if emp_pct:
                 deductions.append(row(SC_EMP_ESIC, wage * emp_pct / 100))
             if empr_pct:
                 employer_share.append(row(SC_EMPR_ESIC, wage * empr_pct / 100, employer=1))
 
+    # ── PF ────────────────────────────────────────────────────
     if is_pf_applicable and comp_doc:
         pf_cfg = comp_doc.get_pf_config()
         if pf_cfg:
             pf_components = comp_doc._get_child_components("pf_dependent_component")
             raw_wage = _sum_components(pf_components, gross_salary, earnings_map)
+
             if pf_type == "Limited PF" and pf_cfg.get("wage_limit"):
                 wage = min(raw_wage, flt(pf_cfg["wage_limit"]))
             else:
                 wage = raw_wage
+
             emp_pct  = flt(pf_cfg.get("employee_percent", 0))
             epf_pct  = flt(pf_cfg.get("employer_epf",    0))
             eps_pct  = flt(pf_cfg.get("employer_eps",    0))
             edli_pct = flt(pf_cfg.get("edli_insurance",  0))
             adm_pct  = flt(pf_cfg.get("admin_charges",   0))
+
             if emp_pct:
                 deductions.append(row(SC_EMP_PF,     wage * emp_pct  / 100))
             if epf_pct:
@@ -475,10 +542,12 @@ def get_statutory_components_internal(company, gross_salary, earnings_map,
             if adm_pct:
                 employer_share.append(row(SC_EMPR_PFADM, wage * adm_pct  / 100, employer=1))
 
+    # ── PT ────────────────────────────────────────────────────
     if is_pt_applicable and month_name:
         pt_amt = _special_component_amount_local(SC_PT, month_name)
         deductions.append(row(SC_PT, pt_amt))
 
+    # ── LWF ───────────────────────────────────────────────────
     if is_lwf_applicable and month_name:
         emp_lwf_amt  = _special_component_amount_local(SC_EMP_LWF,  month_name)
         empr_lwf_amt = _special_component_amount_local(SC_EMPR_LWF, month_name)
@@ -499,6 +568,85 @@ def _special_component_amount_local(component_name, month_name):
     except frappe.DoesNotExistError:
         pass
     return 0.0
+
+
+# ─── Loan & Advance Deductions Fetch ─────────────────────────────────────────
+# Called from Salary Slip JS when the form loads.
+# Returns all pending (is_deducted=0) loan/advance rows for the employee+month.
+#
+# CHANGE: Now also returns is_deferred (1/0) for each row.
+# - Deferred rows have amount=0 but is_deferred=1, so the Is Deferred
+#   checkbox in the Salary Slip deductions table will be checked.
+# - Normal rows have is_deferred=0 and a real deduction amount.
+
+@frappe.whitelist()
+def get_loan_advance_deductions(employee, start_date):
+    """
+    Fetch pending loan/advance deductions for the given employee and month.
+
+    Returns a list of dicts, each representing one deduction row to be
+    added to the Salary Slip deductions table. Only rows where
+    is_deducted = 0 are returned.
+
+    Loan-I / Loan-II : checks schedule rows for matching month label
+    Advance          : checks is_deducted flag on the doc itself
+
+    Each dict includes is_deferred (1 or 0):
+      - 1 = this month was deferred in the loan schedule (amount will be 0,
+            Is Deferred checkbox will be checked in the deductions table)
+      - 0 = normal deduction row (amount is the actual EMI)
+    """
+    if not employee or not start_date:
+        return []
+
+    d                = getdate(start_date)
+    slip_month_label = f"{MONTHS_LIST[d.month - 1]} {d.year}"  # e.g. "March 2026"
+
+    # Get all submitted Employee Loan Advance docs for this employee
+    records = frappe.db.get_all(
+        "Employee Loan Advance",
+        filters={
+            "employee":  employee,
+            "docstatus": 1,          # Only submitted docs
+        },
+        fields=["name", "type"]
+    )
+
+    deductions = []
+
+    for rec in records:
+        doc = frappe.get_doc("Employee Loan Advance", rec.name)
+
+        if doc.type in ("Loan-I", "Loan-II"):
+            # Look for a schedule row matching this slip's month
+            # that has not been deducted yet
+            for row in doc.schedule:
+                if row.month == slip_month_label and not row.is_deducted:
+                    deductions.append({
+                        "salary_component":  doc.type,                         # "Loan-I" or "Loan-II"
+                        "abbr":              "LI" if doc.type == "Loan-I" else "LII",
+                        "amount":            flt(row.deduction_amount),
+                        # is_deferred: 1 = this month was deferred (amount=0, checkbox shown checked)
+                        #              0 = normal EMI deduction
+                        "is_deferred":       1 if row.is_deferred else 0,
+                        "loan_advance_name": doc.name,                         # For reference/debug
+                        "schedule_row_name": row.name,
+                    })
+
+        elif doc.type == "Advance":
+            # Advance has no schedule — check is_deducted directly.
+            # Advance cannot be deferred, so is_deferred is always 0.
+            if not doc.is_deducted:
+                deductions.append({
+                    "salary_component":  "Advance",
+                    "abbr":              "ADV",
+                    "amount":            flt(doc.amount),
+                    "is_deferred":       0,                                    # Advance has no deferral concept
+                    "loan_advance_name": doc.name,
+                    "schedule_row_name": None,
+                })
+
+    return deductions
 
 
 # ─── Additional Components ────────────────────────────────────────────────────
@@ -545,9 +693,7 @@ def get_additional_components_api(employee, start_date):
         return {"earnings": [], "deductions": []}
     start_date_obj = getdate(start_date)
     year_str  = str(start_date_obj.year)
-    month_names = ["January","February","March","April","May","June",
-                   "July","August","September","October","November","December"]
-    month_str = month_names[start_date_obj.month - 1]
+    month_str = MONTHS_LIST[start_date_obj.month - 1]
     earnings, deductions = get_additional_components_for_employee(employee, year_str, month_str)
     return {"earnings": earnings, "deductions": deductions}
 
@@ -569,9 +715,7 @@ def get_variable_pay_percentage(employee, start_date):
         return None
     date_obj = getdate(start_date)
     year     = str(date_obj.year)
-    month_names = ["January","February","March","April","May","June",
-                   "July","August","September","October","November","December"]
-    month    = month_names[date_obj.month - 1]
+    month    = MONTHS_LIST[date_obj.month - 1]
     vpa_name = f"{year} - {month}"
     if not frappe.db.exists("Variable Pay Assignment", vpa_name):
         return None
@@ -593,9 +737,7 @@ def check_variable_pay_assignment(employee, start_date):
         return {"status": "ok"}
     date_obj = getdate(start_date)
     year     = str(date_obj.year)
-    month_names = ["January","February","March","April","May","June",
-                   "July","August","September","October","November","December"]
-    month    = month_names[date_obj.month - 1]
+    month    = MONTHS_LIST[date_obj.month - 1]
     vpa_name = f"{year} - {month}"
     if not frappe.db.exists("Variable Pay Assignment", vpa_name):
         return {
@@ -758,6 +900,7 @@ def calculate_salary_slip_amounts_exact(salary_slip, variable_pay_percentage,
 
     start_month = getdate(start_date).month if start_date else None
 
+    # ── Pass 1: earnings ──────────────────────────────────────
     for row in salary_slip.earnings:
         base = flt(row.base_amount if row.base_amount is not None else row.amount)
         row.base_amount = base
@@ -787,12 +930,18 @@ def calculate_salary_slip_amounts_exact(salary_slip, variable_pay_percentage,
 
     total_basic_da = basic_amount + da_amount
 
+    # ── Pass 2: deductions (employee share only) ──────────────
     for row in salary_slip.deductions:
         base = flt(row.base_amount if row.base_amount is not None else row.amount)
         row.base_amount = base
+        comp = (row.salary_component or "").lower()
 
         is_statutory = _is_statutory_component(row.salary_component)
         is_pt        = _is_pt_component(row.salary_component)
+
+        if is_pt and _is_pt_exempt(salary_slip.employee, start_date):
+            row.amount = 0.0
+            continue
 
         if is_pt:
             amount = 300.0 if start_month == 2 else 200.0
@@ -803,14 +952,17 @@ def calculate_salary_slip_amounts_exact(salary_slip, variable_pay_percentage,
         elif row.depends_on_payment_days and wd > 0 and base > 0:
             amount = (base / wd) * pd
         else:
+            # Loan-I, Loan-II, Advance and other fixed components —
+            # amount stays as-is, no proration needed
             amount = base
 
         row.amount        = flt(amount, 2)
         total_deductions += row.amount
 
-        if "retention" in (row.salary_component or "").lower():
+        if "retention" in comp:
             retention += row.amount
 
+    # ── Pass 3: employer share (fixed, never prorated) ────────
     for row in (salary_slip.employer_share or []):
         base = flt(row.base_amount if row.base_amount is not None else row.amount)
         row.base_amount = base
@@ -866,7 +1018,7 @@ def get_eligible_employees_for_salary_slip(company, year, month, category=None):
     all_active_employees = frappe.db.sql(f"""
         SELECT DISTINCT cl.name, cl.full_name AS employee_name,
             cl.department, cl.designation, cl.company,
-            cl.division, cl.requires_variable_pay, cl.category, cl.skill_type
+            cl.division, cl.requires_variable_pay
         FROM `tabCompany Link` cl
         WHERE cl.is_active = 1
           AND cl.company = %(company)s
@@ -1015,6 +1167,10 @@ def bulk_generate_salary_slips(employees, year, month):
 
             add_earnings, add_deductions = get_additional_components_for_employee(employee, year, month)
 
+            # Fetch loan/advance deductions for this employee + month.
+            # Each item now includes is_deferred so the row is saved correctly.
+            loan_advance_rows = get_loan_advance_deductions(employee, start_date)
+
             salary_slip = frappe.new_doc("Salary Slip")
             salary_slip.employee   = employee
             salary_slip.start_date = start_date
@@ -1087,6 +1243,20 @@ def bulk_generate_salary_slips(employees, year, month):
                 row.employer_contribution            = 0
                 row.depends_on_payment_days          = 0
                 row.depends_on_physical_working_days = 0
+
+            # Add loan/advance rows — fixed amount, no proration.
+            # is_deferred is saved so the Is Deferred checkbox is visible
+            # in the deductions table for months that were deferred.
+            for item in loan_advance_rows:
+                row = salary_slip.append('deductions', {})
+                row.salary_component                 = item.get('salary_component')
+                row.abbr                             = item.get('abbr', '')
+                row.amount                           = flt(item.get('amount'))
+                row.base_amount                      = flt(item.get('amount'))
+                row.employer_contribution            = 0
+                row.depends_on_payment_days          = 0    # Never prorate loan/advance
+                row.depends_on_physical_working_days = 0    # Never prorate loan/advance
+                row.is_deferred                      = int(item.get('is_deferred') or 0)  # Deferred status flag
 
             calculate_salary_slip_amounts_exact(
                 salary_slip, variable_pay_decimal, start_date, category,

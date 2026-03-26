@@ -1,0 +1,146 @@
+frappe.query_reports["Employee Loan Advance Ledger"] = {
+
+    // ----------------------------------------------------------------
+    //  Filters
+    // ----------------------------------------------------------------
+    filters: [
+        {
+            fieldname: "employee",
+            label: __("Employee"),
+            fieldtype: "Link",
+            options: "Employee",
+            default: frappe.defaults.get_default("employee") || "",
+        },
+        {
+            fieldname: "type",
+            label: __("Loan Type"),
+            fieldtype: "Select",
+            options: "\nLoan-I\nLoan-II\nAdvance",
+        },
+        {
+            fieldname: "status",
+            label: __("Status"),
+            fieldtype: "Select",
+            options: "\nActive\nCompleted",
+        },
+        {
+            fieldname: "view",
+            label: __("View"),
+            fieldtype: "Select",
+            options: "Summary\nDetail",
+            default: "Summary",
+            reqd: 1,
+        },
+    ],
+
+    // ----------------------------------------------------------------
+    //  On Load — add "Show Detail" button in toolbar
+    // ----------------------------------------------------------------
+    onload(report) {
+        report.page.add_inner_button(__("🔍 Show Detail"), function () {
+            frappe.query_report.set_filter_value("view", "Detail");
+            frappe.query_report.refresh();
+        });
+
+        report.page.add_inner_button(__("📋 Show Summary"), function () {
+            frappe.query_report.set_filter_value("view", "Summary");
+            frappe.query_report.refresh();
+        });
+    },
+
+    // ----------------------------------------------------------------
+    //  Formatter — colors for status, bold for total row
+    // ----------------------------------------------------------------
+    formatter(value, row, column, data, default_formatter) {
+        value = default_formatter(value, row, column, data);
+
+        if (!data) return value;
+
+        // Format float fields with ₹ symbol
+        const currency_fields = ["amount", "total_paid", "outstanding", "scheduled_amt", "actual_amt", "running_bal"];
+        if (currency_fields.includes(column.fieldname) && value !== "" && value !== undefined) {
+            const num = parseFloat((data[column.fieldname] || 0));
+            const formatted = "₹ " + num.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+            // Outstanding in red if > 0
+            if (column.fieldname === "outstanding" && num > 0) {
+                return `<span style="color:red; font-weight:600">${formatted}</span>`;
+            }
+            // Running balance green if zero
+            if (column.fieldname === "running_bal" && num === 0) {
+                return `<span style="color:green; font-weight:600">${formatted}</span>`;
+            }
+            // Bold for total row
+            if (data.loan_id === "TOTAL") {
+                return `<strong>${formatted}</strong>`;
+            }
+            return formatted;
+        }
+
+        // Bold grand total row (non-currency fields)
+        if (data.loan_id === "TOTAL") {
+            return `<strong style="font-size:13px">${value}</strong>`;
+        }
+
+        // Bold group header rows (loan ID rows in detail view)
+        if (data.is_group_row) {
+            return `<strong style="color:#1a73e8">${value}</strong>`;
+        }
+
+        // Status column coloring
+        if (column.fieldname === "status") {
+            const colors = {
+                "Active":    "orange",
+                "Completed": "green",
+                "Deducted":  "green",
+                "Deferred":  "#1a73e8",
+                "Pending":   "grey",
+            };
+            const color = colors[data.status] || "black";
+            const icons = {
+                "Active":    "🔄",
+                "Completed": "✅",
+                "Deducted":  "✅",
+                "Deferred":  "↪",
+                "Pending":   "⏳",
+            };
+            const icon = icons[data.status] || "";
+            return `<span style="color:${color}; font-weight:600">${icon} ${data.status || ""}</span>`;
+        }
+
+        // Deferred to — show in blue
+        if (column.fieldname === "deferred_to" && data.deferred_to) {
+            return `<span style="color:#1a73e8">→ ${data.deferred_to}</span>`;
+        }
+
+        return value;
+    },
+
+    // ----------------------------------------------------------------
+    //  Row click in Summary → switch to Detail for that loan's employee
+    // ----------------------------------------------------------------
+    get_datatable_options(options) {
+        return Object.assign(options, {
+            events: {
+                onCheckRow(data) {
+                    if (!data) return;
+
+                    const current_view = frappe.query_report.get_filter_value("view");
+                    if (current_view !== "Summary") return;
+
+                    // Find employee value from row data (index 1 = employee column)
+                    const employee_cell = data.find(
+                        cell => cell && cell.column && cell.column.fieldname === "employee"
+                    );
+
+                    if (employee_cell && employee_cell.content) {
+                        frappe.query_report.set_filter_value("employee", employee_cell.content);
+                    }
+
+                    frappe.query_report.set_filter_value("view", "Detail");
+                    frappe.query_report.refresh();
+                }
+            }
+        });
+    },
+};

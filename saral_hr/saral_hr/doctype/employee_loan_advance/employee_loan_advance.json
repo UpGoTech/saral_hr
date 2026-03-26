@@ -1,0 +1,196 @@
+{
+ "actions": [],
+ "autoname": "naming_series:",
+ "creation": "2026-03-23 15:18:16.876511",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "naming_series",
+  "employee",
+  "full_name",
+  "type",
+  "date",
+  "reason",
+  "currency",
+  "amount",
+  "column_break_puxg",
+  "tenure_months",
+  "start_month",
+  "start_year",
+  "installment_gap",
+  "monthly_deduction",
+  "outstanding_amount",
+  "is_deducted",
+  "section_break_uskz",
+  "schedule",
+  "amended_from"
+ ],
+ "fields": [
+  {
+   "default": "ELA-LI-.employee.-.YYYY.-.###",
+   "fieldname": "naming_series",
+   "fieldtype": "Select",
+   "hidden": 1,
+   "label": "Series",
+   "options": "ELA-LI-.employee.-.YYYY.-.###\nELA-LII-.employee.-.YYYY.-.###\nELA-ADV-.employee.-.YYYY.-.###"
+  },
+  {
+   "fieldname": "employee",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Employee",
+   "options": "Company Link",
+   "reqd": 1
+  },
+  {
+   "fieldname": "type",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "label": "Type",
+   "options": "\nLoan-I\nLoan-II\nAdvance",
+   "reqd": 1
+  },
+  {
+   "fieldname": "date",
+   "fieldtype": "Date",
+   "in_list_view": 1,
+   "label": "Date",
+   "reqd": 1
+  },
+  {
+   "fieldname": "reason",
+   "fieldtype": "Small Text",
+   "label": "Reason"
+  },
+  {
+   "default": "INR",
+   "fieldname": "currency",
+   "fieldtype": "Link",
+   "hidden": 1,
+   "label": "Currency",
+   "options": "Currency"
+  },
+  {
+   "fieldname": "amount",
+   "fieldtype": "Currency",
+   "in_list_view": 1,
+   "label": "Amount",
+   "options": "currency",
+   "reqd": 1
+  },
+  {
+   "depends_on": "eval: doc.type == 'Loan-I' || doc.type == 'Loan-II'",
+   "fieldname": "tenure_months",
+   "fieldtype": "Int",
+   "in_list_view": 1,
+   "label": "Tenure Months"
+  },
+  {
+   "depends_on": "eval: doc.type == 'Loan-I' || doc.type == 'Loan-II'",
+   "fieldname": "start_month",
+   "fieldtype": "Select",
+   "label": "Start Month",
+   "options": "\nJanuary\nFebruary\nMarch\nApril\nMay\nJune\nJuly\nAugust\nSeptember\nOctober\nNovember\nDecember"
+  },
+  {
+   "depends_on": "eval: doc.type == 'Loan-I' || doc.type == 'Loan-II'",
+   "fieldname": "start_year",
+   "fieldtype": "Select",
+   "label": "Start Year",
+   "options": "\n2024\n2025\n2026\n2027\n2028"
+  },
+  {
+   "default": "Monthly",
+   "depends_on": "eval: doc.type == 'Loan-I' || doc.type == 'Loan-II'",
+   "fieldname": "installment_gap",
+   "fieldtype": "Select",
+   "label": "Repayment Frequency",
+   "options": "\nMonthly\nBi-Monthly\nQuarterly"
+  },
+  {
+   "depends_on": "eval: doc.type == 'Loan-I' || doc.type == 'Loan-II'",
+   "fieldname": "monthly_deduction",
+   "fieldtype": "Currency",
+   "label": "Installment Amount",
+   "options": "currency",
+   "read_only": 1
+  },
+  {
+   "depends_on": "eval: doc.type == 'Loan-I' || doc.type == 'Loan-II'",
+   "fieldname": "outstanding_amount",
+   "fieldtype": "Currency",
+   "label": "Outstanding Amount",
+   "options": "currency",
+   "read_only": 1
+  },
+  {
+   "depends_on": "eval: doc.type == 'Loan-I' || doc.type == 'Loan-II'",
+   "fieldname": "schedule",
+   "fieldtype": "Table",
+   "label": "Schedule",
+   "options": "Employee Loan Advance Schedule"
+  },
+  {
+   "default": "0",
+   "depends_on": "eval: doc.type == 'Advance'",
+   "fieldname": "is_deducted",
+   "fieldtype": "Check",
+   "label": "Is Deducted"
+  },
+  {
+   "fieldname": "column_break_puxg",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "section_break_uskz",
+   "fieldtype": "Section Break"
+  },
+  {
+   "fieldname": "amended_from",
+   "fieldtype": "Link",
+   "label": "Amended From",
+   "no_copy": 1,
+   "options": "Employee Loan Advance",
+   "print_hide": 1,
+   "read_only": 1,
+   "search_index": 1
+  },
+  {
+   "fetch_from": "employee.full_name",
+   "fieldname": "full_name",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Full Name",
+   "reqd": 1
+  }
+ ],
+ "index_web_pages_for_search": 1,
+ "is_submittable": 1,
+ "links": [],
+ "modified": "2026-03-25 12:03:30.036607",
+ "modified_by": "Administrator",
+ "module": "Saral Hr",
+ "name": "Employee Loan Advance",
+ "naming_rule": "By \"Naming Series\" field",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "amend": 1,
+   "cancel": 1,
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "submit": 1,
+   "write": 1
+  }
+ ],
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": []
+}
