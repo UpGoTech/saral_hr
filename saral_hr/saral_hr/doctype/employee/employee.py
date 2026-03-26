@@ -25,6 +25,16 @@ class Employee(Document):
             )
             if duplicate:
                 frappe.throw(
-                    f"Aadhar Number <b>{self.aadhar_number}</b> already exists for Employee <b>{duplicate}</b>. "
-
+                    f"Aadhar Number <b>{self.aadhar_number}</b> already exists for Employee <b>{duplicate}</b>."
                 )
+
+        # ✅ Fetch and save active companies from Company Link
+        companies = frappe.get_all(
+            "Company Link",
+            filters={"employee": self.name, "is_active": 1},
+            fields=["company"]
+        )
+        if companies:
+            self.active_company = "\n".join([c.company for c in companies])
+        else:
+            self.active_company = ""
