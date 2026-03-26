@@ -13,6 +13,7 @@
   "base_amount",
   "depends_on_payment_days",
   "depends_on_physical_working_days",
+  "daily_wage_component",
   "employer_contribution"
  ],
  "fields": [
@@ -70,6 +71,15 @@
   },
   {
    "default": "0",
+   "fetch_from": "salary_component.daily_wage_component",
+   "fieldname": "daily_wage_component",
+   "fieldtype": "Check",
+   "in_list_view": 1,
+   "label": "Daily Wage",
+   "read_only": 1
+  },
+  {
+   "default": "0",
    "fetch_from": "salary_component.employer_contribution",
    "fieldname": "employer_contribution",
    "fieldtype": "Check",
@@ -81,7 +91,7 @@
  "index_web_pages_for_search": 1,
  "istable": 1,
  "links": [],
- "modified": "2026-03-12 00:00:00.000000",
+ "modified": "2026-03-26 00:00:00.000000",
  "modified_by": "Administrator",
  "module": "Saral Hr",
  "name": "Salary Details",

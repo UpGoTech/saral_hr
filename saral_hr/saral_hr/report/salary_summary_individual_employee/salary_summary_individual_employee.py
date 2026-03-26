@@ -156,28 +156,28 @@ def _get_data(f):
     earn_comps, emp_ded_comps, empr_comps = _get_components(w, p)
 
     cols = [
-        _col("Employee",        "employee",              w=110),
-        _col("Employee Name",   "employee_name",         w=160),
-        _col("Designation",     "designation",           w=120),
-        _col("Department",      "department",            w=120),
-        _col("Payment Days",    "payment_days",          "Float", 80,  precision=2),
-        _col("Present Days",    "present_days",          "Float", 80,  precision=2),
-        _col("Absent Days",     "absent_days",           "Float", 70,  precision=2),
-        _col("LWP",             "total_lwp",             "Float", 55,  precision=2),
-        _col("Earned Leaves",   "total_earned_leaves",   "Float", 70,  precision=2),
-        _col("Casual Leaves",   "total_casual_leaves",   "Float", 70,  precision=2),
-        _col("Comp Off",        "total_comp_off",        "Float", 70,  precision=2),
+        _col("Employee",        "employee",              w=150),
+        _col("Employee Name",   "employee_name",         w=200),
+        _col("Designation",     "designation",           w=150),
+        _col("Department",      "department",            w=150),
+        _col("Payment Days",    "payment_days",          "Float", 120,  precision=2),
+        _col("Present Days",    "present_days",          "Float", 120,  precision=2),
+        _col("Absent Days",     "absent_days",           "Float", 120,  precision=2),
+        _col("LWP",             "total_lwp",             "Float", 120,  precision=2),
+        _col("Earned Leaves",   "total_earned_leaves",   "Float", 160,  precision=2),
+        _col("Casual Leaves",   "total_casual_leaves",   "Float", 160,  precision=2),
+        _col("Comp Off",        "total_comp_off",        "Float", 120,  precision=2),
     ]
     for name, abbr in earn_comps:
-        cols.append(_col(f"{name} ({abbr})", _fn("e", abbr), "Float", 110, precision=2))
-    cols.append(_col("Gross Earnings",   "gross_earnings",   "Float", 110, precision=2))
+        cols.append(_col(f"{name} ({abbr})", _fn("e", abbr), "Float", 190, precision=2))
+    cols.append(_col("Gross Earnings",   "gross_earnings",   "Float", 190, precision=2))
     for name, abbr in emp_ded_comps:
-        cols.append(_col(f"{name} ({abbr})", _fn("d", abbr), "Float", 110, precision=2))
-    cols.append(_col("Total Deductions", "total_deductions", "Float", 110, precision=2))
+        cols.append(_col(f"{name} ({abbr})", _fn("d", abbr), "Float", 190, precision=2))
+    cols.append(_col("Total Deductions", "total_deductions", "Float", 190, precision=2))
     for name, abbr in empr_comps:
-        cols.append(_col(f"{name} ({abbr})", _fn("r", abbr), "Float", 110, precision=2))
-    cols.append(_col("Employer Total",   "employer_total",   "Float", 110, precision=2))
-    cols.append(_col("Net Salary",       "net_salary",       "Float", 110, precision=2))
+        cols.append(_col(f"{name} ({abbr})", _fn("r", abbr), "Float", 190, precision=2))
+    cols.append(_col("Employer Total",   "employer_total",   "Float", 190, precision=2))
+    cols.append(_col("Net Salary",       "net_salary",       "Float", 190, precision=2))
 
     slips = frappe.db.sql(
         f"""

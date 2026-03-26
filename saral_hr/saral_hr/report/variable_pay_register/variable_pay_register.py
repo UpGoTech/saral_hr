@@ -113,12 +113,12 @@ def _fmt(v):
 
 def _get_data(f):
     cols = [
-        _col("Employee ID",            "employee_id",            w=140),
-        _col("Employee Name",          "employee_name",          w=200),
-        _col("Division",               "division",               w=130),
-        _col("Monthly Variable Pay",   "monthly_variable_pay",   "Float", 160, precision=2),
-        _col("Variable Pay %",         "variable_pay_percentage","Percent", 110),
-        _col("Variable Pay Amount",    "variable_pay_amount",    "Float", 160, precision=2),
+        _col("Employee ID",            "employee_id",            w=200),
+        _col("Employee Name",          "employee_name",          w=300),
+        _col("Division",               "division",               w=200),
+        _col("Monthly Variable Pay",   "monthly_variable_pay",   "Float", 180, precision=2),
+        _col("Variable Pay %",         "variable_pay_percentage","Percent", 130),
+        _col("Variable Pay Amount",    "variable_pay_amount",    "Float", 200, precision=2),
     ]
 
     if not f.get("company"):

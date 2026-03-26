@@ -35,23 +35,17 @@ class SalaryComponent(Document):
 
     # ──────────────────────────────────────────────
     # Monthly amounts — ensure all 12 months exist
-    # in correct Jan→Dec order when special component
     # ──────────────────────────────────────────────
 
     def _populate_monthly_amounts(self):
         if not self.is_special_component:
-            # Clear rows if the flag is turned off
             self.monthly_amounts = []
             return
 
-        # Build a map of existing rows keyed by month name
         existing = {row.month: row for row in (self.monthly_amounts or [])}
-
-        # Rebuild the table in strict Jan→Dec order,
-        # preserving any amounts the user has already entered
         self.monthly_amounts = []
         for month in MONTHS:
-            row = self.append("monthly_amounts", {
+            self.append("monthly_amounts", {
                 "month":  month,
                 "amount": existing[month].amount if month in existing else 0,
             })
@@ -61,13 +55,6 @@ class SalaryComponent(Document):
     # ──────────────────────────────────────────────
 
     def get_amount_for_month(self, month_name: str) -> float:
-        """
-        Return the configured amount for a given month name.
-        Used during payroll to fetch the correct monthly value.
-
-        :param month_name: e.g. 'March'
-        :return: float amount (0.0 if not found)
-        """
         if not self.is_special_component:
             return 0.0
         for row in (self.monthly_amounts or []):
@@ -80,22 +67,27 @@ class SalaryComponent(Document):
     # ──────────────────────────────────────────────
 
     def _sync_flags_to_salary_details(self):
-        """Push updated payment-day flags to every Salary Details row
-        that references this component."""
+        """Push updated payment-day flags AND daily_wage_component flag
+        to every Salary Details row that references this component."""
         try:
             existing_columns = set(frappe.db.get_table_columns("Salary Details"))
         except Exception:
             return
 
-        required = {"depends_on_payment_days", "depends_on_physical_working_days"}
-        if not required.issubset(existing_columns):
+        updates = {}
+
+        if {"depends_on_payment_days", "depends_on_physical_working_days"}.issubset(existing_columns):
+            updates["depends_on_payment_days"]          = self.depends_on_payment_days or 0
+            updates["depends_on_physical_working_days"] = self.depends_on_physical_working_days or 0
+
+        if "daily_wage_component" in existing_columns:
+            updates["daily_wage_component"] = self.daily_wage_component or 0
+
+        if not updates:
             return
 
         frappe.db.set_value(
             "Salary Details",
             {"salary_component": self.salary_component},
-            {
-                "depends_on_payment_days":          self.depends_on_payment_days or 0,
-                "depends_on_physical_working_days": self.depends_on_physical_working_days or 0,
-            }
+            updates
         )

@@ -9,6 +9,7 @@
  "field_order": [
   "employee",
   "employee_name",
+  "status",
   "column_break_ngyh",
   "currency",
   "company",
@@ -51,7 +52,6 @@
   {
    "fieldname": "employee",
    "fieldtype": "Link",
-   "in_list_view": 1,
    "in_standard_filter": 1,
    "label": "Employee",
    "options": "Company Link",
@@ -64,6 +64,14 @@
    "fieldtype": "Data",
    "in_list_view": 1,
    "label": "Employee Name",
+   "read_only": 1
+  },
+  {
+   "fieldname": "status",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "label": "Status",
+   "options": "Draft\nSubmitted\nCancelled",
    "read_only": 1
   },
   {
@@ -311,7 +319,7 @@
  "index_web_pages_for_search": 1,
  "is_submittable": 1,
  "links": [],
- "modified": "2026-03-20 00:00:00.000000",
+ "modified": "2026-03-25 00:00:00.000000",
  "modified_by": "Administrator",
  "module": "Saral Hr",
  "name": "Salary Structure Assignment",

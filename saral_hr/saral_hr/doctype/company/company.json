@@ -50,7 +50,9 @@
   "pf_employer_epf",
   "pf_employer_eps",
   "pf_edli_insurance",
-  "pf_admin_charges"
+  "pf_admin_charges",
+  "section_break_nrnf",
+  "daily_wage_multiplier"
  ],
  "fields": [
   {
@@ -223,7 +225,8 @@
    "description": "For reference only. Not used in ESIC calculation.",
    "fieldname": "esic_wage_limit",
    "fieldtype": "Currency",
-   "label": "ESIC Wage Limit (Reference Only)"
+   "label": "ESIC Wage Limit (Reference Only)",
+   "precision": "2"
   },
   {
    "fieldname": "column_break_esic_rates",
@@ -238,8 +241,7 @@
   {
    "fieldname": "esic_employer_contribution",
    "fieldtype": "Float",
-   "label": "Employer Contribution %",
-   "precision": "2"
+   "label": "Employer Contribution %"
   },
   {
    "description": "Add the Earning components used to compute the PF wage basis. Formula: sum of all listed components. For Limited PF employees the result is capped at the wage limit below.",
@@ -298,11 +300,22 @@
    "fieldtype": "Float",
    "label": "Employer Admin Charges %",
    "precision": "2"
+  },
+  {
+   "description": "Enter the count to be multiplied for daily wage employees",
+   "fieldname": "daily_wage_multiplier",
+   "fieldtype": "Float",
+   "label": "Working Days Per Month",
+   "precision": "2"
+  },
+  {
+   "fieldname": "section_break_nrnf",
+   "fieldtype": "Section Break"
   }
  ],
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-03-12 20:16:49.484549",
+ "modified": "2026-03-26 16:03:03.631656",
  "modified_by": "Administrator",
  "module": "Saral Hr",
  "name": "Company",

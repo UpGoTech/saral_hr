@@ -60,10 +60,10 @@ def execute(filters=None):
     filters = filters or {}
 
     columns = [
-        {"label": "Employee ID",   "fieldname": "employee",      "width": 140},
-        {"label": "Employee Name", "fieldname": "employee_name", "width": 200},
-        {"label": "Net Salary",    "fieldname": "net_salary",    "fieldtype": "Float", "width": 120},
-        {"label": "Income Tax",    "fieldname": "income_tax",    "fieldtype": "Float", "width": 120},
+        {"label": "Employee ID",   "fieldname": "employee",      "width": 300},
+        {"label": "Employee Name", "fieldname": "employee_name", "width": 300},
+        {"label": "Net Salary",    "fieldname": "net_salary",    "fieldtype": "Float", "width": 200},
+        {"label": "Income Tax",    "fieldname": "income_tax",    "fieldtype": "Float", "width": 250},
     ]
 
     data       = []

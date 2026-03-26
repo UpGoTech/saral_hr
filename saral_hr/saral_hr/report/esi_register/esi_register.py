@@ -100,17 +100,16 @@ def _fmt(v):
 
 def _get_data(f):
     cols = [
-        _col("Sr",              "sr",              w=40),
-        _col("ESI No.",         "esic_number",     w=150),
+        _col("ESI No.",         "esic_number",     w=200),
         _col("Employee Name",   "employee_name",   w=180),
-        _col("Employee ID",     "employee_id",     w=110),
-        _col("Days Paid",       "days_paid",       "Float", 80,  precision=2),
-        _col("Gross Salary",    "gross_salary",    "Float", 120, precision=2),
-        _col("Emp ESIC",        "emp_esi",         "Float", 110, precision=2),
-        _col("Empr ESIC",       "empr_esi",        "Float", 110, precision=2),
-        _col("Total ESI",       "total_esi",       "Float", 110, precision=2),
-        _col("DOJ",             "date_of_joining", "Date",  100),
-        _col("DOB",             "date_of_birth",   "Date",  100),
+        _col("Employee ID",     "employee_id",     w=130),
+        _col("Days Paid",       "days_paid",       "Float", 50,  precision=2),
+        _col("Gross Salary",    "gross_salary",    "Float", 110, precision=2),
+        _col("Emp ESIC",        "emp_esi",         "Float", 100, precision=2),
+        _col("Empr ESIC",       "empr_esi",        "Float", 100, precision=2),
+        _col("Total ESI",       "total_esi",       "Float", 100, precision=2),
+        _col("DOJ",             "date_of_joining", "Date",  120),
+        _col("DOB",             "date_of_birth",   "Date",  120),
     ]
 
     if not f.get("company"):
@@ -164,7 +163,7 @@ def _get_data(f):
 
     data      = []
     gg = ge = gr = 0.0
-    sr_counter = 1
+
 
     for s in slips:
         ei  = flt(emp_m.get(s.slip,  0))
@@ -176,7 +175,6 @@ def _get_data(f):
         ge += ei
         gr += eri
         data.append({
-            "sr":              sr_counter,
             "esic_number":     s.esic_number      or "-",
             "employee_id":     s.eid              or s.employee,
             "employee_name":   s.employee_name,
@@ -188,11 +186,11 @@ def _get_data(f):
             "date_of_joining": s.date_of_joining,
             "date_of_birth":   s.date_of_birth,
         })
-        sr_counter += 1
+        
 
     if data:
         data.append({
-            "sr": "", "esic_number": "", "employee_id": "",
+            "esic_number": "", "employee_id": "",
             "employee_name":   "Total",
             "days_paid":       "",
             "gross_salary":    flt(gg, 2),
@@ -216,7 +214,7 @@ def execute(filters=None):
 # ---------------------------------------------------------------------------
 
 # Numeric fields (right-aligned)
-_RIGHT_FIELDS = {"sr", "days_paid", "gross_salary", "emp_esi", "empr_esi", "total_esi"}
+_RIGHT_FIELDS = {"days_paid", "gross_salary", "emp_esi", "empr_esi", "total_esi"}
 
 
 def _build_html(cols, data, co, mo, yr):

@@ -162,24 +162,24 @@ def _get_data(f):
     earn_comps, emp_ded_comps, empr_comps = _get_components(w, p)
 
     cols = [
-        _col("Employee",      "employee",      w=110),
-        _col("Employee Name", "employee_name", w=160),
-        _col("Payment Days",  "payment_days",  "Float", 80,  precision=2),
-        _col("Absent Days",   "absent_days",   "Float", 70,  precision=2),
-        _col("LWP",           "total_lwp",     "Float", 55,  precision=2),
+        _col("Employee",      "employee",      w=150),
+        _col("Employee Name", "employee_name", w=200),
+        _col("Payment Days",  "payment_days",  "Float", 120,  precision=2),
+        _col("Absent Days",   "absent_days",   "Float", 120,  precision=2),
+        _col("LWP",           "total_lwp",     "Float", 120,  precision=2),
     ]
     for name, abbr in earn_comps:
-        cols.append(_col(f"{name} ({abbr})", _fn("e", abbr), "Float", 110, precision=2))
-    cols.append(_col("Gross Earnings", "gross_earnings", "Float", 110, precision=2))
+        cols.append(_col(f"{name} ({abbr})", _fn("e", abbr), "Float", 180, precision=2))
+    cols.append(_col("Gross Earnings", "gross_earnings", "Float", 180, precision=2))
 
     for name, abbr in emp_ded_comps:
-        cols.append(_col(f"{name} ({abbr})", _fn("d", abbr), "Float", 110, precision=2))
-    cols.append(_col("Total Deductions", "total_deductions", "Float", 110, precision=2))
+        cols.append(_col(f"{name} ({abbr})", _fn("d", abbr), "Float", 180, precision=2))
+    cols.append(_col("Total Deductions", "total_deductions", "Float", 180, precision=2))
 
     for name, abbr in empr_comps:
-        cols.append(_col(f"{name} ({abbr})", _fn("r", abbr), "Float", 110, precision=2))
-    cols.append(_col("Employer Total", "employer_total", "Float", 110, precision=2))
-    cols.append(_col("Net Salary", "net_salary", "Float", 110, precision=2))
+        cols.append(_col(f"{name} ({abbr})", _fn("r", abbr), "Float", 180, precision=2))
+    cols.append(_col("Employer Total", "employer_total", "Float", 180, precision=2))
+    cols.append(_col("Net Salary", "net_salary", "Float", 180, precision=2))
 
     slips = frappe.db.sql(
         f"""

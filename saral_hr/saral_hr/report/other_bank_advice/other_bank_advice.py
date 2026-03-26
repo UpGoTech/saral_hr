@@ -109,12 +109,12 @@ def _on_hold(f):
 
 def _get_data(f):
     cols = [
-        _col("Employee ID",    "employee_id",    w=120),
-        _col("Employee Name",  "employee_name",  w=200),
-        _col("IFSC Code",      "ifsc_code",      w=130),
-        _col("Account Number", "account_number", w=160),
+        _col("Employee ID",    "employee_id",    w=150),
+        _col("Employee Name",  "employee_name",  w=280),
+        _col("IFSC Code",      "ifsc_code",      w=200),
+        _col("Account Number", "account_number", w=280),
         _col("Net Salary",     "net_salary",     "Data", 120),
-        _col("Bank Name",      "bank_name",      w=150),
+        _col("Bank Name",      "bank_name",      w=190),
     ]
 
     if not f.get("company"):

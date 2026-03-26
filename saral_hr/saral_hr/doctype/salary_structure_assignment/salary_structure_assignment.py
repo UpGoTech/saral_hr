@@ -29,7 +29,12 @@ SC_EMPR_LWF   = "Employer Labour Welfare Fund"
 
 class SalaryStructureAssignment(Document):
 
+    def before_save(self):
+        self.status = "Draft"
+
     def on_submit(self):
+        self.status = "Submitted"
+        self.db_set("status", "Submitted")
         _check_overlap(
             employee=self.employee,
             from_date=self.from_date,
@@ -40,7 +45,8 @@ class SalaryStructureAssignment(Document):
         )
 
     def on_cancel(self):
-        pass
+        self.status = "Cancelled"
+        self.db_set("status", "Cancelled")
 
 
 @frappe.whitelist()
@@ -178,16 +184,8 @@ def _special_component_constant_amount(component_name):
     return 0.0
 
 
-# ─────────────────────────────────────────────────────────────
-#  NEW: SRR lookup for Salary Structure Assignment
-# ─────────────────────────────────────────────────────────────
-
 @frappe.whitelist()
 def get_srr_for_ssa(start_date, skill_type):
-    """
-    Finds submitted Skill Rate Revision covering start_date.
-    Returns vbasic + vda for the given skill_type, or None if not found.
-    """
     MONTH_NUM = {
         "January": 1, "February": 2, "March": 3,  "April": 4,
         "May": 5,     "June": 6,     "July": 7,    "August": 8,
@@ -230,10 +228,6 @@ def get_srr_for_ssa(start_date, skill_type):
 
     return None
 
-
-# ─────────────────────────────────────────────────────────────
-#  Overlap helpers
-# ─────────────────────────────────────────────────────────────
 
 @frappe.whitelist()
 def check_overlap(employee, from_date, to_date=None, employee_name=None,

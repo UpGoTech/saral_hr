@@ -107,11 +107,11 @@ def _fmt(v):
 
 def _get_data(f):
     cols = [
-        _col("Employee ID",              "employee_id",       w=140),
-        _col("Employee Name",            "employee_name",     w=200),
-        _col("Date of Joining",          "date_of_joining",   "Date", 120),
-        _col("Deduction Upto (3 Yrs)",   "ded_upto",          "Date", 150),
-        _col("Retention Amount",         "retention_amount",  "Float", 150, precision=2),
+        _col("Employee ID",              "employee_id",       w=250),
+        _col("Employee Name",            "employee_name",     w=280),
+        _col("Date of Joining",          "date_of_joining",   "Date", 200),
+        _col("Deduction Upto (3 Yrs)",   "ded_upto",          "Date", 270),
+        _col("Retention Amount",         "retention_amount",  "Float", 210, precision=2),
     ]
 
     if not f.get("company"):

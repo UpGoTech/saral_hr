@@ -94,8 +94,8 @@ def _get_data(f):
     mn = MONTH_MAP.get(ms)
 
     cols = [
-        _col("Employee ID",   "employee",      w=110),
-        _col("Employee Name", "employee_name", w=160),
+        _col("Employee ID",   "employee",      w=150),
+        _col("Employee Name", "employee_name", w=250),
     ]
 
     if not mn or not ys:
@@ -108,7 +108,7 @@ def _get_data(f):
 
     for d in range(1, last + 1):
         cols.append({"label": str(d), "fieldname": f"day_{d}",
-                     "fieldtype": "Data", "width": 18})
+                     "fieldtype": "Data", "width": 50})
 
     SUMM_COLS = [
         ("P",   "present_days"),
@@ -124,7 +124,7 @@ def _get_data(f):
         ("LWP", "lwp_days"),
     ]
     for lbl, fn in SUMM_COLS:
-        cols.append(_col(lbl, fn, "Float", 25, precision=2))
+        cols.append(_col(lbl, fn, "Float", 70, precision=2))
 
     cos = _parse_list(f.get("company"))
     if not cos:

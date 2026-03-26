@@ -98,11 +98,11 @@ def _div_cond(f, p):
 
 def _get_data(f):
     cols = [
-        _col("Sr",            "sr",            w=50),
-        _col("Employee ID",   "employee_id",   w=140),
-        _col("Employee Name", "employee_name", w=220),
-        _col("Gross Salary",  "gross_salary",  "Float", 150, precision=2),
-        _col("PT Amount (Rs.)", "pt_amount",   "Float", 140, precision=2),
+        _col("Employee ID",     "employee_id",   w=250),
+        _col("Employee Name",   "employee_name", w=280),
+        _col("PT Type",         "pt_type",       w=200),
+        _col("Gross Salary",    "gross_salary",  "Float", 270, precision=2),
+        _col("PT Amount (Rs.)", "pt_amount",     "Float", 210, precision=2),
     ]
 
     if not f.get("company"):
@@ -130,6 +130,7 @@ def _get_data(f):
 
     sn = tuple(s.slip for s in slips)
 
+    # PT amounts per slip
     pm = {}
     for r in frappe.db.sql(
         """
@@ -145,31 +146,53 @@ def _get_data(f):
     ):
         pm[r.slip] = flt(r.a)
 
+    # PT Type (pf_applicable) from the active Salary Structure Assignment
+    # for each employee, valid on the slip's start_date
+    sd = p.get("start_date", "")
+    eids = list({s.employee for s in slips})
+    pt_type_map = {}
+    if eids and sd:
+        for r in frappe.db.sql(
+            """
+            SELECT ssa.employee, ssa.pf_applicable
+            FROM `tabSalary Structure Assignment` ssa
+            WHERE ssa.employee IN %(eids)s
+              AND ssa.docstatus = 1
+              AND ssa.from_date <= %(sd)s
+              AND (ssa.to_date IS NULL OR ssa.to_date >= %(sd)s)
+            ORDER BY ssa.from_date DESC
+            """,
+            {"eids": tuple(eids), "sd": sd},
+            as_dict=1
+        ):
+            # Keep the most recent assignment (ORDER BY from_date DESC, first wins)
+            if r.employee not in pt_type_map:
+                pt_type_map[r.employee] = r.pf_applicable or ""
+
     data = []
     gg = gp = 0.0
-    sr_counter = 1
 
     for s in slips:
         pt = flt(pm.get(s.slip, 0))
         if pt <= 0:
             continue
-        gross = flt(s.gross_salary, 2)
+        gross   = flt(s.gross_salary, 2)
+        pt_type = pt_type_map.get(s.employee, "")
         gg += gross
         gp += pt
         data.append({
-            "sr":            sr_counter,
             "employee_id":   s.employee,
             "employee_name": s.employee_name,
+            "pt_type":       pt_type,
             "gross_salary":  gross,
             "pt_amount":     pt,
         })
-        sr_counter += 1
 
     if data:
         data.append({
-            "sr":            "",
             "employee_id":   "",
             "employee_name": "Total",
+            "pt_type":       "",
             "gross_salary":  flt(gg, 2),
             "pt_amount":     flt(gp, 2),
             "bold":          1,
@@ -220,6 +243,12 @@ ROW_COLOURS = ["#ffffff", "#f0f0f0"]
 PAD         = "padding:7px 9px;"
 FS          = "font-size:13px;"
 
+# Fields that are numeric and should be right-aligned + formatted
+NUM_FIELDS   = {"gross_salary", "pt_amount"}
+RIGHT_FIELDS = NUM_FIELDS
+# Fields to blank on total row
+SKIP_ON_TOTAL = {"pt_type"}
+
 
 def _build_html(cols, data, co, mo, yr):
     hdr = (
@@ -240,10 +269,6 @@ def _build_html(cols, data, co, mo, yr):
 
     detail_rows = [r for r in data if not r.get("bold")]
     total_row   = next((r for r in data if r.get("bold")), None)
-
-    # Column field types for alignment
-    NUM_FIELDS = {"gross_salary", "pt_amount"}
-    RIGHT_FIELDS = {"sr"} | NUM_FIELDS
 
     # ── thead ──────────────────────────────────────────────────────────
     def _thead():
@@ -269,10 +294,15 @@ def _build_html(cols, data, co, mo, yr):
             fn    = c["fieldname"]
             val   = row.get(fn, "")
             align = "right" if fn in RIGHT_FIELDS else "left"
-            if fn in NUM_FIELDS:
+
+            # Blank certain cols on total row
+            if is_total and fn in SKIP_ON_TOTAL:
+                disp = ""
+            elif fn in NUM_FIELDS:
                 disp = _fmt(val) if val not in ("", None) else ""
             else:
                 disp = str(val) if val not in ("", None) else ""
+
             h += (
                 f'<td style="border:{B};{PAD}{FS}{fw}'
                 f'background:{bg};text-align:{align};vertical-align:middle;">'
@@ -289,7 +319,6 @@ def _build_html(cols, data, co, mo, yr):
         body += _row(total_row, 0, is_total=True)
     body += '</tbody>'
 
-    # ── page footer ────────────────────────────────────────────────────
     pg_footer = (
         '<div style="text-align:right;font-size:12px;color:#444;'
         'margin-top:6px;padding-right:2px;">Page 1 of 1</div>'

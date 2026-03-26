@@ -14,6 +14,7 @@
   "type",
   "depends_on_payment_days",
   "depends_on_physical_working_days",
+  "daily_wage_component",
   "employer_contribution",
   "is_special_component",
   "section_monthly_amounts",
@@ -84,7 +85,7 @@
   },
   {
    "depends_on": "eval:doc.is_special_component == 1",
-   "description": "Enter the fixed amount for each calendar month. Rows are pre-populated January to December. Amounts are applied as-is during payroll — no proration.",
+   "description": "Enter the fixed amount for each calendar month. Rows are pre-populated January to December. Amounts are applied as-is during payroll \u2014 no proration.",
    "fieldname": "section_monthly_amounts",
    "fieldtype": "Section Break",
    "label": "Monthly Amounts"
@@ -95,11 +96,18 @@
    "fieldtype": "Table",
    "label": "Monthly Amounts",
    "options": "Special Salary Component"
+  },
+  {
+   "default": "0",
+   "description": "For employees whose components are daily wage ",
+   "fieldname": "daily_wage_component",
+   "fieldtype": "Check",
+   "label": "Daily Wage Component"
   }
  ],
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-03-12 00:00:00.000000",
+ "modified": "2026-03-26 15:39:39.069780",
  "modified_by": "Administrator",
  "module": "Saral Hr",
  "name": "Salary Component",
