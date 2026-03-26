@@ -29,21 +29,36 @@ def execute(filters=None):
 
 
 # ==================================================================
+#  Helper — fetch employee full name
+# ==================================================================
+
+def get_employee_name(employee_id):
+    if not employee_id:
+        return ""
+    name = frappe.db.get_value("Employee", employee_id, "employee")
+    if not name:
+        # fallback: combine first + last name
+        emp = frappe.db.get_value("Employee", employee_id, ["first_name", "last_name"], as_dict=True)
+        if emp:
+            name = "{} {}".format(emp.get("first_name") or "", emp.get("last_name") or "").strip()
+    return name or employee_id
+
+# ==================================================================
 #  SUMMARY VIEW
 # ==================================================================
 
 def get_summary_columns():
     return [
-        {"label": _("Loan ID"),       "fieldname": "loan_id",       "fieldtype": "Link",     "options": "Employee Loan Advance", "width": 160},
-        {"label": _("Employee"),      "fieldname": "employee",      "fieldtype": "Link",     "options": "Employee",              "width": 120},
-        {"label": _("Employee Name"), "fieldname": "employee_name", "fieldtype": "Data",                                         "width": 160},
-        {"label": _("Type"),          "fieldname": "type",          "fieldtype": "Data",                                         "width": 90},
+        {"label": _("Loan ID"),       "fieldname": "loan_id",       "fieldtype": "Link",  "options": "Employee Loan Advance", "width": 160},
+        {"label": _("Employee"),      "fieldname": "employee",      "fieldtype": "Link",  "options": "Employee",              "width": 120},
+        {"label": _("Employee Name"), "fieldname": "employee_name", "fieldtype": "Data",                                      "width": 160},
+        {"label": _("Type"),          "fieldname": "type",          "fieldtype": "Data",                                      "width": 90},
         {"label": _("Loan Amount"),   "fieldname": "amount",        "fieldtype": "Float",                                     "width": 130},
-        {"label": _("Frequency"),     "fieldname": "frequency",     "fieldtype": "Data",                                         "width": 110},
-        {"label": _("Start"),         "fieldname": "start",         "fieldtype": "Data",                                         "width": 120},
+        {"label": _("Frequency"),     "fieldname": "frequency",     "fieldtype": "Data",                                      "width": 110},
+        {"label": _("Start"),         "fieldname": "start",         "fieldtype": "Data",                                      "width": 120},
         {"label": _("Total Paid"),    "fieldname": "total_paid",    "fieldtype": "Float",                                     "width": 130},
         {"label": _("Outstanding"),   "fieldname": "outstanding",   "fieldtype": "Float",                                     "width": 130},
-        {"label": _("Status"),        "fieldname": "status",        "fieldtype": "Data",                                         "width": 100},
+        {"label": _("Status"),        "fieldname": "status",        "fieldtype": "Data",                                      "width": 100},
     ]
 
 
@@ -54,7 +69,6 @@ def get_summary_data(filters):
         SELECT
             ela.name             AS loan_id,
             ela.employee         AS employee,
-            emp.employee_name    AS employee_name,
             ela.type             AS type,
             ela.amount           AS amount,
             ela.installment_gap  AS frequency,
@@ -67,26 +81,26 @@ def get_summary_data(filters):
         FROM
             `tabEmployee Loan Advance` ela
         LEFT JOIN
-            `tabEmployee` emp ON emp.name = ela.employee
-        LEFT JOIN
             `tabEmployee Loan Advance Schedule` s ON s.parent = ela.name
         WHERE
             ela.docstatus = 1
             {conditions}
         GROUP BY
-            ela.name
+            ela.name, ela.employee, ela.type, ela.amount,
+            ela.installment_gap, ela.start_month, ela.start_year
         ORDER BY
             ela.employee, ela.creation
     """.format(conditions=conditions), filters, as_dict=True)
 
-    data = []
+    data              = []
     grand_amount      = 0
     grand_paid        = 0
     grand_outstanding = 0
 
     for loan in loans:
-        outstanding = round(loan.amount - loan.total_paid, 2)
-        status      = "Completed" if outstanding <= 0 else "Active"
+        outstanding   = round(loan.amount - loan.total_paid, 2)
+        status        = "Completed" if outstanding <= 0 else "Active"
+        employee_name = get_employee_name(loan.employee)
 
         grand_amount      += loan.amount
         grand_paid        += loan.total_paid
@@ -95,7 +109,7 @@ def get_summary_data(filters):
         data.append({
             "loan_id":       loan.loan_id,
             "employee":      loan.employee,
-            "employee_name": loan.employee_name,
+            "employee_name": employee_name,
             "type":          loan.type,
             "amount":        loan.amount,
             "frequency":     loan.frequency,
@@ -129,14 +143,14 @@ def get_summary_data(filters):
 
 def get_detail_columns():
     return [
-        {"label": _("Loan ID"),         "fieldname": "loan_id",       "fieldtype": "Link",     "options": "Employee Loan Advance", "width": 160},
-        {"label": _("Employee Name"),   "fieldname": "employee_name", "fieldtype": "Data",                                         "width": 150},
-        {"label": _("Type"),            "fieldname": "type",          "fieldtype": "Data",                                         "width": 90},
-        {"label": _("Month"),           "fieldname": "month",         "fieldtype": "Data",                                         "width": 130},
+        {"label": _("Loan ID"),         "fieldname": "loan_id",       "fieldtype": "Link",  "options": "Employee Loan Advance", "width": 160},
+        {"label": _("Employee Name"),   "fieldname": "employee_name", "fieldtype": "Data",                                      "width": 150},
+        {"label": _("Type"),            "fieldname": "type",          "fieldtype": "Data",                                      "width": 90},
+        {"label": _("Month"),           "fieldname": "month",         "fieldtype": "Data",                                      "width": 130},
         {"label": _("Base EMI"),        "fieldname": "scheduled_amt", "fieldtype": "Float",                                     "width": 130},
         {"label": _("Actual Deducted"), "fieldname": "actual_amt",    "fieldtype": "Float",                                     "width": 140},
-        {"label": _("Status"),          "fieldname": "status",        "fieldtype": "Data",                                         "width": 120},
-        {"label": _("Deferred To"),     "fieldname": "deferred_to",   "fieldtype": "Data",                                         "width": 130},
+        {"label": _("Status"),          "fieldname": "status",        "fieldtype": "Data",                                      "width": 120},
+        {"label": _("Deferred To"),     "fieldname": "deferred_to",   "fieldtype": "Data",                                      "width": 130},
         {"label": _("Running Balance"), "fieldname": "running_bal",   "fieldtype": "Float",                                     "width": 140},
     ]
 
@@ -147,7 +161,7 @@ def get_detail_data(filters):
     rows = frappe.db.sql("""
         SELECT
             ela.name              AS loan_id,
-            emp.employee_name     AS employee_name,
+            ela.employee          AS employee,
             ela.type              AS type,
             ela.amount            AS amount,
             ela.monthly_deduction AS base_emi,
@@ -159,8 +173,6 @@ def get_detail_data(filters):
             s.idx                 AS idx
         FROM
             `tabEmployee Loan Advance` ela
-        LEFT JOIN
-            `tabEmployee` emp ON emp.name = ela.employee
         JOIN
             `tabEmployee Loan Advance Schedule` s ON s.parent = ela.name
         WHERE
@@ -170,12 +182,18 @@ def get_detail_data(filters):
             ela.employee, ela.creation, s.idx
     """.format(conditions=conditions), filters, as_dict=True)
 
-    data         = []
-    loan_balance = {}
-    loan_paid    = {}
+    data          = []
+    loan_balance  = {}
+    loan_paid     = {}
+    loan_emp_name = {}
 
     for row in rows:
         lid = row.loan_id
+
+        if lid not in loan_emp_name:
+            loan_emp_name[lid] = get_employee_name(row.employee)
+
+        emp_name = loan_emp_name[lid]
 
         if lid not in loan_balance:
             loan_balance[lid] = row.amount
@@ -183,7 +201,7 @@ def get_detail_data(filters):
 
             data.append({
                 "loan_id":       lid,
-                "employee_name": row.employee_name,
+                "employee_name": emp_name,
                 "type":          row.type,
                 "month":         "",
                 "scheduled_amt": "",
@@ -209,7 +227,7 @@ def get_detail_data(filters):
 
         data.append({
             "loan_id":       lid,
-            "employee_name": row.employee_name,
+            "employee_name": emp_name,
             "type":          row.type,
             "month":         row.month,
             "scheduled_amt": row.base_emi,
