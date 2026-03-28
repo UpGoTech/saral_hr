@@ -1,22 +1,22 @@
-frappe.pages["employee-profile"].on_page_load = function(wrapper) {
+frappe.pages["employee-profile"].on_page_load = function (wrapper) {
     frappe.ui.make_app_page({ parent: wrapper, title: "Employee Profile" });
     inject_ep_styles();
 };
 
-frappe.pages["employee-profile"].on_page_show = function(wrapper) {
+frappe.pages["employee-profile"].on_page_show = function (wrapper) {
     var route = frappe.get_route();
     var emp = route[1];
     if (!emp) { return; }
 
     var $sidebar = $(wrapper).find(".layout-side-section");
-    var $main    = $(wrapper).find(".layout-main-section");
+    var $main = $(wrapper).find(".layout-main-section");
 
     $main.html(render_skeleton());
 
     frappe.call({
         method: "saral_hr.saral_hr.page.employee_profile.employee_profile.get_employee_profile_data",
         args: { employee: emp },
-        callback: function(r) {
+        callback: function (r) {
             if (r.message) {
                 ep_fix_breadcrumbs(r.message.employee || emp);
                 $(wrapper).find(".title-text").text(r.message.employee || "Employee Profile");
@@ -25,7 +25,7 @@ frappe.pages["employee-profile"].on_page_show = function(wrapper) {
                 render_error($main, "No data returned for this employee.");
             }
         },
-        error: function() {
+        error: function () {
             render_error($main, "Failed to load employee profile. Please try again.");
         }
     });
@@ -33,20 +33,20 @@ frappe.pages["employee-profile"].on_page_show = function(wrapper) {
 
 function render_skeleton() {
     var pulse = "animation:ep-pulse 1.5s ease-in-out infinite;";
-    var box = function(w, h, r) {
-        return "<div style='background:#e5e7eb;border-radius:" + (r||"6px") + ";width:" + w + ";height:" + h + ";margin-bottom:10px;" + pulse + "'></div>";
+    var box = function (w, h, r) {
+        return "<div style='background:#e5e7eb;border-radius:" + (r || "6px") + ";width:" + w + ";height:" + h + ";margin-bottom:10px;" + pulse + "'></div>";
     };
     var html = "<div style='padding:20px;'>";
     html += "<div style='background:#fff;border:1px solid #f3f4f6;border-radius:8px;padding:20px;margin-bottom:15px;'>";
-    html += box("120px","14px") + "<div style='display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px;'>";
-    for (var i = 0; i < 6; i++) html += "<div>" + box("60px","10px") + box("80px","18px","4px") + "</div>";
+    html += box("120px", "14px") + "<div style='display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px;'>";
+    for (var i = 0; i < 6; i++) html += "<div>" + box("60px", "10px") + box("80px", "18px", "4px") + "</div>";
     html += "</div></div>";
     html += "<div style='background:#fff;border:1px solid #f3f4f6;border-radius:8px;padding:20px;margin-bottom:15px;'>";
-    html += box("160px","14px") + box("100%","120px","6px");
+    html += box("160px", "14px") + box("100%", "120px", "6px");
     html += "</div>";
     html += "<div style='background:#fff;border:1px solid #f3f4f6;border-radius:8px;padding:20px;'>";
-    html += box("140px","14px");
-    for (var j = 0; j < 2; j++) html += "<div style='margin-left:40px;'>" + box("200px","12px") + box("140px","10px") + "</div>";
+    html += box("140px", "14px");
+    for (var j = 0; j < 2; j++) html += "<div style='margin-left:40px;'>" + box("200px", "12px") + box("140px", "10px") + "</div>";
     html += "</div></div>";
     return html;
 }
@@ -483,7 +483,7 @@ function fmt_currency(val) {
 function fmt_date_human(date_str) {
     if (!date_str) return "";
     var d = new Date(date_str);
-    return d.toLocaleDateString("en-IN", { day:"numeric", month:"short", year:"numeric" });
+    return d.toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" });
 }
 
 function days_ago(date_str) {
@@ -491,7 +491,7 @@ function days_ago(date_str) {
     var days = Math.floor((Date.now() - new Date(date_str).getTime()) / 86400000);
     if (days === 0) return "today";
     if (days === 1) return "1 day ago";
-    if (days < 30)  return days + " days ago";
+    if (days < 30) return days + " days ago";
     var months = Math.floor(days / 30);
     if (months < 12) return months + " mo ago";
     var yrs = Math.floor(months / 12), mos = months % 12;
@@ -500,7 +500,7 @@ function days_ago(date_str) {
 
 function calc_duration(start_str, end_str) {
     if (!start_str) return null;
-    var end   = end_str ? new Date(end_str) : new Date();
+    var end = end_str ? new Date(end_str) : new Date();
     var start = new Date(start_str);
     var total_months = (end.getFullYear() - start.getFullYear()) * 12 + (end.getMonth() - start.getMonth());
     if (total_months < 0) return null;
@@ -521,40 +521,40 @@ function calc_age(dob_str) {
 }
 
 var STATUS_COLORS = {
-    "Present":      "present",
-    "Absent":       "absent",
-    "Half Day":     "halfday",
-    "LWP":          "lwp",
-    "Holiday":      "holiday",
-    "Weekly Off":   "weeklyoff",
+    "Present": "present",
+    "Absent": "absent",
+    "Half Day": "halfday",
+    "LWP": "lwp",
+    "Holiday": "holiday",
+    "Weekly Off": "weeklyoff",
     "Earned Leave": "earnedleave",
     "Casual Leave": "casualleave",
-    "On Tour":      "ontour",
-    "Comp Off":     "compoff"
+    "On Tour": "ontour",
+    "Comp Off": "compoff"
 };
 var STATUS_HEX = {
-    "present":      "#16a34a",
-    "absent":       "#dc2626",
-    "halfday":      "#ca8a04",
-    "lwp":          "#ea580c",
-    "holiday":      "#2563eb",
-    "weeklyoff":    "#9333ea",
-    "earnedleave":  "#0d9488",
-    "casualleave":  "#db2777",
-    "ontour":       "#16a34a",
-    "compoff":      "#9333ea"
+    "present": "#16a34a",
+    "absent": "#dc2626",
+    "halfday": "#ca8a04",
+    "lwp": "#ea580c",
+    "holiday": "#2563eb",
+    "weeklyoff": "#9333ea",
+    "earnedleave": "#0d9488",
+    "casualleave": "#db2777",
+    "ontour": "#16a34a",
+    "compoff": "#9333ea"
 };
-var MONTH_NAMES = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+var MONTH_NAMES = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
 // ── Main render ───────────────────────────────────────────────────────────────
 
 function render_profile($sidebar, $main, d, emp) {
-    var s  = d.salary || {};
-    var c  = d.company_link || {};
-    var att_map        = d.attendance_map || {};
-    var years          = d.years || [];
-    var timeline       = d.timeline || [];
-    var latest_ssa     = d.latest_ssa || null;
+    var s = d.salary || {};
+    var c = d.company_link || {};
+    var att_map = d.attendance_map || {};
+    var years = d.years || [];
+    var timeline = d.timeline || [];
+    var latest_ssa = d.latest_ssa || null;
     var cancelled_ssas = d.cancelled_ssas || [];
 
     var avatar_html = d.employee_image
@@ -577,15 +577,15 @@ function render_profile($sidebar, $main, d, emp) {
         sb += "<div class='ep-contact-row'>✉️ <a href='mailto:" + email + "'>" + email + "</a></div>";
     }
     sb += "<hr class='ep-divider'>";
-    if (c.company)         sb += info_row("Company",     c.company);
-    if (c.branch)          sb += info_row("Branch",      c.branch);
-    if (c.category)        sb += info_row("Category",    c.category);
-    if (c.date_of_joining) sb += info_row("Joined",      fmt_date_human(c.date_of_joining));
-    if (c.department)      sb += info_row("Department",  c.department);
-    if (c.designation)     sb += info_row("Designation", c.designation);
-    if (d.tenure)          sb += info_row("Tenure",      d.tenure);
+    if (c.company) sb += info_row("Company", c.company);
+    if (c.branch) sb += info_row("Branch", c.branch);
+    if (c.category) sb += info_row("Category", c.category);
+    if (c.date_of_joining) sb += info_row("Joined", fmt_date_human(c.date_of_joining));
+    if (c.department) sb += info_row("Department", c.department);
+    if (c.designation) sb += info_row("Designation", c.designation);
+    if (d.tenure) sb += info_row("Tenure", d.tenure);
     if (c.immediate_reporting_name) sb += info_row("Immediate Reporting", c.immediate_reporting_name);
-    if (c.final_reporting_name)     sb += info_row("Final Reporting",     c.final_reporting_name);
+    if (c.final_reporting_name) sb += info_row("Final Reporting", c.final_reporting_name);
     sb += "<hr class='ep-divider'>";
     sb += "<a href='/app/employee/" + emp + "' class='ep-link-btn'>✏️ Edit Employee</a>";
     if (d.company_link_name)
@@ -605,11 +605,11 @@ function render_profile($sidebar, $main, d, emp) {
         main += "<span class='ep-salary-structure-tag'>📋 " + latest_ssa.salary_structure + "</span>";
     main += "</div>";
     main += "<div class='ep-salary-grid'>";
-    main += sal_item("Monthly CTC",           s.monthly_ctc);
-    main += sal_item("Annual CTC",            s.annual_ctc);
-    main += sal_item("Gross Salary",          s.gross_salary);
-    main += sal_item("Net Salary",            s.net_salary);
-    main += sal_item("Total Deductions",      s.total_deductions);
+    main += sal_item("Monthly CTC", s.monthly_ctc);
+    main += sal_item("Annual CTC", s.annual_ctc);
+    main += sal_item("Gross Salary", s.gross_salary);
+    main += sal_item("Net Salary", s.net_salary);
+    main += sal_item("Total Deductions", s.total_deductions);
     main += sal_item("Employer Contribution", s.total_employer_contribution);
     main += "</div>";
     if (prev_ctc && s.monthly_ctc && Number(s.monthly_ctc) > 0 && Number(prev_ctc) > 0) {
@@ -627,8 +627,8 @@ function render_profile($sidebar, $main, d, emp) {
     main += "</div>";
 
     // Attendance card
-    var now       = new Date();
-    var cur_year  = now.getFullYear();
+    var now = new Date();
+    var cur_year = now.getFullYear();
     var cur_month = now.getMonth() + 1;
 
     main += "<div class='ep-card'>";
@@ -636,7 +636,7 @@ function render_profile($sidebar, $main, d, emp) {
     main += "<div style='display:flex;gap:8px;align-items:center;'>";
     main += "<button class='ep-today-btn' id='ep-today-btn'>Today</button>";
     main += "<select class='ep-year-select' id='ep-year-select'>";
-    years.forEach(function(yr) {
+    years.forEach(function (yr) {
         main += "<option value='" + yr + "'" + (String(yr) === String(cur_year) ? " selected" : "") + ">" + yr + "</option>";
     });
     main += "</select></div></div>";
@@ -655,32 +655,32 @@ function render_profile($sidebar, $main, d, emp) {
 
     render_heatmap($main, att_map, cur_year, cur_month);
 
-    $main.find("#ep-year-select").on("change", function() {
+    $main.find("#ep-year-select").on("change", function () {
         var yr = parseInt($(this).val());
         var active_btn = $main.find(".ep-month-label-btn.active");
         var active_month = active_btn.length ? parseInt(active_btn.data("month")) : "all";
         render_heatmap($main, att_map, yr, active_month);
     });
 
-    $main.find("#ep-heatmap-wrap").on("click", ".ep-month-label-btn", function() {
+    $main.find("#ep-heatmap-wrap").on("click", ".ep-month-label-btn", function () {
         var clicked = parseInt($(this).data("month"));
         var yr = parseInt($main.find("#ep-year-select").val());
         render_heatmap($main, att_map, yr, $(this).hasClass("active") ? "all" : clicked);
     });
 
-    $main.find("#ep-today-btn").on("click", function() {
+    $main.find("#ep-today-btn").on("click", function () {
         var n = new Date();
         $main.find("#ep-year-select").val(n.getFullYear());
         render_heatmap($main, att_map, n.getFullYear(), n.getMonth() + 1);
     });
 
-    $main.on("mouseenter", ".ep-day:not(.empty)", function(e) {
+    $main.on("mouseenter", ".ep-day:not(.empty)", function (e) {
         var title = $(this).attr("title") || "";
         if (!title) return;
         var colon = title.indexOf(": ");
-        var date_part   = colon > -1 ? title.slice(0, colon) : title;
+        var date_part = colon > -1 ? title.slice(0, colon) : title;
         var status_part = colon > -1 ? title.slice(colon + 2) : "";
-        var cls = ($(this).attr("class") || "").split(" ").find(function(c) { return STATUS_HEX[c]; }) || "";
+        var cls = ($(this).attr("class") || "").split(" ").find(function (c) { return STATUS_HEX[c]; }) || "";
         var color = STATUS_HEX[cls] || "#6b7280";
         var tip = document.getElementById("ep-tooltip");
         tip.innerHTML =
@@ -690,36 +690,36 @@ function render_profile($sidebar, $main, d, emp) {
         tip.classList.add("visible");
         move_tooltip(e);
     });
-    $main.on("mousemove",  ".ep-day:not(.empty)", function(e) { move_tooltip(e); });
-    $main.on("mouseleave", ".ep-day", function() {
+    $main.on("mousemove", ".ep-day:not(.empty)", function (e) { move_tooltip(e); });
+    $main.on("mouseleave", ".ep-day", function () {
         document.getElementById("ep-tooltip").classList.remove("visible");
     });
 
-    $main.on("click", ".ep-ssa-cancelled-header", function() {
+    $main.on("click", ".ep-ssa-cancelled-header", function () {
         $(this).next(".ep-ssa-cancelled-list").toggleClass("open");
         $(this).find(".ep-ssa-toggle-icon").toggleClass("open");
     });
-    $main.on("click", ".ep-sal-prog-header", function() {
+    $main.on("click", ".ep-sal-prog-header", function () {
         $(this).next(".ep-sal-prog-body").toggleClass("open");
         $(this).find(".ep-ssa-toggle-icon").toggleClass("open");
     });
-    $main.on("click", ".ep-comp-toggle-btn", function() {
+    $main.on("click", ".ep-comp-toggle-btn", function () {
         var $section = $(this).closest(".ep-comp-section");
-        var $list    = $section.find(".ep-comp-list");
-        var $chev    = $(this).find(".ep-comp-chevron");
+        var $list = $section.find(".ep-comp-list");
+        var $chev = $(this).find(".ep-comp-chevron");
         $list.toggleClass("open");
         $chev.toggleClass("open");
     });
     // ── Loan card expansion toggle (ADD THIS) ──
-    $main.on("click", ".ep-loan-card-header", function() {
+    $main.on("click", ".ep-loan-card-header", function () {
         var $card = $(this).closest(".ep-loan-card");
         var $body = $card.find(".ep-loan-card-body");
         var $chev = $(this).find(".ep-loan-chev");
-        
+
         $body.toggleClass("open");
         $chev.toggleClass("open");
     });
-// ── Loan schedule tab switching ──
+    // ── Loan schedule tab switching ──
     $main.on("click", ".ep-loan-tab-btn", function () {
         var $wrap = $(this).closest(".ep-loan-tabs-wrap");
         $wrap.find(".ep-loan-tab-btn").removeClass("active");
@@ -735,7 +735,7 @@ function move_tooltip(e) {
     var x = e.clientX + 14, y = e.clientY - 10;
     if (x + 170 > window.innerWidth) x = e.clientX - 170;
     tip.style.left = x + "px";
-    tip.style.top  = y + "px";
+    tip.style.top = y + "px";
 }
 
 // ── Heatmap ───────────────────────────────────────────────────────────────────
@@ -745,9 +745,9 @@ function render_heatmap($w, att_map, year, active_month) {
     active_month = active_month || "all";
     var today_str = new Date().toISOString().split("T")[0];
     var summary = {
-        present:0, absent:0, half_day:0, lwp:0,
-        holiday:0, weekly_off:0, earned_leave:0, casual_leave:0,
-        on_tour:0, comp_off:0
+        present: 0, absent: 0, half_day: 0, lwp: 0,
+        holiday: 0, weekly_off: 0, earned_leave: 0, casual_leave: 0,
+        on_tour: 0, comp_off: 0
     };
     var total_counted = 0;
     var selected_month = (active_month === "all") ? null : parseInt(active_month);
@@ -772,12 +772,12 @@ function render_heatmap($w, att_map, year, active_month) {
         inner += "<button class='ep-month-label-btn" + (is_selected ? " active" : "") + "' data-month='" + month_num + "'>" + MONTH_NAMES[m] + "</button>";
         inner += "<div class='ep-month-weeks'>";
 
-        weeks.forEach(function(wk) {
+        weeks.forEach(function (wk) {
             inner += "<div class='ep-week-col'>";
-            wk.forEach(function(d) {
+            wk.forEach(function (d) {
                 if (!d) { inner += "<div class='ep-day empty'></div>"; return; }
                 var day_str = year + "-" + month_str + "-" + String(d).padStart(2, "0");
-                var status  = att_map[day_str] || null;
+                var status = att_map[day_str] || null;
                 var cls, title_attr;
                 if (day_str > today_str) {
                     cls = "ep-day future"; title_attr = day_str + " (future)";
@@ -786,16 +786,16 @@ function render_heatmap($w, att_map, year, active_month) {
                     cls = "ep-day " + ccls;
                     title_attr = day_str + ": " + status;
                     if (selected_month === null || selected_month === month_num) {
-                        if      (status === "Present")      { summary.present++;      total_counted++; }
-                        else if (status === "Absent")       { summary.absent++;       total_counted++; }
-                        else if (status === "Half Day")     { summary.half_day++;     total_counted++; }
-                        else if (status === "LWP")          { summary.lwp++;          total_counted++; }
-                        else if (status === "Holiday")      { summary.holiday++;      total_counted++; }
-                        else if (status === "Weekly Off")   { summary.weekly_off++;   total_counted++; }
+                        if (status === "Present") { summary.present++; total_counted++; }
+                        else if (status === "Absent") { summary.absent++; total_counted++; }
+                        else if (status === "Half Day") { summary.half_day++; total_counted++; }
+                        else if (status === "LWP") { summary.lwp++; total_counted++; }
+                        else if (status === "Holiday") { summary.holiday++; total_counted++; }
+                        else if (status === "Weekly Off") { summary.weekly_off++; total_counted++; }
                         else if (status === "Earned Leave") { summary.earned_leave++; total_counted++; }
                         else if (status === "Casual Leave") { summary.casual_leave++; total_counted++; }
-                        else if (status === "On Tour")      { summary.on_tour++;      total_counted++; }
-                        else if (status === "Comp Off")     { summary.comp_off++;     total_counted++; }
+                        else if (status === "On Tour") { summary.on_tour++; total_counted++; }
+                        else if (status === "Comp Off") { summary.comp_off++; total_counted++; }
                     }
                 } else {
                     cls = "ep-day future"; title_attr = day_str + " (no record)";
@@ -809,33 +809,33 @@ function render_heatmap($w, att_map, year, active_month) {
     inner += "</div></div>";
 
     var legend_items = [
-        ["present","Present"],["absent","Absent"],["halfday","Half Day"],
-        ["lwp","LWP"],["holiday","Holiday"],["weeklyoff","Weekly Off"],
-        ["earnedleave","Earned Leave"],["casualleave","Casual Leave"],
-        ["ontour","On Tour"],["compoff","Comp Off"],["future","No Record"]
+        ["present", "Present"], ["absent", "Absent"], ["halfday", "Half Day"],
+        ["lwp", "LWP"], ["holiday", "Holiday"], ["weeklyoff", "Weekly Off"],
+        ["earnedleave", "Earned Leave"], ["casualleave", "Casual Leave"],
+        ["ontour", "On Tour"], ["compoff", "Comp Off"], ["future", "No Record"]
     ];
     var legend = "<div class='ep-legend'>";
-    legend_items.forEach(function(li) {
+    legend_items.forEach(function (li) {
         legend += "<div class='ep-legend-item'><div class='ep-legend-dot " + li[0] + "'></div><span class='ep-legend-label " + li[0] + "'>" + li[1] + "</span></div>";
     });
     legend += "</div>";
 
     var boxes = [
-        [summary.present,      "Present",      "#16a34a", true],
-        [summary.absent,       "Absent",       "#dc2626", true],
-        [summary.half_day,     "Half Day",     "#ca8a04", false],
-        [summary.lwp,          "LWP",          "#ea580c", false],
-        [summary.holiday,      "Holiday",      "#2563eb", false],
-        [summary.weekly_off,   "Weekly Off",   "#9333ea", false],
+        [summary.present, "Present", "#16a34a", true],
+        [summary.absent, "Absent", "#dc2626", true],
+        [summary.half_day, "Half Day", "#ca8a04", false],
+        [summary.lwp, "LWP", "#ea580c", false],
+        [summary.holiday, "Holiday", "#2563eb", false],
+        [summary.weekly_off, "Weekly Off", "#9333ea", false],
         [summary.earned_leave, "Earned Leave", "#0d9488", false],
         [summary.casual_leave, "Casual Leave", "#db2777", false],
-        [summary.on_tour,      "On Tour",      "#16a34a", false],
-        [summary.comp_off,     "Comp Off",     "#9333ea", false]
+        [summary.on_tour, "On Tour", "#16a34a", false],
+        [summary.comp_off, "Comp Off", "#9333ea", false]
     ];
     var summ = "<div class='ep-att-summary'>";
-    boxes.forEach(function(b) {
+    boxes.forEach(function (b) {
         var pct_html = (b[3] && total_counted > 0)
-            ? "<div class='ep-att-pct' style='color:" + b[2] + "'>" + Math.round((b[0]/total_counted)*100) + "%</div>"
+            ? "<div class='ep-att-pct' style='color:" + b[2] + "'>" + Math.round((b[0] / total_counted) * 100) + "%</div>"
             : "";
         summ += "<div class='ep-att-box'>" +
             "<div class='ep-att-val' style='color:" + b[2] + "'>" + b[0] + "</div>" +
@@ -853,15 +853,15 @@ function render_timeline_html(timeline) {
     if (!timeline || !timeline.length)
         return "<div class='ep-timeline-empty'>No timeline events found.</div>";
     var html = "<div class='ep-timeline-scroll'><div class='ep-timeline'>";
-    timeline.forEach(function(item) {
+    timeline.forEach(function (item) {
         var active_cls = item.is_active == 1 ? " tl-active" : "";
         var date_html = "";
         if (item.start_date) date_html += "<div class='ep-tl-date'><strong>Start:</strong> " + fmt_date_human(item.start_date) + "</div>";
-        if (item.end_date)   date_html += "<div class='ep-tl-date'><strong>End:</strong> "   + fmt_date_human(item.end_date) + "</div>";
+        if (item.end_date) date_html += "<div class='ep-tl-date'><strong>End:</strong> " + fmt_date_human(item.end_date) + "</div>";
         var meta_parts = [];
         if (item.designation) meta_parts.push(item.designation);
-        if (item.department)  meta_parts.push(item.department);
-        if (item.branch)      meta_parts.push(item.branch);
+        if (item.department) meta_parts.push(item.department);
+        if (item.branch) meta_parts.push(item.branch);
         var meta_html = meta_parts.length ? "<div class='ep-tl-meta'>" + meta_parts.join(" · ") + "</div>" : "";
         var dur = calc_duration(item.start_date, item.end_date);
         var dur_html = dur ? "<span class='ep-tl-duration'>⏱ " + dur + "</span>" : "";
@@ -886,7 +886,7 @@ function render_ssa_panel_html(latest_ssa, cancelled_ssas, company_link) {
 
     if (latest_ssa) {
         var designation = latest_ssa.designation || (company_link && company_link.designation) || "";
-        var department  = latest_ssa.department  || (company_link && company_link.department)  || "";
+        var department = latest_ssa.department || (company_link && company_link.department) || "";
 
         html += "<div class='ep-ssa-current'>";
         html += "<div class='ep-ssa-current-header'>";
@@ -903,22 +903,22 @@ function render_ssa_panel_html(latest_ssa, cancelled_ssas, company_link) {
         if (designation || department) {
             var mp = [];
             if (designation) mp.push(designation);
-            if (department)  mp.push(department);
+            if (department) mp.push(department);
             html += "<div class='ep-ssa-designation'>" + mp.join(" · ") + "</div>";
         }
         html += "<div class='ep-ssa-ctc-row'>";
         html += "<span class='ep-ssa-ctc-val'>&#8377;" + fmt_currency(latest_ssa.monthly_ctc) + "</span>";
         html += "<span class='ep-ssa-ctc-label'>/ month (CTC)</span></div>";
         html += "<div class='ep-ssa-breakdown'>";
-        html += ssa_breakdown_item("Gross Salary",     latest_ssa.gross_salary);
-        html += ssa_breakdown_item("Net Salary",       latest_ssa.net_salary);
+        html += ssa_breakdown_item("Gross Salary", latest_ssa.gross_salary);
+        html += ssa_breakdown_item("Net Salary", latest_ssa.net_salary);
         html += ssa_breakdown_item("Total Deductions", latest_ssa.total_deductions);
         html += ssa_breakdown_item("Employer Contrib", latest_ssa.total_employer_contribution);
         html += "</div>";
 
         html += render_comp_toggles(
-            latest_ssa.earnings       || [],
-            latest_ssa.deductions     || [],
+            latest_ssa.earnings || [],
+            latest_ssa.deductions || [],
             latest_ssa.employer_share || []
         );
 
@@ -933,7 +933,7 @@ function render_ssa_panel_html(latest_ssa, cancelled_ssas, company_link) {
 
     // Salary Progression
     var all_ssas = [];
-    if (cancelled_ssas && cancelled_ssas.length) cancelled_ssas.forEach(function(r) { all_ssas.push(r); });
+    if (cancelled_ssas && cancelled_ssas.length) cancelled_ssas.forEach(function (r) { all_ssas.push(r); });
     if (latest_ssa) all_ssas.unshift(latest_ssa);
 
     if (all_ssas.length > 1) {
@@ -941,9 +941,9 @@ function render_ssa_panel_html(latest_ssa, cancelled_ssas, company_link) {
         html += "<div class='ep-salary-progression'>";
         html += "<div class='ep-sal-prog-header'><span class='ep-sal-prog-title'>📈 Salary Progression</span><span class='ep-ssa-toggle-icon'>&#9660;</span></div>";
         html += "<div class='ep-sal-prog-body'><div class='ep-sal-prog-track'>";
-        ordered.forEach(function(rec, idx) {
+        ordered.forEach(function (rec, idx) {
             var is_current = latest_ssa && rec.name === latest_ssa.name;
-            var prev = idx > 0 ? ordered[idx-1] : null;
+            var prev = idx > 0 ? ordered[idx - 1] : null;
             var hike_html = "";
             if (prev && prev.monthly_ctc && rec.monthly_ctc) {
                 var diff = Number(rec.monthly_ctc) - Number(prev.monthly_ctc);
@@ -956,7 +956,7 @@ function render_ssa_panel_html(latest_ssa, cancelled_ssas, company_link) {
             html += "<div class='ep-sal-prog-node'>";
             html += "<div class='ep-sal-prog-node-dot" + (is_current ? " current" : "") + "'></div>";
             html += "<div class='ep-sal-prog-node-amt'>&#8377;" + fmt_currency(rec.monthly_ctc) + "</div>";
-            html += "<div class='ep-sal-prog-node-date'>" + (rec.from_date ? rec.from_date.slice(0,7) : "—") + "</div>";
+            html += "<div class='ep-sal-prog-node-date'>" + (rec.from_date ? rec.from_date.slice(0, 7) : "—") + "</div>";
             html += hike_html + "</div>";
         });
         html += "</div></div></div>";
@@ -969,13 +969,13 @@ function render_ssa_panel_html(latest_ssa, cancelled_ssas, company_link) {
         html += "<span class='ep-ssa-cancelled-title'>Previous Assignments <span class='ep-ssa-cancelled-count'>" + cancelled_ssas.length + "</span></span>";
         html += "<span class='ep-ssa-toggle-icon'>&#9660;</span></div>";
         html += "<div class='ep-ssa-cancelled-list'>";
-        cancelled_ssas.forEach(function(rec, idx) {
+        cancelled_ssas.forEach(function (rec, idx) {
             var dp = [];
             if (rec.from_date) dp.push(fmt_date_human(rec.from_date));
             dp.push(rec.to_date ? fmt_date_human(rec.to_date) : "—");
             var mp = [];
             if (rec.designation) mp.push(rec.designation);
-            if (rec.department)  mp.push(rec.department);
+            if (rec.department) mp.push(rec.department);
             html += "<div class='ep-ssa-cancelled-item'>";
             html += "<div style='display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;'>";
             html += "<a href='/app/salary-structure-assignment/" + encodeURIComponent(rec.name) + "' class='ep-ssa-cancelled-name' target='_blank'>" + rec.name + "</a>";
@@ -991,8 +991,8 @@ function render_ssa_panel_html(latest_ssa, cancelled_ssas, company_link) {
             html += "<div style='font-size:11px;color:var(--text-muted);'>Employer: <strong>&#8377;" + fmt_currency(rec.total_employer_contribution) + "</strong></div>";
             html += "</div>";
             html += render_comp_toggles(
-                rec.earnings       || [],
-                rec.deductions     || [],
+                rec.earnings || [],
+                rec.deductions || [],
                 rec.employer_share || []
             );
             html += "</div>";
@@ -1017,9 +1017,9 @@ function render_comp_toggles(earnings, deductions, employer_share) {
         html += "<span class='ep-comp-btn-left'>Earnings <span class='ep-comp-btn-count'>" + earnings.length + "</span></span>";
         html += "<span class='ep-comp-chevron'>&#9660;</span></button>";
         html += "<div class='ep-comp-list'>";
-        earnings.forEach(function(row) {
+        earnings.forEach(function (row) {
             html += "<div class='ep-comp-row'><span class='ep-comp-name'>" + (row.salary_component || "") + "</span>" +
-                    "<span class='ep-comp-amt earn'>&#8377;" + fmt_currency(row.amount) + "</span></div>";
+                "<span class='ep-comp-amt earn'>&#8377;" + fmt_currency(row.amount) + "</span></div>";
         });
         html += "</div>";
     }
@@ -1032,9 +1032,9 @@ function render_comp_toggles(earnings, deductions, employer_share) {
         html += "<span class='ep-comp-btn-left'>Deductions <span class='ep-comp-btn-count'>" + deductions.length + "</span></span>";
         html += "<span class='ep-comp-chevron'>&#9660;</span></button>";
         html += "<div class='ep-comp-list'>";
-        deductions.forEach(function(row) {
+        deductions.forEach(function (row) {
             html += "<div class='ep-comp-row'><span class='ep-comp-name'>" + (row.salary_component || "") + "</span>" +
-                    "<span class='ep-comp-amt deduct'>&#8377;" + fmt_currency(row.amount) + "</span></div>";
+                "<span class='ep-comp-amt deduct'>&#8377;" + fmt_currency(row.amount) + "</span></div>";
         });
         html += "</div>";
     }
@@ -1047,9 +1047,9 @@ function render_comp_toggles(earnings, deductions, employer_share) {
         html += "<span class='ep-comp-btn-left'>Employer Share <span class='ep-comp-btn-count'>" + employer_share.length + "</span></span>";
         html += "<span class='ep-comp-chevron'>&#9660;</span></button>";
         html += "<div class='ep-comp-list'>";
-        employer_share.forEach(function(row) {
+        employer_share.forEach(function (row) {
             html += "<div class='ep-comp-row'><span class='ep-comp-name'>" + (row.salary_component || "") + "</span>" +
-                    "<span class='ep-comp-amt employer'>&#8377;" + fmt_currency(row.amount) + "</span></div>";
+                "<span class='ep-comp-amt employer'>&#8377;" + fmt_currency(row.amount) + "</span></div>";
         });
         html += "</div>";
     }
@@ -1086,70 +1086,70 @@ function render_loan_ledger_html(loan_ledger) {
     for (var y = start_year; y <= end_year; y++) {
         years.push(y);
     }
-    
+
     // Create filter dropdown HTML
     var filter_html = "<div style='display: flex; gap: 12px; align-items: center;'>";
     filter_html += "<select id='loan-year-filter' class='ep-year-select' style='padding: 6px 12px; font-size: 12px; border-radius: 6px; border: 1px solid #e5e7eb; background: #fff; cursor: pointer;'>";
     filter_html += "<option value='all'>All Years</option>";
-    years.forEach(function(year) {
+    years.forEach(function (year) {
         filter_html += "<option value='" + year + "'>" + year + "</option>";
     });
     filter_html += "</select>";
     filter_html += "</div>";
-    
+
     // Store original loan ledger data
     window.original_loan_ledger = loan_ledger;
-    
+
     // Function to render loan cards
     function render_loan_cards(loans) {
         // Compute overview totals for filtered loans
-        var total_borrowed    = 0;
-        var total_recovered   = 0;
+        var total_borrowed = 0;
+        var total_recovered = 0;
         var total_outstanding = 0;
-        var active_count      = 0;
+        var active_count = 0;
         var total_loans_count = 0;
         var total_advances_count = 0;
-        
-        loans.forEach(function(ln) {
-            total_borrowed    += Number(ln.loan_amount    || 0);
-            total_recovered   += Number(ln.total_recovered || 0);
-            total_outstanding += Number(ln.outstanding    || 0);
+
+        loans.forEach(function (ln) {
+            total_borrowed += Number(ln.loan_amount || 0);
+            total_recovered += Number(ln.total_recovered || 0);
+            total_outstanding += Number(ln.outstanding || 0);
             if ((ln.status || "").toLowerCase() === "active") active_count++;
-            
+
             if (ln.loan_type === "Advance") {
                 total_advances_count++;
             } else {
                 total_loans_count++;
             }
         });
-        
+
         var container = document.getElementById('loan-ledger-container');
         if (!container) return;
-        
+
         var html = "";
-        
+
         // Overview strip — 4 summary boxes
         html += "<div class='ep-loan-overview'>";
-        html += loan_ov_item("Total Borrowed",    "&#8377;" + fmt_currency(total_borrowed),    "blue");
-        html += loan_ov_item("Total Recovered",   "&#8377;" + fmt_currency(total_recovered),   "green");
+        html += loan_ov_item("Total Borrowed", "&#8377;" + fmt_currency(total_borrowed), "blue");
+        html += loan_ov_item("Total Recovered", "&#8377;" + fmt_currency(total_recovered), "green");
         html += loan_ov_item("Total Outstanding", "&#8377;" + fmt_currency(total_outstanding), "red");
-        html += loan_ov_item("Active Loans",      active_count,                                "purple");
+        html += loan_ov_item("Active Loans", active_count, "purple");
         html += "</div>";
-        
+
         // Individual loan cards
         if (loans.length === 0) {
             html += "<div class='ep-loan-empty'>No loans or advances found for selected year.</div>";
         } else {
-            loans.forEach(function(ln) {
-                var is_active    = (ln.status || "").toLowerCase() === "active";
+            loans.forEach(function (ln) {
+                var is_active = (ln.status || "").toLowerCase() === "active";
                 var status_label = ln.status || "Unknown";
-                var status_cls   = is_active ? "active"
-                                 : status_label.toLowerCase() === "completed" ? "completed" : "pending";
-                
+                var status_cls = is_active ? "active"
+                    : status_label.toLowerCase() === "completed" ? "completed" : "pending";
+
                 var is_advance = (ln.loan_type === "Advance");
-                
+
                 html += "<div class='ep-loan-card" + (is_active ? " active-loan" : "") + "'>";
-                
+
                 // Card header
                 html += "<div class='ep-loan-card-header' style='cursor: pointer;'>";
                 html += "<div class='ep-loan-card-header-left'>";
@@ -1158,14 +1158,14 @@ function render_loan_ledger_html(loan_ledger) {
                 if (!is_advance && ln.frequency)
                     html += "<span style='font-size:11px;color:var(--text-muted);'>" + ln.frequency + "</span>";
                 if (ln.start_date)
-                    html += "<span style='font-size:11px;color:var(--text-muted);'>&#128197; " + fmt_date_human(ln.start_date) + "</span>";
+                    html += "<span style='font-size:11px;color:var(--text-muted);'>&#128197; Taken: " + fmt_date_human(ln.start_date) + "</span>";
                 html += "</div>";
                 html += "<div class='ep-loan-card-header-right'>";
                 html += "<span class='ep-loan-card-amount'>&#8377;" + fmt_currency(ln.loan_amount) + "</span>";
                 html += "<span class='ep-loan-status-badge " + status_cls + "'>" + status_label + "</span>";
                 html += "<span class='ep-loan-chev' style='display: inline-block; transition: transform 0.2s;'>&#9660;</span>";
                 html += "</div></div>";
-                
+
                 // Progress bar
                 var pct = Number(ln.pct_recovered || 0);
                 html += "<div class='ep-loan-progress-wrap'>";
@@ -1176,18 +1176,18 @@ function render_loan_ledger_html(loan_ledger) {
                 html += "</div>";
                 html += "<div class='ep-loan-progress-bar-bg'><div class='ep-loan-progress-bar-fill' style='width:" + Math.min(pct, 100) + "%'></div></div>";
                 html += "</div>";
-                
+
                 // Expandable body - initially hidden
                 html += "<div class='ep-loan-card-body' style='display: none;'>";
-                
+
                 if (is_advance) {
                     // ADVANCE DISPLAY
                     html += "<div class='ep-loan-body-stats' style='grid-template-columns: repeat(3, 1fr);'>";
                     html += loan_body_stat("Advance Amount", "&#8377;" + fmt_currency(ln.loan_amount));
                     html += loan_body_stat("Status", ln.is_deducted ? "Deducted" : "Pending");
-                    html += loan_body_stat("Date", ln.start_date ? fmt_date_human(ln.start_date) : "—");
+                    html += loan_body_stat("Taken On", ln.start_date ? fmt_date_human(ln.start_date) : "—");  // Changed from "Date"
                     html += "</div>";
-                    
+
                 } else {
                     // LOAN-I / LOAN-II DISPLAY
                     html += "<div class='ep-loan-body-stats'>";
@@ -1195,32 +1195,32 @@ function render_loan_ledger_html(loan_ledger) {
                     html += loan_body_stat("Installment Amount", "&#8377;" + fmt_currency(ln.monthly_deduction || 0));
                     html += loan_body_stat("Tenure Months", ln.tenure_display || (ln.tenure_months ? ln.tenure_months + " months" : "—"));
                     html += loan_body_stat("Frequency", ln.frequency || "—");
-                    html += loan_body_stat("Start Date", ln.start_date ? fmt_date_human(ln.start_date) : "—");
+                    html += loan_body_stat("Taken On", ln.start_date ? fmt_date_human(ln.start_date) : "—");
                     html += "</div>";
-                    
+
                     // Schedule tabs for loans
                     html += render_loan_schedule_tabs(ln.schedule || [], ln.loan_amount);
                 }
-                
+
                 html += "</div>"; // .ep-loan-card-body
                 html += "</div>"; // .ep-loan-card
             });
         }
-        
+
         container.innerHTML = html;
-        
+
         // Attach click handlers after rendering
         attach_loan_card_events($(container));
     }
-    
+
     // Function to filter loans by year
     function filter_loans_by_year(year_filter) {
         var filtered_loans = [];
-        
+
         if (year_filter === 'all') {
             filtered_loans = window.original_loan_ledger;
         } else {
-            filtered_loans = window.original_loan_ledger.filter(function(ln) {
+            filtered_loans = window.original_loan_ledger.filter(function (ln) {
                 if (ln.start_date) {
                     var loan_year = new Date(ln.start_date).getFullYear();
                     return loan_year == year_filter;
@@ -1228,23 +1228,23 @@ function render_loan_ledger_html(loan_ledger) {
                 return false;
             });
         }
-        
+
         render_loan_cards(filtered_loans);
         update_count_badges(filtered_loans);
     }
-    
+
     // Update count badges function
     function update_count_badges(loans) {
         var loan_count = 0;
         var advance_count = 0;
-        loans.forEach(function(ln) {
+        loans.forEach(function (ln) {
             if (ln.loan_type === "Advance") {
                 advance_count++;
             } else {
                 loan_count++;
             }
         });
-        
+
         var badges_html = "";
         badges_html += "<span style='background: #eff6ff; padding: 4px 10px; border-radius: 20px; color: #1d4ed8; font-size: 12px;'>";
         badges_html += "📊 Total Loans: <strong>" + loan_count + "</strong>";
@@ -1252,18 +1252,18 @@ function render_loan_ledger_html(loan_ledger) {
         badges_html += "<span style='background: #fef3c7; padding: 4px 10px; border-radius: 20px; color: #b45309; font-size: 12px;'>";
         badges_html += "💰 Total Advances: <strong>" + advance_count + "</strong>";
         badges_html += "</span>";
-        
+
         var badges_container = document.getElementById('loan-count-badges');
         if (badges_container) {
             badges_container.innerHTML = badges_html;
         }
     }
-    
+
     // Create main container HTML
     var main_html = "<div class='ep-card'>";
     main_html += "<div class='ep-title-area'>";
     main_html += "<h4 class='ep-card-title'>💳 Loan Advance Ledger</h4>";
-    
+
     // Add year filter and counts on the right
     main_html += "<div style='display: flex; gap: 12px; align-items: center;'>";
     main_html += filter_html;
@@ -1272,39 +1272,39 @@ function render_loan_ledger_html(loan_ledger) {
     main_html += "</div>";
     main_html += "<div id='loan-ledger-container'></div>";
     main_html += "</div>";
-    
+
     // Initial render after DOM is ready
-    setTimeout(function() {
+    setTimeout(function () {
         // Initial render with all loans
         render_loan_cards(window.original_loan_ledger);
         update_count_badges(window.original_loan_ledger);
-        
+
         // Attach filter change event
         var year_filter_select = document.getElementById('loan-year-filter');
         if (year_filter_select) {
             // Remove existing listener to avoid duplicates
             var newSelect = year_filter_select.cloneNode(true);
             year_filter_select.parentNode.replaceChild(newSelect, year_filter_select);
-            
-            newSelect.addEventListener('change', function(e) {
+
+            newSelect.addEventListener('change', function (e) {
                 filter_loans_by_year(e.target.value);
             });
         }
     }, 100);
-    
+
     return main_html;
 }
 
 // Helper function to attach event handlers for loan cards
 function attach_loan_card_events($container) {
     // Loan card expansion - using slideToggle for smooth animation
-    $container.find(".ep-loan-card-header").off("click").on("click", function(e) {
+    $container.find(".ep-loan-card-header").off("click").on("click", function (e) {
         e.stopPropagation();
         var $header = $(this);
         var $card = $header.closest(".ep-loan-card");
         var $body = $card.find(".ep-loan-card-body");
         var $chev = $header.find(".ep-loan-chev");
-        
+
         // Toggle the body visibility with slide animation
         if ($body.is(":visible")) {
             $body.slideUp(200);
@@ -1314,9 +1314,9 @@ function attach_loan_card_events($container) {
             $chev.css("transform", "rotate(180deg)");
         }
     });
-    
+
     // Loan schedule tab switching
-    $container.find(".ep-loan-tab-btn").off("click").on("click", function(e) {
+    $container.find(".ep-loan-tab-btn").off("click").on("click", function (e) {
         e.stopPropagation();
         var $btn = $(this);
         var $wrap = $btn.closest(".ep-loan-tabs-wrap");
@@ -1335,21 +1335,21 @@ function render_loan_schedule_tabs(schedule, loan_amount) {
         return "<div style='padding:16px;font-size:12px;color:var(--text-muted);'>No repayment schedule found.</div>";
     }
 
-    var all      = schedule;
-    var pending  = schedule.filter(function(r) { return r.status === "Pending";  });
-    var deferred = schedule.filter(function(r) { return r.status === "Deferred"; });
-    var deducted = schedule.filter(function(r) { return r.status === "Deducted"; });
+    var all = schedule;
+    var pending = schedule.filter(function (r) { return r.status === "Pending"; });
+    var deferred = schedule.filter(function (r) { return r.status === "Deferred"; });
+    var deducted = schedule.filter(function (r) { return r.status === "Deducted"; });
 
     var html = "<div class='ep-loan-tabs-wrap'>";
     html += "<div class='ep-loan-tabs-nav'>";
-    html += loan_tab_btn("all",      "All",      all.length,      true);
-    html += loan_tab_btn("pending",  "Pending",  pending.length,  false);
+    html += loan_tab_btn("all", "All", all.length, true);
+    html += loan_tab_btn("pending", "Pending", pending.length, false);
     html += loan_tab_btn("deferred", "Deferred", deferred.length, false);
     html += loan_tab_btn("deducted", "Deducted", deducted.length, false);
     html += "</div>";
 
-    html += loan_tab_panel("all",      all,      loan_amount, true);
-    html += loan_tab_panel("pending",  pending,  loan_amount, false);
+    html += loan_tab_panel("all", all, loan_amount, true);
+    html += loan_tab_panel("pending", pending, loan_amount, false);
     html += loan_tab_panel("deferred", deferred, loan_amount, false);
     html += loan_tab_panel("deducted", deducted, loan_amount, false);
 
@@ -1369,14 +1369,14 @@ function render_loan_schedule_table(rows, loan_amount) {
     html += "<th>#</th><th>Month</th><th>Base EMI</th><th>Deducted</th><th>Status</th><th>Deferred To</th>";
     html += "</tr></thead><tbody>";
 
-    rows.forEach(function(row, idx) {
+    rows.forEach(function (row, idx) {
         var deducted_amt = Number(row.actual_deducted || 0);
         if (row.status === "Deducted") cumulative += deducted_amt;
 
-        var status_cls  = row.status === "Deducted" ? "deducted"
-                        : row.status === "Deferred" ? "deferred" : "pending";
+        var status_cls = row.status === "Deducted" ? "deducted"
+            : row.status === "Deferred" ? "deferred" : "pending";
         var status_icon = row.status === "Deducted" ? "✓"
-                        : row.status === "Deferred" ? "↪" : "⌛";
+            : row.status === "Deferred" ? "↪" : "⌛";
 
         // Format deferred_to to show only month and year (remove day)
         var deferred_display = "—";
@@ -1405,7 +1405,7 @@ function render_loan_schedule_table(rows, loan_amount) {
         html += "<td>₹" + fmt_currency(row.actual_deducted) + "</td>";
         html += "<td><span class='ep-sched-status " + status_cls + "'>" + status_icon + " " + (row.status || "Pending") + "</span></td>";
         html += "<td style='font-size:11px;color:" + (row.deferred_to ? "#dc2626" : "var(--text-muted)") + ";'>" +
-                (row.deferred_to ? "→ " + deferred_display : "—") + "</td>";
+            (row.deferred_to ? "→ " + deferred_display : "—") + "</td>";
         html += "</tr>";
     });
 
