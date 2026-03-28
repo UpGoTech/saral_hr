@@ -71,7 +71,7 @@ frappe.query_reports["Payroll Report"] = {
             }, 0);
         };
 
-        // MutationObserver: hide serial number on ANY bold/total row, always
+        // MutationObserver: hide serial number on ANY bold/total row
         const observer = new MutationObserver(() => _hide_total_serials());
         observer.observe(document.body, { childList: true, subtree: true, characterData: true });
 
@@ -81,6 +81,32 @@ frappe.query_reports["Payroll Report"] = {
                 _set_print_buttons(report);
             }
         });
+
+        // ── Legend injection ──────────────────────────────────────────
+        // Patch frappe.query_report.render_report to catch every render
+        const _patchLegend = () => {
+            const qr = frappe.query_report;
+            if (!qr || qr.__pr_legend_patched) return;
+            qr.__pr_legend_patched = true;
+
+            const _origRender = qr.render_report?.bind(qr);
+            if (_origRender) {
+                qr.render_report = function(...args) {
+                    const result = _origRender(...args);
+                    setTimeout(() => _maybe_inject_legend(report), 300);
+                    return result;
+                };
+            }
+
+            // Also catch after_refresh via jQuery event on the qr object
+            $(qr).on("after_refresh.pr_legend", () => {
+                setTimeout(() => _maybe_inject_legend(report), 300);
+            });
+        };
+
+        // Try patching now and also after frappe finishes loading
+        _patchLegend();
+        setTimeout(_patchLegend, 1000);
     },
 
     formatter(value, row, column, data, default_formatter) {
@@ -119,19 +145,82 @@ frappe.query_reports["Payroll Report"] = {
         if ((mode === "home_bank_advice" || mode === "other_bank_advice") && value === "On Hold" && fn === "net_salary")
             return `<span style="color:#c0392b;font-style:italic;">On Hold</span>`;
 
+        if (mode === "monthly_attendance" && fn && fn.startsWith("day_")) {
+            if (!value || value === "-") return '<span style="color:#ccc;">-</span>';
+            const colors = {
+                P:"#1a6b1a", A:"#c0392b", HD:"#e67e22", T:"#2c3e50",
+                H:"#27ae60", WO:"#2980b9", LWP:"#8e44ad", EL:"#d35400",
+                CL:"#16a085", CO:"#7f8c8d", ECO:"#a93226",
+            };
+            const color = colors[value] || "#1a202c";
+            return `<span style="font-weight:700;color:${color};">${value}</span>`;
+        }
+
         return data.bold ? bold(value) : def(value);
     }
 };
 
-// ─── Hide serial numbers on all bold/total rows ────────────────────────────
+// ── Legend data & inject function (fully self-contained, no window dependency) ─
+
+const _MAR_LEGEND = [
+    { code:"P",   label:"Present",          color:"#1a6b1a" },
+    { code:"A",   label:"Absent",           color:"#c0392b" },
+    { code:"HD",  label:"Half Day",         color:"#e67e22" },
+    { code:"T",   label:"On Tour",          color:"#2c3e50" },
+    { code:"H",   label:"Holiday",          color:"#27ae60" },
+    { code:"WO",  label:"Weekly Off",       color:"#2980b9" },
+    { code:"LWP", label:"Leave Without Pay",color:"#8e44ad" },
+    { code:"EL",  label:"Earned Leave",     color:"#d35400" },
+    { code:"CL",  label:"Casual Leave",     color:"#16a085" },
+    { code:"CO",  label:"Comp Off",         color:"#7f8c8d" },
+    { code:"ECO", label:"Earned Comp Off",  color:"#a93226" },
+];
+
+function _build_legend_bar() {
+    const items = _MAR_LEGEND.map(({ code, label, color }) =>
+        `<span style="display:inline-flex;align-items:center;gap:4px;
+                      margin-right:12px;margin-bottom:2px;white-space:nowrap;">
+            <span style="font-weight:700;font-size:12px;color:${color};">${code}</span>
+            <span style="font-size:12px;color:#444;">– ${label}</span>
+        </span>`
+    ).join("");
+    return `
+        <div id="mar-legend-bar" style="
+            display:flex;flex-wrap:wrap;align-items:center;
+            padding:7px 12px;margin:0 0 8px 0;
+            background:#f4f5f6;border:1px solid #d1d8dd;
+            border-radius:6px;font-family:inherit;">
+            <span style="font-weight:600;font-size:12px;color:#6c7680;
+                         margin-right:12px;white-space:nowrap;">Legend :</span>
+            ${items}
+        </div>`;
+}
+
+function _maybe_inject_legend(report) {
+    const mode = frappe.query_report.get_filter_value
+        ? frappe.query_report.get_filter_value("report_mode")
+        : "";
+
+    const $w = report.page.wrapper;
+    $w.find("#mar-legend-bar").remove();
+
+    if (mode !== "monthly_attendance") return;
+
+    const bar  = _build_legend_bar();
+    const $dt  = $w.find(".dt-wrapper, .frappe-datatable").first();
+    if ($dt.length) {
+        $dt.before(bar);
+    } else {
+        $w.find(".report-wrapper").prepend(bar);
+    }
+}
+
+// ─── Hide serial numbers on bold/total rows ────────────────────────────────
 
 function _hide_total_serials() {
     document.querySelectorAll(".dt-row").forEach(row => {
-        // A total/bold row contains at least one <strong> element
         const hasStrong = row.querySelector("strong");
         if (!hasStrong) return;
-
-        // Find the serial number cell (always col-index 0) and blank it
         const srCell = row.querySelector('[data-col-index="0"] .dt-cell__content');
         if (srCell && srCell.textContent.trim() !== "") {
             srCell.textContent = "";
@@ -139,7 +228,7 @@ function _hide_total_serials() {
     });
 }
 
-// ─── Report list ───────────────────────────────────────────────────────────────
+// ─── Report list ──────────────────────────────────────────────────────────────
 
 const REPORTS = [
     { key:"salary_summary",            label:"Salary Summary"            },
@@ -355,16 +444,27 @@ function _go(report, idx) {
     _sync(report);
     frappe.query_report.set_filter_value("report_mode", modeKey);
 
+    // Always remove stale legend immediately when switching tabs
+    report.page.wrapper.find("#mar-legend-bar").remove();
+
     const fk     = _filter_key(report);
     const cached = _cache[fk]?.[modeKey];
     if (cached) {
         _render_cached(cached);
         _update_on_hold_note(cached.result);
+        // Inject legend after cached render paints
+        if (modeKey === "monthly_attendance") {
+            setTimeout(() => _maybe_inject_legend(report), 350);
+        }
         return;
     }
 
     _loading_key = `${fk}::${modeKey}`;
     frappe.query_report.refresh();
+    // Also schedule legend inject for fresh load path
+    if (modeKey === "monthly_attendance") {
+        setTimeout(() => _maybe_inject_legend(report), 1200);
+    }
 }
 
 function _render_cached(cached) {
@@ -394,6 +494,8 @@ function _bind_refresh_listener(report) {
             result:  frappe.query_report.data,
         };
         _update_on_hold_note(frappe.query_report.data);
+        // Inject legend after every refresh that completes
+        setTimeout(() => _maybe_inject_legend(report), 300);
     });
 }
 

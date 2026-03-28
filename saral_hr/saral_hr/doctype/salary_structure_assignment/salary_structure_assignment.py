@@ -229,6 +229,47 @@ def get_srr_for_ssa(start_date, skill_type):
     return None
 
 
+# ─────────────────────────────────────────────────────────────
+#  Daily Wage Multiplier — fetched from Skill Rate Revision
+# ─────────────────────────────────────────────────────────────
+
+@frappe.whitelist()
+def get_daily_wage_multiplier(start_date, skill_type):
+    """
+    Returns the daily_wage_multiplier from the submitted Skill Rate Revision
+    that covers start_date. Falls back to 26 if no matching record found.
+    """
+    MONTH_NUM = {
+        "January": 1, "February": 2, "March": 3,  "April": 4,
+        "May": 5,     "June": 6,     "July": 7,    "August": 8,
+        "September": 9, "October": 10, "November": 11, "December": 12,
+    }
+
+    d          = getdate(start_date)
+    month_name = MONTHS[d.month - 1]
+    target     = d.year * 100 + MONTH_NUM[month_name]
+
+    records = frappe.db.get_all(
+        "Skill Rate Revision",
+        filters={"docstatus": 1},
+        fields=["from_month", "from_year", "to_month", "to_year", "daily_wage_multiplier"]
+    )
+
+    for r in records:
+        if not all([r.from_month, r.from_year, r.to_month, r.to_year]):
+            continue
+        from_val = int(r.from_year) * 100 + MONTH_NUM[r.from_month]
+        to_val   = int(r.to_year)   * 100 + MONTH_NUM[r.to_month]
+        if from_val <= target <= to_val:
+            return {"multiplier": flt(r.daily_wage_multiplier) or 26}
+
+    return {"multiplier": 26}
+
+
+# ─────────────────────────────────────────────────────────────
+#  Overlap helpers
+# ─────────────────────────────────────────────────────────────
+
 @frappe.whitelist()
 def check_overlap(employee, from_date, to_date=None, employee_name=None,
                   current_name=None, throw_if_overlap=False):

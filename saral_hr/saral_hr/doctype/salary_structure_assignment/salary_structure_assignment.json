@@ -32,6 +32,8 @@
   "pf_applicable",
   "is_pt_applicable",
   "is_lwf_applicable",
+  "section_break_punm",
+  "daily_wage_html",
   "earnings_and_deductions_section",
   "earnings",
   "column_break_oeow",
@@ -46,7 +48,8 @@
   "column_break_nlti",
   "net_salary",
   "annual_ctc",
-  "amended_from"
+  "amended_from",
+  "total_basic_da"
  ],
  "fields": [
   {
@@ -69,6 +72,7 @@
   {
    "fieldname": "status",
    "fieldtype": "Select",
+   "hidden": 1,
    "in_list_view": 1,
    "label": "Status",
    "options": "Draft\nSubmitted\nCancelled",
@@ -175,55 +179,59 @@
   {
    "fieldname": "statutory_section_bar",
    "fieldtype": "Section Break",
-   "label": "Statutory Applicability",
-   "hide_border": 0
+   "label": "Statutory Applicability"
   },
   {
    "description": "Configure statutory deductions for this assignment. Checkmarks control which components are injected into the Deductions and Employer Share tables.",
    "fieldname": "statutory_info_html",
    "fieldtype": "HTML",
-   "label": "Statutory Controls",
-   "options": ""
+   "label": "Statutory Controls"
   },
   {
    "default": "0",
    "fieldname": "is_esic_applicable",
    "fieldtype": "Check",
-   "label": "ESIC Applicable",
-   "hidden": 1
+   "hidden": 1,
+   "label": "ESIC Applicable"
   },
   {
    "default": "0",
    "fieldname": "is_pf_applicable",
    "fieldtype": "Check",
-   "label": "PF Applicable",
-   "hidden": 1
+   "hidden": 1,
+   "label": "PF Applicable"
   },
   {
    "fieldname": "pf_applicable",
    "fieldtype": "Select",
+   "hidden": 1,
    "label": "PF Type",
-   "options": "\nLimited PF\nFull PF",
-   "hidden": 1
+   "options": "\nLimited PF\nFull PF"
   },
   {
    "default": "0",
    "fieldname": "is_pt_applicable",
    "fieldtype": "Check",
-   "label": "PT Applicable",
-   "hidden": 1
+   "hidden": 1,
+   "label": "PT Applicable"
   },
   {
    "default": "0",
    "fieldname": "is_lwf_applicable",
    "fieldtype": "Check",
-   "label": "LWF Applicable",
-   "hidden": 1
+   "hidden": 1,
+   "label": "LWF Applicable"
   },
   {
    "fieldname": "earnings_and_deductions_section",
    "fieldtype": "Section Break",
    "label": "Earnings and Deductions"
+  },
+  {
+   "description": "Shown only when employee category has skill sub-types and the salary structure contains daily wage components.",
+   "fieldname": "daily_wage_html",
+   "fieldtype": "HTML",
+   "label": "Daily Wage Entry"
   },
   {
    "fieldname": "earnings",
@@ -236,14 +244,13 @@
    "fieldtype": "Column Break"
   },
   {
-   "description": "Employee share of statutory and non-statutory deductions.",
    "fieldname": "deductions",
    "fieldtype": "Table",
    "label": "Deductions (Employee Share)",
    "options": "Salary Details"
   },
   {
-   "description": "Employer statutory contributions — EPF, EPS, EDLI, Admin Charges, Employer ESIC, Employer LWF. Auto-computed from Company statutory configuration.",
+   "description": "Employer statutory contributions \u2014 EPF, EPS, EDLI, Admin Charges, Employer ESIC, Employer LWF. Auto-computed from Company statutory configuration.",
    "fieldname": "employer_share_section",
    "fieldtype": "Section Break",
    "label": "Employer Share"
@@ -314,12 +321,23 @@
    "print_hide": 1,
    "read_only": 1,
    "search_index": 1
+  },
+  {
+   "fieldname": "section_break_punm",
+   "fieldtype": "Section Break"
+  },
+  {
+   "fieldname": "total_basic_da",
+   "fieldtype": "Float",
+   "label": "Total (Basic + DA)",
+   "precision": "2",
+   "read_only": 1
   }
  ],
  "index_web_pages_for_search": 1,
  "is_submittable": 1,
  "links": [],
- "modified": "2026-03-25 00:00:00.000000",
+ "modified": "2026-03-27 15:58:29.303183",
  "modified_by": "Administrator",
  "module": "Saral Hr",
  "name": "Salary Structure Assignment",
@@ -365,7 +383,7 @@
    "title": "Submitted"
   },
   {
-   "color": "Grey",
+   "color": "Gray",
    "title": "Cancelled"
   }
  ],
