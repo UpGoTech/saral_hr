@@ -9,11 +9,34 @@ import os
 
 BULK_PRINT_FORMAT = "Salary Slip Custom"
 
+ATTENDANCE_ALLOWANCE_COMPONENT = "Attendance Allowance"
+
 
 class SalarySlip(Document):
     def validate(self):
         if self.start_date:
             self.end_date = get_last_day(getdate(self.start_date))
+
+
+def _is_attendance_allowance(comp_name):
+    return (comp_name or "").strip() == ATTENDANCE_ALLOWANCE_COMPONENT
+
+
+def _calc_attendance_allowance(base, physical_working_days, working_days, start_month):
+    """
+    Returns the Attendance Allowance amount:
+    - base == 0  → 0 (component not configured, skip)
+    - February   → full amount if phd >= working_days of that February, else 0
+    - Other months → full amount if phd >= 25, else 0
+    """
+    if base == 0:
+        return 0.0
+    phd = flt(physical_working_days)
+    if start_month == 2:
+        required = flt(working_days)
+        return flt(base, 2) if phd >= required else 0.0
+    else:
+        return flt(base, 2) if phd >= 25 else 0.0
 
 
 @frappe.whitelist()
@@ -74,11 +97,13 @@ def get_salary_structure_for_employee(employee, start_date=None,
                    "July","August","September","October","November","December"]
     current_month = None
     year_str = month_str = None
+    start_month_num = None
     if start_date:
         d = getdate(start_date)
         current_month = month_names[d.month - 1]
         year_str = str(d.year)
         month_str = current_month
+        start_month_num = d.month
 
     wd     = flt(working_days)            if working_days            is not None else None
     pd     = flt(payment_days)            if payment_days            is not None else None
@@ -92,12 +117,14 @@ def get_salary_structure_for_employee(employee, start_date=None,
              "depends_on_physical_working_days", "employer_contribution",
              "type", "daily_wage_component"], as_dict=True) or {}
 
-    def _prorate(base, dep_pd, dep_phd, is_daily_wage, per_day_rate):
+    def _prorate(base, dep_pd, dep_phd, is_daily_wage, per_day_rate, comp_name=None):
         """
         Daily wage: per_day_rate × physical_working_days  (if depends_on_physical_working_days)
                     per_day_rate × payment_days            (otherwise)
         Standard:   (base / working_days) × appropriate_days
         Fixed:      base as-is
+
+        Attendance Allowance: special hard-coded logic — handled before calling _prorate.
         """
         if is_daily_wage and flt(per_day_rate) > 0:
             if not has_att_data:
@@ -105,7 +132,6 @@ def get_salary_structure_for_employee(employee, start_date=None,
             if dep_phd and phd is not None:
                 return flt(per_day_rate) * phd
             else:
-                # covers dep_pd=True and dep_pd=False — both use payment_days
                 return flt(per_day_rate) * (pd if pd is not None else 0)
 
         if not has_att_data or wd == 0:
@@ -127,16 +153,24 @@ def get_salary_structure_for_employee(employee, start_date=None,
         base          = flt(row.amount, 2)
         dep_pd        = int(meta.get("depends_on_payment_days") or 0)
         dep_phd       = int(meta.get("depends_on_physical_working_days") or 0)
-        # ── KEY FIX: use getattr, not row.get() ──────────────────────────────
         is_daily_wage = int(meta.get("daily_wage_component") or
                             getattr(row, "daily_wage_component", 0) or 0)
         per_day_rate  = flt(getattr(row, "per_day_rate", None) or 0)
         comp_lower    = (row.salary_component or "").lower()
 
-        if has_att_data and "variable" in comp_lower:
+        if _is_attendance_allowance(row.salary_component):
+            # Hard-coded Attendance Allowance logic
+            # base == 0 means not configured → pass 0 through; JS/server will keep it 0
+            if has_att_data and base > 0:
+                actual = _calc_attendance_allowance(base, phd, wd, start_month_num)
+            else:
+                actual = base  # will be recalculated client-side when att data arrives
+
+        elif has_att_data and "variable" in comp_lower:
             actual = (base / wd * pd * vp_pct) if (dep_pd and wd > 0) else (base * vp_pct)
+
         else:
-            actual = _prorate(base, dep_pd, dep_phd, is_daily_wage, per_day_rate)
+            actual = _prorate(base, dep_pd, dep_phd, is_daily_wage, per_day_rate, row.salary_component)
 
         actual_earnings_map[row.salary_component] = flt(actual, 2)
 
@@ -145,8 +179,8 @@ def get_salary_structure_for_employee(employee, start_date=None,
             "abbr":                             meta.get("salary_component_abbr") or getattr(row, "abbr", "") or "",
             "amount":                           base,
             "base_amount":                      base,
-            "per_day_rate":                     per_day_rate,       # ← critical: pass through
-            "daily_wage_component":             is_daily_wage,      # ← critical: pass through
+            "per_day_rate":                     per_day_rate,
+            "daily_wage_component":             is_daily_wage,
             "depends_on_payment_days":          dep_pd,
             "depends_on_physical_working_days": dep_phd,
         })
@@ -299,12 +333,13 @@ def calculate_salary_slip_amounts_exact(salary_slip, variable_pay_percentage,
                                         start_date, category=None, ssa_gross=None):
     """
     Priority order:
-    1. Variable pay           → ratio-based on payment_days × variable_pct
-    2. Daily wage component   → per_day_rate × physical_working_days  (if depends_on_physical_working_days)
-                                per_day_rate × payment_days            (otherwise)
-    3. depends_on_physical_working_days (non-daily-wage) → (base / wd) × phd
-    4. depends_on_payment_days (non-daily-wage)          → (base / wd) × pd
-    5. Statutory / PT / Fixed → base as-is (or PT fixed amount)
+    1. Attendance Allowance    → hard-coded threshold logic (phd >= 25 or full Feb working days)
+    2. Variable pay            → ratio-based on payment_days × variable_pct
+    3. Daily wage component    → per_day_rate × physical_working_days  (if depends_on_physical_working_days)
+                                 per_day_rate × payment_days            (otherwise)
+    4. depends_on_physical_working_days (non-daily-wage) → (base / wd) × phd
+    5. depends_on_payment_days (non-daily-wage)          → (base / wd) × pd
+    6. Statutory / PT / Fixed  → base as-is (or PT fixed amount)
     """
     wd           = flt(salary_slip.total_working_days)
     pd           = flt(salary_slip.payment_days)
@@ -323,12 +358,14 @@ def calculate_salary_slip_amounts_exact(salary_slip, variable_pay_percentage,
         is_daily_wage = int(getattr(row, "daily_wage_component", 0) or 0)
         per_day_rate  = flt(getattr(row, "per_day_rate", 0) or 0)
 
-        if "variable" in comp:
+        if _is_attendance_allowance(row.salary_component):
+            amount = _calc_attendance_allowance(base, phd, wd, start_month)
+
+        elif "variable" in comp:
             amount = 0.0 if pd == 0 else \
                      ((base / wd) * pd * variable_pct if (wd > 0 and row.depends_on_payment_days) else base * variable_pct)
 
         elif is_daily_wage and per_day_rate > 0:
-            # ── Daily wage: ALWAYS use per_day_rate × days, never base/wd ratio ──
             amount = per_day_rate * phd if row.depends_on_physical_working_days else per_day_rate * pd
 
         elif row.depends_on_physical_working_days and wd > 0:

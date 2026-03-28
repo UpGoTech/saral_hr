@@ -51,6 +51,29 @@ frappe.ui.form.on("Salary Details", {
     employer_share_remove(frm) { recalculate_salary(frm); }
 });
 
+// ─── Attendance Allowance detection ───────────────────────────────────────────
+
+const ATTENDANCE_ALLOWANCE_COMPONENT = "Attendance Allowance";
+
+function is_attendance_allowance(comp_name) {
+    return (comp_name || "").trim() === ATTENDANCE_ALLOWANCE_COMPONENT;
+}
+
+/**
+ * Returns the Attendance Allowance amount given the current attendance data.
+ *  - base == 0  → 0  (not configured in SSA, do nothing)
+ *  - February   → full amount if phd >= working_days, else 0
+ *  - Other months → full amount if phd >= 25, else 0
+ */
+function calc_attendance_allowance(base, phd, wd, slip_month) {
+    if (!base || base === 0) return 0;
+    if (slip_month === 2) {
+        return phd >= wd ? base : 0;
+    } else {
+        return phd >= 25 ? base : 0;
+    }
+}
+
 // ─── DA detection ─────────────────────────────────────────────────────────────
 
 function is_da_component(comp_name, abbr) {
@@ -306,12 +329,13 @@ function apply_attendance(frm, d, variable_pay_pct) {
 // ─── Salary Calculation ───────────────────────────────────────────────────────
 //
 //  Priority order for each row:
-//  1. Variable pay component       → ratio-based on payment_days × variable_pct
-//  2. Daily wage component         → per_day_rate × physical_working_days  (if depends_on_physical_working_days)
+//  1. Attendance Allowance         → hard-coded threshold: phd >= 25 (or full Feb wd) → full, else 0
+//  2. Variable pay component       → ratio-based on payment_days × variable_pct
+//  3. Daily wage component         → per_day_rate × physical_working_days  (if depends_on_physical_working_days)
 //                                    per_day_rate × payment_days            (otherwise, including depends_on_payment_days)
-//  3. depends_on_physical_working_days (non-daily-wage) → (base / wd) × phd
-//  4. depends_on_payment_days (non-daily-wage)          → (base / wd) × pd
-//  5. Otherwise                    → base (fixed)
+//  4. depends_on_physical_working_days (non-daily-wage) → (base / wd) × phd
+//  5. depends_on_payment_days (non-daily-wage)          → (base / wd) × pd
+//  6. Otherwise                    → base (fixed)
 //
 //  Statutory components always use their stored base_amount (already computed
 //  server-side against the correct wage). PT uses the month-specific fixed amount.
@@ -344,7 +368,11 @@ function recalculate_salary(frm, wd_override, pd_override, phd_override) {
 
         let amount;
 
-        if (comp.includes("variable")) {
+        if (is_attendance_allowance(row.salary_component)) {
+            // Hard-coded Attendance Allowance: base == 0 → skip (not in SSA)
+            amount = calc_attendance_allowance(base, phd, wd, slip_month);
+
+        } else if (comp.includes("variable")) {
             // Variable pay: ratio-based, never daily-wage
             if (pd === 0) {
                 amount = 0;
