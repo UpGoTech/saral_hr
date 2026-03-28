@@ -71,8 +71,13 @@ class EmployeeLoanAdvance(Document):
     def calculate_outstanding(self):
         if not self.schedule:
             self.outstanding_amount = self.amount
+            self.total_deducted = 0
             return
-        total_deducted = sum(row.deduction_amount for row in self.schedule if row.is_deducted == 1)
+        
+        total_deducted = sum(
+            row.deduction_amount for row in self.schedule if row.is_deducted
+        )
+        self.total_deducted = total_deducted
         self.outstanding_amount = self.amount - total_deducted
 
     def validate_schedule_total(self):

@@ -89,7 +89,7 @@ def get_summary_columns():
         {"label": _("Loan ID"),       "fieldname": "loan_id",       "fieldtype": "Link",  "options": "Employee Loan Advance", "width": 180},
         {"label": _("Employee"),      "fieldname": "employee",      "fieldtype": "Link",  "options": "Employee",              "width": 130},
         {"label": _("Employee Name"), "fieldname": "employee_name", "fieldtype": "Data",                                      "width": 160},
-        {"label": _("Type"),          "fieldname": "type",          "fieldtype": "Data",                                      "width": 90},
+        {"label": _("Loan Type"),     "fieldname": "type",          "fieldtype": "Data",                                      "width": 90},
         {"label": _("Loan Amount"),   "fieldname": "amount",        "fieldtype": "Float",                                     "width": 130},
         {"label": _("Frequency"),     "fieldname": "frequency",     "fieldtype": "Data",                                      "width": 110},
         {"label": _("Start"),         "fieldname": "start",         "fieldtype": "Data",                                      "width": 120},
@@ -194,7 +194,7 @@ def get_detail_columns():
     return [
         {"label": _("Loan ID"),         "fieldname": "loan_id",       "fieldtype": "Link",  "options": "Employee Loan Advance", "width": 180},
         {"label": _("Employee Name"),   "fieldname": "employee_name", "fieldtype": "Data",                                      "width": 150},
-        {"label": _("Type"),            "fieldname": "type",          "fieldtype": "Data",                                      "width": 90},
+        {"label": _("Loan Type"),            "fieldname": "type",          "fieldtype": "Data",                                      "width": 90},
         {"label": _("Month"),           "fieldname": "month",         "fieldtype": "Data",                                      "width": 130},
         {"label": _("Base EMI"),        "fieldname": "scheduled_amt", "fieldtype": "Float",                                     "width": 130},
         {"label": _("Actual Deducted"), "fieldname": "actual_amt",    "fieldtype": "Float",                                     "width": 140},

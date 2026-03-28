@@ -12,13 +12,14 @@
   "date",
   "reason",
   "currency",
-  "amount",
+  "installment_gap",
   "column_break_puxg",
   "tenure_months",
   "start_month",
   "start_year",
-  "installment_gap",
+  "amount",
   "monthly_deduction",
+  "total_deducted",
   "outstanding_amount",
   "is_deducted",
   "section_break_uskz",
@@ -46,7 +47,7 @@
    "fieldname": "type",
    "fieldtype": "Select",
    "in_list_view": 1,
-   "label": "Type",
+   "label": "Loan Type",
    "options": "\nLoan-I\nLoan-II\nAdvance",
    "reqd": 1
   },
@@ -105,7 +106,7 @@
    "fieldname": "installment_gap",
    "fieldtype": "Select",
    "label": "Repayment Frequency",
-   "options": "\nMonthly\nBi-Monthly\nQuarterly"
+   "options": "\nMonthly\n2 Month Gap\n3 Month Gap"
   },
   {
    "depends_on": "eval: doc.type == 'Loan-I' || doc.type == 'Loan-II'",
@@ -162,12 +163,20 @@
    "in_list_view": 1,
    "label": "Full Name",
    "reqd": 1
+  },
+  {
+   "depends_on": "eval: doc.type == 'Loan-I' || doc.type == 'Loan-II'",
+   "fieldname": "total_deducted",
+   "fieldtype": "Currency",
+   "label": "Total Deducted",
+   "options": "currency",
+   "read_only": 1
   }
  ],
  "index_web_pages_for_search": 1,
  "is_submittable": 1,
  "links": [],
- "modified": "2026-03-25 12:03:30.036607",
+ "modified": "2026-03-26 17:28:35.354816",
  "modified_by": "Administrator",
  "module": "Saral Hr",
  "name": "Employee Loan Advance",

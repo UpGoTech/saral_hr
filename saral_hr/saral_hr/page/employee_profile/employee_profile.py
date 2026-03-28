@@ -221,7 +221,116 @@ def get_employee_profile_data(employee):
             cancelled_ssas.append(_serialize_ssa(frappe.get_doc("Salary Structure Assignment", rec.name)))
         except Exception:
             pass
-
+        
+  # ── Loan Ledger ────────────────────────────────────────────────────────────
+    
+    loan_ledger = []
+    try:
+        # Fetch ONLY submitted loans (docstatus = 1) for this employee
+        loan_names = frappe.db.get_all(
+            "Employee Loan Advance",
+            filters={
+                "employee": employee,
+                "docstatus": 1
+            },
+            fields=["name"],
+            order_by="creation desc"
+        )
+        
+        for ln in loan_names:
+            try:
+                loan_doc = frappe.get_doc("Employee Loan Advance", ln.name)
+                
+                schedule_rows = []
+                total_recovered = 0.0
+                total_outstanding = 0.0
+                
+                loan_type = loan_doc.get("type")
+                loan_amount = float(loan_doc.get("amount") or 0)
+                
+                # Check if this is Advance or Loan
+                if loan_type == "Advance":
+                    # ADVANCE: Single deduction, no schedule
+                    is_deducted = loan_doc.get("is_deducted", 0)
+                    
+                    if is_deducted:
+                        total_recovered = loan_amount
+                        total_outstanding = 0
+                    else:
+                        total_recovered = 0
+                        total_outstanding = loan_amount
+                    
+                    # For display consistency
+                    schedule_rows = []  # No schedule for advance
+                    
+                else:
+                    # LOAN-I or LOAN-II: Has schedule table
+                    if loan_doc.get("schedule") and len(loan_doc.schedule) > 0:
+                        for row in loan_doc.schedule:
+                            deducted = float(row.get("deduction_amount") or 0)
+                            base_emi = float(row.get("deduction_amount") or 0)
+                            status = "Deducted" if row.get("is_deducted") else "Pending"
+                            if row.get("is_deferred"):
+                                status = "Deferred"
+                            deferred_to = str(row.get("deferred_to")) if row.get("deferred_to") else None
+                            
+                            if status == "Deducted":
+                                total_recovered += deducted
+                            else:
+                                total_outstanding += base_emi
+                            
+                            schedule_rows.append({
+                                "month": str(row.get("month")) if row.get("month") else None,
+                                "base_emi": base_emi,
+                                "actual_deducted": deducted,
+                                "status": status,
+                                "deferred_to": deferred_to,
+                            })
+                    else:
+                        # Should not happen for loans, but fallback
+                        total_outstanding = loan_amount
+                
+                pct_recovered = round((total_recovered / loan_amount * 100), 1) if loan_amount else 0
+                
+                # Determine status
+                if total_outstanding <= 0:
+                    status = "Completed"
+                else:
+                    status = "Active"
+                
+                # Prepare loan data
+                loan_data = {
+                    "name": loan_doc.name,
+                    "loan_type": loan_type,
+                    "loan_amount": loan_amount,
+                    "start_date": str(loan_doc.get("date")) if loan_doc.get("date") else None,
+                    "status": status,
+                    "total_recovered": total_recovered,
+                    "outstanding": total_outstanding,
+                    "pct_recovered": pct_recovered,
+                    "schedule": schedule_rows,
+                }
+                
+                # Add loan-specific fields
+                if loan_type == "Advance":
+                    loan_data["is_deducted"] = loan_doc.get("is_deducted", 0)
+                else:
+                    loan_data["frequency"] = loan_doc.get("installment_gap") or ""
+                    loan_data["tenure_months"] = loan_doc.get("tenure_months")
+                    loan_data["tenure_display"] = f"{loan_doc.get('tenure_months')} months" if loan_doc.get('tenure_months') else "—"
+                    loan_data["monthly_deduction"] = float(loan_doc.get("monthly_deduction") or 0)
+                    loan_data["start_month"] = loan_doc.get("start_month") or ""
+                    loan_data["start_year"] = loan_doc.get("start_year") or ""
+                
+                loan_ledger.append(loan_data)
+                
+            except Exception as e:
+                frappe.log_error(f"Error loading loan {ln.name}: {str(e)}", "Employee Profile")
+                continue
+                    
+    except Exception as e:
+        frappe.log_error(f"Error fetching loans: {str(e)}", "Employee Profile")
+    # ── Return data ────────────────────────────────────────────────────────────
     return {
         "employee":                  emp.employee,
         "first_name":                emp.first_name,
@@ -242,4 +351,5 @@ def get_employee_profile_data(employee):
         "final_reporting_name":      final_reporting_name,
         "latest_ssa":                latest_ssa,
         "cancelled_ssas":            cancelled_ssas,
+        "loan_ledger":               loan_ledger, 
     }

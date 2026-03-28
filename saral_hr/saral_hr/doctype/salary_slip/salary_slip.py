@@ -46,27 +46,16 @@ class SalarySlip(Document):
 
     # ── Core helper: sync is_deducted on loan/advance docs ───────────────────
     def _sync_loan_advance_deducted(self, deducted):
-        """
-        Loop through deductions table on this salary slip.
-        For every row that is Loan-I / Loan-II / Advance,
-        find the matching Employee Loan Advance doc and update is_deducted.
-
-        Uses frappe.db.set_value instead of doc.save() so that submitted
-        Employee Loan Advance docs can be updated without triggering the
-        "cannot change field after submission" validation error.
-        """
         d                = getdate(self.start_date)
-        slip_month_label = f"{MONTHS_LIST[d.month - 1]} {d.year}"  # e.g. "March 2026"
+        slip_month_label = f"{MONTHS_LIST[d.month - 1]} {d.year}"
         flag             = 1 if deducted else 0
 
         for row in self.deductions:
             comp = (row.salary_component or "").strip()
 
-            # Only process our loan/advance components — skip everything else
             if comp not in ("Loan-I", "Loan-II", "Advance"):
                 continue
 
-            # Find all submitted loan/advance docs for this employee + type
             loan_docs = frappe.db.get_all(
                 "Employee Loan Advance",
                 filters={
@@ -81,13 +70,10 @@ class SalarySlip(Document):
                 doc = frappe.get_doc("Employee Loan Advance", loan_rec.name)
 
                 if comp in ("Loan-I", "Loan-II"):
-                    # Find the schedule row for this month with matching amount
                     changed = False
                     for srow in doc.schedule:
                         if (srow.month == slip_month_label
                                 and flt(srow.deduction_amount) == flt(row.amount)):
-                            # Use db.set_value directly on the child row —
-                            # this bypasses the submitted-doc restriction
                             frappe.db.set_value(
                                 srow.doctype,
                                 srow.name,
@@ -96,23 +82,22 @@ class SalarySlip(Document):
                                 update_modified=False
                             )
                             changed = True
-                            break  # Only update one row per slip
+                            break
 
                     if changed:
-                        # Reload doc to get updated schedule, then recalculate
                         doc.reload()
                         doc.calculate_outstanding()
-                        # Update outstanding_amount directly — no save() needed
                         frappe.db.set_value(
                             "Employee Loan Advance",
                             doc.name,
-                            "outstanding_amount",
-                            doc.outstanding_amount,
+                            {
+                                "outstanding_amount": doc.outstanding_amount,
+                                "total_deducted":     doc.total_deducted
+                            },
                             update_modified=False
                         )
 
                 elif comp == "Advance":
-                    # Advance has no schedule — just flip the flag directly
                     frappe.db.set_value(
                         "Employee Loan Advance",
                         loan_rec.name,
@@ -120,7 +105,6 @@ class SalarySlip(Document):
                         flag,
                         update_modified=False
                     )
-
 
 # ─── Duplicate Check ──────────────────────────────────────────────────────────
 

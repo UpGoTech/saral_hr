@@ -10,6 +10,20 @@ frappe.query_reports["Employee Loan Advance Ledger"] = {
             fieldtype: "Link",
             options: "Employee",
             default: frappe.defaults.get_default("employee") || "",
+            get_query: function() {
+                const company = frappe.query_report.get_filter_value("company");
+
+                // Get all employees who have at least one submitted loan
+                // Then filter by company if selected
+                // We use a direct SQL-style frappe query via filters on Employee
+                // scoped to those present in Employee Loan Advance
+                return {
+                    query: "saral_hr.saral_hr.report.employee_loan_advance_ledger.employee_loan_advance_ledger.get_employees_with_loans",
+                    filters: {
+                        company: company || ""
+                    }
+                };
+            },
         },
         {
             fieldname: "type",
@@ -34,7 +48,7 @@ frappe.query_reports["Employee Loan Advance Ledger"] = {
     ],
 
     // ----------------------------------------------------------------
-    //  On Load — add "Show Detail" button in toolbar
+    //  On Load
     // ----------------------------------------------------------------
     onload(report) {
         report.page.add_inner_button(__("🔍 Show Detail"), function () {
@@ -49,66 +63,51 @@ frappe.query_reports["Employee Loan Advance Ledger"] = {
     },
 
     // ----------------------------------------------------------------
-    //  Formatter — colors for status, bold for total row
+    //  Formatter
     // ----------------------------------------------------------------
     formatter(value, row, column, data, default_formatter) {
         value = default_formatter(value, row, column, data);
 
         if (!data) return value;
 
-        // Format float fields with ₹ symbol
+        const numeric_fields = ["amount", "total_paid", "outstanding", "scheduled_amt", "actual_amt", "running_bal"];
+        if (data.is_group_row && numeric_fields.includes(column.fieldname)) {
+            return "";
+        }
+
         const currency_fields = ["amount", "total_paid", "outstanding", "scheduled_amt", "actual_amt", "running_bal"];
         if (currency_fields.includes(column.fieldname) && value !== "" && value !== undefined) {
             const num = parseFloat((data[column.fieldname] || 0));
             const formatted = "₹ " + num.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
-            // Outstanding in red if > 0
             if (column.fieldname === "outstanding" && num > 0) {
                 return `<span style="color:red; font-weight:600">${formatted}</span>`;
             }
-            // Running balance green if zero
             if (column.fieldname === "running_bal" && num === 0) {
                 return `<span style="color:green; font-weight:600">${formatted}</span>`;
             }
-            // Bold for total row
             if (data.loan_id === "TOTAL") {
                 return `<strong>${formatted}</strong>`;
             }
             return formatted;
         }
 
-        // Bold grand total row (non-currency fields)
         if (data.loan_id === "TOTAL") {
             return `<strong style="font-size:13px">${value}</strong>`;
         }
 
-        // Bold group header rows (loan ID rows in detail view)
         if (data.is_group_row) {
             return `<strong style="color:#1a73e8">${value}</strong>`;
         }
 
-        // Status column coloring
         if (column.fieldname === "status") {
-            const colors = {
-                "Active":    "orange",
-                "Completed": "green",
-                "Deducted":  "green",
-                "Deferred":  "#1a73e8",
-                "Pending":   "grey",
-            };
-            const color = colors[data.status] || "black";
-            const icons = {
-                "Active":    "🔄",
-                "Completed": "✅",
-                "Deducted":  "✅",
-                "Deferred":  "↪",
-                "Pending":   "⏳",
-            };
-            const icon = icons[data.status] || "";
+            const colors = { "Active": "orange", "Completed": "green", "Deducted": "green", "Deferred": "#1a73e8", "Pending": "grey" };
+            const icons  = { "Active": "🔄", "Completed": "✅", "Deducted": "✅", "Deferred": "↪", "Pending": "⏳" };
+            const color  = colors[data.status] || "black";
+            const icon   = icons[data.status]  || "";
             return `<span style="color:${color}; font-weight:600">${icon} ${data.status || ""}</span>`;
         }
 
-        // Deferred to — show in blue
         if (column.fieldname === "deferred_to" && data.deferred_to) {
             return `<span style="color:#1a73e8">→ ${data.deferred_to}</span>`;
         }
@@ -116,27 +115,17 @@ frappe.query_reports["Employee Loan Advance Ledger"] = {
         return value;
     },
 
-    // ----------------------------------------------------------------
-    //  Row click in Summary → switch to Detail for that loan's employee
-    // ----------------------------------------------------------------
     get_datatable_options(options) {
         return Object.assign(options, {
             events: {
                 onCheckRow(data) {
                     if (!data) return;
-
                     const current_view = frappe.query_report.get_filter_value("view");
                     if (current_view !== "Summary") return;
-
-                    // Find employee value from row data (index 1 = employee column)
-                    const employee_cell = data.find(
-                        cell => cell && cell.column && cell.column.fieldname === "employee"
-                    );
-
+                    const employee_cell = data.find(cell => cell && cell.column && cell.column.fieldname === "employee");
                     if (employee_cell && employee_cell.content) {
                         frappe.query_report.set_filter_value("employee", employee_cell.content);
                     }
-
                     frappe.query_report.set_filter_value("view", "Detail");
                     frappe.query_report.refresh();
                 }

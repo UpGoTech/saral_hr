@@ -300,7 +300,6 @@ function inject_ep_styles() {
         .ep-sal-prog-arrow { font-size:14px; color:#d1d5db; padding:0 4px; margin-top:2px; }
         .ep-sal-prog-hike-chip { display:inline-block; font-size:10px; font-weight:700; background:#f0fdf4; color:#166534; border:1px solid #86efac; border-radius:10px; padding:1px 7px; margin-top:3px; }
 
-        /* ── Component toggles — 3 columns now (earnings / deductions / employer share) ── */
         .ep-comp-toggle-wrap { margin-top:10px; }
         .ep-comp-cols { display:grid; grid-template-columns:1fr 1fr 1fr; gap:8px; }
         .ep-comp-toggle-btn {
@@ -350,6 +349,119 @@ function inject_ep_styles() {
         .ep-ssa-cancelled-meta { font-size:11px; color:var(--text-muted); display:flex; gap:10px; flex-wrap:wrap; }
         .ep-ssa-cancelled-ctc  { font-size:12px; font-weight:600; color:var(--text-color); }
         .ep-ssa-cancelled-badge { display:inline-block; padding:1px 7px; font-size:10px; font-weight:600; border-radius:10px; background:#fee2e2; color:#991b1b; }
+
+        /* ══════════════════════════════════════════════════════
+           LOAN LEDGER STYLES  — added below existing styles
+           ══════════════════════════════════════════════════════ */
+
+        .ep-loan-section-title { font-size:15px; font-weight:600; color:var(--text-color); margin:0 0 12px 0; }
+
+        .ep-loan-overview {
+            display:grid; grid-template-columns:repeat(4,1fr);
+            border:1px solid var(--border-color,#e5e7eb);
+            border-radius:8px; overflow:hidden; margin-bottom:14px;
+        }
+        .ep-loan-ov-item {
+            padding:14px 16px; text-align:center;
+            border-right:1px solid var(--border-color,#e5e7eb);
+        }
+        .ep-loan-ov-item:last-child { border-right:none; }
+        .ep-loan-ov-label { font-size:10px; text-transform:uppercase; letter-spacing:0.05em; color:var(--text-muted); margin-bottom:4px; }
+        .ep-loan-ov-val { font-size:18px; font-weight:700; }
+        .ep-loan-ov-val.blue   { color:#1d4ed8; }
+        .ep-loan-ov-val.green  { color:#16a34a; }
+        .ep-loan-ov-val.red    { color:#dc2626; }
+        .ep-loan-ov-val.purple { color:#9333ea; }
+
+        .ep-loan-card { border:1px solid var(--border-color,#e5e7eb); border-radius:8px; overflow:hidden; margin-bottom:10px; }
+        .ep-loan-card.active-loan { border-color:#86efac; }
+        .ep-loan-card-header {
+            display:flex; align-items:center; justify-content:space-between;
+            padding:12px 16px; cursor:pointer; user-select:none;
+            background:var(--control-bg,#f9fafb);
+        }
+        .ep-loan-card.active-loan .ep-loan-card-header { background:linear-gradient(135deg,#dcfce7,#bbf7d0); }
+        .ep-loan-card-header-left  { display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
+        .ep-loan-card-header-right { display:flex; align-items:center; gap:10px; }
+        .ep-loan-card-id { font-size:12px; font-weight:700; color:#1d4ed8; font-family:monospace; }
+        .ep-loan-type-badge {
+            font-size:10px; font-weight:700; padding:2px 8px;
+            border-radius:10px; background:#eff6ff; color:#1d4ed8; border:1px solid #bfdbfe;
+        }
+        .ep-loan-status-badge { font-size:10px; font-weight:700; padding:2px 8px; border-radius:10px; }
+        .ep-loan-status-badge.active    { background:#dcfce7; color:#166534; border:1px solid #86efac; }
+        .ep-loan-status-badge.completed { background:#e0e7ff; color:#3730a3; border:1px solid #a5b4fc; }
+        .ep-loan-status-badge.pending   { background:#fef9c3; color:#713f12; border:1px solid #fde047; }
+        .ep-loan-card-amount { font-size:14px; font-weight:700; color:var(--text-color); }
+        .ep-loan-chev { font-size:10px; color:var(--text-muted); transition:transform 0.2s; }
+        .ep-loan-chev.open { transform:rotate(180deg); }
+
+        .ep-loan-progress-wrap { padding:0 16px 12px; background:var(--control-bg,#f9fafb); }
+        .ep-loan-card.active-loan .ep-loan-progress-wrap { background:linear-gradient(135deg,#dcfce7,#f0fdf4); }
+        .ep-loan-progress-meta {
+            display:flex; justify-content:space-between; flex-wrap:wrap;
+            font-size:11px; color:var(--text-muted); margin-bottom:4px; gap:4px;
+        }
+        .ep-loan-progress-bar-bg { height:6px; border-radius:3px; background:var(--border-color,#e5e7eb); overflow:hidden; }
+        .ep-loan-progress-bar-fill { height:100%; border-radius:3px; background:linear-gradient(90deg,#22c55e,#16a34a); transition:width 0.5s; }
+
+        .ep-loan-card-body { display:none; border-top:1px solid var(--border-color,#e5e7eb); }
+        .ep-loan-card-body.open { display:block; }
+
+        .ep-loan-body-stats { display:grid; grid-template-columns:repeat(5,1fr); border-bottom:1px solid var(--border-color,#e5e7eb); }
+        .ep-loan-body-stat { padding:10px 12px; text-align:center; border-right:1px solid var(--border-color,#e5e7eb); }
+        .ep-loan-body-stat:last-child { border-right:none; }
+        .ep-loan-body-stat-label { font-size:10px; color:var(--text-muted); text-transform:uppercase; letter-spacing:0.04em; margin-bottom:3px; }
+        .ep-loan-body-stat-val   { font-size:13px; font-weight:700; color:var(--text-color); }
+
+        .ep-loan-tabs-wrap { padding:12px 16px; }
+        .ep-loan-tabs-nav { display:flex; gap:4px; border-bottom:1px solid var(--border-color,#e5e7eb); margin-bottom:10px; }
+        .ep-loan-tab-btn {
+            padding:5px 12px; border:none; background:none;
+            font-size:12px; font-weight:600; cursor:pointer;
+            color:var(--text-muted); border-bottom:2px solid transparent;
+            margin-bottom:-1px; transition:all 0.15s;
+        }
+        .ep-loan-tab-btn.active { color:#1d4ed8; border-bottom-color:#1d4ed8; }
+        .ep-loan-tab-btn .ep-tab-count {
+            font-size:10px; font-weight:700; padding:1px 5px;
+            border-radius:8px; background:#e5e7eb; color:var(--text-muted); margin-left:4px;
+        }
+        .ep-loan-tab-btn.active .ep-tab-count { background:#bfdbfe; color:#1d4ed8; }
+        .ep-loan-tab-panel { display:none; }
+        .ep-loan-tab-panel.active { display:block; }
+
+        .ep-loan-schedule-table { width:100%; border-collapse:collapse; font-size:12px; }
+        .ep-loan-schedule-table th {
+            text-align:left; padding:6px 10px;
+            background:var(--control-bg,#f9fafb);
+            border-bottom:1px solid var(--border-color,#e5e7eb);
+            font-size:10px; text-transform:uppercase; letter-spacing:0.04em;
+            color:var(--text-muted); font-weight:600;
+        }
+        .ep-loan-schedule-table td { padding:7px 10px; border-bottom:1px solid var(--border-color,#f3f4f6); vertical-align:middle; }
+        .ep-loan-schedule-table tr:last-child td { border-bottom:none; }
+        .ep-loan-schedule-table tr:nth-child(even) td { background:var(--control-bg,#f9fafb); }
+
+        .ep-sched-status { display:inline-block; font-size:10px; font-weight:600; padding:2px 7px; border-radius:8px; }
+        .ep-sched-status.deducted { background:#dcfce7; color:#166534; }
+        .ep-sched-status.pending  { background:#fef9c3; color:#713f12; }
+        .ep-sched-status.deferred { background:#fee2e2; color:#991b1b; }
+
+        .ep-sched-bar-wrap { width:60px; height:5px; background:#e5e7eb; border-radius:3px; overflow:hidden; display:inline-block; vertical-align:middle; margin-left:6px; }
+        .ep-sched-bar-fill { height:100%; border-radius:3px; background:#22c55e; }
+
+        .ep-loan-empty {
+            text-align:center; padding:32px 16px;
+            font-size:13px; color:var(--text-muted);
+            background:var(--control-bg,#f9fafb); border-radius:8px;
+            border:1px dashed var(--border-color,#e5e7eb);
+        }
+
+        @media (max-width:900px) {
+            .ep-loan-overview    { grid-template-columns:1fr 1fr; }
+            .ep-loan-body-stats  { grid-template-columns:1fr 1fr 1fr; }
+        }
     `;
     document.head.appendChild(style);
 
@@ -537,6 +649,7 @@ function render_profile($sidebar, $main, d, emp) {
     main += "<div>" + render_timeline_html(timeline) + "</div>";
     main += "<div class='ep-ssa-panel'>" + render_ssa_panel_html(latest_ssa, cancelled_ssas, c) + "</div>";
     main += "</div></div>";
+    main += render_loan_ledger_html(d.loan_ledger || []);
 
     $main.html(main);
 
@@ -596,6 +709,24 @@ function render_profile($sidebar, $main, d, emp) {
         var $chev    = $(this).find(".ep-comp-chevron");
         $list.toggleClass("open");
         $chev.toggleClass("open");
+    });
+    // ── Loan card expansion toggle (ADD THIS) ──
+    $main.on("click", ".ep-loan-card-header", function() {
+        var $card = $(this).closest(".ep-loan-card");
+        var $body = $card.find(".ep-loan-card-body");
+        var $chev = $(this).find(".ep-loan-chev");
+        
+        $body.toggleClass("open");
+        $chev.toggleClass("open");
+    });
+// ── Loan schedule tab switching ──
+    $main.on("click", ".ep-loan-tab-btn", function () {
+        var $wrap = $(this).closest(".ep-loan-tabs-wrap");
+        $wrap.find(".ep-loan-tab-btn").removeClass("active");
+        $(this).addClass("active");
+        var target = $(this).data("tab");
+        $wrap.find(".ep-loan-tab-panel").removeClass("active");
+        $wrap.find("[data-tab='" + target + "'].ep-loan-tab-panel").addClass("active");
     });
 }
 
@@ -938,4 +1069,372 @@ function info_row(label, val) {
 }
 function sal_item(label, val) {
     return "<div class='ep-salary-item'><div class='ep-salary-item-label'>" + label + "</div><div class='ep-salary-item-val'>&#8377;" + fmt_currency(val) + "</div></div>";
+}
+// ── Loan Ledger — main render ─────────────────────────────────────────────────
+function render_loan_ledger_html(loan_ledger) {
+    if (!loan_ledger || !loan_ledger.length) {
+        return "<div class='ep-card'>" +
+            "<div class='ep-title-area'><h4 class='ep-card-title'>💳 Loan Ledger</h4></div>" +
+            "<div class='ep-loan-empty'>No loans or advances found for this employee.</div>" +
+            "</div>";
+    }
+
+    // ALWAYS show years from 2024 to 2028
+    var start_year = 2024;
+    var end_year = 2028;
+    var years = [];
+    for (var y = start_year; y <= end_year; y++) {
+        years.push(y);
+    }
+    
+    // Create filter dropdown HTML
+    var filter_html = "<div style='display: flex; gap: 12px; align-items: center;'>";
+    filter_html += "<select id='loan-year-filter' class='ep-year-select' style='padding: 6px 12px; font-size: 12px; border-radius: 6px; border: 1px solid #e5e7eb; background: #fff; cursor: pointer;'>";
+    filter_html += "<option value='all'>All Years</option>";
+    years.forEach(function(year) {
+        filter_html += "<option value='" + year + "'>" + year + "</option>";
+    });
+    filter_html += "</select>";
+    filter_html += "</div>";
+    
+    // Store original loan ledger data
+    window.original_loan_ledger = loan_ledger;
+    
+    // Function to render loan cards
+    function render_loan_cards(loans) {
+        // Compute overview totals for filtered loans
+        var total_borrowed    = 0;
+        var total_recovered   = 0;
+        var total_outstanding = 0;
+        var active_count      = 0;
+        var total_loans_count = 0;
+        var total_advances_count = 0;
+        
+        loans.forEach(function(ln) {
+            total_borrowed    += Number(ln.loan_amount    || 0);
+            total_recovered   += Number(ln.total_recovered || 0);
+            total_outstanding += Number(ln.outstanding    || 0);
+            if ((ln.status || "").toLowerCase() === "active") active_count++;
+            
+            if (ln.loan_type === "Advance") {
+                total_advances_count++;
+            } else {
+                total_loans_count++;
+            }
+        });
+        
+        var container = document.getElementById('loan-ledger-container');
+        if (!container) return;
+        
+        var html = "";
+        
+        // Overview strip — 4 summary boxes
+        html += "<div class='ep-loan-overview'>";
+        html += loan_ov_item("Total Borrowed",    "&#8377;" + fmt_currency(total_borrowed),    "blue");
+        html += loan_ov_item("Total Recovered",   "&#8377;" + fmt_currency(total_recovered),   "green");
+        html += loan_ov_item("Total Outstanding", "&#8377;" + fmt_currency(total_outstanding), "red");
+        html += loan_ov_item("Active Loans",      active_count,                                "purple");
+        html += "</div>";
+        
+        // Individual loan cards
+        if (loans.length === 0) {
+            html += "<div class='ep-loan-empty'>No loans or advances found for selected year.</div>";
+        } else {
+            loans.forEach(function(ln) {
+                var is_active    = (ln.status || "").toLowerCase() === "active";
+                var status_label = ln.status || "Unknown";
+                var status_cls   = is_active ? "active"
+                                 : status_label.toLowerCase() === "completed" ? "completed" : "pending";
+                
+                var is_advance = (ln.loan_type === "Advance");
+                
+                html += "<div class='ep-loan-card" + (is_active ? " active-loan" : "") + "'>";
+                
+                // Card header
+                html += "<div class='ep-loan-card-header' style='cursor: pointer;'>";
+                html += "<div class='ep-loan-card-header-left'>";
+                html += "<span class='ep-loan-card-id'>" + ln.name + "</span>";
+                html += "<span class='ep-loan-type-badge'>" + (ln.loan_type || "Loan") + "</span>";
+                if (!is_advance && ln.frequency)
+                    html += "<span style='font-size:11px;color:var(--text-muted);'>" + ln.frequency + "</span>";
+                if (ln.start_date)
+                    html += "<span style='font-size:11px;color:var(--text-muted);'>&#128197; " + fmt_date_human(ln.start_date) + "</span>";
+                html += "</div>";
+                html += "<div class='ep-loan-card-header-right'>";
+                html += "<span class='ep-loan-card-amount'>&#8377;" + fmt_currency(ln.loan_amount) + "</span>";
+                html += "<span class='ep-loan-status-badge " + status_cls + "'>" + status_label + "</span>";
+                html += "<span class='ep-loan-chev' style='display: inline-block; transition: transform 0.2s;'>&#9660;</span>";
+                html += "</div></div>";
+                
+                // Progress bar
+                var pct = Number(ln.pct_recovered || 0);
+                html += "<div class='ep-loan-progress-wrap'>";
+                html += "<div class='ep-loan-progress-meta'>";
+                html += "<span>Recovered: <strong>&#8377;" + fmt_currency(ln.total_recovered) + "</strong></span>";
+                html += "<span>Outstanding: <strong style='color:#dc2626;'>&#8377;" + fmt_currency(ln.outstanding) + "</strong></span>";
+                html += "<span style='color:#16a34a;font-weight:700;'>" + pct + "% repaid</span>";
+                html += "</div>";
+                html += "<div class='ep-loan-progress-bar-bg'><div class='ep-loan-progress-bar-fill' style='width:" + Math.min(pct, 100) + "%'></div></div>";
+                html += "</div>";
+                
+                // Expandable body - initially hidden
+                html += "<div class='ep-loan-card-body' style='display: none;'>";
+                
+                if (is_advance) {
+                    // ADVANCE DISPLAY
+                    html += "<div class='ep-loan-body-stats' style='grid-template-columns: repeat(3, 1fr);'>";
+                    html += loan_body_stat("Advance Amount", "&#8377;" + fmt_currency(ln.loan_amount));
+                    html += loan_body_stat("Status", ln.is_deducted ? "Deducted" : "Pending");
+                    html += loan_body_stat("Date", ln.start_date ? fmt_date_human(ln.start_date) : "—");
+                    html += "</div>";
+                    
+                } else {
+                    // LOAN-I / LOAN-II DISPLAY
+                    html += "<div class='ep-loan-body-stats'>";
+                    html += loan_body_stat("Loan Amount", "&#8377;" + fmt_currency(ln.loan_amount));
+                    html += loan_body_stat("Installment Amount", "&#8377;" + fmt_currency(ln.monthly_deduction || 0));
+                    html += loan_body_stat("Tenure Months", ln.tenure_display || (ln.tenure_months ? ln.tenure_months + " months" : "—"));
+                    html += loan_body_stat("Frequency", ln.frequency || "—");
+                    html += loan_body_stat("Start Date", ln.start_date ? fmt_date_human(ln.start_date) : "—");
+                    html += "</div>";
+                    
+                    // Schedule tabs for loans
+                    html += render_loan_schedule_tabs(ln.schedule || [], ln.loan_amount);
+                }
+                
+                html += "</div>"; // .ep-loan-card-body
+                html += "</div>"; // .ep-loan-card
+            });
+        }
+        
+        container.innerHTML = html;
+        
+        // Attach click handlers after rendering
+        attach_loan_card_events($(container));
+    }
+    
+    // Function to filter loans by year
+    function filter_loans_by_year(year_filter) {
+        var filtered_loans = [];
+        
+        if (year_filter === 'all') {
+            filtered_loans = window.original_loan_ledger;
+        } else {
+            filtered_loans = window.original_loan_ledger.filter(function(ln) {
+                if (ln.start_date) {
+                    var loan_year = new Date(ln.start_date).getFullYear();
+                    return loan_year == year_filter;
+                }
+                return false;
+            });
+        }
+        
+        render_loan_cards(filtered_loans);
+        update_count_badges(filtered_loans);
+    }
+    
+    // Update count badges function
+    function update_count_badges(loans) {
+        var loan_count = 0;
+        var advance_count = 0;
+        loans.forEach(function(ln) {
+            if (ln.loan_type === "Advance") {
+                advance_count++;
+            } else {
+                loan_count++;
+            }
+        });
+        
+        var badges_html = "";
+        badges_html += "<span style='background: #eff6ff; padding: 4px 10px; border-radius: 20px; color: #1d4ed8; font-size: 12px;'>";
+        badges_html += "📊 Total Loans: <strong>" + loan_count + "</strong>";
+        badges_html += "</span>";
+        badges_html += "<span style='background: #fef3c7; padding: 4px 10px; border-radius: 20px; color: #b45309; font-size: 12px;'>";
+        badges_html += "💰 Total Advances: <strong>" + advance_count + "</strong>";
+        badges_html += "</span>";
+        
+        var badges_container = document.getElementById('loan-count-badges');
+        if (badges_container) {
+            badges_container.innerHTML = badges_html;
+        }
+    }
+    
+    // Create main container HTML
+    var main_html = "<div class='ep-card'>";
+    main_html += "<div class='ep-title-area'>";
+    main_html += "<h4 class='ep-card-title'>💳 Loan Advance Ledger</h4>";
+    
+    // Add year filter and counts on the right
+    main_html += "<div style='display: flex; gap: 12px; align-items: center;'>";
+    main_html += filter_html;
+    main_html += "<div style='display: flex; gap: 12px;' id='loan-count-badges'></div>";
+    main_html += "</div>";
+    main_html += "</div>";
+    main_html += "<div id='loan-ledger-container'></div>";
+    main_html += "</div>";
+    
+    // Initial render after DOM is ready
+    setTimeout(function() {
+        // Initial render with all loans
+        render_loan_cards(window.original_loan_ledger);
+        update_count_badges(window.original_loan_ledger);
+        
+        // Attach filter change event
+        var year_filter_select = document.getElementById('loan-year-filter');
+        if (year_filter_select) {
+            // Remove existing listener to avoid duplicates
+            var newSelect = year_filter_select.cloneNode(true);
+            year_filter_select.parentNode.replaceChild(newSelect, year_filter_select);
+            
+            newSelect.addEventListener('change', function(e) {
+                filter_loans_by_year(e.target.value);
+            });
+        }
+    }, 100);
+    
+    return main_html;
+}
+
+// Helper function to attach event handlers for loan cards
+function attach_loan_card_events($container) {
+    // Loan card expansion - using slideToggle for smooth animation
+    $container.find(".ep-loan-card-header").off("click").on("click", function(e) {
+        e.stopPropagation();
+        var $header = $(this);
+        var $card = $header.closest(".ep-loan-card");
+        var $body = $card.find(".ep-loan-card-body");
+        var $chev = $header.find(".ep-loan-chev");
+        
+        // Toggle the body visibility with slide animation
+        if ($body.is(":visible")) {
+            $body.slideUp(200);
+            $chev.css("transform", "rotate(0deg)");
+        } else {
+            $body.slideDown(200);
+            $chev.css("transform", "rotate(180deg)");
+        }
+    });
+    
+    // Loan schedule tab switching
+    $container.find(".ep-loan-tab-btn").off("click").on("click", function(e) {
+        e.stopPropagation();
+        var $btn = $(this);
+        var $wrap = $btn.closest(".ep-loan-tabs-wrap");
+        $wrap.find(".ep-loan-tab-btn").removeClass("active");
+        $btn.addClass("active");
+        var target = $btn.data("tab");
+        $wrap.find(".ep-loan-tab-panel").removeClass("active");
+        $wrap.find("[data-tab='" + target + "'].ep-loan-tab-panel").addClass("active");
+    });
+}
+
+// ── Loan schedule tabs ────────────────────────────────────────────────────────
+
+function render_loan_schedule_tabs(schedule, loan_amount) {
+    if (!schedule.length) {
+        return "<div style='padding:16px;font-size:12px;color:var(--text-muted);'>No repayment schedule found.</div>";
+    }
+
+    var all      = schedule;
+    var pending  = schedule.filter(function(r) { return r.status === "Pending";  });
+    var deferred = schedule.filter(function(r) { return r.status === "Deferred"; });
+    var deducted = schedule.filter(function(r) { return r.status === "Deducted"; });
+
+    var html = "<div class='ep-loan-tabs-wrap'>";
+    html += "<div class='ep-loan-tabs-nav'>";
+    html += loan_tab_btn("all",      "All",      all.length,      true);
+    html += loan_tab_btn("pending",  "Pending",  pending.length,  false);
+    html += loan_tab_btn("deferred", "Deferred", deferred.length, false);
+    html += loan_tab_btn("deducted", "Deducted", deducted.length, false);
+    html += "</div>";
+
+    html += loan_tab_panel("all",      all,      loan_amount, true);
+    html += loan_tab_panel("pending",  pending,  loan_amount, false);
+    html += loan_tab_panel("deferred", deferred, loan_amount, false);
+    html += loan_tab_panel("deducted", deducted, loan_amount, false);
+
+    html += "</div>";
+    return html;
+}
+// ── Schedule table ────────────────────────────────────────────────────────────
+
+function render_loan_schedule_table(rows, loan_amount) {
+    if (!rows.length) {
+        return "<div style='padding:12px;text-align:center;font-size:12px;color:var(--text-muted);'>No entries in this filter.</div>";
+    }
+
+    var cumulative = 0;
+    var html = "<div style='max-height:280px;overflow-y:auto;'>";
+    html += "<table class='ep-loan-schedule-table'><thead><tr>";  // ← FIXED: removed "西峡"
+    html += "<th>#</th><th>Month</th><th>Base EMI</th><th>Deducted</th><th>Status</th><th>Deferred To</th>";
+    html += "</tr></thead><tbody>";
+
+    rows.forEach(function(row, idx) {
+        var deducted_amt = Number(row.actual_deducted || 0);
+        if (row.status === "Deducted") cumulative += deducted_amt;
+
+        var status_cls  = row.status === "Deducted" ? "deducted"
+                        : row.status === "Deferred" ? "deferred" : "pending";
+        var status_icon = row.status === "Deducted" ? "✓"
+                        : row.status === "Deferred" ? "↪" : "⌛";
+
+        // Format deferred_to to show only month and year (remove day)
+        var deferred_display = "—";
+        if (row.deferred_to) {
+            if (row.deferred_to.includes('-')) {
+                var date_parts = row.deferred_to.split('-');
+                if (date_parts.length === 3) {
+                    var deferred_date = new Date(row.deferred_to);
+                    if (!isNaN(deferred_date.getTime())) {
+                        deferred_display = deferred_date.toLocaleDateString("en-IN", { month: "long", year: "numeric" });
+                    } else {
+                        deferred_display = row.deferred_to;
+                    }
+                } else {
+                    deferred_display = row.deferred_to;
+                }
+            } else {
+                deferred_display = row.deferred_to;
+            }
+        }
+
+        html += "<tr>";
+        html += "<td style='color:var(--text-muted);font-size:11px;'>" + (idx + 1) + "</td>";
+        html += "<td style='font-weight:500;'>" + (row.month || "—") + "</td>";
+        html += "<td>₹" + fmt_currency(row.base_emi) + "</td>";
+        html += "<td>₹" + fmt_currency(row.actual_deducted) + "</td>";
+        html += "<td><span class='ep-sched-status " + status_cls + "'>" + status_icon + " " + (row.status || "Pending") + "</span></td>";
+        html += "<td style='font-size:11px;color:" + (row.deferred_to ? "#dc2626" : "var(--text-muted)") + ";'>" +
+                (row.deferred_to ? "→ " + deferred_display : "—") + "</td>";
+        html += "</tr>";
+    });
+
+    html += "</tbody></table></div>";
+    return html;
+}
+// ── Small helpers (loan) ──────────────────────────────────────────────────────
+
+function loan_ov_item(label, val, color_cls) {
+    return "<div class='ep-loan-ov-item'>" +
+        "<div class='ep-loan-ov-label'>" + label + "</div>" +
+        "<div class='ep-loan-ov-val " + color_cls + "'>" + val + "</div>" +
+        "</div>";
+}
+
+function loan_body_stat(label, val) {
+    return "<div class='ep-loan-body-stat'>" +
+        "<div class='ep-loan-body-stat-label'>" + label + "</div>" +
+        "<div class='ep-loan-body-stat-val'>" + val + "</div>" +
+        "</div>";
+}
+
+function loan_tab_btn(tab, label, count, active) {
+    return "<button class='ep-loan-tab-btn" + (active ? " active" : "") + "' data-tab='" + tab + "'>" +
+        label + "<span class='ep-tab-count'>" + count + "</span></button>";
+}
+
+function loan_tab_panel(tab, rows, loan_amount, active) {
+    return "<div class='ep-loan-tab-panel" + (active ? " active" : "") + "' data-tab='" + tab + "'>" +
+        render_loan_schedule_table(rows, loan_amount) +
+        "</div>";
 }

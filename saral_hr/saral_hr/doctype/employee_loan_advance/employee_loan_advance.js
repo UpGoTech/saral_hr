@@ -460,10 +460,19 @@ function trigger_generate(frm) {
 /**
  * Builds the repayment schedule rows.
  * Base EMI is floored; last EMI absorbs rounding difference.
+ *
+ * ✅ GAP LOGIC:
+ *   Monthly     = step 1 → Jan, Feb, Mar ...
+ *   2 Month Gap = step 3 → Jan, Apr, Jul ...
+ *                          (Jan kata, Feb+Mar gap, Apr kata)
+ *   3 Month Gap = step 4 → Jan, May, Sep ...
+ *                          (Jan kata, Feb+Mar+Apr gap, May kata)
  */
 function generate_schedule(frm) {
     const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
-    const GAP_MAP = { 'Monthly': 1, 'Bi-Monthly': 2, 'Quarterly': 3 };
+
+    const GAP_MAP = { 'Monthly': 1, '2 Month Gap': 3, '3 Month Gap': 4 };
+
     const gap = GAP_MAP[frm.doc.installment_gap] || 1;
 
     const tenure = parseInt(frm.doc.tenure_months);
