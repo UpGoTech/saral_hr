@@ -35,7 +35,7 @@ function get_year_options() {
 function get_ma_html() {
     return `
     <div class="ma-wrap">
-        <div class="ma-sticky">
+        <div class="ma-sticky" id="ma_sticky_bar">
             <div class="ma-top-wrap">
             <div class="ma-left-block">
             <div class="ma-row1">
@@ -217,7 +217,7 @@ function get_ma_html() {
                             </div>
                         </th>
                         <th colspan="2" class="ma-th-hd-group">
-                            <div class="ma-th-inner ma-th-hd-top">
+                            <div class="ma-th-hd-top-wrap">
                                 <span class="ma-th-label">Half Day</span>
                                 <span class="ma-col-count" id="ma_cnt_hd_total">0</span>
                             </div>
@@ -225,10 +225,14 @@ function get_ma_html() {
                     </tr>
                     <tr class="ma-thead-row2">
                         <th class="ma-th-hd1">
-                            <div class="ma-th-inner ma-th-sub"><span class="ma-th-label">First Half</span></div>
+                            <div class="ma-th-inner ma-th-sub">
+                                <span class="ma-th-label">First Half</span>
+                            </div>
                         </th>
                         <th class="ma-th-hd2">
-                            <div class="ma-th-inner ma-th-sub"><span class="ma-th-label">Second Half</span></div>
+                            <div class="ma-th-inner ma-th-sub">
+                                <span class="ma-th-label">Second Half</span>
+                            </div>
                         </th>
                     </tr>
                 </thead>
@@ -316,9 +320,8 @@ function init_mark_attendance($main) {
     var rowMetaMap             = {};
 
     var hdDropdownTarget = null;
-    var focusedCell      = null; // { rowIdx, colIdx }
+    var focusedCell      = null;
 
-    // Column order matches table column order left-to-right (status cols only)
     var FULL_DAY_STATUSES = [
         "Present", "On Tour", "Earned Comp Off",
         "Absent",
@@ -329,7 +332,6 @@ function init_mark_attendance($main) {
         "Present", "On Tour", "Earned Comp Off",
         "Absent", "Earned Leave", "Casual Leave", "Comp Off", "LWP"
     ];
-    // Total interactive columns: full-day statuses + first half + second half
     var TOTAL_STATUS_COLS = FULL_DAY_STATUSES.length + 2; // 12
 
     var PRESENT_TYPE = new Set(["Present", "On Tour", "Earned Comp Off"]);
@@ -348,8 +350,21 @@ function init_mark_attendance($main) {
     var tableEl        = document.getElementById("ma_table");
     var hdDropdown     = document.getElementById("ma_hd_dropdown");
     var tbody          = document.getElementById("ma_table_body");
+    var stickyBar      = document.getElementById("ma_sticky_bar");
 
     var allEmployees = [];
+
+    // ── Measure sticky bar height & update CSS var for table header offset ──
+    function updateStickyOffset() {
+        if (!stickyBar) return;
+        var h = stickyBar.offsetHeight;
+        // thead row1 top = 0 (relative to table-scroll), row2 top = row1 height (52px)
+        // We set a CSS var that the thead th's use via their top property
+        document.documentElement.style.setProperty("--ma-sticky-bar-h", h + "px");
+    }
+    // Run once immediately and again on resize
+    setTimeout(updateStickyOffset, 50);
+    window.addEventListener("resize", updateStickyOffset);
 
     // ════════════════════════════════════════════════════════════════════════
     //  EMPLOYEE LOADING
@@ -384,6 +399,7 @@ function init_mark_attendance($main) {
                 }
             });
             employees = [];
+            updateStickyOffset();
         }
     });
 
@@ -674,8 +690,19 @@ function init_mark_attendance($main) {
 
     // ════════════════════════════════════════════════════════════════════════
     //  HALF-DAY DROPDOWN
+    //  KEY FIX: We do NOT auto-open the dropdown from activateHalfDayMode.
+    //  Instead: click handler on each half-cell does:
+    //    1. Ensure record is in half mode (activateHalfDayMode)
+    //    2. Re-query the actual live DOM cell after any refresh
+    //    3. Open dropdown positioned to that live cell
     // ════════════════════════════════════════════════════════════════════════
-    function openHdDropdown(dateKey, half, cellEl) {
+    function openHdDropdown(dateKey, half) {
+        // Always re-query the live cell from DOM to get correct position after refresh
+        var row = document.querySelector('tr[data-date="' + dateKey + '"]');
+        if (!row) return;
+        var cellEl = row.querySelector(half === "first" ? ".ma-hd1-cell" : ".ma-hd2-cell");
+        if (!cellEl) return;
+
         var rec    = attendanceTableData[dateKey] || {};
         var curVal = (rec.mode === "half") ? (half === "first" ? rec.first_half : rec.second_half) : "";
         hdDropdown.querySelectorAll(".ma-hd-option").forEach(function (opt) {
@@ -687,16 +714,20 @@ function init_mark_attendance($main) {
         hdDropdown.style.top      = (rect.bottom + 4) + "px";
         hdDropdown.style.left     = rect.left + "px";
         hdDropdown.style.minWidth = Math.max(rect.width, 160) + "px";
-        hdDropdownTarget = { dateKey: dateKey, half: half, cellEl: cellEl };
+        hdDropdownTarget = { dateKey: dateKey, half: half };
     }
     function closeHdDropdown() { hdDropdown.style.display = "none"; hdDropdownTarget = null; }
     function applyHdChoice(value) {
         if (!hdDropdownTarget) return;
         var dateKey = hdDropdownTarget.dateKey, half = hdDropdownTarget.half;
         closeHdDropdown();
-        var rec = attendanceTableData[dateKey] || { mode:"half", first_half:"", second_half:"" };
-        if (rec.mode !== "half") rec = { mode:"half", first_half:"", second_half:"" };
-        if (half === "first") rec.first_half = value; else rec.second_half = value;
+        var rec = attendanceTableData[dateKey];
+        // Should already be in half mode, but guard just in case
+        if (!rec || rec.mode !== "half") {
+            rec = { mode:"half", first_half:"", second_half:"" };
+        }
+        if (half === "first") rec.first_half = value;
+        else rec.second_half = value;
         attendanceTableData[dateKey] = rec;
         markDirty(dateKey);
         refreshRowVisuals(dateKey);
@@ -706,8 +737,11 @@ function init_mark_attendance($main) {
         opt.addEventListener("click", function (e) { e.stopPropagation(); applyHdChoice(this.dataset.value); });
     });
     document.addEventListener("click", function (e) {
-        if (!hdDropdown.contains(e.target) && hdDropdownTarget && !hdDropdownTarget.cellEl.contains(e.target))
-            closeHdDropdown();
+        if (hdDropdownTarget && !hdDropdown.contains(e.target)) {
+            // Check if the click is on a hd cell — if so let that handler manage it
+            var target = e.target.closest(".ma-hd-cell");
+            if (!target) closeHdDropdown();
+        }
     });
 
     // ════════════════════════════════════════════════════════════════════════
@@ -732,7 +766,7 @@ function init_mark_attendance($main) {
     }
 
     // ════════════════════════════════════════════════════════════════════════
-    //  CELL ENABLE / DISABLE (all status cells including half-day)
+    //  CELL ENABLE / DISABLE — affects FULL cells and HD cells alike
     // ════════════════════════════════════════════════════════════════════════
     function setAllStatusCellsEnabled(row, enabled) {
         if (enabled) {
@@ -740,10 +774,9 @@ function init_mark_attendance($main) {
         } else {
             row.classList.add("ma-status-cells-disabled");
         }
-        row.querySelectorAll(".ma-status-cell").forEach(function (td) {
-            td.style.pointerEvents = enabled ? "" : "none";
-            td.style.cursor        = enabled ? "pointer" : "default";
-        });
+        // Note: we do NOT touch td.style.pointerEvents here because the event
+        // delegation model handles locking via the class check in click handlers.
+        // This keeps the DOM clean and avoids stale inline style issues.
     }
 
     // ════════════════════════════════════════════════════════════════════════
@@ -754,7 +787,7 @@ function init_mark_attendance($main) {
         if (!row) return;
         var rec = attendanceTableData[dateKey] || {};
 
-        row.classList.remove("ma-row-wo", "ma-row-holiday", "ma-row-halfday", "ma-row-override");
+        row.classList.remove("ma-row-halfday", "ma-row-override");
 
         if (rec.mode === "half") {
             row.classList.add("ma-row-halfday");
@@ -774,7 +807,6 @@ function init_mark_attendance($main) {
             if (hd2Cell) hd2Cell.innerHTML = statusBadge("") + ' <span class="ma-hd-caret">▾</span>';
         }
 
-        // Toggle state
         var toggle = row.querySelector(".ma-override-toggle");
         if (toggle) {
             var restStatus    = toggle.dataset.reststatus;
@@ -785,6 +817,7 @@ function init_mark_attendance($main) {
                 ? "Click to override " + restStatus
                 : "Click to restore " + restStatus;
 
+            row.classList.remove("ma-row-wo", "ma-row-holiday");
             if (currentIsRest) {
                 if (restStatus === "Holiday")    row.classList.add("ma-row-holiday");
                 if (restStatus === "Weekly Off") row.classList.add("ma-row-wo");
@@ -792,11 +825,9 @@ function init_mark_attendance($main) {
                 if (rec.mode === "full" && !rec.status) row.classList.add("ma-row-override");
             }
 
-            // Lock ALL status cells (full-day + half-day) when in rest mode
             setAllStatusCellsEnabled(row, !currentIsRest);
         }
 
-        // Dirty indicator on dots
         refreshDotDirty(dateKey);
     }
 
@@ -812,49 +843,39 @@ function init_mark_attendance($main) {
         return row.querySelector('[data-colidx="' + colIdx + '"]');
     }
     function setFocusCell(rowIdx, colIdx) {
-        // Remove old focus
         tbody.querySelectorAll(".ma-cell-focused").forEach(function(el){ el.classList.remove("ma-cell-focused"); });
         focusedCell = { rowIdx: rowIdx, colIdx: colIdx };
         var td = getCellAt(rowIdx, colIdx);
         if (td) { td.classList.add("ma-cell-focused"); td.scrollIntoView({ block:"nearest", inline:"nearest" }); }
     }
-
     tbody.addEventListener("keydown", function(e) {
         if (!focusedCell) return;
         var r = focusedCell.rowIdx, c = focusedCell.colIdx;
         var maxRow = tbody.querySelectorAll("tr[data-rowidx]").length - 1;
         var maxCol = TOTAL_STATUS_COLS - 1;
-
         if (e.key === "ArrowDown") {
             e.preventDefault(); if (r < maxRow) setFocusCell(r + 1, c);
         } else if (e.key === "ArrowUp") {
             e.preventDefault(); if (r > 0) setFocusCell(r - 1, c);
         } else if (e.key === "ArrowRight") {
             e.preventDefault();
-            if (c < maxCol) setFocusCell(r, c + 1);
-            else if (r < maxRow) setFocusCell(r + 1, 0);
+            if (c < maxCol) setFocusCell(r, c + 1); else if (r < maxRow) setFocusCell(r + 1, 0);
         } else if (e.key === "ArrowLeft") {
             e.preventDefault();
-            if (c > 0) setFocusCell(r, c - 1);
-            else if (r > 0) setFocusCell(r - 1, maxCol);
+            if (c > 0) setFocusCell(r, c - 1); else if (r > 0) setFocusCell(r - 1, maxCol);
         } else if (e.key === "Tab") {
             e.preventDefault();
-            if (!e.shiftKey) {
-                if (c < maxCol) setFocusCell(r, c + 1);
-                else if (r < maxRow) setFocusCell(r + 1, 0);
-            } else {
-                if (c > 0) setFocusCell(r, c - 1);
-                else if (r > 0) setFocusCell(r - 1, maxCol);
-            }
+            if (!e.shiftKey) { if (c < maxCol) setFocusCell(r, c + 1); else if (r < maxRow) setFocusCell(r + 1, 0); }
+            else             { if (c > 0) setFocusCell(r, c - 1); else if (r > 0) setFocusCell(r - 1, maxCol); }
         } else if (e.key === "Enter" || e.key === " ") {
             e.preventDefault();
-            var td = getCellAt(r, c);
-            if (td) td.click();
+            var td = getCellAt(r, c); if (td) td.click();
         }
     });
 
     // ════════════════════════════════════════════════════════════════════════
-    //  BUILD ROW
+    //  BUILD ROW — uses event delegation pattern for HD cells so that
+    //  refreshRowVisuals (which replaces innerHTML) doesn't break listeners
     // ════════════════════════════════════════════════════════════════════════
     function buildRow(dateKey, dayName, currentDate, savedRec, isHoliday, isDefaultWeeklyOff, isFuture, rowIdx) {
         var row = document.createElement("tr");
@@ -866,7 +887,8 @@ function init_mark_attendance($main) {
         var isRestMode = isRestDay && savedRec.mode === "full" &&
                          (savedRec.status === "Holiday" || savedRec.status === "Weekly Off");
 
-        rowMetaMap[dateKey] = { isRestDay: isRestDay, restStatus: restStatus };
+        rowMetaMap[dateKey] = { isRestDay: isRestDay, restStatus: restStatus,
+                                isHoliday: isHoliday, isDefaultWeeklyOff: isDefaultWeeklyOff };
 
         var cellsLocked = isFuture || (isRestDay && isRestMode);
 
@@ -886,22 +908,29 @@ function init_mark_attendance($main) {
             currentDate.toLocaleDateString("en-US", { month:"long" }) + " " +
             currentDate.getFullYear();
 
+        // Date cell
         var dateTd = document.createElement("td");
-        dateTd.className = "ma-date-cell"; dateTd.textContent = dateLabel;
+        dateTd.className = "ma-date-cell";
+        if (isDefaultWeeklyOff && !isHoliday) dateTd.classList.add("ma-date-wo");
+        else if (isHoliday) dateTd.classList.add("ma-date-holiday");
+        dateTd.textContent = dateLabel;
         row.appendChild(dateTd);
 
+        // Day cell
         var dayTd = document.createElement("td");
-        dayTd.className = "ma-day-cell"; dayTd.textContent = dayName;
+        dayTd.className = "ma-day-cell";
+        if (isDefaultWeeklyOff && !isHoliday) dayTd.classList.add("ma-date-wo");
+        else if (isHoliday) dayTd.classList.add("ma-date-holiday");
+        dayTd.textContent = dayName;
         row.appendChild(dayTd);
 
-        // ── Override toggle ──────────────────────────────────────────────
+        // Override toggle
         var overrideTd = document.createElement("td");
         overrideTd.className = "ma-override-cell";
         if (isRestDay && !isFuture) {
             var lbl = document.createElement("label");
             lbl.className = "ma-toggle" + (restStatus === "Holiday" ? " ma-toggle-holiday" : "");
             lbl.title = isRestMode ? "Click to override " + restStatus : "Click to restore " + restStatus;
-
             var chk = document.createElement("input");
             chk.type      = "checkbox";
             chk.className = "ma-override-toggle";
@@ -909,7 +938,6 @@ function init_mark_attendance($main) {
             chk.dataset.isrestday  = "true";
             chk.dataset.reststatus = restStatus;
             chk.dataset.datekey    = dateKey;
-
             chk.addEventListener("change", function () {
                 var nowChecked = this.checked;
                 if (nowChecked) {
@@ -924,14 +952,12 @@ function init_mark_attendance($main) {
                     }
                     attendanceTableData[dateKey] = { mode:"full", status: restStatus };
                 } else {
-                    // Override toggled ON → clear so HR can mark
                     attendanceTableData[dateKey] = { mode:"full", status: "" };
                 }
                 markDirty(dateKey);
                 refreshRowVisuals(dateKey);
                 updateCounts();
             });
-
             var slider = document.createElement("span");
             slider.className = "ma-toggle-slider";
             lbl.appendChild(chk); lbl.appendChild(slider);
@@ -941,7 +967,7 @@ function init_mark_attendance($main) {
         }
         row.appendChild(overrideTd);
 
-        // ── Full-day status columns ──────────────────────────────────────
+        // Full-day status columns
         FULL_DAY_STATUSES.forEach(function (status, colIdx) {
             var td = document.createElement("td");
             td.className = "ma-status-cell ma-cell-" + status.toLowerCase().replace(/ /g, "_");
@@ -953,58 +979,54 @@ function init_mark_attendance($main) {
             dot.className = "ma-col-dot" + (isActive ? " " + getDotClass(status) : "");
             dot.setAttribute("data-status", status);
 
-            td.style.cursor        = cellsLocked ? "default" : "pointer";
-            td.style.pointerEvents = cellsLocked ? "none" : "";
+            if (!isActive) {
+                if (status === "Weekly Off" && isDefaultWeeklyOff) dot.classList.add("ma-dot-wo-hint");
+                if (status === "Holiday"    && isHoliday)          dot.classList.add("ma-dot-holiday-hint");
+            }
 
             td.addEventListener("click", function () {
+                // Check lock via class (not inline style) — works after toggle
+                var parentRow = td.closest("tr");
+                if (parentRow && parentRow.classList.contains("ma-status-cells-disabled")) return;
                 onFullDayClick(dateKey, status, isHoliday, isDefaultWeeklyOff);
             });
             td.addEventListener("mousedown", function() { setFocusCell(rowIdx, colIdx); });
-
             td.appendChild(dot);
             row.appendChild(td);
         });
 
-        // ── Half Day – First Half ────────────────────────────────────────
+        // Half Day – First Half
         var hd1Td = document.createElement("td");
         hd1Td.className = "ma-status-cell ma-hd-cell ma-hd1-cell";
         hd1Td.setAttribute("data-colidx", FULL_DAY_STATUSES.length);
         var h1Val = (savedRec.mode === "half") ? savedRec.first_half  : "";
         var h2Val = (savedRec.mode === "half") ? savedRec.second_half : "";
         hd1Td.innerHTML = statusBadge(h1Val) + ' <span class="ma-hd-caret">▾</span>';
-        if (!cellsLocked) {
-            hd1Td.style.cursor = "pointer";
-            hd1Td.addEventListener("click", function (e) {
-                e.stopPropagation();
-                // First activate half-day mode, then open dropdown
-                activateHalfDayMode(dateKey);
-                // Use setTimeout(0) to let DOM update after activateHalfDayMode
-                setTimeout(function() { openHdDropdown(dateKey, "first", hd1Td); }, 0);
-            });
-            hd1Td.addEventListener("mousedown", function() { setFocusCell(rowIdx, FULL_DAY_STATUSES.length); });
-        } else {
-            hd1Td.style.pointerEvents = "none";
-            hd1Td.style.cursor = "default";
-        }
+        hd1Td.addEventListener("click", function (e) {
+            e.stopPropagation();
+            var parentRow = hd1Td.closest("tr");
+            if (parentRow && parentRow.classList.contains("ma-status-cells-disabled")) return;
+            // Ensure half-day mode WITHOUT setting any hint — keep both halves independent
+            ensureHalfDayMode(dateKey);
+            // Open dropdown positioned to live DOM cell
+            openHdDropdown(dateKey, "first");
+        });
+        hd1Td.addEventListener("mousedown", function() { setFocusCell(rowIdx, FULL_DAY_STATUSES.length); });
         row.appendChild(hd1Td);
 
-        // ── Half Day – Second Half ───────────────────────────────────────
+        // Half Day – Second Half
         var hd2Td = document.createElement("td");
         hd2Td.className = "ma-status-cell ma-hd-cell ma-hd2-cell";
         hd2Td.setAttribute("data-colidx", FULL_DAY_STATUSES.length + 1);
         hd2Td.innerHTML = statusBadge(h2Val) + ' <span class="ma-hd-caret">▾</span>';
-        if (!cellsLocked) {
-            hd2Td.style.cursor = "pointer";
-            hd2Td.addEventListener("click", function (e) {
-                e.stopPropagation();
-                activateHalfDayMode(dateKey);
-                setTimeout(function() { openHdDropdown(dateKey, "second", hd2Td); }, 0);
-            });
-            hd2Td.addEventListener("mousedown", function() { setFocusCell(rowIdx, FULL_DAY_STATUSES.length + 1); });
-        } else {
-            hd2Td.style.pointerEvents = "none";
-            hd2Td.style.cursor = "default";
-        }
+        hd2Td.addEventListener("click", function (e) {
+            e.stopPropagation();
+            var parentRow = hd2Td.closest("tr");
+            if (parentRow && parentRow.classList.contains("ma-status-cells-disabled")) return;
+            ensureHalfDayMode(dateKey);
+            openHdDropdown(dateKey, "second");
+        });
+        hd2Td.addEventListener("mousedown", function() { setFocusCell(rowIdx, FULL_DAY_STATUSES.length + 1); });
         row.appendChild(hd2Td);
 
         return row;
@@ -1015,9 +1037,6 @@ function init_mark_attendance($main) {
     // ════════════════════════════════════════════════════════════════════════
     function onFullDayClick(dateKey, status, isHoliday, isDefaultWeeklyOff) {
         var rec = attendanceTableData[dateKey] || {};
-        // Guard: if row is still locked, do nothing
-        var row = document.querySelector('tr[data-date="' + dateKey + '"]');
-        if (row && row.classList.contains("ma-status-cells-disabled")) return;
 
         if (status === "Weekly Off") {
             var limit = calcMaxWeeklyOffInMonth();
@@ -1043,14 +1062,13 @@ function init_mark_attendance($main) {
         markDirty(dateKey); refreshRowVisuals(dateKey); updateCounts();
     }
 
-    function activateHalfDayMode(dateKey) {
+    // KEY FIX: ensureHalfDayMode does NOT set first_half hint — preserves both halves independently.
+    // If already in half mode → keep existing values untouched (just returns).
+    // If in full mode → enter half mode with both halves empty.
+    function ensureHalfDayMode(dateKey) {
         var rec = attendanceTableData[dateKey] || {};
-        // Guard: if locked, abort
-        var row = document.querySelector('tr[data-date="' + dateKey + '"]');
-        if (row && row.classList.contains("ma-status-cells-disabled")) return;
-        if (rec.mode === "half") return; // already in half mode, nothing to do
-        var hint = (rec.mode === "full" && HALF_OPTIONS.includes(rec.status)) ? rec.status : "";
-        attendanceTableData[dateKey] = { mode:"half", first_half: hint, second_half:"" };
+        if (rec.mode === "half") return; // already half — don't reset values
+        attendanceTableData[dateKey] = { mode:"half", first_half: "", second_half: "" };
         markDirty(dateKey); refreshRowVisuals(dateKey); updateCounts();
     }
 
@@ -1171,6 +1189,7 @@ function init_mark_attendance($main) {
 
                         hideTableLoading();
                         updateCounts();
+                        updateStickyOffset();
                     },
                     error: function () { hideTableLoading(); }
                 });
@@ -1210,7 +1229,7 @@ function init_mark_attendance($main) {
     document.getElementById("ma_mark_lwp").onclick      = function () { bulkMark("LWP"); };
 
     // ════════════════════════════════════════════════════════════════════════
-    //  SAVE
+    //  SAVE — prevent button color change on click via mousedown preventDefault
     // ════════════════════════════════════════════════════════════════════════
     function playSaveSound() {
         try { var audio = document.getElementById("ma-sound-click"); if (audio) { audio.volume=0.2; audio.play(); } } catch(e) {}
@@ -1275,7 +1294,11 @@ function init_mark_attendance($main) {
         });
     }
 
-    document.getElementById("ma_save_attendance").addEventListener("click", doSave);
+    var saveBtn = document.getElementById("ma_save_attendance");
+    // Prevent focus/active style from changing button appearance on click
+    saveBtn.addEventListener("mousedown", function(e) { e.preventDefault(); });
+    saveBtn.addEventListener("click", doSave);
+
     document.getElementById("ma_goto_attendance").addEventListener("click", function (e) {
         e.preventDefault();
         window.open(frappe.urllib.get_full_url("/app/attendance"), "_blank");
@@ -1422,18 +1445,45 @@ function inject_ma_styles() {
     var style = document.createElement("style");
     style.id = "ma-styles";
     style.innerHTML = `
+
+        /* ══════════════════════════════════════════════════════
+           CSS VARIABLES
+           ══════════════════════════════════════════════════════ */
+        :root {
+            --ma-sticky-bar-h: 120px;   /* updated dynamically by JS */
+            --ma-thead-row1-h: 52px;
+        }
+
         /* ── Layout ── */
         .ma-wrap { padding: 0 4px; }
-        .ma-sticky { position:sticky; top:0; background:var(--card-bg,#fff); z-index:100; padding-bottom:12px; border-bottom:1px solid var(--border-color,#e5e7eb); margin-bottom:12px; }
+
+        /* ══════════════════════════════════════════════════════
+           STICKY TOP CONTROLS BAR — always sticky on all screens
+           ══════════════════════════════════════════════════════ */
+        .ma-sticky {
+            position: sticky;
+            top: 0;
+            z-index: 100;
+            background: var(--card-bg, #fff);
+            padding-bottom: 12px;
+            border-bottom: 1px solid var(--border-color, #e5e7eb);
+            margin-bottom: 12px;
+        }
+
         .ma-header-actions { display:flex; align-items:center; gap:10px; margin-left:20px; }
         .ma-link { font-size:12px; color:var(--text-on-light-blue); cursor:pointer; text-decoration:underline; text-underline-offset:2px; background:none; border:none; padding:0; font-weight:500; transition:color 0.2s; white-space:nowrap; }
         .ma-link:hover { color:var(--blue-600); }
         .ma-link-sep { color:var(--text-muted); font-size:12px; }
-        .ma-btn { background:var(--control-bg,#f4f5f6); color:var(--text-color); border:1px solid var(--border-color,#d1d8dd); border-radius:5px; padding:6px 14px; font-weight:500; cursor:pointer; transition:all 0.15s; font-size:13px; white-space:nowrap; }
-        .ma-btn-primary { background:var(--primary); color:#fff; border-color:var(--primary); }
-        .ma-btn:hover { background:var(--control-bg-on-gray,#eee); }
-        .ma-btn-primary:hover { opacity:0.9; }
-        .ma-btn:active { transform:scale(0.98); }
+
+        /* Save button — lock appearance; no focus/active color change */
+        .ma-btn { background:var(--control-bg,#f4f5f6); color:var(--text-color); border:1px solid var(--border-color,#d1d8dd); border-radius:5px; padding:6px 14px; font-weight:500; cursor:pointer; transition:background 0.15s; font-size:13px; white-space:nowrap; user-select:none; }
+        .ma-btn-primary { background:var(--primary) !important; color:#fff !important; border-color:var(--primary) !important; }
+        .ma-btn-primary:hover { opacity:0.88; }
+        /* Prevent :focus and :active from changing primary button appearance */
+        .ma-btn-primary:focus,
+        .ma-btn-primary:active { outline:none; background:var(--primary) !important; color:#fff !important; border-color:var(--primary) !important; opacity:1; box-shadow:none; }
+        .ma-btn:hover:not(.ma-btn-primary) { background:var(--control-bg-on-gray,#eee); }
+        .ma-btn:active:not(.ma-btn-primary) { transform:scale(0.98); }
 
         /* ── Top controls ── */
         .ma-top-wrap { display:flex; gap:14px; align-items:stretch; }
@@ -1470,16 +1520,15 @@ function inject_ma_styles() {
         .ma-no-results { padding:12px 14px; font-size:13px; color:var(--text-muted); text-align:center; }
         .ma-bulk-btns { display:flex; align-items:center; gap:6px; flex-wrap:wrap; }
 
-        /* ══════════════════════════════════════════════════════════
-           TABLE — clean, no row background colors except header
-           ══════════════════════════════════════════════════════════ */
-        .ma-table-scroll { overflow-y:auto; overflow-x:auto; position:relative; }
+        /* ══════════════════════════════════════════════════════
+           TABLE SCROLL — takes remaining height
+           ══════════════════════════════════════════════════════ */
+        .ma-table-scroll { overflow-x:auto; overflow-y:auto; position:relative; }
         .ma-table { width:100%; border-collapse:collapse; font-size:12px; }
 
-        /* Default: all body cells transparent */
+        /* All body cells: transparent background */
         .ma-table td { border:1px solid var(--border-color,#d1d8dd); padding:5px 7px; background:transparent; }
-
-        /* Subtle alternating row tint for readability */
+        /* Subtle alternating row tint */
         .ma-table tbody tr:nth-child(even) td { background:rgba(0,0,0,0.013); }
 
         /* ── Spinner ── */
@@ -1488,10 +1537,11 @@ function inject_ma_styles() {
         @keyframes ma-spin { to { transform:rotate(360deg); } }
         .ma-loading-text { font-size:13px; color:var(--text-muted); }
 
-        /* ══════════════════════════════════════════════════════════
-           STICKY TWO-ROW HEADER
-           ══════════════════════════════════════════════════════════ */
-        /* Row 1 */
+        /* ══════════════════════════════════════════════════════
+           STICKY TABLE HEADER — uses CSS var set by JS
+           Row 1 sticks at top:0 (relative to scroll container),
+           Row 2 sticks just below row 1.
+           ══════════════════════════════════════════════════════ */
         .ma-table thead tr.ma-thead-row th {
             position: sticky;
             top: 0;
@@ -1500,113 +1550,93 @@ function inject_ma_styles() {
             border: 1px solid var(--border-color, #d1d8dd);
             box-shadow: 0 1px 0 var(--border-color, #d1d8dd);
         }
-        /* Row 2 (First Half / Second Half sub-headers) */
         .ma-table thead tr.ma-thead-row2 th {
             position: sticky;
-            top: 52px;
+            top: var(--ma-thead-row1-h, 52px);
             z-index: 49;
             background: var(--control-bg, #f7f7f7);
             border: 1px solid var(--border-color, #d1d8dd);
             box-shadow: 0 1px 0 var(--border-color, #d1d8dd);
         }
 
-        /* ── th inner flex: label on top, count pinned bottom ── */
-        .ma-table thead th {
-            padding: 0;
-            text-align: center;
-            vertical-align: middle;
-        }
+        /* ── th inner layout ── */
+        .ma-table thead th { padding:0; text-align:center; vertical-align:middle; }
         .ma-th-inner {
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            justify-content: space-between;
-            height: 52px;
-            padding: 7px 6px 5px;
-            box-sizing: border-box;
+            display: flex; flex-direction: column;
+            align-items: center; justify-content: space-between;
+            height: var(--ma-thead-row1-h, 52px);
+            padding: 7px 6px 5px; box-sizing: border-box;
         }
-        /* Left-aligned for Date / Day columns */
-        .ma-th-left {
-            align-items: flex-start;
-            padding-left: 10px;
+        .ma-th-left { align-items:flex-start; padding-left:10px; }
+        .ma-th-sub  { height:28px; justify-content:center; padding:4px 6px; }
+
+        /* Half Day group header */
+        .ma-th-hd-group { min-width:200px; border-bottom:none !important; }
+        .ma-th-hd-top-wrap {
+            display:flex; flex-direction:column;
+            align-items:center; justify-content:space-between;
+            height:var(--ma-thead-row1-h, 52px);
+            padding:7px 6px 5px; box-sizing:border-box;
         }
-        /* Sub-header row inner (shorter, centered only) */
-        .ma-th-sub {
-            height: 28px;
-            justify-content: center;
-            padding: 4px 6px;
-        }
-        /* Half Day group header: horizontal layout */
-        .ma-th-hd-top {
-            flex-direction: row !important;
-            justify-content: center !important;
-            align-items: center !important;
-            gap: 6px !important;
-            height: 52px;
-            padding: 0 8px;
-        }
-        .ma-th-label {
-            font-size: 11px;
-            font-weight: 600;
-            color: var(--text-muted);
-            line-height: 1.3;
-            text-align: center;
-            white-space: normal;
-        }
-        /* Count always pinned to bottom of th-inner */
-        .ma-col-count {
-            font-size: 11px;
-            font-weight: 700;
-            color: var(--text-color);
-            line-height: 1;
-            /* Sits at the bottom via space-between */
-        }
+
+        .ma-th-label { font-size:11px; font-weight:600; color:var(--text-muted); line-height:1.3; text-align:center; white-space:normal; }
+        .ma-col-count { font-size:11px; font-weight:700; color:var(--text-color); line-height:1; }
 
         /* Column widths */
         .ma-th-date     { width:148px; min-width:148px; }
         .ma-th-day      { width:100px; min-width:100px; }
         .ma-th-override { width:80px;  min-width:80px; }
         .ma-th-status   { width:66px;  min-width:66px; }
-        .ma-th-hd-group { min-width:200px; border-bottom:none !important; }
         .ma-th-hd1, .ma-th-hd2 { width:100px; min-width:100px; border-top:none !important; }
 
-        /* ── Row state indicators — LEFT BORDER ONLY, no fill ── */
-        /* Weekly Off */
-        .ma-row-wo td:first-child    { border-left:3px solid #8d99a6 !important; }
-        .ma-row-wo .ma-day-cell      { color:var(--text-muted); }
-        /* Holiday */
-        .ma-row-holiday td:first-child { border-left:3px solid #e09a2a !important; }
-        .ma-row-holiday .ma-day-cell   { color:#8a6000; }
-        /* Override (rest day being worked) */
-        .ma-row-override td:first-child { border-left:3px solid #f0ad4e !important; }
-        /* Half-day: very faint blue tint */
+        /* ══════════════════════════════════════════════════════
+           ROW STATES — text colour only, no backgrounds, no borders
+           ══════════════════════════════════════════════════════ */
+        /* Weekly Off day — golden text on date/day */
+        .ma-date-wo { color:#b8860b !important; font-weight:600 !important; }
+        .ma-dot-wo-hint { border-color:#d4a017 !important; background:rgba(212,160,23,0.12) !important; }
+
+        /* Holiday — warm amber text */
+        .ma-date-holiday { color:#c05800 !important; font-weight:600 !important; }
+        .ma-dot-holiday-hint { border-color:#e09a2a !important; background:rgba(224,154,42,0.12) !important; }
+
+        /* Half-day: very faint blue tint on cells */
         .ma-row-halfday td { background:rgba(59,130,246,0.035) !important; }
-        /* Future / pre-joining */
+
+        /* Future / before-joining rows */
         .ma-table tbody tr.ma-future-row td { opacity:0.4; }
-        /* Dirty (unsaved) — amber left border on date cell */
-        .ma-row-dirty td:first-child { border-left:3px solid #f59e0b !important; }
+
+        /* Dirty (unsaved) — subtle amber tint */
+        .ma-row-dirty td { background:rgba(245,158,11,0.07) !important; }
+        .ma-row-dirty:nth-child(even) td { background:rgba(245,158,11,0.1) !important; }
+
+        /* Override (rest day being worked) — faint purple tint */
+        .ma-row-override td { background:rgba(139,92,246,0.04) !important; }
 
         /* Locked status cells */
-        .ma-status-cells-disabled .ma-status-cell { opacity:0.2 !important; pointer-events:none !important; cursor:default !important; }
+        .ma-status-cells-disabled .ma-status-cell {
+            opacity: 0.2 !important;
+            pointer-events: none !important;
+            cursor: default !important;
+        }
 
         /* ── Status cells & dots ── */
         .ma-status-cell { text-align:center; padding:4px 3px !important; vertical-align:middle; cursor:pointer; }
         .ma-status-cell:not(.ma-hd-cell):hover { background:rgba(0,0,0,0.04) !important; }
 
         .ma-col-dot {
-            width: 14px; height: 14px; border-radius: 50%;
-            border: 2px solid #c0c6cc;
-            margin: 0 auto; transition: all 0.12s;
-            background: transparent;
-            box-sizing: border-box;
+            width:14px; height:14px; border-radius:50%;
+            border:2px solid #c0c6cc;
+            margin:0 auto; transition:all 0.12s;
+            background:transparent; box-sizing:border-box;
         }
-        .ma-col-dot.active   { border-color: transparent; }
-        .ma-col-dot.present-dot  { background:#28a745; border-color:#28a745; }
-        .ma-col-dot.absent-dot   { background:#e74c3c; border-color:#e74c3c; }
-        .ma-col-dot.wo-dot       { background:#8d99a6; border-color:#8d99a6; }
-        .ma-col-dot.holiday-dot  { background:#e09a2a; border-color:#e09a2a; }
+        .ma-col-dot.active        { border-color:transparent; }
+        .ma-col-dot.present-dot   { background:#28a745; border-color:#28a745; }
+        .ma-col-dot.absent-dot    { background:#e74c3c; border-color:#e74c3c; }
+        .ma-col-dot.wo-dot        { background:#b8860b; border-color:#b8860b; }
+        .ma-col-dot.holiday-dot   { background:#e09a2a; border-color:#e09a2a; }
 
-        /* Dirty dot: amber glow ring so HR knows it's unsaved */
+        /* Dirty dot: amber glow ring around active dots */
         .ma-col-dot.ma-dot-dirty.active {
             box-shadow: 0 0 0 2px var(--card-bg,#fff), 0 0 0 4px #f59e0b;
         }
@@ -1619,7 +1649,7 @@ function inject_ma_styles() {
         .ma-day-cell  { font-size:12px; color:var(--text-muted); padding:5px 8px !important; white-space:nowrap; min-width:100px; }
 
         /* ── Half-day cells ── */
-        .ma-hd-cell { width:100px; min-width:90px; }
+        .ma-hd-cell { width:100px; min-width:90px; cursor:pointer; }
         .ma-hd-badge {
             display:inline-flex; align-items:center; justify-content:center;
             min-width:36px; padding:2px 6px; border-radius:3px;
@@ -1632,6 +1662,7 @@ function inject_ma_styles() {
         .ma-hd-badge.ma-badge-present { background:#eafaf1; color:#1a7a3c; border-color:#a3d9b1; }
         .ma-hd-badge.ma-badge-absent  { background:#fdf3f2; color:#c0392b; border-color:#f5b7b1; }
         .ma-hd-caret { font-size:9px; color:var(--text-muted); margin-left:2px; vertical-align:middle; }
+        .ma-hd-cell:hover { background:rgba(0,0,0,0.04) !important; }
 
         /* ── Half-day dropdown ── */
         .ma-hd-dropdown { z-index:3000; background:var(--card-bg,#fff); border:1px solid var(--border-color,#d1d8dd); border-radius:6px; box-shadow:0 6px 20px rgba(0,0,0,0.1); overflow:hidden; }
