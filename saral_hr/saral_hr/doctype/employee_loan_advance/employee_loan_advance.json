@@ -8,6 +8,7 @@
   "naming_series",
   "employee",
   "full_name",
+  "company",
   "type",
   "date",
   "reason",
@@ -171,12 +172,19 @@
    "label": "Total Deducted",
    "options": "currency",
    "read_only": 1
+  },
+  {
+   "fetch_from": "employee.company",
+   "fieldname": "company",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Company"
   }
  ],
  "index_web_pages_for_search": 1,
  "is_submittable": 1,
  "links": [],
- "modified": "2026-03-26 17:28:35.354816",
+ "modified": "2026-03-30 13:35:30.774158",
  "modified_by": "Administrator",
  "module": "Saral Hr",
  "name": "Employee Loan Advance",
