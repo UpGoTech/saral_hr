@@ -83,7 +83,6 @@ frappe.query_reports["Payroll Report"] = {
         });
 
         // ── Legend injection ──────────────────────────────────────────
-        // Patch frappe.query_report.render_report to catch every render
         const _patchLegend = () => {
             const qr = frappe.query_report;
             if (!qr || qr.__pr_legend_patched) return;
@@ -98,13 +97,11 @@ frappe.query_reports["Payroll Report"] = {
                 };
             }
 
-            // Also catch after_refresh via jQuery event on the qr object
             $(qr).on("after_refresh.pr_legend", () => {
                 setTimeout(() => _maybe_inject_legend(report), 300);
             });
         };
 
-        // Try patching now and also after frappe finishes loading
         _patchLegend();
         setTimeout(_patchLegend, 1000);
     },
@@ -160,7 +157,7 @@ frappe.query_reports["Payroll Report"] = {
     }
 };
 
-// ── Legend data & inject function (fully self-contained, no window dependency) ─
+// ── Legend data & inject function ─────────────────────────────────────────────
 
 const _MAR_LEGEND = [
     { code:"P",   label:"Present",          color:"#1a6b1a" },
@@ -271,6 +268,8 @@ function _validate(report) {
     return true;
 }
 
+// ─── UPDATED: Button tab styles (replaces dropdown styles) ────────────────────
+
 function _ensure_styles() {
     if (document.getElementById("pr-style")) return;
     const s = document.createElement("style");
@@ -278,76 +277,41 @@ function _ensure_styles() {
     s.textContent = `
         .pr-nav-bar {
             display: flex;
+            flex-wrap: wrap;
             align-items: center;
-            gap: 10px;
+            gap: 6px;
             padding: 10px 16px;
             background: var(--card-bg, #fff);
             border-top: 1px solid var(--border-color, #e2e8f0);
             border-bottom: 1px solid var(--border-color, #e2e8f0);
         }
-        .pr-nav-label {
-            font-size: 11px;
-            font-weight: 700;
-            color: var(--text-muted, #6b7280);
-            text-transform: uppercase;
-            letter-spacing: 0.4px;
-            white-space: nowrap;
-            flex-shrink: 0;
-        }
-        .pr-select-wrap {
-            flex: 1;
-            max-width: 320px;
-            position: relative;
-        }
-        .pr-report-select {
-            width: 100%;
-            height: 34px;
-            padding: 0 34px 0 10px;
-            font-size: 13px;
+        .pr-tab-btn {
+            height: 32px;
+            padding: 0 14px;
+            font-size: 12.5px;
             font-weight: 500;
-            color: var(--text-color, #1a202c);
-            background: var(--control-bg, #f8fafc);
-            border: 1.5px solid var(--border-color, #e2e8f0);
-            border-radius: 6px;
-            outline: none;
-            cursor: pointer;
-            appearance: none;
-            -webkit-appearance: none;
-            transition: border-color .15s, box-shadow .15s;
-        }
-        .pr-report-select:focus {
-            border-color: var(--primary, #2563eb);
-            box-shadow: 0 0 0 3px rgba(37,99,235,.12);
-        }
-        .pr-select-arrow {
-            position: absolute;
-            right: 10px;
-            top: 50%;
-            transform: translateY(-50%);
-            pointer-events: none;
-            color: var(--text-muted, #6b7280);
-        }
-        .pr-arrow-btn {
-            width: 34px;
-            height: 34px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            border: 1.5px solid var(--border-color, #e2e8f0);
-            border-radius: 6px;
-            background: var(--control-bg, #f8fafc);
             color: var(--text-color, #374151);
+            background: var(--control-bg, #f8fafc);
+            border: 1.5px solid var(--border-color, #e2e8f0);
+            border-radius: 6px;
             cursor: pointer;
-            font-size: 16px;
-            flex-shrink: 0;
-            transition: all .15s;
-            user-select: none;
+            white-space: nowrap;
+            transition: all .15s ease;
+            outline: none;
             line-height: 1;
+            font-family: inherit;
         }
-        .pr-arrow-btn:hover {
+        .pr-tab-btn:hover {
             border-color: var(--primary, #2563eb);
             color: var(--primary, #2563eb);
             background: #eff6ff;
+        }
+        .pr-tab-btn.active {
+            background: var(--primary, #2563eb);
+            border-color: var(--primary, #2563eb);
+            color: #fff;
+            font-weight: 600;
+            box-shadow: 0 1px 4px rgba(37,99,235,.25);
         }
         .pr-on-hold-note {
             font-size: 11px;
@@ -361,29 +325,19 @@ function _ensure_styles() {
     document.head.appendChild(s);
 }
 
+// ─── UPDATED: _inject_nav — renders button tabs ───────────────────────────────
+
 function _inject_nav(report) {
     if (report.page.wrapper.find(".pr-nav-bar").length) return;
     _ensure_styles();
 
-    const options = REPORTS.map((r, i) =>
-        `<option value="${i}">${r.label}</option>`
+    const buttons = REPORTS.map((r, i) =>
+        `<button class="pr-tab-btn${i === _idx ? " active" : ""}" data-idx="${i}">${r.label}</button>`
     ).join("");
 
     const nav = $(`
         <div class="pr-nav-bar">
-            <span class="pr-nav-label">Report</span>
-            <div class="pr-select-wrap">
-                <select class="pr-report-select">
-                    ${options}
-                </select>
-                <svg class="pr-select-arrow" width="14" height="14" viewBox="0 0 24 24"
-                     fill="none" stroke="currentColor" stroke-width="2.5"
-                     stroke-linecap="round" stroke-linejoin="round">
-                    <polyline points="6 9 12 15 18 9"/>
-                </svg>
-            </div>
-            <button class="pr-arrow-btn pr-prev" title="${__("Previous report")}">&#8249;</button>
-            <button class="pr-arrow-btn pr-next" title="${__("Next report")}">&#8250;</button>
+            ${buttons}
         </div>
         <div class="pr-on-hold-note" id="pr-on-hold-note"></div>
     `);
@@ -396,14 +350,13 @@ function _inject_nav(report) {
     }
     if (!inserted) report.page.wrapper.find(".report-wrapper").prepend(nav);
 
-    nav.find(".pr-report-select").on("change", function () {
-        _go(report, +this.value);
+    // Click handler for each tab button
+    nav.find(".pr-tab-btn").on("click", function () {
+        _go(report, +$(this).data("idx"));
     });
-    nav.find(".pr-prev").on("click", () => _go(report, (_idx - 1 + REPORTS.length) % REPORTS.length));
-    nav.find(".pr-next").on("click", () => _go(report, (_idx + 1) % REPORTS.length));
 
+    // Invalidate cache when filters change
     report.page.wrapper.on("change.pr", ".frappe-control input, .frappe-control select", function () {
-        if ($(this).hasClass("pr-report-select")) return;
         _cache       = {};
         _loading_key = null;
         if (_prefetch_xhr) { _prefetch_xhr.abort?.(); _prefetch_xhr = null; }
@@ -421,8 +374,13 @@ function _inject_nav(report) {
     });
 }
 
+// ─── UPDATED: _sync — highlights the active button ───────────────────────────
+
 function _sync(report) {
-    report.page.wrapper.find(".pr-report-select").val(_idx);
+    // Update active state on tab buttons
+    report.page.wrapper.find(".pr-tab-btn").each(function () {
+        $(this).toggleClass("active", +$(this).data("idx") === _idx);
+    });
     const label = REPORTS[_idx].label;
     report.page.wrapper.find(".title-text").text(label);
     document.title = label + " — Frappe";
@@ -435,7 +393,6 @@ function _go(report, idx) {
             message:   __("Please select Company, Year and Month first."),
             indicator: "orange",
         });
-        report.page.wrapper.find(".pr-report-select").val(_idx);
         return;
     }
 
@@ -452,7 +409,6 @@ function _go(report, idx) {
     if (cached) {
         _render_cached(cached);
         _update_on_hold_note(cached.result);
-        // Inject legend after cached render paints
         if (modeKey === "monthly_attendance") {
             setTimeout(() => _maybe_inject_legend(report), 350);
         }
@@ -461,7 +417,6 @@ function _go(report, idx) {
 
     _loading_key = `${fk}::${modeKey}`;
     frappe.query_report.refresh();
-    // Also schedule legend inject for fresh load path
     if (modeKey === "monthly_attendance") {
         setTimeout(() => _maybe_inject_legend(report), 1200);
     }
@@ -494,7 +449,6 @@ function _bind_refresh_listener(report) {
             result:  frappe.query_report.data,
         };
         _update_on_hold_note(frappe.query_report.data);
-        // Inject legend after every refresh that completes
         setTimeout(() => _maybe_inject_legend(report), 300);
     });
 }
