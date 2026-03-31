@@ -608,71 +608,26 @@ def check_variable_pay_assignment(employee, start_date):
     return {"status": "ok"}
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-#  HALF-DAY CLASSIFICATION
-#
-#  For each half of a Half Day record, returns exactly ONE bucket set to 0.5,
-#  all others 0.0.
-#
-#  Buckets:
-#    present      → physically worked, pure Present
-#    on_tour      → physically worked, on tour
-#    eco          → physically worked, earns comp-off credit (Earned Comp Off)
-#    earned_leave → paid leave, NOT physical work
-#    casual_leave → paid leave, NOT physical work
-#    comp_off     → comp-off taken — paid, NOT physical work
-#    absent       → unpaid / absent
-#    lwp          → unpaid leave
-# ─────────────────────────────────────────────────────────────────────────────
-
 def _classify_half(status):
-    """
-    Given one half of a Half Day record, return a dict with exactly one
-    key = 0.5 and all others = 0.0.
-    """
     base = {
         "present": 0.0, "on_tour": 0.0, "eco": 0.0,
         "earned_leave": 0.0, "casual_leave": 0.0, "comp_off": 0.0,
         "absent": 0.0, "lwp": 0.0,
     }
     s = (status or "").strip()
-
-    if s == "Present":          base["present"]      = 0.5
-    elif s == "On Tour":        base["on_tour"]       = 0.5
-    elif s == "Earned Comp Off":base["eco"]           = 0.5
-    elif s == "Earned Leave":   base["earned_leave"]  = 0.5
-    elif s == "Casual Leave":   base["casual_leave"]  = 0.5
-    elif s == "Comp Off":       base["comp_off"]      = 0.5
-    elif s == "LWP":            base["lwp"]           = 0.5
-    else:                       base["absent"]        = 0.5   # "Absent" or empty
-
+    if s == "Present":           base["present"]      = 0.5
+    elif s == "On Tour":         base["on_tour"]       = 0.5
+    elif s == "Earned Comp Off": base["eco"]           = 0.5
+    elif s == "Earned Leave":    base["earned_leave"]  = 0.5
+    elif s == "Casual Leave":    base["casual_leave"]  = 0.5
+    elif s == "Comp Off":        base["comp_off"]      = 0.5
+    elif s == "LWP":             base["lwp"]           = 0.5
+    else:                        base["absent"]        = 0.5
     return base
 
 
 @frappe.whitelist()
 def get_attendance_and_days(employee, start_date, working_days_calculation_method=None):
-    """
-    Computes attendance summary for the payroll month.
-
-    Payment logic:
-    ─────────────────────────────────────────────────────────────────────────
-    Status              Paid?   Physical Work?
-    ──────────────────  ──────  ──────────────
-    Present             YES     YES
-    On Tour             YES     YES
-    Earned Comp Off     YES     YES  (also earns comp-off credit)
-    Earned Leave        YES     NO
-    Casual Leave        YES     NO
-    Comp Off (taken)    YES     NO
-    Absent              NO      NO   ← reduces payment_days
-    LWP                 NO      NO   ← reduces payment_days
-    Holiday             YES     NO   (already in calendar, not deducted)
-    Weekly Off          -       NO   (excluded from working_days in Excl. WO method)
-
-    payment_days   = working_days  - (absent + lwp)
-    physical_days  = payment_days  - earned_leave - casual_leave - comp_off_taken
-    ─────────────────────────────────────────────────────────────────────────
-    """
     start_date = getdate(start_date)
     end_date   = get_last_day(start_date)
 
@@ -689,7 +644,6 @@ def get_attendance_and_days(employee, start_date, working_days_calculation_metho
         else "Exclude Weekly Offs"
     )
 
-    # ── Count weekly-off occurrences in the month ─────────────────────────
     weekly_off       = frappe.db.get_value("Company Link", employee, "weekly_off")
     total_days       = calendar.monthrange(start_date.year, start_date.month)[1]
     day_map          = {
@@ -706,7 +660,6 @@ def get_attendance_and_days(employee, start_date, working_days_calculation_metho
                     weekly_off_count += 1
                 cur += timedelta(days=1)
 
-    # ── Fetch attendance records ──────────────────────────────────────────
     attendance_records = frappe.db.get_all(
         "Attendance",
         filters={
@@ -717,21 +670,19 @@ def get_attendance_and_days(employee, start_date, working_days_calculation_metho
         fields=["status", "custom_first_half", "custom_second_half"]
     )
 
-    # ── One accumulator per display column (matches mark-attendance) ──────
-    present_days    = 0.0   # "Present" dots
-    on_tour         = 0.0   # "On Tour" dots
-    earned_comp_off = 0.0   # "Earned Comp Off" dots
-    earned_leave    = 0.0   # "Earned Leave" dots
-    casual_leave    = 0.0   # "Casual Leave" dots
-    comp_off        = 0.0   # "Comp Off" (taken) dots
-    absent_days     = 0.0   # "Absent" dots — UNPAID
-    lwp_days        = 0.0   # "LWP" dots    — UNPAID
-    holiday_days    = 0.0   # "Holiday" (informational)
-    half_day_count  = 0     # number of Half Day records
+    present_days    = 0.0
+    on_tour         = 0.0
+    earned_comp_off = 0.0
+    earned_leave    = 0.0
+    casual_leave    = 0.0
+    comp_off        = 0.0
+    absent_days     = 0.0
+    lwp_days        = 0.0
+    holiday_days    = 0.0
+    half_day_count  = 0
 
     for a in attendance_records:
         status = (a.status or "").strip()
-
         if   status == "Present":          present_days    += 1.0
         elif status == "On Tour":          on_tour         += 1.0
         elif status == "Earned Comp Off":  earned_comp_off += 1.0
@@ -741,13 +692,10 @@ def get_attendance_and_days(employee, start_date, working_days_calculation_metho
         elif status == "Absent":           absent_days     += 1.0
         elif status == "LWP":              lwp_days        += 1.0
         elif status == "Holiday":          holiday_days    += 1.0
-
         elif status == "Half Day":
             half_day_count += 1
             fh = (a.custom_first_half  or "").strip()
             sh = (a.custom_second_half or "").strip()
-
-            # Classify each half independently and accumulate
             for h in (fh, sh):
                 c = _classify_half(h)
                 present_days    += c["present"]
@@ -759,14 +707,8 @@ def get_attendance_and_days(employee, start_date, working_days_calculation_metho
                 absent_days     += c["absent"]
                 lwp_days        += c["lwp"]
 
-        # "Weekly Off" records are informational — skip
-
-    # ── Total unpaid days: ONLY Absent + LWP ─────────────────────────────
-    # EL, CL, Comp Off are PAID — they do NOT reduce payment_days.
     total_unpaid = flt(absent_days + lwp_days, 2)
 
-    # ── Payment days ──────────────────────────────────────────────────────
-    # Holidays are INCLUDED in working_days and are paid — not deducted.
     if calculation_method == "Include Weekly Offs":
         working_days = total_days
         payment_days = flt(total_days - total_unpaid, 2)
@@ -774,8 +716,6 @@ def get_attendance_and_days(employee, start_date, working_days_calculation_metho
         working_days = total_days - weekly_off_count
         payment_days = flt(working_days - total_unpaid, 2)
 
-    # ── Physical working days ─────────────────────────────────────────────
-    # Actual days at work = payment_days minus paid-leave days.
     physical_working_days = flt(payment_days - earned_leave - casual_leave - comp_off, 2)
     if physical_working_days < 0:
         physical_working_days = 0.0
@@ -787,10 +727,8 @@ def get_attendance_and_days(employee, start_date, working_days_calculation_metho
         "working_days":          working_days,
         "payment_days":          flt(payment_days, 2),
         "physical_working_days": flt(physical_working_days, 2),
-
-        # Display fields — each matches a column in mark-attendance
         "present_days":          flt(present_days, 2),
-        "absent_days":           flt(absent_days, 2),        # Absent only (not + LWP)
+        "absent_days":           flt(absent_days, 2),
         "total_half_days":       flt(half_day_count * 0.5, 2),
         "total_lwp":             flt(lwp_days, 2),
         "total_holidays":        flt(holiday_days, 2),
@@ -799,13 +737,19 @@ def get_attendance_and_days(employee, start_date, working_days_calculation_metho
         "total_on_tour":         flt(on_tour, 2),
         "total_comp_off":        flt(comp_off, 2),
         "total_earned_comp_off": flt(earned_comp_off, 2),
-        "total_unpaid_days":     flt(total_unpaid, 2),       # absent + LWP (for display)
+        "total_unpaid_days":     flt(total_unpaid, 2),
         "calculation_method":    calculation_method,
     }
 
 
+# ─── Eligible employees — three buckets ──────────────────────────────────────
+#
+#  eligible          → no slip yet, all prereqs met → checkbox enabled
+#  already_generated → slip already exists (Draft or Submitted) → shown separately
+#  skipped           → missing salary structure / attendance / VPA → not eligible
+
 @frappe.whitelist()
-def get_eligible_employees_for_salary_slip(company, year, month, category=None):
+def get_eligible_employees_for_salary_slip(company, year, month, category=None, division=None):
     month_map = {
         'January':1,'February':2,'March':3,'April':4,'May':5,'June':6,
         'July':7,'August':8,'September':9,'October':10,'November':11,'December':12
@@ -823,13 +767,22 @@ def get_eligible_employees_for_salary_slip(company, year, month, category=None):
         vpa_doc       = frappe.get_doc("Variable Pay Assignment", vpa_name)
         vpa_divisions = {r.division for r in vpa_doc.variable_pay}
 
-    category_filter = "AND cl.category = %(category)s" if category else ""
+    # Build optional WHERE clauses
+    extra_filters = ""
+    filter_params = {"company": company}
+    if category:
+        extra_filters += " AND cl.category = %(category)s"
+        filter_params["category"] = category
+    if division:
+        extra_filters += " AND cl.division = %(division)s"
+        filter_params["division"] = division
+
     all_emps = frappe.db.sql(f"""
         SELECT DISTINCT cl.name, cl.full_name AS employee_name, cl.department,
             cl.designation, cl.company, cl.division, cl.requires_variable_pay
         FROM `tabCompany Link` cl
-        WHERE cl.is_active=1 AND cl.company=%(company)s {category_filter}
-    """, {"company": company, "category": category}, as_dict=1)
+        WHERE cl.is_active=1 AND cl.company=%(company)s {extra_filters}
+    """, filter_params, as_dict=1)
 
     with_structure = frappe.db.sql("""
         SELECT DISTINCT cl.name FROM `tabCompany Link` cl
@@ -839,7 +792,8 @@ def get_eligible_employees_for_salary_slip(company, year, month, category=None):
     """, {"company": company, "start_date": start_date, "end_date": str(end_date)}, as_dict=1)
     with_structure_ids = {e.name for e in with_structure}
 
-    emp_names = [e.name for e in all_emps]; att_counts = {}
+    emp_names = [e.name for e in all_emps]
+    att_counts = {}
     if emp_names:
         ph   = ", ".join(["%s"] * len(emp_names))
         rows = frappe.db.sql(
@@ -849,8 +803,36 @@ def get_eligible_employees_for_salary_slip(company, year, month, category=None):
         )
         att_counts = {r[0]: r[1] for r in rows}
 
-    eligible = []; ineligible = []
+    # Fetch existing slips (Draft or Submitted) for the period
+    existing_slips = {}
+    if emp_names:
+        ph = ", ".join(["%s"] * len(emp_names))
+        slip_rows = frappe.db.sql(
+            f"SELECT name, employee, docstatus FROM `tabSalary Slip` "
+            f"WHERE employee IN ({ph}) AND start_date=%s AND docstatus IN (0,1)",
+            tuple(emp_names) + (start_date,),
+            as_dict=1
+        )
+        for s in slip_rows:
+            existing_slips[s.employee] = s
+
+    eligible = []; ineligible = []; already_generated = []
+
     for emp in all_emps:
+        # Check if already has a slip
+        existing = existing_slips.get(emp.name)
+        if existing:
+            status_label = "Submitted" if existing.docstatus == 1 else "Draft"
+            already_generated.append({
+                "id":          emp.name,
+                "name":        emp.employee_name or emp.name,
+                "slip_name":   existing.name,
+                "slip_status": status_label,
+                "slip_info":   f"Salary slip ({existing.name}) already exists — {status_label}"
+            })
+            continue
+
+        # Check prereqs
         unmet = []
         if emp.name not in with_structure_ids:
             unmet.append("No submitted Salary Structure Assignment found covering the full payroll period")
@@ -863,17 +845,21 @@ def get_eligible_employees_for_salary_slip(company, year, month, category=None):
                     unmet.append(f"No Variable Pay Assignment has been created for {month} {year}")
                 elif div not in vpa_divisions:
                     unmet.append(f"Division '{div}' is not configured in the Variable Pay Assignment for {month} {year}")
-        if unmet: ineligible.append({"id": emp.name, "name": emp.employee_name or emp.name, "reasons": unmet})
-        else:     eligible.append(emp)
+
+        if unmet:
+            ineligible.append({"id": emp.name, "name": emp.employee_name or emp.name, "reasons": unmet})
+        else:
+            eligible.append(emp)
+
+    cat_requires_vpa = any(e.get("requires_variable_pay") for e in all_emps)
 
     return {
-        "eligible":               eligible,
-        "skipped":                ineligible,
-        "total_active":           len(all_emps),
-        "total_eligible":         len(eligible),
-        "category_requires_variable_pay": bool(
-            frappe.db.get_value("Category", category, "requires_variable_pay")
-        ) if category else False,
+        "eligible":                       eligible,
+        "skipped":                        ineligible,
+        "already_generated":              already_generated,
+        "total_active":                   len(all_emps),
+        "total_eligible":                 len(eligible),
+        "category_requires_variable_pay": cat_requires_vpa,
     }
 
 
@@ -986,14 +972,24 @@ def bulk_generate_salary_slips(employees, year, month):
 def get_submitted_salary_slips(company, year, month):
     month_map = {'January':1,'February':2,'March':3,'April':4,'May':5,'June':6,'July':7,'August':8,'September':9,'October':10,'November':11,'December':12}
     start_date = f"{year}-{month_map[month]:02d}-01"
-    return frappe.db.sql("SELECT ss.name,ss.employee,ss.employee_name,ss.department,ss.designation,ss.net_salary,ss.start_date,ss.end_date FROM `tabSalary Slip` ss WHERE ss.docstatus=1 AND ss.start_date=%(sd)s AND ss.company=%(co)s ORDER BY ss.employee_name", {"co": company, "sd": start_date}, as_dict=1)
+    return frappe.db.sql(
+        "SELECT ss.name,ss.employee,ss.employee_name,ss.department,ss.designation,"
+        "ss.net_salary,ss.start_date,ss.end_date FROM `tabSalary Slip` ss "
+        "WHERE ss.docstatus=1 AND ss.start_date=%(sd)s AND ss.company=%(co)s ORDER BY ss.employee_name",
+        {"co": company, "sd": start_date}, as_dict=1
+    )
 
 
 @frappe.whitelist()
 def get_draft_salary_slips(company, year, month):
     month_map = {'January':1,'February':2,'March':3,'April':4,'May':5,'June':6,'July':7,'August':8,'September':9,'October':10,'November':11,'December':12}
     start_date = f"{year}-{month_map[month]:02d}-01"
-    return frappe.db.sql("SELECT ss.name,ss.employee,ss.employee_name,ss.department,ss.designation,ss.net_salary,ss.start_date,ss.end_date FROM `tabSalary Slip` ss WHERE ss.docstatus=0 AND ss.start_date=%(sd)s AND ss.company=%(co)s ORDER BY ss.employee_name", {"co": company, "sd": start_date}, as_dict=1)
+    return frappe.db.sql(
+        "SELECT ss.name,ss.employee,ss.employee_name,ss.department,ss.designation,"
+        "ss.net_salary,ss.start_date,ss.end_date FROM `tabSalary Slip` ss "
+        "WHERE ss.docstatus=0 AND ss.start_date=%(sd)s AND ss.company=%(co)s ORDER BY ss.employee_name",
+        {"co": company, "sd": start_date}, as_dict=1
+    )
 
 
 @frappe.whitelist()
@@ -1045,21 +1041,56 @@ def bulk_print_salary_slips(salary_slip_names):
 
 
 @frappe.whitelist()
-def get_salary_slips_print_summary(company, year, month, category=None):
+def get_salary_slips_print_summary(company, year, month, category=None, division=None):
     month_map = {'January':1,'February':2,'March':3,'April':4,'May':5,'June':6,'July':7,'August':8,'September':9,'October':10,'November':11,'December':12}
     start_date = f"{year}-{month_map[month]:02d}-01"
-    cf = "AND category=%(category)s" if category else ""
-    all_emps = frappe.db.sql(f"SELECT name, full_name AS employee_name FROM `tabCompany Link` WHERE is_active=1 AND company=%(company)s {cf}", {"company": company, "category": category}, as_dict=1)
-    all_slips = frappe.db.sql("SELECT name,employee,employee_name,docstatus FROM `tabSalary Slip` WHERE start_date=%(sd)s AND company=%(co)s ORDER BY employee_name", {"co": company, "sd": start_date}, as_dict=1)
+
+    extra_filters = ""
+    filter_params = {"company": company}
+    if category:
+        extra_filters += " AND category=%(category)s"
+        filter_params["category"] = category
+    if division:
+        extra_filters += " AND division=%(division)s"
+        filter_params["division"] = division
+
+    all_emps = frappe.db.sql(
+        f"SELECT name, full_name AS employee_name FROM `tabCompany Link` "
+        f"WHERE is_active=1 AND company=%(company)s {extra_filters}",
+        filter_params, as_dict=1
+    )
+
+    all_slips = frappe.db.sql(
+        "SELECT name,employee,employee_name,docstatus FROM `tabSalary Slip` "
+        "WHERE start_date=%(sd)s AND company=%(co)s ORDER BY employee_name",
+        {"co": company, "sd": start_date}, as_dict=1
+    )
     slip_map = {s.employee: s for s in all_slips}
+
     submitted = []; not_printable = []
     for emp in all_emps:
         slip = slip_map.get(emp.name)
-        if slip and slip.docstatus == 1: submitted.append(slip)
+        if slip and slip.docstatus == 1:
+            submitted.append(slip)
         else:
             reasons = []; sn = None; ss = 'No Slip'
-            if not slip: reasons.append('Salary slip has not been created for this period')
-            elif slip.docstatus == 0: sn = slip.name; ss = 'Draft'; reasons.append('Salary slip is in Draft — submit it first')
-            elif slip.docstatus == 2: sn = slip.name; ss = 'Cancelled'; reasons.append('Salary slip was cancelled')
-            not_printable.append({'employee': emp.name, 'employee_name': emp.employee_name or emp.name, 'slip_name': sn, 'slip_status': ss, 'reasons': reasons})
-    return {'submitted': submitted, 'not_printable': not_printable, 'total_active': len(all_emps), 'total_submitted': len(submitted)}
+            if not slip:
+                reasons.append('Salary slip has not been created for this period')
+            elif slip.docstatus == 0:
+                sn = slip.name; ss = 'Draft'
+                reasons.append('Salary slip is in Draft — submit it first')
+            elif slip.docstatus == 2:
+                sn = slip.name; ss = 'Cancelled'
+                reasons.append('Salary slip was cancelled')
+            not_printable.append({
+                'employee': emp.name,
+                'employee_name': emp.employee_name or emp.name,
+                'slip_name': sn, 'slip_status': ss, 'reasons': reasons
+            })
+
+    return {
+        'submitted':       submitted,
+        'not_printable':   not_printable,
+        'total_active':    len(all_emps),
+        'total_submitted': len(submitted)
+    }
