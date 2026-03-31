@@ -11,11 +11,11 @@ frappe.query_reports["Employee Loan Advance Ledger"] = {
                 frappe.query_report.refresh();
             },
         },
-  {
+ {
     fieldname: "employee",
     label: __("Employee"),
     fieldtype: "Link",
-    options: "Employee",
+    options: "Company Link",   // ← was "Employee", must match the actual DocType
     only_select: 1,
     get_query: function () {
         const company = frappe.query_report.get_filter_value("company");
@@ -25,7 +25,7 @@ frappe.query_reports["Employee Loan Advance Ledger"] = {
             query: "saral_hr.saral_hr.report.employee_loan_advance_ledger.employee_loan_advance_ledger.get_employees_with_loans",
             filters: filters,
         };
-    }
+    },
 },
 {
             fieldname: "type",
@@ -41,28 +41,11 @@ frappe.query_reports["Employee Loan Advance Ledger"] = {
         },
     ],
 
-    onload(report) {
-        const emp_field = report.get_filter("employee");
-        if (emp_field && emp_field.df) emp_field.df.only_select = 1;
-        
-        // Format existing selected employee value on load
-        setTimeout(function() {
-            const emp_value = emp_field.get_value();
-            if (emp_value) {
-                frappe.db.get_value("Employee", emp_value, "employee_name", function(r) {
-                    if (r && r.employee_name) {
-                        const $filter_input = $('.filter-field.employee .awesomplete input, .filter-field.employee input[data-fieldname="employee"]');
-                        if ($filter_input.length) {
-                            $filter_input.val(`${r.employee_name} (${emp_value})`);
-                        }
-                    }
-                });
-            }
-        }, 500);
-        
-        setTimeout(() => frappe.query_report.refresh(), 300);
-    },
-
+   onload(report) {
+    const emp_field = report.get_filter("employee");
+    if (emp_field && emp_field.df) emp_field.df.only_select = 1;
+    setTimeout(() => frappe.query_report.refresh(), 300);
+},
     formatter(value, row, column, data, default_formatter) {
         value = default_formatter(value, row, column, data);
         if (!data) return value;

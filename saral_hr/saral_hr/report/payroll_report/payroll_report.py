@@ -21,7 +21,9 @@ REPORT_MODULE_MAP = {
     "salary_summary_individual": "saral_hr.saral_hr.report.salary_summary_individual_employee.salary_summary_individual_employee",
     "transaction_checklist":     "saral_hr.saral_hr.report.transaction_checklist.transaction_checklist",
     "variable_pay":              "saral_hr.saral_hr.report.variable_pay_register.variable_pay_register",
-    "income_tax":                "saral_hr.saral_hr.report.income_tax_report.income_tax_report",  # ← NEW
+    "income_tax":                "saral_hr.saral_hr.report.income_tax_report.income_tax_report", 
+    "loan_register":    "saral_hr.saral_hr.report.loan_register.loan_register",    
+    "advance_register": "saral_hr.saral_hr.report.advance_register.advance_register"
 }
 
 REPORT_LABELS = {
@@ -38,7 +40,9 @@ REPORT_LABELS = {
     "salary_summary_individual": "Salary Summary — Individual",
     "transaction_checklist":     "Transaction Checklist",
     "variable_pay":              "Variable Pay Register",
-    "income_tax":                "Income Tax Register",  # ← NEW
+    "income_tax":                "Income Tax Register", 
+    "loan_register":    "Loan Register",   
+    "advance_register": "Advance Register"
 }
 
 REPORTS = [
@@ -55,7 +59,9 @@ REPORTS = [
     "other_bank_advice",
     "home_bank_advice",
     "monthly_attendance",
-    "income_tax",  # ← NEW
+    "income_tax",
+    "loan_register",    
+    "advance_register" 
 ]
 
 MONTH_MAP = {

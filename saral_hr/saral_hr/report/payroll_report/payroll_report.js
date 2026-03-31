@@ -126,6 +126,8 @@ const REPORTS = [
     { key:"home_bank_advice",          label:"Home Bank Advice"          },
     { key:"monthly_attendance",        label:"Monthly Attendance"        },
     { key:"income_tax",                label:"Income Tax"                },
+    { key:"loan_register",             label:"Loan Register"             },  // ← ADD
+    { key:"advance_register",          label:"Advance Register"          },
 ];
 
 let _idx = 0, _cache = {}, _debounce_timer = null, _prefetch_xhr = null, _last_filter_key = null;

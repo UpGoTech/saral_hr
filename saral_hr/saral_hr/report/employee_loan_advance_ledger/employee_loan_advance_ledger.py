@@ -45,19 +45,19 @@ def get_employees_with_loans(doctype, txt, searchfield, start, page_len, filters
 
     results = frappe.db.sql("""
         SELECT DISTINCT
-            e.name,
-            e.employee_name
-        FROM `tabEmployee` e
-        INNER JOIN `tabEmployee Loan Advance` ela ON ela.employee = e.name
+            cl.name,
+            cl.full_name
+        FROM `tabCompany Link` cl
+        INNER JOIN `tabEmployee Loan Advance` ela ON ela.employee = cl.name
         WHERE ela.docstatus = 1
             {company_cond}
-            AND (e.name LIKE %(txt)s OR e.employee_name LIKE %(txt)s)
-        ORDER BY e.employee_name
+            AND (cl.name LIKE %(txt)s OR cl.full_name LIKE %(txt)s)
+        ORDER BY cl.full_name
         LIMIT %(page_len)s OFFSET %(start)s
     """.format(company_cond=company_cond), params)
-    
-    # Return employee name and ID - Frappe will format using Employee's title field
+
     return results
+
 # ==================================================================
 #  SUMMARY — columns
 # ==================================================================
