@@ -143,7 +143,7 @@ function get_ma_html() {
             <input type="hidden" id="ma_end_date">
         </div>
 
-        <div class="ma-table-scroll">
+        <div class="ma-table-scroll" id="ma_table_scroll">
             <table class="ma-table" id="ma_table" style="display:none;">
                 <thead>
                     <tr class="ma-thead-row">
@@ -351,20 +351,34 @@ function init_mark_attendance($main) {
     var hdDropdown     = document.getElementById("ma_hd_dropdown");
     var tbody          = document.getElementById("ma_table_body");
     var stickyBar      = document.getElementById("ma_sticky_bar");
+    var tableScroll    = document.getElementById("ma_table_scroll");
 
     var allEmployees = [];
 
-    // ── Measure sticky bar height & update CSS var for table header offset ──
-    function updateStickyOffset() {
-        if (!stickyBar) return;
-        var h = stickyBar.offsetHeight;
-        // thead row1 top = 0 (relative to table-scroll), row2 top = row1 height (52px)
-        // We set a CSS var that the thead th's use via their top property
-        document.documentElement.style.setProperty("--ma-sticky-bar-h", h + "px");
+    // ── KEY FIX: Set table-scroll height so it fills remaining viewport ──
+    // The sticky bar height is measured; table-scroll gets the leftover height.
+    // This makes the table scroll independently while controls stay fixed.
+    function updateScrollHeight() {
+        if (!stickyBar || !tableScroll) return;
+        var stickyH = stickyBar.offsetHeight;
+
+        // Frappe page header height (the bar with title + Save button)
+        var pageHead = document.querySelector(".page-head");
+        var pageHeadH = pageHead ? pageHead.offsetHeight : 60;
+
+        // Extra bottom padding
+        var BOTTOM_PAD = 16;
+
+        var availableH = window.innerHeight - pageHeadH - stickyH - BOTTOM_PAD;
+        tableScroll.style.height = Math.max(availableH, 200) + "px";
+
+        // Also update the CSS var used by sticky thead
+        document.documentElement.style.setProperty("--ma-sticky-bar-h", stickyH + "px");
     }
-    // Run once immediately and again on resize
-    setTimeout(updateStickyOffset, 50);
-    window.addEventListener("resize", updateStickyOffset);
+
+    // Run after short delay (DOM paint) and on every resize
+    setTimeout(updateScrollHeight, 80);
+    window.addEventListener("resize", updateScrollHeight);
 
     // ════════════════════════════════════════════════════════════════════════
     //  EMPLOYEE LOADING
@@ -399,7 +413,7 @@ function init_mark_attendance($main) {
                 }
             });
             employees = [];
-            updateStickyOffset();
+            updateScrollHeight();
         }
     });
 
@@ -690,14 +704,8 @@ function init_mark_attendance($main) {
 
     // ════════════════════════════════════════════════════════════════════════
     //  HALF-DAY DROPDOWN
-    //  KEY FIX: We do NOT auto-open the dropdown from activateHalfDayMode.
-    //  Instead: click handler on each half-cell does:
-    //    1. Ensure record is in half mode (activateHalfDayMode)
-    //    2. Re-query the actual live DOM cell after any refresh
-    //    3. Open dropdown positioned to that live cell
     // ════════════════════════════════════════════════════════════════════════
     function openHdDropdown(dateKey, half) {
-        // Always re-query the live cell from DOM to get correct position after refresh
         var row = document.querySelector('tr[data-date="' + dateKey + '"]');
         if (!row) return;
         var cellEl = row.querySelector(half === "first" ? ".ma-hd1-cell" : ".ma-hd2-cell");
@@ -722,7 +730,6 @@ function init_mark_attendance($main) {
         var dateKey = hdDropdownTarget.dateKey, half = hdDropdownTarget.half;
         closeHdDropdown();
         var rec = attendanceTableData[dateKey];
-        // Should already be in half mode, but guard just in case
         if (!rec || rec.mode !== "half") {
             rec = { mode:"half", first_half:"", second_half:"" };
         }
@@ -738,7 +745,6 @@ function init_mark_attendance($main) {
     });
     document.addEventListener("click", function (e) {
         if (hdDropdownTarget && !hdDropdown.contains(e.target)) {
-            // Check if the click is on a hd cell — if so let that handler manage it
             var target = e.target.closest(".ma-hd-cell");
             if (!target) closeHdDropdown();
         }
@@ -766,7 +772,7 @@ function init_mark_attendance($main) {
     }
 
     // ════════════════════════════════════════════════════════════════════════
-    //  CELL ENABLE / DISABLE — affects FULL cells and HD cells alike
+    //  CELL ENABLE / DISABLE
     // ════════════════════════════════════════════════════════════════════════
     function setAllStatusCellsEnabled(row, enabled) {
         if (enabled) {
@@ -774,9 +780,6 @@ function init_mark_attendance($main) {
         } else {
             row.classList.add("ma-status-cells-disabled");
         }
-        // Note: we do NOT touch td.style.pointerEvents here because the event
-        // delegation model handles locking via the class check in click handlers.
-        // This keeps the DOM clean and avoids stale inline style issues.
     }
 
     // ════════════════════════════════════════════════════════════════════════
@@ -874,8 +877,7 @@ function init_mark_attendance($main) {
     });
 
     // ════════════════════════════════════════════════════════════════════════
-    //  BUILD ROW — uses event delegation pattern for HD cells so that
-    //  refreshRowVisuals (which replaces innerHTML) doesn't break listeners
+    //  BUILD ROW
     // ════════════════════════════════════════════════════════════════════════
     function buildRow(dateKey, dayName, currentDate, savedRec, isHoliday, isDefaultWeeklyOff, isFuture, rowIdx) {
         var row = document.createElement("tr");
@@ -985,7 +987,6 @@ function init_mark_attendance($main) {
             }
 
             td.addEventListener("click", function () {
-                // Check lock via class (not inline style) — works after toggle
                 var parentRow = td.closest("tr");
                 if (parentRow && parentRow.classList.contains("ma-status-cells-disabled")) return;
                 onFullDayClick(dateKey, status, isHoliday, isDefaultWeeklyOff);
@@ -1006,9 +1007,7 @@ function init_mark_attendance($main) {
             e.stopPropagation();
             var parentRow = hd1Td.closest("tr");
             if (parentRow && parentRow.classList.contains("ma-status-cells-disabled")) return;
-            // Ensure half-day mode WITHOUT setting any hint — keep both halves independent
             ensureHalfDayMode(dateKey);
-            // Open dropdown positioned to live DOM cell
             openHdDropdown(dateKey, "first");
         });
         hd1Td.addEventListener("mousedown", function() { setFocusCell(rowIdx, FULL_DAY_STATUSES.length); });
@@ -1062,12 +1061,9 @@ function init_mark_attendance($main) {
         markDirty(dateKey); refreshRowVisuals(dateKey); updateCounts();
     }
 
-    // KEY FIX: ensureHalfDayMode does NOT set first_half hint — preserves both halves independently.
-    // If already in half mode → keep existing values untouched (just returns).
-    // If in full mode → enter half mode with both halves empty.
     function ensureHalfDayMode(dateKey) {
         var rec = attendanceTableData[dateKey] || {};
-        if (rec.mode === "half") return; // already half — don't reset values
+        if (rec.mode === "half") return;
         attendanceTableData[dateKey] = { mode:"half", first_half: "", second_half: "" };
         markDirty(dateKey); refreshRowVisuals(dateKey); updateCounts();
     }
@@ -1110,7 +1106,12 @@ function init_mark_attendance($main) {
     //  LOADING
     // ════════════════════════════════════════════════════════════════════════
     function showTableLoading() { tableEl.style.display="none"; tableLoading.style.display="flex"; }
-    function hideTableLoading() { tableLoading.style.display="none"; tableEl.style.display="table"; }
+    function hideTableLoading() {
+        tableLoading.style.display="none";
+        tableEl.style.display="table";
+        // Recalculate scroll height after table becomes visible
+        setTimeout(updateScrollHeight, 50);
+    }
 
     // ════════════════════════════════════════════════════════════════════════
     //  GENERATE TABLE
@@ -1189,7 +1190,7 @@ function init_mark_attendance($main) {
 
                         hideTableLoading();
                         updateCounts();
-                        updateStickyOffset();
+                        updateScrollHeight();
                     },
                     error: function () { hideTableLoading(); }
                 });
@@ -1229,7 +1230,7 @@ function init_mark_attendance($main) {
     document.getElementById("ma_mark_lwp").onclick      = function () { bulkMark("LWP"); };
 
     // ════════════════════════════════════════════════════════════════════════
-    //  SAVE — prevent button color change on click via mousedown preventDefault
+    //  SAVE
     // ════════════════════════════════════════════════════════════════════════
     function playSaveSound() {
         try { var audio = document.getElementById("ma-sound-click"); if (audio) { audio.volume=0.2; audio.play(); } } catch(e) {}
@@ -1267,7 +1268,7 @@ function init_mark_attendance($main) {
         }
 
         isSaving = true; playSaveSound();
-        var scrollPos = document.querySelector(".ma-table-scroll").scrollTop;
+        var scrollPos = tableScroll ? tableScroll.scrollTop : 0;
 
         frappe.call({
             method: "saral_hr.saral_hr.page.mark_attendance.mark_attendance.save_attendance_batch",
@@ -1284,7 +1285,7 @@ function init_mark_attendance($main) {
                     });
                     setTimeout(function () {
                         generateTable(); loadCompOffBalance(employee);
-                        setTimeout(function () { document.querySelector(".ma-table-scroll").scrollTop = scrollPos; }, 100);
+                        setTimeout(function () { if (tableScroll) tableScroll.scrollTop = scrollPos; }, 100);
                     }, 300);
                 } else {
                     frappe.show_alert({ message:(r.message && r.message.error) || "Error saving attendance", indicator:"red" });
@@ -1295,7 +1296,6 @@ function init_mark_attendance($main) {
     }
 
     var saveBtn = document.getElementById("ma_save_attendance");
-    // Prevent focus/active style from changing button appearance on click
     saveBtn.addEventListener("mousedown", function(e) { e.preventDefault(); });
     saveBtn.addEventListener("click", doSave);
 
@@ -1455,19 +1455,25 @@ function inject_ma_styles() {
         }
 
         /* ── Layout ── */
-        .ma-wrap { padding: 0 4px; }
+        .ma-wrap {
+            padding: 0 4px;
+            display: flex;
+            flex-direction: column;
+            /* Fill the main section completely */
+            height: 100%;
+        }
 
         /* ══════════════════════════════════════════════════════
-           STICKY TOP CONTROLS BAR — always sticky on all screens
+           STICKY TOP CONTROLS BAR
+           Stays fixed at top; does NOT scroll with the table.
            ══════════════════════════════════════════════════════ */
         .ma-sticky {
-            position: sticky;
-            top: 0;
-            z-index: 100;
+            flex-shrink: 0;          /* never shrink */
             background: var(--card-bg, #fff);
             padding-bottom: 12px;
             border-bottom: 1px solid var(--border-color, #e5e7eb);
-            margin-bottom: 12px;
+            margin-bottom: 0;
+            z-index: 100;
         }
 
         .ma-header-actions { display:flex; align-items:center; gap:10px; margin-left:20px; }
@@ -1475,11 +1481,10 @@ function inject_ma_styles() {
         .ma-link:hover { color:var(--blue-600); }
         .ma-link-sep { color:var(--text-muted); font-size:12px; }
 
-        /* Save button — lock appearance; no focus/active color change */
+        /* Save button */
         .ma-btn { background:var(--control-bg,#f4f5f6); color:var(--text-color); border:1px solid var(--border-color,#d1d8dd); border-radius:5px; padding:6px 14px; font-weight:500; cursor:pointer; transition:background 0.15s; font-size:13px; white-space:nowrap; user-select:none; }
         .ma-btn-primary { background:var(--primary) !important; color:#fff !important; border-color:var(--primary) !important; }
         .ma-btn-primary:hover { opacity:0.88; }
-        /* Prevent :focus and :active from changing primary button appearance */
         .ma-btn-primary:focus,
         .ma-btn-primary:active { outline:none; background:var(--primary) !important; color:#fff !important; border-color:var(--primary) !important; opacity:1; box-shadow:none; }
         .ma-btn:hover:not(.ma-btn-primary) { background:var(--control-bg-on-gray,#eee); }
@@ -1521,9 +1526,23 @@ function inject_ma_styles() {
         .ma-bulk-btns { display:flex; align-items:center; gap:6px; flex-wrap:wrap; }
 
         /* ══════════════════════════════════════════════════════
-           TABLE SCROLL — takes remaining height
+           TABLE SCROLL CONTAINER
+           KEY FIX: This div has a calculated fixed height so it
+           scrolls independently from the page. The sticky bar
+           above it never scrolls away.
            ══════════════════════════════════════════════════════ */
-        .ma-table-scroll { overflow-x:auto; overflow-y:auto; position:relative; }
+        .ma-table-scroll {
+            flex: 1 1 auto;
+            overflow-x: auto;
+            overflow-y: auto;
+            /* Height is set by JS via updateScrollHeight().
+               This fallback calc is a safety net. */
+            min-height: 200px;
+            border-top: 1px solid var(--border-color, #e5e7eb);
+            /* Needed so sticky thead works inside this scroll container */
+            position: relative;
+        }
+
         .ma-table { width:100%; border-collapse:collapse; font-size:12px; }
 
         /* All body cells: transparent background */
@@ -1538,9 +1557,11 @@ function inject_ma_styles() {
         .ma-loading-text { font-size:13px; color:var(--text-muted); }
 
         /* ══════════════════════════════════════════════════════
-           STICKY TABLE HEADER — uses CSS var set by JS
-           Row 1 sticks at top:0 (relative to scroll container),
-           Row 2 sticks just below row 1.
+           STICKY TABLE HEADER
+           Sticks to top of .ma-table-scroll (the scroll container),
+           NOT to the page. This works because .ma-table-scroll has
+           overflow:auto, which creates a new scroll context.
+           Row 1: top:0  Row 2: top: var(--ma-thead-row1-h)
            ══════════════════════════════════════════════════════ */
         .ma-table thead tr.ma-thead-row th {
             position: sticky;
@@ -1590,30 +1611,17 @@ function inject_ma_styles() {
         .ma-th-hd1, .ma-th-hd2 { width:100px; min-width:100px; border-top:none !important; }
 
         /* ══════════════════════════════════════════════════════
-           ROW STATES — text colour only, no backgrounds, no borders
+           ROW STATES
            ══════════════════════════════════════════════════════ */
-        /* Weekly Off day — golden text on date/day */
         .ma-date-wo { color:#b8860b !important; font-weight:600 !important; }
         .ma-dot-wo-hint { border-color:#d4a017 !important; background:rgba(212,160,23,0.12) !important; }
-
-        /* Holiday — warm amber text */
         .ma-date-holiday { color:#c05800 !important; font-weight:600 !important; }
         .ma-dot-holiday-hint { border-color:#e09a2a !important; background:rgba(224,154,42,0.12) !important; }
-
-        /* Half-day: very faint blue tint on cells */
         .ma-row-halfday td { background:rgba(59,130,246,0.035) !important; }
-
-        /* Future / before-joining rows */
         .ma-table tbody tr.ma-future-row td { opacity:0.4; }
-
-        /* Dirty (unsaved) — subtle amber tint */
         .ma-row-dirty td { background:rgba(245,158,11,0.07) !important; }
         .ma-row-dirty:nth-child(even) td { background:rgba(245,158,11,0.1) !important; }
-
-        /* Override (rest day being worked) — faint purple tint */
         .ma-row-override td { background:rgba(139,92,246,0.04) !important; }
-
-        /* Locked status cells */
         .ma-status-cells-disabled .ma-status-cell {
             opacity: 0.2 !important;
             pointer-events: none !important;
@@ -1623,25 +1631,13 @@ function inject_ma_styles() {
         /* ── Status cells & dots ── */
         .ma-status-cell { text-align:center; padding:4px 3px !important; vertical-align:middle; cursor:pointer; }
         .ma-status-cell:not(.ma-hd-cell):hover { background:rgba(0,0,0,0.04) !important; }
-
-        .ma-col-dot {
-            width:14px; height:14px; border-radius:50%;
-            border:2px solid #c0c6cc;
-            margin:0 auto; transition:all 0.12s;
-            background:transparent; box-sizing:border-box;
-        }
+        .ma-col-dot { width:14px; height:14px; border-radius:50%; border:2px solid #c0c6cc; margin:0 auto; transition:all 0.12s; background:transparent; box-sizing:border-box; }
         .ma-col-dot.active        { border-color:transparent; }
         .ma-col-dot.present-dot   { background:#28a745; border-color:#28a745; }
         .ma-col-dot.absent-dot    { background:#e74c3c; border-color:#e74c3c; }
         .ma-col-dot.wo-dot        { background:#b8860b; border-color:#b8860b; }
         .ma-col-dot.holiday-dot   { background:#e09a2a; border-color:#e09a2a; }
-
-        /* Dirty dot: amber glow ring around active dots */
-        .ma-col-dot.ma-dot-dirty.active {
-            box-shadow: 0 0 0 2px var(--card-bg,#fff), 0 0 0 4px #f59e0b;
-        }
-
-        /* Keyboard focus ring */
+        .ma-col-dot.ma-dot-dirty.active { box-shadow: 0 0 0 2px var(--card-bg,#fff), 0 0 0 4px #f59e0b; }
         .ma-cell-focused { outline:2px solid var(--primary,#2d6adf) !important; outline-offset:-2px; background:rgba(45,106,223,0.06) !important; }
 
         /* ── Cell typography ── */
@@ -1650,14 +1646,7 @@ function inject_ma_styles() {
 
         /* ── Half-day cells ── */
         .ma-hd-cell { width:100px; min-width:90px; cursor:pointer; }
-        .ma-hd-badge {
-            display:inline-flex; align-items:center; justify-content:center;
-            min-width:36px; padding:2px 6px; border-radius:3px;
-            font-size:10px; font-weight:600;
-            border:1px solid var(--border-color,#d1d5db);
-            background:var(--control-bg,#f3f4f6);
-            color:var(--text-muted); vertical-align:middle;
-        }
+        .ma-hd-badge { display:inline-flex; align-items:center; justify-content:center; min-width:36px; padding:2px 6px; border-radius:3px; font-size:10px; font-weight:600; border:1px solid var(--border-color,#d1d5db); background:var(--control-bg,#f3f4f6); color:var(--text-muted); vertical-align:middle; }
         .ma-hd-badge-empty { border-style:dashed; color:var(--text-muted); background:transparent; }
         .ma-hd-badge.ma-badge-present { background:#eafaf1; color:#1a7a3c; border-color:#a3d9b1; }
         .ma-hd-badge.ma-badge-absent  { background:#fdf3f2; color:#c0392b; border-color:#f5b7b1; }
