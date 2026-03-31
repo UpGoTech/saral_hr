@@ -9,7 +9,7 @@ from datetime import datetime
 def execute(filters=None):
     filters = filters or {}
     columns = get_columns()
-    data    = get_data(filters)
+    data = get_data(filters)
     return columns, data
 
 
@@ -17,38 +17,39 @@ def execute(filters=None):
 #  Columns  — untouched                                               #
 # ------------------------------------------------------------------ #
 
+
 def get_columns():
     return [
         {
             "fieldname": "employee",
-            "label":     "Employee ID",
+            "label": "Employee ID",
             "fieldtype": "Link",
-            "options":   "Employee",
-            "width":     130
+            "options": "Employee",
+            "width": 130,
         },
         {
             "fieldname": "employee_name",
-            "label":     "Employee Name",
+            "label": "Employee Name",
             "fieldtype": "Data",
-            "width":     200
+            "width": 200,
         },
         {
             "fieldname": "total_advance",
-            "label":     "Total Advance (₹)",
-            "fieldtype": "Currency",
-            "width":     160
+            "label": "Total Advance ",
+            "fieldtype": "Float",
+            "width": 160,
         },
         {
             "fieldname": "recovered_advance",
-            "label":     "Recovered Advance (₹)",
-            "fieldtype": "Currency",
-            "width":     180
+            "label": "Recovered Advance ",
+            "fieldtype": "Float",
+            "width": 180,
         },
         {
             "fieldname": "pending_advance",
-            "label":     "Pending Advance (₹)",
-            "fieldtype": "Currency",
-            "width":     170
+            "label": "Pending Advance",
+            "fieldtype": "Flaot", # ← add this
+            "width": 170,
         },
     ]
 
@@ -56,6 +57,7 @@ def get_columns():
 # ------------------------------------------------------------------ #
 #  Employee dropdown — ID bold on top, Name as subtitle               #
 # ------------------------------------------------------------------ #
+
 
 @frappe.whitelist()
 @frappe.validate_and_sanitize_search_inputs
@@ -73,7 +75,8 @@ def get_employees_with_advances(doctype, txt, searchfield, start, page_len, filt
         company_cond = "AND ela.company = %(company)s"
         params["company"] = company
 
-    results = frappe.db.sql("""
+    results = frappe.db.sql(
+        """
         SELECT DISTINCT
             ela.employee,
             COALESCE(e.employee_name, ela.full_name, ela.employee) AS employee_name
@@ -85,7 +88,11 @@ def get_employees_with_advances(doctype, txt, searchfield, start, page_len, filt
             AND (ela.employee LIKE %(txt)s OR e.employee_name LIKE %(txt)s)
         ORDER BY ela.employee ASC
         LIMIT %(page_len)s OFFSET %(start)s
-    """.format(company_cond=company_cond), params)
+    """.format(
+            company_cond=company_cond
+        ),
+        params,
+    )
 
     return [[emp[0], emp[1] or emp[0]] for emp in results]
 
@@ -93,6 +100,7 @@ def get_employees_with_advances(doctype, txt, searchfield, start, page_len, filt
 # ------------------------------------------------------------------ #
 #  Data  — untouched                                                  #
 # ------------------------------------------------------------------ #
+
 
 def get_data(filters):
     conditions, values = build_conditions(filters)
@@ -117,7 +125,7 @@ def get_data(filters):
             ela.employee ASC
         """,
         values,
-        as_dict=True
+        as_dict=True,
     )
 
     return rows
@@ -127,9 +135,10 @@ def get_data(filters):
 #  Filter → SQL Conditions  — untouched                               #
 # ------------------------------------------------------------------ #
 
+
 def build_conditions(filters):
     conditions = ""
-    values     = {}
+    values = {}
 
     if filters.get("company"):
         conditions += " AND ela.company = %(company)s"
@@ -144,21 +153,21 @@ def build_conditions(filters):
         if date_from and date_to:
             conditions += " AND ela.date BETWEEN %(date_from)s AND %(date_to)s"
             values["date_from"] = date_from
-            values["date_to"]   = date_to
+            values["date_to"] = date_to
 
     return conditions, values
 
 
 def get_date_range(filters):
-    year  = filters.get("year")
+    year = filters.get("year")
     month = filters.get("month")
 
     if year and month:
         try:
-            dt        = datetime.strptime(f"{month} {year}", "%B %Y")
-            last_day  = calendar.monthrange(dt.year, dt.month)[1]
+            dt = datetime.strptime(f"{month} {year}", "%B %Y")
+            last_day = calendar.monthrange(dt.year, dt.month)[1]
             date_from = dt.strftime("%Y-%m-01")
-            date_to   = dt.strftime(f"%Y-%m-{last_day:02d}")
+            date_to = dt.strftime(f"%Y-%m-{last_day:02d}")
             return date_from, date_to
         except Exception:
             return None, None

@@ -21,9 +21,9 @@ REPORT_MODULE_MAP = {
     "salary_summary_individual": "saral_hr.saral_hr.report.salary_summary_individual_employee.salary_summary_individual_employee",
     "transaction_checklist":     "saral_hr.saral_hr.report.transaction_checklist.transaction_checklist",
     "variable_pay":              "saral_hr.saral_hr.report.variable_pay_register.variable_pay_register",
-    "income_tax":                "saral_hr.saral_hr.report.income_tax_report.income_tax_report", 
-    "loan_register":    "saral_hr.saral_hr.report.loan_register.loan_register",    
-    "advance_register": "saral_hr.saral_hr.report.advance_register.advance_register"
+    "income_tax":                "saral_hr.saral_hr.report.income_tax_report.income_tax_report",
+    "loan_register":    "saral_hr.saral_hr.report.loan_register.loan_register",     
+    "advance_register": "saral_hr.saral_hr.report.advance_register.advance_register", 
 }
 
 REPORT_LABELS = {
@@ -40,9 +40,9 @@ REPORT_LABELS = {
     "salary_summary_individual": "Salary Summary — Individual",
     "transaction_checklist":     "Transaction Checklist",
     "variable_pay":              "Variable Pay Register",
-    "income_tax":                "Income Tax Register", 
-    "loan_register":    "Loan Register",   
-    "advance_register": "Advance Register"
+    "income_tax":                "Income Tax Register",
+    "loan_register":    "Loan Register",    
+    "advance_register": "Advance Register", 
 }
 
 REPORTS = [
@@ -60,8 +60,8 @@ REPORTS = [
     "home_bank_advice",
     "monthly_attendance",
     "income_tax",
-    "loan_register",    
-    "advance_register" 
+     "loan_register",    
+    "advance_register",
 ]
 
 MONTH_MAP = {
@@ -107,16 +107,6 @@ def _import_print_html(mode):
     mod = _load_module(mode)
     return getattr(mod, "_build_html", None) if mod else None
 
-def _run_report(mode, filters):
-    fn = _import_execute(mode)
-    if not fn:
-        return [], []
-    try:
-        return fn(dict(filters, report_mode=mode))
-    except Exception:
-        frappe.log_error(f"payroll_report: {mode}", "Payroll Report")
-        return [], []
-
 
 # ---------------------------------------------------------------------------
 # Frappe report entry-point
@@ -137,17 +127,13 @@ def execute(filters=None):
 
 _CSS = """<style>
 *{margin:0;padding:0;box-sizing:border-box}
-body{font-family:Arial,sans-serif;font-size:10px;color:#000;background:#fff}
+body{font-family:Arial,sans-serif;font-size:10px;color:#000;background:#fff;width:100%;}
 .sec{page-break-after:always;padding:6px 4px}
 .sec:last-child{page-break-after:avoid}
 .hdr{text-align:center;border-bottom:2px solid #000;padding:8px 4px 6px;margin-bottom:6px}
 .hdr .co{font-size:18px;font-weight:900;letter-spacing:1px;text-transform:uppercase}
 .hdr .ttl{font-size:13px;font-weight:700;margin-top:3px}
 .hdr .per{font-size:11px;margin-top:2px}
-.sig{display:flex;justify-content:space-between;margin-top:24px;padding-top:6px}
-.sig-b{text-align:center;width:160px}
-.sig-l{border-top:1px solid #000;margin-bottom:3px}
-.sig-t{font-size:10px;color:#333}
 table{width:100%;border-collapse:collapse;margin-top:6px}
 th{border:1px solid #000;padding:5px 7px;font-size:10px;font-weight:700;background:#f0f0f0;color:#000;white-space:nowrap}
 td{border:1px solid #000;padding:5px 7px;font-size:10px;vertical-align:middle;color:#000}
@@ -157,36 +143,69 @@ tr.tot td{background:#e8e8e8;font-weight:700}
 .hold{color:#c0392b;font-style:italic}
 </style>"""
 
-_SIG = '<div class="sig">' + "".join(
-    f'<div class="sig-b"><div class="sig-l"></div><div class="sig-t">{l}</div></div>'
-    for l in ["Prepared By", "Checked By", "Authorised Signatory"]
-) + '</div>'
+# FIX: use inline styles with a unique sentinel comment so _strip_sig
+# can reliably find and remove this block regardless of which report
+# generated its own _SIG variant.
+_SIG = """
+<!--SIG_START-->
+<div style="display:flex;justify-content:space-between;
+            width:100%;margin-top:24px;padding-top:8px;
+            box-sizing:border-box;">
+    <div style="text-align:center;width:180px;">
+        <div style="border-top:1px solid #000;margin-bottom:4px;"></div>
+        <div style="font-size:13px;color:#333;">Prepared By</div>
+    </div>
+    <div style="text-align:center;width:180px;">
+        <div style="border-top:1px solid #000;margin-bottom:4px;"></div>
+        <div style="font-size:13px;color:#333;">Checked By</div>
+    </div>
+    <div style="text-align:center;width:180px;">
+        <div style="border-top:1px solid #000;margin-bottom:4px;"></div>
+        <div style="font-size:13px;color:#333;">Authorised Signatory</div>
+    </div>
+</div>
+<!--SIG_END-->
+"""
 
-_SIG_MARKER = '<div class="sig">'
+# Sentinel used by _strip_sig — works for BOTH old class-based and
+# new inline-style _SIG blocks from all sub-reports
+_SIG_MARKERS = [
+    "<!--SIG_START-->",   # new inline style (this file + updated sub-reports)
+    '<div class="sig">',  # old class-based (any sub-report not yet updated)
+]
 
 
 def _strip_sig(html):
+    """
+    Strip the signature block and everything after it from a sub-report's
+    HTML body content. Handles both old class-based and new inline-style sigs.
+    """
     import re
+
+    # Extract body content
     body_match = re.search(r'<body[^>]*>(.*)</body>', html, re.DOTALL | re.IGNORECASE)
     if body_match:
         html = body_match.group(1)
-    idx = html.rfind(_SIG_MARKER)
-    if idx != -1:
-        html = html[:idx]
+
+    # Try each known sig marker, strip from the last occurrence
+    for marker in _SIG_MARKERS:
+        idx = html.rfind(marker)
+        if idx != -1:
+            html = html[:idx]
+            break
+
     return html.strip()
 
 
 def _render_section(mode, cols, data, co, mo, yr):
     """
-    Delegate to sub-report's _build_html().
-    Income tax report's _build_html() takes (cols, data, filters_dict),
-    all others take (cols, data, company, month, year).
+    Delegate to sub-report's _build_html(), strip its signature block,
+    return clean inner HTML only. payroll_report adds its own _SIG after.
     """
     build_fn = _import_print_html(mode)
     if build_fn:
         try:
             if mode == "income_tax":
-                # income_tax_report._build_html expects a filters dict as 3rd arg
                 raw = build_fn(cols, data, {"company": co, "month": mo, "year": yr})
             else:
                 raw = build_fn(cols, data, co, mo, yr)
@@ -200,6 +219,7 @@ def _build_all_html(sections, co, mo, yr):
     parts = []
     for s in sections:
         inner = _render_section(s["mode"], s["cols"], s["data"], co, mo, yr)
+        # Each section gets exactly ONE signature block
         parts.append(f'<div class="sec">{inner}{_SIG}</div>')
     return (
         f'<!DOCTYPE html><html>'
@@ -299,7 +319,8 @@ def print_single_report(filters):
     yr = filters.get("year",  "")
 
     inner = _render_section(mode, cols, data, co, mo, yr)
-    html  = (
+    # ONE signature block added here after the stripped content
+    html = (
         f'<!DOCTYPE html><html>'
         f'<head><meta charset="UTF-8">{_CSS}</head>'
         f'<body>{inner}{_SIG}</body></html>'

@@ -1,6 +1,5 @@
 frappe.query_reports["Payroll Report"] = {
     filters: [
-        // ── 1. Company first ─────────────────────────────────────────────
         {
             fieldname: "company",
             label:     __("Company"),
@@ -8,7 +7,6 @@ frappe.query_reports["Payroll Report"] = {
             options:   "Company",
             reqd:      1,
         },
-        // ── 2. Year second ───────────────────────────────────────────────
         {
             fieldname: "year",
             label:     __("Year"),
@@ -21,7 +19,6 @@ frappe.query_reports["Payroll Report"] = {
                 return opts;
             })(),
         },
-        // ── 3. Month third ───────────────────────────────────────────────
         {
             fieldname: "month",
             label:     __("Month"),
@@ -31,7 +28,6 @@ frappe.query_reports["Payroll Report"] = {
             options:   ["","January","February","March","April","May","June",
                         "July","August","September","October","November","December"],
         },
-        // ── Other optional filters ───────────────────────────────────────
         { fieldname: "report_mode", label: __("Report"), fieldtype: "Data", hidden: 1, default: "salary_summary" },
         { fieldname: "category",    label: __("Category"), fieldtype: "Link", options: "Category", default: "" },
         {
@@ -42,24 +38,42 @@ frappe.query_reports["Payroll Report"] = {
         },
     ],
 
-    // ── Block auto-run until Company + Year + Month are all filled ───────
     onload(report) {
-        // Override the default refresh so it only runs when all 3 are filled
+        function _live_filters() {
+            const vals = {};
+            (report.filters || []).forEach(f => {
+                try { vals[f.df.fieldname] = f.get_value(); } catch(e) {}
+            });
+            return vals;
+        }
+
+        function _filters_filled(f) {
+            f = f || _live_filters();
+            return !!(f.company && f.year && f.month);
+        }
+
+        report._live_filters   = _live_filters;
+        report._filters_filled = _filters_filled;
+
         const _originalRefresh = report.refresh.bind(report);
         report.refresh = function () {
-            const f = report.get_values() || {};
-            if (!f.company || !f.year || !f.month) {
-                // Clear the table and show a prompt instead
-                report.page.wrapper.find(".report-wrapper").html(
-                    `<div style="text-align:center;padding:40px;color:#888;font-size:13px;">
-                        Please select <strong>Company</strong>, <strong>Year</strong>, and
-                        <strong>Month</strong> to load the report.
-                    </div>`
-                );
-                return;
-            }
-            _originalRefresh();
+            setTimeout(() => {
+                if (!_filters_filled()) {
+                    report.page.wrapper.find(".report-wrapper").html(
+                        `<div style="text-align:center;padding:40px;color:#888;font-size:13px;">
+                            Please select <strong>Company</strong>, <strong>Year</strong>, and
+                            <strong>Month</strong> to load the report.
+                        </div>`
+                    );
+                    return;
+                }
+                _originalRefresh();
+            }, 0);
         };
+
+        // MutationObserver: hide serial number on ANY bold/total row
+        const observer = new MutationObserver(() => _hide_total_serials());
+        observer.observe(document.body, { childList: true, subtree: true, characterData: true });
 
         frappe.after_ajax(() => {
             _inject_nav(report);
@@ -67,6 +81,29 @@ frappe.query_reports["Payroll Report"] = {
                 _set_print_buttons(report);
             }
         });
+
+        // ── Legend injection ──────────────────────────────────────────
+        const _patchLegend = () => {
+            const qr = frappe.query_report;
+            if (!qr || qr.__pr_legend_patched) return;
+            qr.__pr_legend_patched = true;
+
+            const _origRender = qr.render_report?.bind(qr);
+            if (_origRender) {
+                qr.render_report = function(...args) {
+                    const result = _origRender(...args);
+                    setTimeout(() => _maybe_inject_legend(report), 300);
+                    return result;
+                };
+            }
+
+            $(qr).on("after_refresh.pr_legend", () => {
+                setTimeout(() => _maybe_inject_legend(report), 300);
+            });
+        };
+
+        _patchLegend();
+        setTimeout(_patchLegend, 1000);
     },
 
     formatter(value, row, column, data, default_formatter) {
@@ -105,11 +142,90 @@ frappe.query_reports["Payroll Report"] = {
         if ((mode === "home_bank_advice" || mode === "other_bank_advice") && value === "On Hold" && fn === "net_salary")
             return `<span style="color:#c0392b;font-style:italic;">On Hold</span>`;
 
+        if (mode === "monthly_attendance" && fn && fn.startsWith("day_")) {
+            if (!value || value === "-") return '<span style="color:#ccc;">-</span>';
+            const colors = {
+                P:"#1a6b1a", A:"#c0392b", HD:"#e67e22", T:"#2c3e50",
+                H:"#27ae60", WO:"#2980b9", LWP:"#8e44ad", EL:"#d35400",
+                CL:"#16a085", CO:"#7f8c8d", ECO:"#a93226",
+            };
+            const color = colors[value] || "#1a202c";
+            return `<span style="font-weight:700;color:${color};">${value}</span>`;
+        }
+
         return data.bold ? bold(value) : def(value);
     }
 };
 
-// ─── Report definitions ────────────────────────────────────────────────────────
+// ── Legend data & inject function ─────────────────────────────────────────────
+
+const _MAR_LEGEND = [
+    { code:"P",   label:"Present",          color:"#1a6b1a" },
+    { code:"A",   label:"Absent",           color:"#c0392b" },
+    { code:"HD",  label:"Half Day",         color:"#e67e22" },
+    { code:"T",   label:"On Tour",          color:"#2c3e50" },
+    { code:"H",   label:"Holiday",          color:"#27ae60" },
+    { code:"WO",  label:"Weekly Off",       color:"#2980b9" },
+    { code:"LWP", label:"Leave Without Pay",color:"#8e44ad" },
+    { code:"EL",  label:"Earned Leave",     color:"#d35400" },
+    { code:"CL",  label:"Casual Leave",     color:"#16a085" },
+    { code:"CO",  label:"Comp Off",         color:"#7f8c8d" },
+    { code:"ECO", label:"Earned Comp Off",  color:"#a93226" },
+];
+
+function _build_legend_bar() {
+    const items = _MAR_LEGEND.map(({ code, label, color }) =>
+        `<span style="display:inline-flex;align-items:center;gap:4px;
+                      margin-right:12px;margin-bottom:2px;white-space:nowrap;">
+            <span style="font-weight:700;font-size:12px;color:${color};">${code}</span>
+            <span style="font-size:12px;color:#444;">– ${label}</span>
+        </span>`
+    ).join("");
+    return `
+        <div id="mar-legend-bar" style="
+            display:flex;flex-wrap:wrap;align-items:center;
+            padding:7px 12px;margin:0 0 8px 0;
+            background:#f4f5f6;border:1px solid #d1d8dd;
+            border-radius:6px;font-family:inherit;">
+            <span style="font-weight:600;font-size:12px;color:#6c7680;
+                         margin-right:12px;white-space:nowrap;">Legend :</span>
+            ${items}
+        </div>`;
+}
+
+function _maybe_inject_legend(report) {
+    const mode = frappe.query_report.get_filter_value
+        ? frappe.query_report.get_filter_value("report_mode")
+        : "";
+
+    const $w = report.page.wrapper;
+    $w.find("#mar-legend-bar").remove();
+
+    if (mode !== "monthly_attendance") return;
+
+    const bar  = _build_legend_bar();
+    const $dt  = $w.find(".dt-wrapper, .frappe-datatable").first();
+    if ($dt.length) {
+        $dt.before(bar);
+    } else {
+        $w.find(".report-wrapper").prepend(bar);
+    }
+}
+
+// ─── Hide serial numbers on bold/total rows ────────────────────────────────
+
+function _hide_total_serials() {
+    document.querySelectorAll(".dt-row").forEach(row => {
+        const hasStrong = row.querySelector("strong");
+        if (!hasStrong) return;
+        const srCell = row.querySelector('[data-col-index="0"] .dt-cell__content');
+        if (srCell && srCell.textContent.trim() !== "") {
+            srCell.textContent = "";
+        }
+    });
+}
+
+// ─── Report list ──────────────────────────────────────────────────────────────
 
 const REPORTS = [
     { key:"salary_summary",            label:"Salary Summary"            },
@@ -126,27 +242,19 @@ const REPORTS = [
     { key:"home_bank_advice",          label:"Home Bank Advice"          },
     { key:"monthly_attendance",        label:"Monthly Attendance"        },
     { key:"income_tax",                label:"Income Tax"                },
-    { key:"loan_register",             label:"Loan Register"             },  // ← ADD
-    { key:"advance_register",          label:"Advance Register"          },
+    { key:"loan_register",             label:"Loan Register"             },  
+    { key:"advance_register",          label:"Advance Register"          },  
 ];
 
-let _idx = 0, _cache = {}, _debounce_timer = null, _prefetch_xhr = null, _last_filter_key = null;
+let _idx = 0, _cache = {}, _debounce_timer = null, _prefetch_xhr = null, _loading_key = null;
 
-function _get_year_options() {
-    const y = new Date().getFullYear(), opts = [""];
-    for (let i = y - 2; i <= y + 2; i++) opts.push(String(i));
-    return opts;
+function _filter_key(report) {
+    const f = report._live_filters ? report._live_filters() : (frappe.query_report.get_values() || {});
+    return JSON.stringify([f.year, f.month, f.company || "", f.category || "", JSON.stringify(f.division || [])]);
 }
 
-function _filter_key() {
-    const f = frappe.query_report.get_values() || {};
-    return JSON.stringify([f.year, f.month, JSON.stringify(f.company || []), f.category || "", JSON.stringify(f.division || [])]);
-}
-
-// ── Validate all 3 required filters ──────────────────────────────────────────
-
-function _validate(forPrint = false) {
-    const f = frappe.query_report.get_values() || {};
+function _validate(report) {
+    const f = report._live_filters ? report._live_filters() : (frappe.query_report.get_values() || {});
     if (!f.company) {
         frappe.msgprint({ title:__("Missing Filters"), message:__("Please select a Company."), indicator:"orange" });
         return false;
@@ -159,77 +267,58 @@ function _validate(forPrint = false) {
         frappe.msgprint({ title:__("Missing Filters"), message:__("Please select a Month."), indicator:"orange" });
         return false;
     }
-    const yr = parseInt(f.year);
-    if (isNaN(yr) || yr < 2000 || yr > 2100) {
-        frappe.msgprint({ title:__("Invalid Year"), message:__("Please select a valid year between 2000 and 2100."), indicator:"orange" });
-        return false;
-    }
     return true;
 }
 
-// ── Styles ────────────────────────────────────────────────────────────────────
+// ─── UPDATED: Button tab styles (replaces dropdown styles) ────────────────────
 
 function _ensure_styles() {
     if (document.getElementById("pr-style")) return;
     const s = document.createElement("style");
     s.id = "pr-style";
     s.textContent = `
-        .pr-nav {
-            padding: 8px 14px 10px;
-            background: #f8fafc;
-            border-top: 1px solid #e2e8f0;
-            border-bottom: 1px solid #e2e8f0;
-        }
-        .pr-scroll {
-            display: grid;
-            grid-template-columns: repeat(7, 1fr);
-            gap: 6px;
-        }
-        .pr-pill {
+        .pr-nav-bar {
             display: flex;
+            flex-wrap: wrap;
             align-items: center;
-            justify-content: center;
-            text-align: center;
-            padding: 7px 10px;
-            font-size: 11.5px;
+            gap: 6px;
+            padding: 10px 16px;
+            background: var(--card-bg, #fff);
+            border-top: 1px solid var(--border-color, #e2e8f0);
+            border-bottom: 1px solid var(--border-color, #e2e8f0);
+        }
+        .pr-tab-btn {
+            height: 32px;
+            padding: 0 14px;
+            font-size: 12.5px;
             font-weight: 500;
-            color: #4a5568;
-            background: #fff;
-            border: 1.5px solid #e2e8f0;
+            color: var(--text-color, #374151);
+            background: var(--control-bg, #f8fafc);
+            border: 1.5px solid var(--border-color, #e2e8f0);
             border-radius: 6px;
             cursor: pointer;
             white-space: nowrap;
-            overflow: hidden;
-            text-overflow: ellipsis;
-            transition: all .15s;
-            user-select: none;
-            line-height: 1.3;
+            transition: all .15s ease;
+            outline: none;
+            line-height: 1;
+            font-family: inherit;
         }
-        .pr-pill:hover { border-color:#93c5fd; color:#1d4ed8; background:#eff6ff; }
-        .pr-pill.active {
-            background: #2563eb;
-            border-color: #2563eb;
+        .pr-tab-btn:hover {
+            border-color: var(--primary, #2563eb);
+            color: var(--primary, #2563eb);
+            background: #eff6ff;
+        }
+        .pr-tab-btn.active {
+            background: var(--primary, #2563eb);
+            border-color: var(--primary, #2563eb);
             color: #fff;
-            font-weight: 700;
-            box-shadow: 0 2px 6px rgba(37,99,235,.35);
+            font-weight: 600;
+            box-shadow: 0 1px 4px rgba(37,99,235,.25);
         }
-        .pr-pill.no-data { opacity: 0.45; }
-        .pr-status-bar {
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            padding: 4px 14px;
-            background: #fff;
-            border-bottom: 1px solid #e2e8f0;
-            font-size: 11px;
-        }
-        .pr-current { font-weight: 600; color: #1a202c; font-size: 12px; }
-        .pr-ready   { color: #16a34a; font-size: 10px; margin-left: 8px; }
-        .pr-nav-btns { display: flex; gap: 4px; }
         .pr-on-hold-note {
             font-size: 11px;
             color: #c0392b;
-            padding: 4px 14px;
+            padding: 5px 16px;
             background: #fff5f5;
             border-bottom: 1px solid #fecaca;
             display: none;
@@ -238,29 +327,19 @@ function _ensure_styles() {
     document.head.appendChild(s);
 }
 
-// ── Nav injection ─────────────────────────────────────────────────────────────
+// ─── UPDATED: _inject_nav — renders button tabs ───────────────────────────────
 
 function _inject_nav(report) {
-    if (report.page.wrapper.find(".pr-nav").length) return;
+    if (report.page.wrapper.find(".pr-nav-bar").length) return;
     _ensure_styles();
 
-    const pillsHtml = REPORTS.map((r, i) =>
-        `<button class="pr-pill${i === 0 ? " active" : ""}" data-idx="${i}" title="${r.label}">${r.label}</button>`
+    const buttons = REPORTS.map((r, i) =>
+        `<button class="pr-tab-btn${i === _idx ? " active" : ""}" data-idx="${i}">${r.label}</button>`
     ).join("");
 
     const nav = $(`
-        <div class="pr-nav">
-            <div class="pr-scroll">${pillsHtml}</div>
-        </div>
-        <div class="pr-status-bar">
-            <span>
-                <span class="pr-current">${REPORTS[0].label}</span>
-                <span class="pr-ready"></span>
-            </span>
-            <div class="pr-nav-btns">
-                <button class="btn btn-xs btn-default pr-prev" title="Previous">&#8249;</button>
-                <button class="btn btn-xs btn-default pr-next" title="Next">&#8250;</button>
-            </div>
+        <div class="pr-nav-bar">
+            ${buttons}
         </div>
         <div class="pr-on-hold-note" id="pr-on-hold-note"></div>
     `);
@@ -273,50 +352,135 @@ function _inject_nav(report) {
     }
     if (!inserted) report.page.wrapper.find(".report-wrapper").prepend(nav);
 
-    nav.on("click", ".pr-pill", function () { _go(report, +$(this).data("idx")); });
-    nav.find(".pr-prev").on("click", () => _go(report, (_idx - 1 + REPORTS.length) % REPORTS.length));
-    nav.find(".pr-next").on("click", () => _go(report, (_idx + 1) % REPORTS.length));
+    // Click handler for each tab button
+    nav.find(".pr-tab-btn").on("click", function () {
+        _go(report, +$(this).data("idx"));
+    });
 
-    // Filter change — wipe cache, wait for all 3 to be filled before prefetching
-    report.page.wrapper.on("change.pr", ".frappe-control input, .frappe-control select", () => {
+    // Invalidate cache when filters change
+    report.page.wrapper.on("change.pr", ".frappe-control input, .frappe-control select", function () {
         _cache       = {};
         _loading_key = null;
-        nav.find(".pr-ready").text("");
-        nav.find(".pr-pill").removeClass("no-data");
         if (_prefetch_xhr) { _prefetch_xhr.abort?.(); _prefetch_xhr = null; }
         clearTimeout(_debounce_timer);
-
         _debounce_timer = setTimeout(() => {
-            const f = frappe.query_report.get_values() || {};
-            // Only prefetch once all 3 required filters are filled
-            if (!f.company || !f.year || !f.month) return;
-            _last_filter_key = _filter_key();
-            _prefetch_all(nav);
+            if (!report._filters_filled()) return;
+            _prefetch_all(report);
         }, 1500);
     });
 
     _bind_refresh_listener(report);
 
     $(frappe.query_report).one("after_refresh.pr_init", () => {
-        _last_filter_key = _filter_key();
-        _prefetch_all(nav);
+        _prefetch_all(report);
     });
 }
 
-// ── Mark pills with no data ───────────────────────────────────────────────────
+// ─── UPDATED: _sync — highlights the active button ───────────────────────────
 
-function _mark_no_data(nav, fk) {
-    const cached = _cache[fk] || {};
-    const anyHasData = Object.values(cached).some(r => (r.result || []).length > 0);
-    if (!anyHasData) { nav.find(".pr-pill").removeClass("no-data"); return; }
-    nav.find(".pr-pill").each(function () {
-        const key = REPORTS[+$(this).data("idx")]?.key;
-        if (!key || !cached[key]) return;
-        $(this).toggleClass("no-data", (cached[key].result || []).length === 0);
+function _sync(report) {
+    // Update active state on tab buttons
+    report.page.wrapper.find(".pr-tab-btn").each(function () {
+        $(this).toggleClass("active", +$(this).data("idx") === _idx);
+    });
+    const label = REPORTS[_idx].label;
+    report.page.wrapper.find(".title-text").text(label);
+    document.title = label + " — Frappe";
+}
+
+function _go(report, idx) {
+    if (!report._filters_filled || !report._filters_filled()) {
+        frappe.msgprint({
+            title:     __("Missing Filters"),
+            message:   __("Please select Company, Year and Month first."),
+            indicator: "orange",
+        });
+        return;
+    }
+
+    _idx = idx;
+    const modeKey = REPORTS[idx].key;
+    _sync(report);
+    frappe.query_report.set_filter_value("report_mode", modeKey);
+
+    // Always remove stale legend immediately when switching tabs
+    report.page.wrapper.find("#mar-legend-bar").remove();
+
+    const fk     = _filter_key(report);
+    const cached = _cache[fk]?.[modeKey];
+    if (cached) {
+        _render_cached(cached);
+        _update_on_hold_note(cached.result);
+        if (modeKey === "monthly_attendance") {
+            setTimeout(() => _maybe_inject_legend(report), 350);
+        }
+        return;
+    }
+
+    _loading_key = `${fk}::${modeKey}`;
+    frappe.query_report.refresh();
+    if (modeKey === "monthly_attendance") {
+        setTimeout(() => _maybe_inject_legend(report), 1200);
+    }
+}
+
+function _render_cached(cached) {
+    const qr = frappe.query_report;
+    qr.columns = cached.columns;
+    qr.data    = cached.result;
+    try {
+        qr.render_datatable();
+    } catch (_) {
+        try {
+            if (qr.datatable) qr.datatable.refresh(cached.result, cached.columns);
+            else qr.refresh();
+        } catch (__) { qr.refresh(); }
+    }
+}
+
+function _bind_refresh_listener(report) {
+    $(frappe.query_report).on("after_refresh.pr", () => {
+        const fk      = _filter_key(report);
+        const modeKey = frappe.query_report.get_filter_value("report_mode");
+        const thisKey = `${fk}::${modeKey}`;
+        if (_loading_key && _loading_key !== thisKey) return;
+        _loading_key = null;
+        if (!_cache[fk]) _cache[fk] = {};
+        _cache[fk][modeKey] = {
+            columns: frappe.query_report.columns,
+            result:  frappe.query_report.data,
+        };
+        _update_on_hold_note(frappe.query_report.data);
+        setTimeout(() => _maybe_inject_legend(report), 300);
     });
 }
 
-// ── On Hold footnote ──────────────────────────────────────────────────────────
+function _prefetch_all(report) {
+    const fk = _filter_key(report);
+    const f  = report._live_filters ? report._live_filters() : (frappe.query_report.get_values() || {});
+    if (!f.company || !f.year || !f.month) return;
+
+    _prefetch_xhr = frappe.call({
+        method: "saral_hr.saral_hr.report.payroll_report.payroll_report.get_all_reports_data",
+        args: {
+            filters: JSON.stringify({
+                year:     f.year     || "",
+                month:    f.month    || "",
+                company:  f.company  || "",
+                category: f.category || "",
+                division: JSON.stringify(f.division || []),
+            })
+        },
+        callback(res) {
+            _prefetch_xhr = null;
+            if (!res.message) return;
+            if (fk !== _filter_key(report)) return;
+            if (!_cache[fk]) _cache[fk] = {};
+            Object.assign(_cache[fk], res.message);
+        },
+        error() { _prefetch_xhr = null; }
+    });
+}
 
 function _update_on_hold_note(data) {
     const note = $("#pr-on-hold-note");
@@ -329,129 +493,17 @@ function _update_on_hold_note(data) {
         : note.hide().text("");
 }
 
-// ── Prefetch all reports ──────────────────────────────────────────────────────
-
-function _prefetch_all(nav) {
-    const fk = _filter_key();
-    const f  = frappe.query_report.get_values() || {};
-    if (!f.company || !f.year || !f.month) return;  // guard
-
-    _prefetch_xhr = frappe.call({
-        method: "saral_hr.saral_hr.report.payroll_report.payroll_report.get_all_reports_data",
-        args: {
-            filters: JSON.stringify({
-                year:     f.year     || "",
-                month:    f.month    || "",
-                company:  f.company || "",
-                category: f.category || "",
-                division: JSON.stringify(f.division || []),
-            })
-        },
-        callback(res) {
-            _prefetch_xhr = null;
-            if (!res.message) return;
-            if (fk !== _filter_key()) return;
-            if (!_cache[fk]) _cache[fk] = {};
-            Object.assign(_cache[fk], res.message);
-            nav.find(".pr-ready").text("✓ All ready");
-            _mark_no_data(nav, fk);
-        },
-        error() { _prefetch_xhr = null; }
-    });
-}
-
-// ── Sync pill + page title ────────────────────────────────────────────────────
-
-function _sync(nav, report) {
-    nav.find(".pr-pill").removeClass("active");
-    nav.find(`.pr-pill[data-idx="${_idx}"]`).addClass("active");
-    nav.find(".pr-current").text(REPORTS[_idx].label);
-    report.page.wrapper.find(".title-text").text(REPORTS[_idx].label);
-    document.title = REPORTS[_idx].label + " — Frappe";
-}
-
-// ── Navigate ──────────────────────────────────────────────────────────────────
-
-let _loading_key = null;
-
-function _go(report, idx) {
-    // Block navigation if required filters not filled
-    const f = frappe.query_report.get_values() || {};
-    if (!f.company || !f.year || !f.month) {
-        frappe.msgprint({
-            title:     __("Missing Filters"),
-            message:   __("Please select Company, Year and Month first."),
-            indicator: "orange",
-        });
-        return;
-    }
-
-    _idx = idx;
-    const nav     = report.page.wrapper.find(".pr-nav").parent();
-    const modeKey = REPORTS[idx].key;
-    _sync(nav, report);
-    frappe.query_report.set_filter_value("report_mode", modeKey);
-
-    const fk     = _filter_key();
-    const cached = _cache[fk]?.[modeKey];
-    if (cached) {
-        _render_cached(cached, nav, fk);
-        _update_on_hold_note(cached.result);
-        return;
-    }
-
-    _loading_key = `${fk}::${modeKey}`;
-    frappe.query_report.refresh();
-}
-
-function _render_cached(cached, nav, fk) {
-    const qr = frappe.query_report;
-    qr.columns = cached.columns;
-    qr.data    = cached.result;
-    try {
-        qr.render_datatable();
-    } catch (_) {
-        try {
-            if (qr.datatable) qr.datatable.refresh(cached.result, cached.columns);
-            else qr.refresh();
-        } catch (__) { qr.refresh(); }
-    }
-    _mark_no_data(nav, fk);
-}
-
-function _bind_refresh_listener(report) {
-    $(frappe.query_report).on("after_refresh.pr", () => {
-        const fk      = _filter_key();
-        const modeKey = frappe.query_report.get_filter_value("report_mode");
-        const thisKey = `${fk}::${modeKey}`;
-        if (_loading_key && _loading_key !== thisKey) return;
-        _loading_key = null;
-        if (!_cache[fk]) _cache[fk] = {};
-        _cache[fk][modeKey] = {
-            columns: frappe.query_report.columns,
-            result:  frappe.query_report.data,
-        };
-        const nav = report.page.wrapper.find(".pr-nav").parent();
-        _update_on_hold_note(frappe.query_report.data);
-        _mark_no_data(nav, fk);
-    });
-}
-
-// ── Server filter builder ─────────────────────────────────────────────────────
-
-function _server_filters() {
-    const f = frappe.query_report.get_values() || {};
+function _server_filters(report) {
+    const f = report && report._live_filters ? report._live_filters() : (frappe.query_report.get_values() || {});
     return {
         year:        f.year     || "",
         month:       f.month    || "",
-        company:     f.company || "",
+        company:     f.company  || "",
         category:    f.category || "",
         division:    JSON.stringify(f.division || []),
         report_mode: frappe.query_report.get_filter_value("report_mode") || "salary_summary",
     };
 }
-
-// ── Print buttons ─────────────────────────────────────────────────────────────
 
 function _set_print_buttons(report) {
     report.page.wrapper.find(".pr-select-print-btn").remove();
@@ -462,27 +514,22 @@ function _set_print_buttons(report) {
           <polyline points="9 11 12 14 22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/>
         </svg>${__("Select & Print")}</button>`);
     report.page.wrapper.find(".page-actions").prepend(btnSel);
-    btnSel.on("click", () => _show_select_print_dialog(btnSel));
-    report.page.wrapper.find(".pr-print-btn").off("click.pr_print");
-    report.page.set_primary_action(__("Print"), _print_current, "printer");
+    btnSel.on("click", () => _show_select_print_dialog(report, btnSel));
+    report.page.set_primary_action(__("Print"), () => _print_current(report), "printer");
 }
 
-// ── Print current ─────────────────────────────────────────────────────────────
-
-function _print_current() {
-    if (!_validate()) return;
+function _print_current(report) {
+    if (!_validate(report)) return;
     const label = REPORTS[_idx]?.label || "Report";
     _run_with_progress(
         "saral_hr.saral_hr.report.payroll_report.payroll_report.print_single_report",
-        { filters: JSON.stringify(_server_filters()) },
+        { filters: JSON.stringify(_server_filters(report)) },
         `Generating PDF: ${label}`
     );
 }
 
-// ── Select & Print dialog ─────────────────────────────────────────────────────
-
-function _show_select_print_dialog(triggerBtn) {
-    if (!_validate()) return;
+function _show_select_print_dialog(report, triggerBtn) {
+    if (!_validate(report)) return;
 
     const half  = Math.ceil(REPORTS.length / 2);
     const left  = REPORTS.slice(0, half);
@@ -539,17 +586,17 @@ function _show_select_print_dialog(triggerBtn) {
                 return;
             }
             d.hide();
-            _print_selected(selected, triggerBtn);
+            _print_selected(report, selected, triggerBtn);
         },
     });
     d.show();
 }
 
-function _print_selected(selectedKeys, btn) {
+function _print_selected(report, selectedKeys, btn) {
     const orig = btn.html();
     btn.prop("disabled", true);
     const count = selectedKeys.length;
-    const f = _server_filters(); delete f.report_mode;
+    const f = _server_filters(report); delete f.report_mode;
     f.selected_reports = JSON.stringify(selectedKeys);
     _run_with_progress(
         "saral_hr.saral_hr.report.payroll_report.payroll_report.print_selected_reports",
@@ -559,26 +606,16 @@ function _print_selected(selectedKeys, btn) {
     );
 }
 
-// ── Progress-aware PDF call ───────────────────────────────────────────────
-// Smoothly animates the progress bar while the server is working.
-// The bar crawls from 0 → 85% during the call, then snaps to 100% on done.
-
 function _run_with_progress(method, args, label, onDone) {
-    let pct = 0;
-    let done = false;
+    let pct = 0, done = false, phaseIdx = 0, phaseStart = Date.now(), rafId = null;
 
-    // Phase timings (ms): how long each segment takes to fill
     const PHASES = [
-        { target: 15, duration: 400  },   // 0→15%  fast start
-        { target: 40, duration: 1200 },   // 15→40% medium
-        { target: 65, duration: 2000 },   // 40→65% slower
-        { target: 82, duration: 4000 },   // 65→82% crawl
-        { target: 88, duration: 6000 },   // 82→88% very slow (waiting for server)
+        { target: 15, duration: 400  },
+        { target: 40, duration: 1200 },
+        { target: 65, duration: 2000 },
+        { target: 82, duration: 4000 },
+        { target: 88, duration: 6000 },
     ];
-
-    let phaseIdx = 0;
-    let phaseStart = Date.now();
-    let rafId = null;
 
     frappe.show_progress(__("Generating PDF"), 0, 100, `${__(label)}…`);
 
@@ -586,28 +623,19 @@ function _run_with_progress(method, args, label, onDone) {
         if (done) return;
         const phase = PHASES[phaseIdx];
         if (!phase) { rafId = requestAnimationFrame(_tick); return; }
-
         const elapsed  = Date.now() - phaseStart;
         const progress = Math.min(elapsed / phase.duration, 1);
-        // ease-out curve so it decelerates as it approaches the target
         const eased    = 1 - Math.pow(1 - progress, 2);
         const prevTarget = phaseIdx === 0 ? 0 : PHASES[phaseIdx - 1].target;
         pct = prevTarget + eased * (phase.target - prevTarget);
-
         frappe.show_progress(__("Generating PDF"), Math.round(pct), 100, `${__(label)}…`);
-
-        if (progress >= 1) {
-            phaseIdx++;
-            phaseStart = Date.now();
-        }
+        if (progress >= 1) { phaseIdx++; phaseStart = Date.now(); }
         rafId = requestAnimationFrame(_tick);
     }
-
     rafId = requestAnimationFrame(_tick);
 
     frappe.call({
-        method,
-        args,
+        method, args,
         callback(r) {
             done = true;
             if (rafId) cancelAnimationFrame(rafId);
