@@ -53,6 +53,57 @@ frappe.query_reports["Advance Register"] = {
             // no default — empty on load
         },
     ],
+    onload(report) {
+    report.page.set_primary_action(__("Print"), function () {
+
+        const f = report.get_values();
+
+        if (!f.company) {
+            frappe.msgprint({
+                title:     __("Missing Filters"),
+                message:   __("Please select Company before printing."),
+                indicator: "orange",
+            });
+            return;
+        }
+
+        frappe.dom.freeze(__("Generating PDF…"));
+
+        frappe.call({
+            method: "saral_hr.saral_hr.report.advance_register.advance_register.print_report",
+            args: {
+                filters: JSON.stringify({
+                    year:     f.year     || "",
+                    month:    f.month    || "",
+                    company:  f.company  || "",
+                    employee: f.employee || "",
+                }),
+            },
+            callback(r) {
+                frappe.dom.unfreeze();
+                if (r.message) {
+                    const a = Object.assign(document.createElement("a"), {
+                        href:   frappe.urllib.get_full_url(r.message),
+                        target: "_blank",
+                        rel:    "noopener noreferrer",
+                    });
+                    document.body.appendChild(a);
+                    a.click();
+                    document.body.removeChild(a);
+                }
+            },
+            error() {
+                frappe.dom.unfreeze();
+                frappe.msgprint({
+                    title:     __("Error"),
+                    message:   __("Failed to generate PDF."),
+                    indicator: "red",
+                });
+            },
+        });
+
+    }, "printer");
+},
 
     "formatter": function(value, row, column, data, default_formatter) {
         value = default_formatter(value, row, column, data);

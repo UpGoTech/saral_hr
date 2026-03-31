@@ -164,3 +164,154 @@ def build_base_conditions(filters):
         values["employee"] = filters["employee"]
 
     return conditions, values
+
+
+import json
+from frappe.utils.pdf import get_pdf
+
+
+_CSS = """<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:Arial,sans-serif;font-size:16px;color:#000;background:#fff}
+.hdr{text-align:center;border-bottom:2px solid #000;padding:10px 6px 6px;margin-bottom:6px}
+.hdr .co{font-size:28px;font-weight:900;letter-spacing:1px;text-transform:uppercase}
+.hdr .ttl{font-size:20px;font-weight:700;margin-top:2px}
+.hdr .per{font-size:16px;margin-top:2px}
+.sig{display:flex;justify-content:space-between;margin-top:16px;padding-top:8px}
+.sig-b{text-align:center;width:180px}
+.sig-l{border-top:1px solid #000;margin-bottom:4px}
+.sig-t{font-size:15px;color:#333}
+table{width:100%;border-collapse:collapse;margin-top:8px}
+th{border:1px solid #000;padding:10px 12px;font-size:16px;font-weight:700;background:#f0f0f0;color:#000;white-space:nowrap;text-align:left}
+td{border:1px solid #000;padding:10px 12px;font-size:16px;vertical-align:middle;color:#000;text-align:left}
+tr.tot td{background:#e8e8e8;font-weight:700}
+.nd{text-align:center;padding:10px;color:#888;font-size:16px}
+</style>"""
+
+
+_SIG = '<div class="sig">' + "".join(
+    f'<div class="sig-b"><div class="sig-l"></div><div class="sig-t">{l}</div></div>'
+    for l in ["Prepared By", "Checked By", "Authorised Signatory"]
+) + '</div>'
+
+
+def _fmt(v):
+    if v is None or v == "":
+        return ""
+    try:
+        return f"{float(v):,.2f}"
+    except (TypeError, ValueError):
+        return str(v)
+
+
+def _build_html(cols, data, co, title, mo, yr):
+    hdr = (
+        f'<div class="hdr">'
+        f'<div class="co">{co}</div>'
+        f'<div class="ttl">{title}</div>'
+        f'<div class="per">For the Month of {mo} {yr}</div>'
+        f'</div>'
+    )
+
+    def _th():
+        return "<tr>" + "".join(f'<th>{c.get("label","")}</th>' for c in cols) + "</tr>"
+
+    def _dr(row):
+        h = "<tr>"
+        for c in cols:
+            val = row.get(c.get("fieldname", ""), "")
+            h += f'<td>{_fmt(val) if isinstance(val, (int, float)) else (val or "")}</td>'
+        return h + "</tr>"
+
+    def _tr(row):
+        amount_cols = {"total_loan", "recovered_this_month", "loan_balance"}
+        h = '<tr class="tot">'
+        for c in cols:
+            fn = c.get("fieldname", "")
+            if fn == "employee":
+                h += "<td>TOTAL</td>"
+            elif fn in amount_cols:
+                h += f'<td>{_fmt(row.get(fn, ""))}</td>'
+            else:
+                h += "<td></td>"
+        return h + "</tr>"
+
+    # Separate totals row (employee == "TOTAL") from detail rows
+    detail_rows = [r for r in data if r.get("employee") != "TOTAL"]
+    total_row   = next((r for r in data if r.get("employee") == "TOTAL"), None)
+    ncols       = len(cols) or 1
+
+    if not detail_rows:
+        return (
+            f'<!DOCTYPE html><html><head><meta charset="UTF-8">{_CSS}</head>'
+            f'<body>{hdr}'
+            f'<table><thead>{_th()}</thead>'
+            f'<tbody><tr><td colspan="{ncols}" class="nd">No data for this period</td></tr></tbody>'
+            f'</table>{_SIG}</body></html>'
+        )
+
+    FIRST, OTHER = 20, 25
+    pages, idx, first = [], 0, True
+    while idx < len(detail_rows):
+        lim = FIRST if first else OTHER
+        pages.append(detail_rows[idx: idx + lim])
+        idx += lim
+        first = False
+
+    html = ""
+    for pn, pr in enumerate(pages):
+        last = (pn == len(pages) - 1)
+        if pn > 0:
+            html += '<div style="page-break-before:always;"></div>'
+        html += hdr
+        html += f'<table><thead>{_th()}</thead><tbody>'
+        for row in pr:
+            html += _dr(row)
+        if last and total_row:
+            html += _tr(total_row)
+        html += '</tbody></table>'
+
+    html += _SIG
+    return f'<!DOCTYPE html><html><head><meta charset="UTF-8">{_CSS}</head><body>{html}</body></html>'
+
+
+def _save_pdf(html, prefix):
+    pdf = get_pdf(html, options={
+        "page-size":     "A4",
+        "orientation":   "Landscape",
+        "margin-top":    "8mm",
+        "margin-right":  "8mm",
+        "margin-bottom": "8mm",
+        "margin-left":   "8mm",
+        "encoding":      "UTF-8",
+        "no-outline":    None,
+    })
+    ts  = frappe.utils.now_datetime().strftime("%Y%m%d_%H%M%S")
+    fn  = f"{prefix}_{ts}.pdf"
+    with open(frappe.utils.get_files_path(fn, is_private=0), "wb") as fh:
+        fh.write(pdf)
+    doc = frappe.get_doc({
+        "doctype":    "File",
+        "file_name":  fn,
+        "is_private": 0,
+        "file_url":   f"/files/{fn}",
+    })
+    doc.insert(ignore_permissions=True)
+    frappe.db.commit()
+    return doc.file_url
+
+
+@frappe.whitelist()
+def print_report(filters):
+    if isinstance(filters, str):
+        filters = json.loads(filters)
+
+    cols, data = execute(filters)
+
+    co    = filters.get("company", "")
+    mo    = filters.get("month",   "")
+    yr    = filters.get("year",    "")
+    title = "Loan Register"
+
+    html = _build_html(cols, data, co, title, mo, yr)
+    return _save_pdf(html, "Loan_Register")
