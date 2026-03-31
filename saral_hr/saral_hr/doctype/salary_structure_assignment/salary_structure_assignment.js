@@ -1,10 +1,6 @@
 // Copyright (c) 2026, sj and contributors
 // For license information, please see license.txt
 
-// ─────────────────────────────────────────────────────────────
-//  Exact Salary Component names (must match DB)
-// ─────────────────────────────────────────────────────────────
-
 const SC = {
     EMP_ESIC:   "Employee ESIC",
     EMPR_ESIC:  "Employer ESIC",
@@ -23,8 +19,12 @@ const STATUTORY_EMPLOYER   = [SC.EMPR_ESIC, SC.EMPR_PF, SC.EMPR_EPS, SC.EMPR_EDL
 const ALL_STATUTORY        = [...STATUTORY_DEDUCTION, ...STATUTORY_EMPLOYER];
 
 // ─────────────────────────────────────────────────────────────
-//  Main form events
+//  Guard: prevent concurrent statutory refresh calls
 // ─────────────────────────────────────────────────────────────
+// If refresh_statutory_rows is already in-flight, a second call
+// would race and double-add rows. We queue at most one pending call.
+let _statutory_inflight = false;
+let _statutory_pending  = false;
 
 frappe.ui.form.on("Salary Structure Assignment", {
 
@@ -35,6 +35,7 @@ frappe.ui.form.on("Salary Structure Assignment", {
         if (frm.doc.salary_structure) {
             toggle_salary_sections(frm);
             calculate_salary(frm);
+            maybe_render_daily_wage_panel(frm);
         }
     },
 
@@ -73,6 +74,7 @@ frappe.ui.form.on("Salary Structure Assignment", {
                 render_statutory_controls(frm);
                 toggle_skill_type(frm);
                 check_srr_and_apply(frm);
+                maybe_render_daily_wage_panel(frm);
             }
         });
     },
@@ -94,6 +96,7 @@ frappe.ui.form.on("Salary Structure Assignment", {
         if (!frm.doc.salary_structure) {
             clear_all_tables(frm);
             render_statutory_controls(frm);
+            _remove_daily_wage_panel(frm);
             return;
         }
         load_salary_structure(frm);
@@ -105,14 +108,13 @@ frappe.ui.form.on("Salary Structure Assignment", {
 });
 
 // ─────────────────────────────────────────────────────────────
-//  Salary Details — live recalc when earnings amount changes
+//  Salary Details — live recalc
 // ─────────────────────────────────────────────────────────────
 
 frappe.ui.form.on("Salary Details", {
     amount(frm, cdt, cdn) {
         const row = frappe.get_doc(cdt, cdn);
 
-        // ── Revert V-DA if user tries to edit it ──────────────────────────
         if (frm._locked_vda_row
             && row
             && row.name === frm._locked_vda_row
@@ -138,13 +140,298 @@ frappe.ui.form.on("Salary Details", {
 });
 
 // ─────────────────────────────────────────────────────────────
-//  Statutory controls
+//  Daily Wage Panel
+// ─────────────────────────────────────────────────────────────
+
+function maybe_render_daily_wage_panel(frm) {
+    _remove_daily_wage_panel(frm);
+    if (!frm.doc.salary_structure) return;
+
+    const category = frm.doc.category;
+    if (category) {
+        _check_subtype_and_render(frm, category);
+    } else if (frm.doc.employee) {
+        frappe.db.get_value("Company Link", frm.doc.employee, "category", (r) => {
+            const cat = r && r.category;
+            if (!cat) return;
+            _check_subtype_and_render(frm, cat);
+        });
+    }
+}
+
+function _check_subtype_and_render(frm, category) {
+    frappe.db.get_value("Category", category, "has_subtype", (r) => {
+        if (!r || !r.has_subtype) return;
+
+        const dw_rows = _get_daily_wage_rows(frm);
+        if (!dw_rows.length) return;
+
+        if (frm.doc.skill_type && frm.doc.from_date) {
+            frappe.call({
+                method: "saral_hr.saral_hr.doctype.salary_structure_assignment.salary_structure_assignment.get_daily_wage_multiplier",
+                args: { start_date: frm.doc.from_date, skill_type: frm.doc.skill_type },
+                callback(r) {
+                    const multiplier = (r.message && r.message.multiplier) ? flt(r.message.multiplier) : 26;
+                    _build_daily_wage_panel(frm, dw_rows, multiplier);
+                },
+                error() { _build_daily_wage_panel(frm, dw_rows, 26); }
+            });
+        } else {
+            _build_daily_wage_panel(frm, dw_rows, 26);
+        }
+    });
+}
+
+function _get_daily_wage_rows(frm) {
+    const all = [
+        ...(frm.doc.earnings       || []),
+        ...(frm.doc.deductions     || []),
+        ...(frm.doc.employer_share || []),
+    ];
+    return all.filter(r => parseInt(r.daily_wage_component));
+}
+
+function _remove_daily_wage_panel(frm) {
+    if (frm.wrapper) $(frm.wrapper).find(".dw-panel").remove();
+    const f = frm.fields_dict["daily_wage_html"];
+    if (f && f.$wrapper) f.$wrapper.empty();
+}
+
+function _build_daily_wage_panel(frm, dw_rows, multiplier) {
+    if (!dw_rows || !dw_rows.length) return;
+
+    const is_readonly = frm.doc.docstatus !== 0;
+
+    const rows_html = dw_rows.map((row, idx) => {
+        const saved_amount = flt(row.amount) || 0;
+        const per_day = flt(row._dw_per_day) > 0
+            ? flt(row._dw_per_day)
+            : (saved_amount > 0 ? flt(saved_amount / multiplier, 4) : "");
+
+        const monthly_display = saved_amount > 0
+            ? flt(saved_amount, 2).toLocaleString("en-IN", {minimumFractionDigits:2, maximumFractionDigits:2})
+            : "";
+
+        return `
+        <tr class="dw-data-row" data-rowname="${row.name}" data-parentfield="${row.parentfield}">
+            <td class="dw-td-sr">${idx + 1}</td>
+            <td class="dw-td-component">
+                <div class="dw-comp-name">${frappe.utils.escape_html(row.salary_component || "")}</div>
+                <div class="dw-comp-abbr">${frappe.utils.escape_html(row.abbr || "")}</div>
+            </td>
+            <td class="dw-td-perday">
+                <input
+                    type="number"
+                    class="dw-rate-input${is_readonly ? " dw-readonly" : ""}"
+                    data-rowname="${row.name}"
+                    min="0"
+                    step="0.01"
+                    placeholder="0.00"
+                    value="${per_day}"
+                    ${is_readonly ? "disabled readonly tabindex='-1'" : ""}
+                />
+            </td>
+            <td class="dw-td-monthly">
+                <span class="dw-computed-val" data-rowname="${row.name}">${monthly_display}</span>
+            </td>
+        </tr>`;
+    }).join("");
+
+    const panel_html = `
+        <div class="dw-panel">
+        <style>
+            .dw-panel { margin-bottom: 16px; }
+            .dw-grid-label {
+                display: flex; align-items: center; justify-content: space-between;
+                margin-bottom: 6px;
+            }
+            .dw-grid-label-text {
+                font-size: 12px; font-weight: 600;
+                color: var(--text-muted, #8d99a6);
+                text-transform: uppercase; letter-spacing: 0.04em;
+            }
+            .dw-grid-label-meta {
+                font-size: 11px; font-weight: 400;
+                color: var(--text-muted, #adb5bd); margin-left: 8px;
+                text-transform: none; letter-spacing: 0;
+            }
+            .dw-grid-actions { display: flex; gap: 6px; }
+            .dw-grid-wrap {
+                border: 1px solid var(--border-color, #d1d8dd);
+                border-radius: var(--border-radius, 6px); overflow: hidden;
+            }
+            .dw-grid-table {
+                width: 100%; border-collapse: collapse;
+                font-size: 13px; table-layout: fixed;
+            }
+            .dw-grid-table thead tr {
+                background: var(--datatable-header-background, #f3f4f6);
+                border-bottom: 1px solid var(--border-color, #d1d8dd);
+            }
+            .dw-grid-table thead th {
+                padding: 7px 10px; font-size: 11px; font-weight: 600;
+                color: var(--text-muted, #6b7280); text-transform: uppercase;
+                letter-spacing: 0.04em; text-align: left; white-space: nowrap;
+                border-right: 1px solid var(--border-color, #e5e7eb);
+            }
+            .dw-grid-table thead th:last-child { border-right: none; }
+            .dw-th-right { text-align: right !important; }
+            .dw-data-row {
+                border-bottom: 1px solid var(--border-color, #f0f0f0);
+                transition: background 0.1s;
+            }
+            .dw-data-row:last-child { border-bottom: none; }
+            .dw-data-row:hover { background: var(--fg-hover-color, #f9fafb); }
+            .dw-data-row td {
+                padding: 6px 10px; vertical-align: middle;
+                border-right: 1px solid var(--border-color, #f0f0f0);
+            }
+            .dw-data-row td:last-child { border-right: none; }
+            .dw-td-sr { width: 40px; text-align: center; color: var(--text-muted, #adb5bd); font-size: 11px; }
+            .dw-td-component { width: auto; }
+            .dw-td-perday  { width: 180px; }
+            .dw-td-monthly { width: 150px; text-align: right; }
+            .dw-comp-name { font-size: 13px; font-weight: 500; color: var(--text-color, #1f2937); line-height: 1.3; }
+            .dw-comp-abbr { font-size: 11px; color: var(--text-muted, #8d99a6); margin-top: 1px; }
+            .dw-rate-input {
+                width: 100%; height: 28px; padding: 0 8px; font-size: 13px;
+                color: var(--text-color, #1f2937); background: transparent;
+                border: 1px solid transparent; border-radius: var(--border-radius-sm, 4px);
+                outline: none; text-align: right; transition: border-color 0.15s; box-sizing: border-box;
+            }
+            .dw-rate-input:hover  { border-color: var(--border-color, #d1d8dd); }
+            .dw-rate-input:focus  { border-color: var(--primary, #5e64ff); background: var(--control-bg, #fff); box-shadow: 0 0 0 2px rgba(94,100,255,0.12); }
+            .dw-rate-input.dw-error { border-color: var(--red-500, #ef4444) !important; background: #fff5f5; }
+            .dw-rate-input::placeholder { color: var(--text-muted, #d1d5db); }
+            .dw-rate-input.dw-readonly, .dw-rate-input[disabled] {
+                background: transparent !important; border-color: transparent !important;
+                box-shadow: none !important; cursor: default !important;
+                color: var(--text-color, #1f2937); pointer-events: none;
+            }
+            .dw-computed-val { font-size: 13px; font-weight: 500; color: var(--text-color, #1f2937); }
+            .dw-computed-val.has-value { color: var(--primary, #5e64ff); }
+            .dw-computed-val:empty::before { content: "—"; color: var(--text-muted, #d1d5db); font-weight: 400; }
+        </style>
+        <div class="dw-grid-label">
+            <div>
+                <span class="dw-grid-label-text">Daily Wage Entry</span>
+                <span class="dw-grid-label-meta">per-day × ${multiplier} days = monthly</span>
+            </div>
+            ${is_readonly ? "" : `
+            <div class="dw-grid-actions">
+                <button class="btn btn-xs btn-default dw-reset-btn">Reset</button>
+                <button class="btn btn-xs btn-primary dw-compute-btn">Compute</button>
+            </div>`}
+        </div>
+        <div class="dw-grid-wrap">
+            <table class="dw-grid-table">
+                <thead>
+                    <tr>
+                        <th class="dw-td-sr">Sr</th>
+                        <th>Component</th>
+                        <th class="dw-th-right">Per Day (₹)</th>
+                        <th class="dw-th-right">Monthly (₹)</th>
+                    </tr>
+                </thead>
+                <tbody class="dw-tbody">${rows_html}</tbody>
+            </table>
+        </div>
+        </div>
+    `;
+
+    const $anchor = frm.fields_dict["daily_wage_html"] &&
+                    frm.fields_dict["daily_wage_html"].$wrapper;
+
+    if ($anchor && $anchor.length) {
+        $anchor.html(panel_html);
+    } else {
+        const $ew = frm.fields_dict["earnings"] && frm.fields_dict["earnings"].$wrapper;
+        if ($ew && $ew.length) $ew.before(panel_html);
+    }
+
+    const $panel = ($anchor && $anchor.length)
+        ? $anchor.find(".dw-panel")
+        : $(frm.wrapper).find(".dw-panel").last();
+
+    // Live preview
+    $panel.on("input", ".dw-rate-input", function () {
+        const per_day = flt($(this).val());
+        const monthly = per_day > 0 ? flt(per_day * multiplier, 2) : 0;
+        const rname   = $(this).data("rowname");
+        $(this).removeClass("dw-error");
+        const $val = $panel.find(`.dw-computed-val[data-rowname="${rname}"]`);
+        if (monthly > 0) {
+            $val.text(monthly.toLocaleString("en-IN", {minimumFractionDigits:2, maximumFractionDigits:2}));
+            $val.addClass("has-value");
+        } else {
+            $val.text("").removeClass("has-value");
+        }
+    });
+
+    // Compute
+    $panel.find(".dw-compute-btn").on("click", function () {
+        let any_missing = false;
+        $panel.find(".dw-rate-input").each(function () {
+            if ($(this).val() === "" || isNaN(flt($(this).val()))) {
+                any_missing = true;
+                $(this).addClass("dw-error");
+            } else {
+                $(this).removeClass("dw-error");
+            }
+        });
+
+        if (any_missing) {
+            frappe.show_alert({ message: __("Please enter a per-day rate for all components."), indicator: "orange" });
+            return;
+        }
+
+        $panel.find(".dw-rate-input").each(function () {
+            const per_day = flt($(this).val());
+            const monthly = flt(per_day * multiplier, 2);
+            const rname   = $(this).data("rowname");
+            const pfield  = $(this).closest("tr").data("parentfield");
+
+            const table = frm.doc[pfield] || [];
+            const match = (table.filter ? table.filter(r => r.name === rname) : [])[0];
+            if (match) match._dw_per_day = per_day;
+
+            frappe.model.set_value("Salary Details", rname, "amount",       monthly);
+            frappe.model.set_value("Salary Details", rname, "base_amount",  monthly);
+            frappe.model.set_value("Salary Details", rname, "per_day_rate", per_day);
+
+            const $val = $panel.find(`.dw-computed-val[data-rowname="${rname}"]`);
+            $val.text(monthly.toLocaleString("en-IN", {minimumFractionDigits:2, maximumFractionDigits:2}));
+            $val.addClass("has-value");
+        });
+
+        frm.refresh_fields(["earnings", "deductions", "employer_share"]);
+        refresh_statutory_rows(frm);
+        frappe.show_alert({ message: __("Monthly amounts applied."), indicator: "green" });
+    });
+
+    // Reset
+    $panel.find(".dw-reset-btn").on("click", function () {
+        $panel.find(".dw-rate-input").val("").removeClass("dw-error");
+        $panel.find(".dw-computed-val").text("").removeClass("has-value");
+        dw_rows.forEach(row => {
+            frappe.model.set_value("Salary Details", row.name, "amount",       0);
+            frappe.model.set_value("Salary Details", row.name, "base_amount",  0);
+            frappe.model.set_value("Salary Details", row.name, "per_day_rate", 0);
+            row._dw_per_day = 0;
+        });
+        frm.refresh_fields(["earnings", "deductions", "employer_share"]);
+        refresh_statutory_rows(frm);
+        frappe.show_alert({ message: __("Daily wage amounts reset."), indicator: "blue" });
+    });
+}
+
+// ─────────────────────────────────────────────────────────────
+//  Statutory controls (HTML checkboxes)
 // ─────────────────────────────────────────────────────────────
 
 function render_statutory_controls(frm) {
     const f = frm.fields_dict["statutory_info_html"];
     if (!f || !f.$wrapper) return;
-
     f.$wrapper.empty();
 
     if (!frm.doc.salary_structure) {
@@ -172,10 +459,8 @@ function render_statutory_controls(frm) {
 
     const pf_select = pf ? `
         <select id="ssa-pf-type" ${editable ? "" : "disabled"}
-            style="margin-left:4px;margin-right:14px;
-                   height:26px;padding:0 8px;font-size:12px;
-                   border:1px solid var(--border-color,#d1d8dd);
-                   border-radius:4px;background:#fff;
+            style="margin-left:4px;margin-right:14px;height:26px;padding:0 8px;font-size:12px;
+                   border:1px solid var(--border-color,#d1d8dd);border-radius:4px;background:#fff;
                    cursor:${editable ? "pointer" : "default"};">
             <option value=""           ${!pftype                 ? "selected" : ""}>${__("Select type")}</option>
             <option value="Limited PF" ${pftype === "Limited PF" ? "selected" : ""}>${__("Limited PF")}</option>
@@ -196,128 +481,107 @@ function render_statutory_controls(frm) {
 
     f.$wrapper.find("#ssa-esic").on("change", function () {
         frm.set_value("is_esic_applicable", this.checked ? 1 : 0);
-        refresh_statutory_rows(frm);
-        render_statutory_controls(frm);
+        refresh_statutory_rows(frm); render_statutory_controls(frm);
     });
-
     f.$wrapper.find("#ssa-pf").on("change", function () {
         frm.set_value("is_pf_applicable", this.checked ? 1 : 0);
         if (!this.checked) frm.set_value("pf_applicable", "");
-        refresh_statutory_rows(frm);
-        render_statutory_controls(frm);
+        refresh_statutory_rows(frm); render_statutory_controls(frm);
     });
-
     f.$wrapper.find("#ssa-pf-type").on("change", function () {
         frm.set_value("pf_applicable", this.value);
         refresh_statutory_rows(frm);
     });
-
     f.$wrapper.find("#ssa-pt").on("change", function () {
         frm.set_value("is_pt_applicable", this.checked ? 1 : 0);
-        refresh_statutory_rows(frm);
-        render_statutory_controls(frm);
+        refresh_statutory_rows(frm); render_statutory_controls(frm);
     });
-
     f.$wrapper.find("#ssa-lwf").on("change", function () {
         frm.set_value("is_lwf_applicable", this.checked ? 1 : 0);
-        refresh_statutory_rows(frm);
-        render_statutory_controls(frm);
+        refresh_statutory_rows(frm); render_statutory_controls(frm);
     });
 }
 
 // ─────────────────────────────────────────────────────────────
-//  Show/hide skill_type based on category's has_subtype
+//  Show/hide skill_type
 // ─────────────────────────────────────────────────────────────
 
 function toggle_skill_type(frm) {
     if (!frm.doc.category) {
-        frm.set_df_property('skill_type', 'hidden', 1);
-        frm.refresh_field('skill_type');
+        frm.set_df_property("skill_type", "hidden", 1);
+        frm.refresh_field("skill_type");
         return;
     }
-    frappe.db.get_value('Category', frm.doc.category, 'has_subtype', (r) => {
+    frappe.db.get_value("Category", frm.doc.category, "has_subtype", (r) => {
         const show = r && !!r.has_subtype;
-        frm.set_df_property('skill_type', 'hidden', show ? 0 : 1);
-        frm.refresh_field('skill_type');
+        frm.set_df_property("skill_type", "hidden", show ? 0 : 1);
+        frm.refresh_field("skill_type");
     });
 }
 
 // ─────────────────────────────────────────────────────────────
-//  SRR check and apply for skill-subtype employees
+//  SRR check and apply
 // ─────────────────────────────────────────────────────────────
 
 function check_srr_and_apply(frm) {
     if (!frm.doc.employee || !frm.doc.from_date) return;
 
-    frappe.db.get_value(
-        "Company Link", frm.doc.employee,
-        ["category", "skill_type"],
-        (emp) => {
-            const category   = (emp && emp.category)   || frm.doc.category;
-            const skill_type = (emp && emp.skill_type) || frm.doc.skill_type;
+    frappe.db.get_value("Company Link", frm.doc.employee, ["category", "skill_type"], (emp) => {
+        const category   = (emp && emp.category)   || frm.doc.category;
+        const skill_type = (emp && emp.skill_type) || frm.doc.skill_type;
+        if (!category || !skill_type) return;
 
-            if (!category || !skill_type) return;
+        frappe.db.get_value("Category", category, "has_subtype", (r) => {
+            if (!r || !r.has_subtype) return;
 
-            frappe.db.get_value('Category', category, 'has_subtype', (r) => {
-                if (!r || !r.has_subtype) return;
-
-                frappe.call({
-                    method: "saral_hr.saral_hr.doctype.salary_structure_assignment.salary_structure_assignment.get_srr_for_ssa",
-                    args: {
-                        start_date: frm.doc.from_date,
-                        skill_type: skill_type
-                    },
-                    callback(res) {
-                        if (!res.message) {
-                            frappe.msgprint({
-                                title:     __("Skill Rate Revision Not Found"),
-                                message:   __(
-                                    `Employee <strong>${frm.doc.employee_name || frm.doc.employee}</strong> `
-                                    + `belongs to category <strong>${category}</strong> `
-                                    + `with skill type <strong>${skill_type}</strong>.<br><br>`
-                                    + `No submitted Skill Rate Revision found covering <strong>${frm.doc.from_date}</strong>. `
-                                    + `Please create and submit a Skill Rate Revision for this period `
-                                    + `before creating this assignment.`
-                                ),
-                                indicator: "red"
-                            });
-                            frm.set_value("from_date", "");
-                            return;
-                        }
-
-                        apply_srr_to_earnings(frm, res.message);
+            frappe.call({
+                method: "saral_hr.saral_hr.doctype.salary_structure_assignment.salary_structure_assignment.get_srr_for_ssa",
+                args: { start_date: frm.doc.from_date, skill_type: skill_type },
+                callback(res) {
+                    if (!res.message) {
+                        frappe.msgprint({
+                            title:     __("Skill Rate Revision Not Found"),
+                            message:   __(
+                                `Employee <strong>${frm.doc.employee_name || frm.doc.employee}</strong> `
+                                + `belongs to category <strong>${category}</strong> `
+                                + `with skill type <strong>${skill_type}</strong>.<br><br>`
+                                + `No submitted Skill Rate Revision found covering <strong>${frm.doc.from_date}</strong>. `
+                                + `Please create and submit a Skill Rate Revision for this period `
+                                + `before creating this assignment.`
+                            ),
+                            indicator: "red"
+                        });
+                        frm.set_value("from_date", "");
+                        return;
                     }
-                });
+                    apply_srr_to_earnings(frm, res.message);
+                }
             });
-        }
-    );
+        });
+    });
 }
 
 function apply_srr_to_earnings(frm, srr) {
     if (!frm.doc.earnings || !frm.doc.earnings.length) return;
 
-    // ── Check if Basic or V-DA components actually exist in earnings ──────
     const has_basic = frm.doc.earnings.some(row => {
         const comp = (row.salary_component || "").toLowerCase();
         const abbr = (row.abbr || "").toLowerCase().trim();
         return comp.includes("basic") || abbr === "basic";
     });
-
     const has_vda = frm.doc.earnings.some(row => {
         const comp = (row.salary_component || "").toLowerCase();
         const abbr = (row.abbr || "").toLowerCase().trim();
         return comp.includes("dearness") || abbr === "v-da" || abbr === "vda";
     });
 
-    // If neither component exists in this salary structure, skip entirely
     if (!has_basic && !has_vda) return;
 
     let vda_row_name = null;
 
     frm.doc.earnings.forEach(row => {
-        const comp = (row.salary_component || "").toLowerCase();
-        const abbr = (row.abbr || "").toLowerCase().trim();
-
+        const comp     = (row.salary_component || "").toLowerCase();
+        const abbr     = (row.abbr || "").toLowerCase().trim();
         const is_basic = comp.includes("basic") || abbr === "basic";
         const is_vda   = comp.includes("dearness") || abbr === "v-da" || abbr === "vda";
 
@@ -325,7 +589,6 @@ function apply_srr_to_earnings(frm, srr) {
             frappe.model.set_value(row.doctype, row.name, "amount",      flt(srr.vbasic, 2));
             frappe.model.set_value(row.doctype, row.name, "base_amount", flt(srr.vbasic, 2));
         }
-
         if (is_vda) {
             frappe.model.set_value(row.doctype, row.name, "amount",      flt(srr.vda, 2));
             frappe.model.set_value(row.doctype, row.name, "base_amount", flt(srr.vda, 2));
@@ -335,11 +598,7 @@ function apply_srr_to_earnings(frm, srr) {
     });
 
     frm.refresh_field("earnings");
-
-    if (vda_row_name) {
-        frm._locked_vda_row = vda_row_name;
-    }
-
+    if (vda_row_name) frm._locked_vda_row = vda_row_name;
     refresh_statutory_rows(frm);
 }
 
@@ -374,8 +633,8 @@ function load_salary_structure(frm) {
 
             render_statutory_controls(frm);
             refresh_statutory_rows(frm);
+            maybe_render_daily_wage_panel(frm);
 
-            // After loading structure, apply SRR if applicable
             setTimeout(() => check_srr_and_apply(frm), 500);
         }
     });
@@ -383,16 +642,54 @@ function load_salary_structure(frm) {
 
 // ─────────────────────────────────────────────────────────────
 //  Refresh statutory rows
+//
+//  THE KEY FIX: use _remove_statutory_rows() which calls
+//  frm.clear_table() + frm.get_field().grid.refresh() so Frappe's
+//  internal child-table model is fully cleared before we add new rows.
+//  The old approach of re-assigning frm.doc.deductions = [...filter()]
+//  only updates the JS array; it does NOT remove rows from Frappe's
+//  internal docmap, so on the next add_child() the old rows remain
+//  and new ones are appended — producing duplicates.
 // ─────────────────────────────────────────────────────────────
+
+function _remove_statutory_rows(frm) {
+    // Collect non-statutory rows we want to keep
+    const keep_ded  = (frm.doc.deductions    || []).filter(r => !ALL_STATUTORY.includes((r.salary_component || "").trim()));
+    const keep_empr = (frm.doc.employer_share || []).filter(r => !ALL_STATUTORY.includes((r.salary_component || "").trim()));
+
+    // Save their data snapshots (name will be regenerated)
+    const snap_ded  = keep_ded.map(r => ({ ...r }));
+    const snap_empr = keep_empr.map(r => ({ ...r }));
+
+    // Fully clear both tables
+    frm.clear_table("deductions");
+    frm.clear_table("employer_share");
+
+    // Re-add the non-statutory rows we want to keep
+    snap_ded.forEach(snap => {
+        const child = frm.add_child("deductions");
+        copy_row(child, snap);
+    });
+    snap_empr.forEach(snap => {
+        const child = frm.add_child("employer_share");
+        copy_row(child, snap);
+    });
+
+    frm.refresh_fields(["deductions", "employer_share"]);
+}
 
 function refresh_statutory_rows(frm) {
     if (!frm.doc.salary_structure || !frm.doc.company) return;
 
-    frm.doc.deductions = (frm.doc.deductions || [])
-        .filter(r => !ALL_STATUTORY.includes((r.salary_component || "").trim()));
-    frm.doc.employer_share = (frm.doc.employer_share || [])
-        .filter(r => !ALL_STATUTORY.includes((r.salary_component || "").trim()));
-    frm.refresh_fields(["deductions", "employer_share"]);
+    // Guard: if a call is already in flight, mark pending and return.
+    // The in-flight callback will re-run after it finishes.
+    if (_statutory_inflight) {
+        _statutory_pending = true;
+        return;
+    }
+
+    // Remove existing statutory rows cleanly
+    _remove_statutory_rows(frm);
 
     const any_on = frm.doc.is_esic_applicable || frm.doc.is_pf_applicable
         || frm.doc.is_pt_applicable || frm.doc.is_lwf_applicable;
@@ -403,6 +700,7 @@ function refresh_statutory_rows(frm) {
     }
 
     const earnings_map = _earnings_map(frm);
+    _statutory_inflight = true;
 
     frappe.call({
         method: "saral_hr.saral_hr.doctype.salary_structure_assignment.salary_structure_assignment.get_statutory_components",
@@ -418,31 +716,44 @@ function refresh_statutory_rows(frm) {
             is_lwf_applicable:  frm.doc.is_lwf_applicable  ? 1 : 0,
         },
         callback(r) {
-            if (!r.message) return;
+            _statutory_inflight = false;
 
-            (r.message.deductions || []).forEach(d => {
-                const child = frm.add_child("deductions");
-                frappe.model.set_value(child.doctype, child.name, {
-                    salary_component:      d.salary_component,
-                    abbr:                  d.abbr || "",
-                    amount:                flt(d.amount),
-                    base_amount:           flt(d.amount),
-                    employer_contribution: 0,
+            if (r.message) {
+                (r.message.deductions || []).forEach(d => {
+                    const child = frm.add_child("deductions");
+                    frappe.model.set_value(child.doctype, child.name, {
+                        salary_component:      d.salary_component,
+                        abbr:                  d.abbr || "",
+                        amount:                flt(d.amount),
+                        base_amount:           flt(d.amount),
+                        employer_contribution: 0,
+                    });
                 });
-            });
 
-            (r.message.employer_share || []).forEach(d => {
-                const child = frm.add_child("employer_share");
-                frappe.model.set_value(child.doctype, child.name, {
-                    salary_component:      d.salary_component,
-                    abbr:                  d.abbr || "",
-                    amount:                flt(d.amount),
-                    base_amount:           flt(d.amount),
-                    employer_contribution: 1,
+                (r.message.employer_share || []).forEach(d => {
+                    const child = frm.add_child("employer_share");
+                    frappe.model.set_value(child.doctype, child.name, {
+                        salary_component:      d.salary_component,
+                        abbr:                  d.abbr || "",
+                        amount:                flt(d.amount),
+                        base_amount:           flt(d.amount),
+                        employer_contribution: 1,
+                    });
                 });
-            });
 
-            frm.refresh_fields(["deductions", "employer_share"]);
+                frm.refresh_fields(["deductions", "employer_share"]);
+                calculate_salary(frm);
+            }
+
+            // If another call was queued while we were in-flight, run it now
+            if (_statutory_pending) {
+                _statutory_pending = false;
+                refresh_statutory_rows(frm);
+            }
+        },
+        error() {
+            _statutory_inflight = false;
+            _statutory_pending  = false;
             calculate_salary(frm);
         }
     });
@@ -466,6 +777,9 @@ function toggle_salary_sections(frm) {
     frm.toggle_display("earnings_and_deductions_section", s);
     frm.toggle_display("employer_share_section",          s);
     frm.toggle_display("calculations_section",            s);
+    if (frm.fields_dict["daily_wage_html"]) {
+        frm.toggle_display("daily_wage_html", s);
+    }
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -505,15 +819,14 @@ function calculate_salary()        { _do_calculate(arguments[0], false); }
 function calculate_salary_silent() { _do_calculate(arguments[0], true);  }
 
 function _do_calculate(frm, silent) {
-    const gross    = _sum_earnings(frm);
-    let emp_ded    = 0;
-    let empr_cont  = 0;
+    const gross   = _sum_earnings(frm);
+    let emp_ded   = 0;
+    let empr_cont = 0;
 
     (frm.doc.deductions || []).forEach(d => {
         const live = frappe.get_doc(d.doctype, d.name);
         emp_ded += flt(live ? live.amount : d.amount);
     });
-
     (frm.doc.employer_share || []).forEach(d => {
         const live = frappe.get_doc(d.doctype, d.name);
         empr_cont += flt(live ? live.amount : d.amount);
@@ -526,6 +839,7 @@ function _do_calculate(frm, silent) {
         net_salary:                  gross - emp_ded,
         monthly_ctc:                 gross + empr_cont,
         annual_ctc:                  (gross + empr_cont) * 12,
+        total_basic_da:              _sum_basic_da(frm),
     };
 
     if (silent) {
@@ -539,7 +853,7 @@ function _do_calculate(frm, silent) {
     } else {
         frm.set_value(values);
         frm.refresh_fields(["gross_salary", "total_deductions",
-            "total_employer_contribution", "net_salary", "monthly_ctc", "annual_ctc"]);
+            "total_employer_contribution", "net_salary", "monthly_ctc", "annual_ctc","total_basic_da"]);
     }
 }
 
@@ -551,7 +865,21 @@ function _sum_earnings(frm) {
     });
     return t;
 }
-
+function _sum_basic_da(frm) {
+    let basic = 0, da = 0;
+    (frm.doc.earnings || []).forEach(r => {
+        const live = frappe.get_doc(r.doctype, r.name);
+        const amt  = flt(live ? live.amount : r.amount);
+        const comp = (r.salary_component || "").toLowerCase();
+        const abbr = (r.abbr || "").toLowerCase().trim();
+        if (comp.includes("basic") || abbr === "basic") basic += amt;
+        // Match same DA detection logic as salary_slip.js
+        if (comp.includes("dearness") || comp === "da"
+            || abbr === "da" || abbr.startsWith("da-") || abbr.startsWith("da ")
+            || abbr === "da - dr" || abbr.startsWith("da-dr")) da += amt;
+    });
+    return flt(basic + da, 2);
+}
 function _earnings_map(frm) {
     const map = {};
     (frm.doc.earnings || []).forEach(r => {

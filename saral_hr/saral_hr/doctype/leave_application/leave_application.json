@@ -1,25 +1,175 @@
 {
  "actions": [],
+ "allow_import": 1,
  "allow_rename": 1,
  "autoname": "LA-.#####",
- "creation": "2026-03-04 17:36:19.134927",
+ "creation": "2026-03-23 00:00:00.000000",
  "doctype": "DocType",
  "engine": "InnoDB",
  "field_order": [
-  "employee", "leave_type", "from_date", "to_date", "total_days", "status", "amended_from"
+  "employee",
+  "employee_name",
+  "column_break_emp",
+  "leave_type",
+  "leave_balance",
+  "section_break_balance_table",
+  "leave_balance_html",
+  "section_break_dates",
+  "from_date",
+  "to_date",
+  "half_day",
+  "half_day_date",
+  "column_break_dates",
+  "total_days",
+  "reason",
+  "section_break_approval",
+  "status",
+  "approver",
+  "column_break_approval",
+  "approver_remark",
+  "approved_on"
  ],
  "fields": [
-  {"fieldname": "employee", "fieldtype": "Link", "in_list_view": 1, "label": "Employee", "options": "Employee", "reqd": 1},
-  {"fieldname": "leave_type", "fieldtype": "Link", "in_list_view": 1, "label": "Leave Type", "options": "Leave Types", "reqd": 1},
-  {"fieldname": "from_date", "fieldtype": "Date", "in_list_view": 1, "label": "From Date", "reqd": 1},
-  {"fieldname": "to_date", "fieldtype": "Date", "in_list_view": 1, "label": "To Date", "reqd": 1},
-  {"fieldname": "total_days", "fieldtype": "Float", "in_list_view": 1, "label": "Total Days", "read_only": 1},
-  {"fieldname": "status", "fieldtype": "Select", "in_list_view": 1, "label": "Status", "options": "Pending\nApproved\nRejected", "default": "Pending"},
-  {"fieldname": "amended_from", "fieldtype": "Link", "label": "Amended From", "no_copy": 1, "options": "Leave Application", "print_hide": 1, "read_only": 1, "search_index": 1}
+  {
+   "fieldname": "employee",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Employee",
+   "options": "Employee",
+   "reqd": 1
+  },
+  {
+   "fetch_from": "employee.employee",
+   "fieldname": "employee_name",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Employee Name",
+   "read_only": 1
+  },
+  {
+   "fieldname": "column_break_emp",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "leave_type",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Leave Type",
+   "options": "Leave Types",
+   "reqd": 1
+  },
+  {
+   "description": "Balance for the selected leave type. Auto-fetched.",
+   "fieldname": "leave_balance",
+   "fieldtype": "Float",
+   "label": "Leave Balance",
+   "precision": "2",
+   "read_only": 1
+  },
+  {
+   "fieldname": "section_break_balance_table",
+   "fieldtype": "Section Break",
+   "label": "Leave Balance Summary"
+  },
+  {
+   "fieldname": "leave_balance_html",
+   "fieldtype": "HTML",
+   "label": "Leave Balance HTML",
+   "options": "<p class='text-muted'>Select an employee to view leave balances.</p>"
+  },
+  {
+   "fieldname": "section_break_dates",
+   "fieldtype": "Section Break",
+   "label": "Leave Dates"
+  },
+  {
+   "fieldname": "from_date",
+   "fieldtype": "Date",
+   "in_list_view": 1,
+   "label": "From Date",
+   "reqd": 1
+  },
+  {
+   "fieldname": "to_date",
+   "fieldtype": "Date",
+   "in_list_view": 1,
+   "label": "To Date",
+   "reqd": 1
+  },
+  {
+   "default": "0",
+   "fieldname": "half_day",
+   "fieldtype": "Check",
+   "label": "Half Day"
+  },
+  {
+   "depends_on": "eval:doc.half_day",
+   "fieldname": "half_day_date",
+   "fieldtype": "Date",
+   "label": "Half Day Date"
+  },
+  {
+   "fieldname": "column_break_dates",
+   "fieldtype": "Column Break"
+  },
+  {
+   "description": "Auto-calculated from From Date and To Date.",
+   "fieldname": "total_days",
+   "fieldtype": "Float",
+   "in_list_view": 1,
+   "label": "Total Days",
+   "precision": "2",
+   "read_only": 1
+  },
+  {
+   "fieldname": "reason",
+   "fieldtype": "Small Text",
+   "label": "Reason"
+  },
+  {
+   "fieldname": "section_break_approval",
+   "fieldtype": "Section Break",
+   "label": "Approval"
+  },
+  {
+   "default": "Open",
+   "fieldname": "status",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Status",
+   "options": "Open\nApproved\nRejected",
+   "reqd": 1
+  },
+  {
+   "description": "HR Manager or Reporting Manager who approves this leave.",
+   "fieldname": "approver",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Leave Approver",
+   "options": "Employee"
+  },
+  {
+   "fieldname": "column_break_approval",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "approver_remark",
+   "fieldtype": "Small Text",
+   "label": "Approver Remark"
+  },
+  {
+   "fieldname": "approved_on",
+   "fieldtype": "Date",
+   "label": "Approved / Rejected On",
+   "read_only": 1
+  }
  ],
- "is_submittable": 1,
+ "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-03-06 00:00:00.000000",
+ "modified": "2026-03-23 00:00:00.000000",
  "modified_by": "Administrator",
  "module": "Saral Hr",
  "name": "Leave Application",
@@ -27,19 +177,37 @@
  "owner": "Administrator",
  "permissions": [
   {
-   "create": 1, "delete": 1, "email": 1, "export": 1,
-   "print": 1, "read": 1, "report": 1,
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
    "role": "Saral HR Manager",
-   "share": 1, "submit": 1, "amend": 1, "write": 1
+   "select": 1,
+   "share": 1,
+   "write": 1
   },
   {
-   "create": 1, "delete": 1, "email": 1, "export": 1,
-   "print": 1, "read": 1, "report": 1,
-   "role": "System Manager",
-   "share": 1, "submit": 1, "amend": 1, "write": 1
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "Saral HR User",
+   "select": 1,
+   "share": 1,
+   "write": 1
   }
  ],
  "sort_field": "modified",
  "sort_order": "DESC",
- "states": []
+ "states": [
+  {"color": "Blue",  "title": "Open"},
+  {"color": "Green", "title": "Approved"},
+  {"color": "Red",   "title": "Rejected"}
+ ]
 }

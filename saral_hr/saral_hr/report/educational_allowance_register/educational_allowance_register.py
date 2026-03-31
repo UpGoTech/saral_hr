@@ -89,9 +89,9 @@ def _fmt(v):
 
 def _get_data(f):
     cols = [
-        _col("Employee ID",         "employee_id",           w=140),
-        _col("Employee Name",       "employee_name",         w=240),
-        _col("Education Allowance", "educational_allowance", "Float", 180, precision=2),
+        _col("Employee ID",         "employee_id",           w=400),
+        _col("Employee Name",       "employee_name",         w=500),
+        _col("Education Allowance", "educational_allowance", "Float", 315, precision=2),
     ]
 
     if not f.get("company"): return cols, []

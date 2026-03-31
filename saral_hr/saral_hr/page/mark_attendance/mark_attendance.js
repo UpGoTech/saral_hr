@@ -23,7 +23,6 @@ frappe.pages["mark-attendance"].on_page_show = function (wrapper) {
     init_mark_attendance($main);
 };
 
-// ── Dynamic year options ───────────────────────────────────────────────────
 function get_year_options() {
     var current = new Date().getFullYear();
     var html = '<option value="">Select Year</option>';
@@ -36,12 +35,9 @@ function get_year_options() {
 function get_ma_html() {
     return `
     <div class="ma-wrap">
-
-        <div class="ma-sticky">
+        <div class="ma-sticky" id="ma_sticky_bar">
             <div class="ma-top-wrap">
             <div class="ma-left-block">
-
-            <!-- Row 1 -->
             <div class="ma-row1">
                 <div class="ma-r1-company">
                     <label class="ma-label">Company</label>
@@ -66,8 +62,6 @@ function get_ma_html() {
                     <input type="text" id="ma_weekly_off" class="ma-input" readonly>
                 </div>
             </div>
-
-            <!-- Row 2 -->
             <div class="ma-row2">
                 <div class="ma-r2-year">
                     <label class="ma-label">Year</label>
@@ -103,10 +97,8 @@ function get_ma_html() {
                     </div>
                 </div>
             </div>
+            </div>
 
-            </div><!-- end ma-left-block -->
-
-            <!-- Leave summary: right side -->
             <div class="ma-r1-leave">
                 <table class="ma-leave-table">
                     <thead>
@@ -145,63 +137,106 @@ function get_ma_html() {
                     </tbody>
                 </table>
             </div>
-
-            </div><!-- end ma-top-wrap -->
+            </div>
 
             <input type="hidden" id="ma_start_date">
             <input type="hidden" id="ma_end_date">
-        </div><!-- end ma-sticky -->
+        </div>
 
-        <div class="ma-table-scroll">
+        <div class="ma-table-scroll" id="ma_table_scroll">
             <table class="ma-table" id="ma_table" style="display:none;">
                 <thead>
-                    <tr>
-                        <th rowspan="2">Day</th>
-                        <th rowspan="2">Date</th>
-                        <th rowspan="2" class="text-center ma-col-override">
-                            Override<br>
-                            <small class="ma-th-small">Rest Day</small>
+                    <tr class="ma-thead-row">
+                        <th rowspan="2" class="ma-th-date">
+                            <div class="ma-th-inner ma-th-left"><span class="ma-th-label">Date</span></div>
                         </th>
-                        <th rowspan="2" class="text-center">
-                            Half Day<br>
-                            <span id="ma_hd_col_count">0</span><br>
-                            <small id="ma_hd_col_eq" class="ma-th-small"></small>
+                        <th rowspan="2" class="ma-th-day">
+                            <div class="ma-th-inner ma-th-left"><span class="ma-th-label">Day</span></div>
                         </th>
-                        <!-- Present group: colspan=3 now (Regular + On Tour + Earned Comp Off) -->
-                        <th class="ma-present-group-th text-center" colspan="3">
-                            <div class="ma-present-group-label">Present <span id="ma_p_col_count" class="ma-group-total">(0)</span></div>
-                            <div class="ma-present-sub-row">
-                                <div class="ma-present-sub-cell">Regular<br><span id="ma_pr_col_count">0</span></div>
-                                <div class="ma-present-sub-cell">On Tour<br><span id="ma_pt_col_count">0</span></div>
-                                <div class="ma-present-sub-cell">Earned Comp Off<br><span id="ma_eco_col_count">0</span></div>
+                        <th rowspan="2" class="ma-th-override">
+                            <div class="ma-th-inner"><span class="ma-th-label">Override<br>Rest Day</span></div>
+                        </th>
+                        <th rowspan="2" class="ma-th-status">
+                            <div class="ma-th-inner">
+                                <span class="ma-th-label">Present</span>
+                                <span class="ma-col-count" id="ma_cnt_regular">0</span>
                             </div>
                         </th>
-                        <!-- Absent group -->
-                        <th rowspan="2" class="text-center">
-                            Absent<br>
-                            <span id="ma_a_col_count">0</span>
-                        </th>
-                        <th class="ma-absent-group-th" colspan="4">
-                            <div class="ma-absent-group-label">Absent Type</div>
-                            <div class="ma-absent-sub-row">
-                                <div class="ma-absent-sub-cell">LWP<br><span id="ma_lwp_count_col">0</span></div>
-                                <div class="ma-absent-sub-cell">Earned Leave<br><span id="ma_el_count_col">0</span></div>
-                                <div class="ma-absent-sub-cell">Casual Leave<br><span id="ma_cl_count_col">0</span></div>
-                                <div class="ma-absent-sub-cell">Comp Off<br><span id="ma_coff_count_col">0</span></div>
+                        <th rowspan="2" class="ma-th-status">
+                            <div class="ma-th-inner">
+                                <span class="ma-th-label">On Tour</span>
+                                <span class="ma-col-count" id="ma_cnt_ontour">0</span>
                             </div>
                         </th>
-                        <th rowspan="2" class="text-center ma-col-wo">
-                            Weekly Off<br>
-                            <span id="ma_wo_col_count">0</span>
+                        <th rowspan="2" class="ma-th-status">
+                            <div class="ma-th-inner">
+                                <span class="ma-th-label">Earned<br>Comp Off</span>
+                                <span class="ma-col-count" id="ma_cnt_eco">0</span>
+                            </div>
                         </th>
-                        <th rowspan="2" class="text-center ma-col-holiday">
-                            Holiday<br>
-                            <span id="ma_hol_col_count">0</span>
+                        <th rowspan="2" class="ma-th-status">
+                            <div class="ma-th-inner">
+                                <span class="ma-th-label">Absent</span>
+                                <span class="ma-col-count" id="ma_cnt_absent">0</span>
+                            </div>
+                        </th>
+                        <th rowspan="2" class="ma-th-status">
+                            <div class="ma-th-inner">
+                                <span class="ma-th-label">LWP</span>
+                                <span class="ma-col-count" id="ma_cnt_lwp">0</span>
+                            </div>
+                        </th>
+                        <th rowspan="2" class="ma-th-status">
+                            <div class="ma-th-inner">
+                                <span class="ma-th-label">Earned<br>Leave</span>
+                                <span class="ma-col-count" id="ma_cnt_el">0</span>
+                            </div>
+                        </th>
+                        <th rowspan="2" class="ma-th-status">
+                            <div class="ma-th-inner">
+                                <span class="ma-th-label">Casual<br>Leave</span>
+                                <span class="ma-col-count" id="ma_cnt_cl">0</span>
+                            </div>
+                        </th>
+                        <th rowspan="2" class="ma-th-status">
+                            <div class="ma-th-inner">
+                                <span class="ma-th-label">Comp Off</span>
+                                <span class="ma-col-count" id="ma_cnt_coff">0</span>
+                            </div>
+                        </th>
+                        <th rowspan="2" class="ma-th-status">
+                            <div class="ma-th-inner">
+                                <span class="ma-th-label">Weekly Off</span>
+                                <span class="ma-col-count" id="ma_cnt_wo">0</span>
+                            </div>
+                        </th>
+                        <th rowspan="2" class="ma-th-status">
+                            <div class="ma-th-inner">
+                                <span class="ma-th-label">Holiday</span>
+                                <span class="ma-col-count" id="ma_cnt_holiday">0</span>
+                            </div>
+                        </th>
+                        <th colspan="2" class="ma-th-hd-group">
+                            <div class="ma-th-hd-top-wrap">
+                                <span class="ma-th-label">Half Day</span>
+                                <span class="ma-col-count" id="ma_cnt_hd_total">0</span>
+                            </div>
                         </th>
                     </tr>
-                    <tr></tr>
+                    <tr class="ma-thead-row2">
+                        <th class="ma-th-hd1">
+                            <div class="ma-th-inner ma-th-sub">
+                                <span class="ma-th-label">First Half</span>
+                            </div>
+                        </th>
+                        <th class="ma-th-hd2">
+                            <div class="ma-th-inner ma-th-sub">
+                                <span class="ma-th-label">Second Half</span>
+                            </div>
+                        </th>
+                    </tr>
                 </thead>
-                <tbody id="ma_table_body"></tbody>
+                <tbody id="ma_table_body" tabindex="0"></tbody>
             </table>
 
             <div id="ma_table_loading" class="ma-table-loading" style="display:none;">
@@ -209,7 +244,21 @@ function get_ma_html() {
                 <div class="ma-loading-text">Loading attendance…</div>
             </div>
         </div>
+    </div>
 
+    <!-- Half-day dropdown portal -->
+    <div id="ma_hd_dropdown" class="ma-hd-dropdown" style="display:none;">
+        <div class="ma-hd-dropdown-inner">
+            <div class="ma-hd-option" data-value="">— None —</div>
+            <div class="ma-hd-option" data-value="Present">Present</div>
+            <div class="ma-hd-option" data-value="On Tour">On Tour</div>
+            <div class="ma-hd-option" data-value="Earned Comp Off">Earned Comp Off</div>
+            <div class="ma-hd-option" data-value="Absent">Absent</div>
+            <div class="ma-hd-option" data-value="Earned Leave">Earned Leave</div>
+            <div class="ma-hd-option" data-value="Casual Leave">Casual Leave</div>
+            <div class="ma-hd-option" data-value="Comp Off">Comp Off</div>
+            <div class="ma-hd-option" data-value="LWP">LWP</div>
+        </div>
     </div>
 
     <!-- Calendar modal -->
@@ -245,49 +294,95 @@ function get_ma_html() {
     `;
 }
 
+// ════════════════════════════════════════════════════════════════════════════
+//  INIT
+// ════════════════════════════════════════════════════════════════════════════
 function init_mark_attendance($main) {
 
-    var employees = [];
-    var filteredEmployees = [];
-    var selectedIndex = -1;
-    var searchDebounceTimer = null;
-    var attendanceTableData = {};
-    var originalAttendanceData = {};
-    var holidayDates = {};
-    var isSaving = false;
-    var currentCalendarYear = new Date().getFullYear();
-    var yearAttendanceData = {};
-    var yearHolidayData = {};
-    var employeeCompanyMap = {};
+    var employees            = [];
+    var filteredEmployees    = [];
+    var selectedIndex        = -1;
+    var searchDebounceTimer  = null;
+    var isSaving             = false;
+    var currentCalendarYear  = new Date().getFullYear();
+    var yearAttendanceData   = {};
+    var yearHolidayData      = {};
+    var employeeCompanyMap   = {};
     var employeeWeeklyOffMap = {};
-    var calendarCache = {};
+    var calendarCache        = {};
+    var joiningDateMap       = {};
+    var leftDateMap          = {};
 
-    // ── joining date + left date cache per employee ────────────────────────
-    var joiningDateMap = {};
-    var leftDateMap    = {};
+    var attendanceTableData    = {};
+    var originalAttendanceData = {};
+    var dirtyDates             = new Set();
+    var holidayDates           = {};
+    var rowMetaMap             = {};
 
-    // Tracks dates where Weekly Off was overridden (worked) → Earned Comp Off earned
-    var weeklyOffOverrideDates = new Set();
+    var hdDropdownTarget = null;
+    var focusedCell      = null;
 
-    // ── Status sets ────────────────────────────────────────────────────────
-    var ABSENT_SUBTYPES = ["LWP", "Earned Leave", "Casual Leave", "Comp Off"];
-    var PRESENT_SUBTYPES = ["Regular", "On Tour", "Earned Comp Off"];
+    var FULL_DAY_STATUSES = [
+        "Present", "On Tour", "Earned Comp Off",
+        "Absent",
+        "LWP", "Earned Leave", "Casual Leave", "Comp Off",
+        "Weekly Off", "Holiday"
+    ];
+    var HALF_OPTIONS = [
+        "Present", "On Tour", "Earned Comp Off",
+        "Absent", "Earned Leave", "Casual Leave", "Comp Off", "LWP"
+    ];
+    var TOTAL_STATUS_COLS = FULL_DAY_STATUSES.length + 2; // 12
 
-    var searchInput = document.getElementById("ma_employee_search");
-    var searchResults = document.getElementById("ma_search_results");
-    var employeeSel = document.getElementById("ma_employee");
-    var clearBtn = document.getElementById("ma_clear_search");
-    var companySel = document.getElementById("ma_company");
-    var yearSel = document.getElementById("ma_year");
-    var monthSel = document.getElementById("ma_month");
+    var PRESENT_TYPE = new Set(["Present", "On Tour", "Earned Comp Off"]);
+    var ABSENT_TYPE  = new Set(["Absent", "LWP", "Earned Leave", "Casual Leave", "Comp Off"]);
+
+    var searchInput    = document.getElementById("ma_employee_search");
+    var searchResults  = document.getElementById("ma_search_results");
+    var employeeSel    = document.getElementById("ma_employee");
+    var clearBtn       = document.getElementById("ma_clear_search");
+    var companySel     = document.getElementById("ma_company");
+    var yearSel        = document.getElementById("ma_year");
+    var monthSel       = document.getElementById("ma_month");
     var startDateInput = document.getElementById("ma_start_date");
-    var endDateInput = document.getElementById("ma_end_date");
-    var tableLoading = document.getElementById("ma_table_loading");
-    var tableEl = document.getElementById("ma_table");
+    var endDateInput   = document.getElementById("ma_end_date");
+    var tableLoading   = document.getElementById("ma_table_loading");
+    var tableEl        = document.getElementById("ma_table");
+    var hdDropdown     = document.getElementById("ma_hd_dropdown");
+    var tbody          = document.getElementById("ma_table_body");
+    var stickyBar      = document.getElementById("ma_sticky_bar");
+    var tableScroll    = document.getElementById("ma_table_scroll");
 
     var allEmployees = [];
 
-    // ── Load employees + populate company dropdown ─────────────────────────
+    // ── KEY FIX: Set table-scroll height so it fills remaining viewport ──
+    // The sticky bar height is measured; table-scroll gets the leftover height.
+    // This makes the table scroll independently while controls stay fixed.
+    function updateScrollHeight() {
+        if (!stickyBar || !tableScroll) return;
+        var stickyH = stickyBar.offsetHeight;
+
+        // Frappe page header height (the bar with title + Save button)
+        var pageHead = document.querySelector(".page-head");
+        var pageHeadH = pageHead ? pageHead.offsetHeight : 60;
+
+        // Extra bottom padding
+        var BOTTOM_PAD = 16;
+
+        var availableH = window.innerHeight - pageHeadH - stickyH - BOTTOM_PAD;
+        tableScroll.style.height = Math.max(availableH, 200) + "px";
+
+        // Also update the CSS var used by sticky thead
+        document.documentElement.style.setProperty("--ma-sticky-bar-h", stickyH + "px");
+    }
+
+    // Run after short delay (DOM paint) and on every resize
+    setTimeout(updateScrollHeight, 80);
+    window.addEventListener("resize", updateScrollHeight);
+
+    // ════════════════════════════════════════════════════════════════════════
+    //  EMPLOYEE LOADING
+    // ════════════════════════════════════════════════════════════════════════
     frappe.call({
         method: "saral_hr.saral_hr.page.mark_attendance.mark_attendance.get_active_employees",
         callback: function (r) {
@@ -295,67 +390,49 @@ function init_mark_attendance($main) {
             r.message.forEach(function (row) {
                 var opt = document.createElement("option");
                 opt.value = row.name;
-                opt.text = row.full_name + (row.aadhaar_number ? " (" + row.aadhaar_number + ")" : "");
+                opt.text  = row.full_name + (row.aadhaar_number ? " (" + row.aadhaar_number + ")" : "");
                 employeeSel.appendChild(opt);
-                employeeCompanyMap[row.name] = row.company;
+                employeeCompanyMap[row.name]   = row.company;
                 employeeWeeklyOffMap[row.name] = row.weekly_off
-                    ? [row.weekly_off.trim().toLowerCase()]
-                    : [];
+                    ? [row.weekly_off.trim().toLowerCase()] : [];
             });
-
             allEmployees = Array.from(employeeSel.options)
                 .filter(function (o) { return o.value; })
                 .map(function (o) {
                     var row = r.message.find(function (e) { return e.name === o.value; }) || {};
-                    return {
-                        value: o.value,
-                        name: o.text.trim(),
-                        emp_id: row.employee || o.value,
-                        company: row.company || ""
-                    };
+                    return { value: o.value, name: o.text.trim(),
+                             emp_id: row.employee || o.value, company: row.company || "" };
                 });
-
             var seen = {};
             r.message.forEach(function (row) {
                 if (row.company && !seen[row.company]) {
                     seen[row.company] = true;
                     var opt = document.createElement("option");
-                    opt.value = row.company;
-                    opt.text = row.company;
+                    opt.value = row.company; opt.text = row.company;
                     companySel.appendChild(opt);
                 }
             });
-
             employees = [];
+            updateScrollHeight();
         }
     });
 
-    // ── Company change → filter employees ─────────────────────────────────
     companySel.addEventListener("change", function () {
-        var selectedCompany = companySel.value;
-        searchInput.value = "";
-        employeeSel.value = "";
-        clearBtn.classList.remove("show");
-        searchResults.classList.remove("show");
+        var sel = companySel.value;
+        searchInput.value = ""; employeeSel.value = "";
+        clearBtn.classList.remove("show"); searchResults.classList.remove("show");
         document.getElementById("ma_weekly_off").value = "";
         tableEl.style.display = "none";
-        attendanceTableData = {};
-        originalAttendanceData = {};
+        attendanceTableData = {}; originalAttendanceData = {}; dirtyDates.clear();
         updateCounts();
-
-        if (!selectedCompany) {
-            searchInput.disabled = true;
-            searchInput.placeholder = "Search Employee";
-            employees = [];
-            return;
-        }
-
-        employees = allEmployees.filter(function (e) { return e.company === selectedCompany; });
+        if (!sel) { searchInput.disabled = true; employees = []; return; }
+        employees = allEmployees.filter(function (e) { return e.company === sel; });
         searchInput.disabled = false;
-        searchInput.placeholder = "Search Employee";
     });
 
-    // ── Search ─────────────────────────────────────────────────────────────
+    // ════════════════════════════════════════════════════════════════════════
+    //  SEARCH
+    // ════════════════════════════════════════════════════════════════════════
     function localSearch(term) {
         if (!term) return employees;
         var lower = term.toLowerCase();
@@ -363,603 +440,651 @@ function init_mark_attendance($main) {
             return e.name.toLowerCase().includes(lower) || e.emp_id.toLowerCase().includes(lower);
         });
     }
-
     function apiSearch(term, callback) {
         frappe.call({
             method: "saral_hr.saral_hr.page.mark_attendance.mark_attendance.search_employees",
-            args: { query: term, company: companySel.value || "" },
-            freeze: false,
+            args: { query: term, company: companySel.value || "" }, freeze: false,
             callback: function (r) {
                 callback(r.message ? r.message.map(function (row) {
-                    return {
-                        value: row.name, name: row.full_name,
-                        emp_id: row.emp_id || row.employee || row.name,
-                        company: row.company, weekly_off: row.weekly_off,
-                        aadhaar_number: row.aadhaar_number
-                    };
+                    return { value: row.name, name: row.full_name,
+                             emp_id: row.emp_id || row.employee || row.name,
+                             company: row.company, weekly_off: row.weekly_off,
+                             aadhaar_number: row.aadhaar_number };
                 }) : []);
             },
             error: function () { callback([]); }
         });
     }
-
     function mergeResults(local, api) {
         var seen = new Set(), merged = [];
         api.forEach(function (e) { if (!seen.has(e.value)) { seen.add(e.value); merged.push(e); } });
         local.forEach(function (e) { if (!seen.has(e.value)) { seen.add(e.value); merged.push(e); } });
         return merged;
     }
-
     function handleSearch(term) {
         var localResults = localSearch(term);
-        filteredEmployees = localResults;
-        showResults(localResults, term);
+        filteredEmployees = localResults; showResults(localResults, term);
         clearTimeout(searchDebounceTimer);
         if (term.length >= 2) {
             searchDebounceTimer = setTimeout(function () {
                 apiSearch(term, function (apiResults) {
-                    var merged = mergeResults(localResults, apiResults);
-                    filteredEmployees = merged;
-                    showResults(merged, term);
+                    filteredEmployees = mergeResults(localResults, apiResults);
+                    showResults(filteredEmployees, term);
                 });
             }, 300);
         }
     }
-
     function escapeHtml(text) {
         if (!text) return "";
         return text.replace(/[&<>"']/g, function (m) {
-            return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#039;" }[m];
+            return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#039;"}[m];
         });
     }
-
     function highlightMatch(text, term) {
         if (!term) return escapeHtml(text);
         var escaped = escapeHtml(text);
-        var escapedTerm = term.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-        return escaped.replace(new RegExp("(" + escapedTerm + ")", "gi"), '<span class="ma-highlight">$1</span>');
+        var et = term.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+        return escaped.replace(new RegExp("(" + et + ")", "gi"), '<span class="ma-highlight">$1</span>');
     }
-
     function showResults(results, term) {
         if (!results.length) {
             searchResults.innerHTML = '<div class="ma-no-results">No employee found</div>';
-            searchResults.classList.add("show");
-            selectedIndex = -1;
-            return;
+            searchResults.classList.add("show"); selectedIndex = -1; return;
         }
         searchResults.innerHTML = results.map(function (emp, i) {
             return '<div class="ma-result-item" data-index="' + i + '" data-value="' + emp.value + '">' +
                 '<div class="ma-result-name">' + highlightMatch(emp.name, term) + '</div>' +
-                '<div class="ma-result-id">' + highlightMatch(emp.emp_id, term) + '</div>' +
+                '<div class="ma-result-id">'   + highlightMatch(emp.emp_id, term) + '</div>' +
                 '</div>';
         }).join("");
         searchResults.classList.add("show");
         searchResults.querySelectorAll(".ma-result-item").forEach(function (item) {
             item.addEventListener("click", function () {
                 var emp = filteredEmployees.find(function (e) { return e.value === item.dataset.value; })
-                    || employees.find(function (e) { return e.value === item.dataset.value; });
+                       || employees.find(function (e) { return e.value === item.dataset.value; });
                 if (emp) selectEmployee(emp);
             });
             item.addEventListener("mouseenter", function () {
-                selectedIndex = parseInt(item.dataset.index);
-                highlightResult();
+                selectedIndex = parseInt(item.dataset.index); highlightResult();
             });
         });
     }
-
     function highlightResult() {
         var items = searchResults.querySelectorAll(".ma-result-item");
         items.forEach(function (item, i) { item.classList.toggle("selected", i === selectedIndex); });
         if (items[selectedIndex]) items[selectedIndex].scrollIntoView({ block: "nearest" });
     }
-
     function selectEmployee(emp) {
-        searchInput.value = emp.name;
-        employeeSel.value = emp.value;
-        searchResults.classList.remove("show");
-        selectedIndex = -1;
-        clearBtn.classList.add("show");
-        clearTimeout(searchDebounceTimer);
-
-        if (emp.company !== undefined) employeeCompanyMap[emp.value] = emp.company;
-        if (emp.weekly_off !== undefined) employeeWeeklyOffMap[emp.value] = emp.weekly_off
-            ? [emp.weekly_off.trim().toLowerCase()]
-            : [];
-
-        document.getElementById("ma_weekly_off").value = (employeeWeeklyOffMap[emp.value] || [])
-            .map(function (d) { return d.charAt(0).toUpperCase() + d.slice(1); }).join(", ");
-
+        searchInput.value = emp.name; employeeSel.value = emp.value;
+        searchResults.classList.remove("show"); selectedIndex = -1;
+        clearBtn.classList.add("show"); clearTimeout(searchDebounceTimer);
+        if (emp.company    !== undefined) employeeCompanyMap[emp.value]   = emp.company;
+        if (emp.weekly_off !== undefined) employeeWeeklyOffMap[emp.value] =
+            emp.weekly_off ? [emp.weekly_off.trim().toLowerCase()] : [];
+        document.getElementById("ma_weekly_off").value =
+            (employeeWeeklyOffMap[emp.value] || [])
+                .map(function (d) { return d.charAt(0).toUpperCase() + d.slice(1); }).join(", ");
         if (joiningDateMap[emp.value] !== undefined) {
-            generateTable();
-            loadCompOffBalance(emp.value);
+            generateTable(); loadCompOffBalance(emp.value);
         } else {
             frappe.call({
                 method: "saral_hr.saral_hr.page.mark_attendance.mark_attendance.get_employee_joining_date",
-                args: { employee: emp.value },
+                args:   { employee: emp.value },
                 callback: function (r) {
                     var data = r.message || {};
                     joiningDateMap[emp.value] = data.joining_date || null;
                     leftDateMap[emp.value]    = data.left_date    || null;
-                    generateTable();
-                    loadCompOffBalance(emp.value);
+                    generateTable(); loadCompOffBalance(emp.value);
                 }
             });
         }
     }
-
     function clearSearch() {
-        searchInput.value = "";
-        employeeSel.value = "";
+        searchInput.value = ""; employeeSel.value = "";
         document.getElementById("ma_weekly_off").value = "";
-        clearBtn.classList.remove("show");
-        searchResults.classList.remove("show");
+        clearBtn.classList.remove("show"); searchResults.classList.remove("show");
         tableEl.style.display = "none";
-        attendanceTableData = {};
-        originalAttendanceData = {};
-        clearTimeout(searchDebounceTimer);
-        updateCounts();
-        clearCompOffBalance();
+        attendanceTableData = {}; originalAttendanceData = {}; dirtyDates.clear();
+        clearTimeout(searchDebounceTimer); updateCounts(); clearCompOffBalance();
     }
 
     clearBtn.addEventListener("click", clearSearch);
-
     searchInput.addEventListener("focus", function () {
         var term = searchInput.value.trim().toLowerCase();
         filteredEmployees = term ? localSearch(term) : employees;
         showResults(filteredEmployees, term);
     });
-
     searchInput.addEventListener("input", function () {
         var term = searchInput.value.trim();
         clearBtn.classList.toggle("show", searchInput.value.length > 0);
         if (!term) {
             filteredEmployees = employees;
             if (searchInput === document.activeElement) showResults(filteredEmployees, "");
-            selectedIndex = -1;
-            clearTimeout(searchDebounceTimer);
-            return;
+            selectedIndex = -1; clearTimeout(searchDebounceTimer); return;
         }
-        handleSearch(term.toLowerCase());
-        selectedIndex = -1;
+        handleSearch(term.toLowerCase()); selectedIndex = -1;
     });
-
     searchInput.addEventListener("keydown", function (e) {
         if (!searchResults.classList.contains("show")) return;
         if (e.key === "ArrowDown") {
             e.preventDefault();
-            selectedIndex = (selectedIndex + 1) % filteredEmployees.length;
-            highlightResult();
+            selectedIndex = (selectedIndex + 1) % filteredEmployees.length; highlightResult();
         } else if (e.key === "ArrowUp") {
             e.preventDefault();
-            selectedIndex = (selectedIndex - 1 + filteredEmployees.length) % filteredEmployees.length;
-            highlightResult();
+            selectedIndex = (selectedIndex - 1 + filteredEmployees.length) % filteredEmployees.length; highlightResult();
         } else if (e.key === "Enter" && selectedIndex >= 0) {
-            e.preventDefault();
-            selectEmployee(filteredEmployees[selectedIndex]);
+            e.preventDefault(); selectEmployee(filteredEmployees[selectedIndex]);
         } else if (e.key === "Escape") {
             searchResults.classList.remove("show");
         }
     });
-
     document.addEventListener("click", function (e) {
-        if (!searchInput.contains(e.target) && !searchResults.contains(e.target) && !clearBtn.contains(e.target)) {
+        if (!searchInput.contains(e.target) && !searchResults.contains(e.target) && !clearBtn.contains(e.target))
             searchResults.classList.remove("show");
-        }
     });
 
-    // ── Date helpers ───────────────────────────────────────────────────────
+    // ════════════════════════════════════════════════════════════════════════
+    //  DATE HELPERS
+    // ════════════════════════════════════════════════════════════════════════
     function updateDatesFromMonthYear() {
         if (!yearSel.value || monthSel.value === "") return;
-        var year = yearSel.value;
-        var month = Number(monthSel.value);
+        var year = yearSel.value, month = Number(monthSel.value);
         var lastDay = new Date(year, month + 1, 0);
         startDateInput.value = year + "-" + String(month + 1).padStart(2, "0") + "-01";
-        endDateInput.value = year + "-" + String(month + 1).padStart(2, "0") + "-" + String(lastDay.getDate()).padStart(2, "0");
+        endDateInput.value   = year + "-" + String(month + 1).padStart(2, "0") + "-" +
+                               String(lastDay.getDate()).padStart(2, "0");
         generateTable();
         var emp = employeeSel.value;
         if (emp) loadCompOffBalance(emp);
     }
-
-    yearSel.addEventListener("change", updateDatesFromMonthYear);
+    yearSel.addEventListener("change",  updateDatesFromMonthYear);
     monthSel.addEventListener("change", updateDatesFromMonthYear);
-
-    function formatHalf(n) {
-        return (n % 1 === 0) ? String(n) : n.toFixed(1);
-    }
 
     function parseDateLocal(str) {
         if (!str) return null;
         var p = str.split("-");
         var d = new Date(parseInt(p[0]), parseInt(p[1]) - 1, parseInt(p[2]));
-        d.setHours(0, 0, 0, 0);
-        return d;
+        d.setHours(0, 0, 0, 0); return d;
     }
 
-    // ── Status classification ──────────────────────────────────────────────
-    function isAbsentSubtype(status) { return ABSENT_SUBTYPES.includes(status); }
-    function isPresentSubtype(status) { return PRESENT_SUBTYPES.includes(status); }
-    function isPresent(status) { return status === "Present" || isPresentSubtype(status); }
-
-    // ── Count update ───────────────────────────────────────────────────────
-    function updateCounts() {
-        // CHANGED: added eco variable for Earned Comp Off
-        var p = 0, pr = 0, pt = 0, eco = 0, a = 0, h = 0, l = 0, el = 0, cl = 0, coff = 0, wo = 0, hol = 0;
-
-        Object.values(attendanceTableData).forEach(function (s) {
-            if (!s) return;
-            if (s === "Present") { p++; pr++; }
-            else if (s === "Regular") { p++; pr++; }
-            else if (s === "On Tour") { p++; pt++; }
-            else if (s === "Earned Comp Off") { p++; }
-            else if (s === "Absent") a++;
-            else if (s === "Half Day") h++;
-            else if (s === "LWP") l++;
-            else if (s === "Earned Leave") el++;
-            else if (s === "Casual Leave") cl++;
-            else if (s === "Comp Off") coff++;
-            else if (s === "Weekly Off") wo++;
-            else if (s === "Holiday") hol++;
-        });
-
-        // eco = number of Weekly Off days that were overridden (worked)
-        eco = weeklyOffOverrideDates.size;
-
-        document.getElementById("ma_hd_col_count").textContent = h;
-        document.getElementById("ma_p_col_count").textContent = p;
-        document.getElementById("ma_pr_col_count").textContent = pr;
-        document.getElementById("ma_pt_col_count").textContent = pt;
-        // CHANGED: update Earned Comp Off counter element
-        document.getElementById("ma_eco_col_count").textContent = eco;
-        document.getElementById("ma_a_col_count").textContent = a;
-        document.getElementById("ma_lwp_count_col").textContent = l;
-        document.getElementById("ma_el_count_col").textContent = el;
-        document.getElementById("ma_cl_count_col").textContent = cl;
-        document.getElementById("ma_coff_count_col").textContent = coff;
-        document.getElementById("ma_wo_col_count").textContent = wo;
-        document.getElementById("ma_hol_col_count").textContent = hol;
-
-        document.getElementById("ma_hd_col_eq").textContent =
-            h > 0 ? h + " \u00d7 0.5 = " + formatHalf(h * 0.5) + " day" : "";
-    }
-
-    function resolveStatus(rawStatus, isHoliday, isDefaultWeeklyOff) {
-        if (!rawStatus) {
-            if (isHoliday) return "Holiday";
-            if (isDefaultWeeklyOff) return "Weekly Off";
-            return "";
-        }
-        return rawStatus;
-    }
-
-    // ── Radio helpers ──────────────────────────────────────────────────────
-    function disableAllRadios(row, dateKey) {
-        row.querySelectorAll(
-            'input[name="status_' + dateKey + '"], input[name="p_subtype_' + dateKey + '"], input[name="a_subtype_' + dateKey + '"]'
-        ).forEach(function (r) { r.disabled = true; r.checked = false; });
-    }
-
-    function enableMainRadios(row, dateKey) {
-        row.querySelectorAll('input[name="status_' + dateKey + '"]').forEach(function (r) { r.disabled = false; });
-        row.querySelectorAll('input[name="p_subtype_' + dateKey + '"], input[name="a_subtype_' + dateKey + '"]').forEach(function (r) {
-            r.disabled = true; r.checked = false;
-        });
-        row.querySelectorAll('input[name="p_subtype_' + dateKey + '"]').forEach(function (r) { r.disabled = false; });
-    }
-
-    function applyRowClass(row, status) {
-        row.classList.remove("ma-holiday-row", "ma-weekly-off-row", "ma-override-row");
-        if (status === "Holiday") row.classList.add("ma-holiday-row");
-        else if (status === "Weekly Off") row.classList.add("ma-weekly-off-row");
-    }
-
-    // ── Weekly Off limit helpers ───────────────────────────────────────────
-    function countWeeklyOffInMonth() {
-        return Object.values(attendanceTableData).filter(function (s) { return s === "Weekly Off"; }).length;
-    }
-
-    function maxWeeklyOffInMonth() {
+    // ════════════════════════════════════════════════════════════════════════
+    //  WEEKLY OFF LIMIT
+    // ════════════════════════════════════════════════════════════════════════
+    function calcMaxWeeklyOffInMonth() {
         var employee = employeeSel.value;
-        var year = parseInt(yearSel.value);
-        var month = parseInt(monthSel.value);
+        if (!yearSel.value || monthSel.value === "") return 0;
+        var year = parseInt(yearSel.value), month = parseInt(monthSel.value);
         var weeklyOffDays = employeeWeeklyOffMap[employee] || [];
-        if (!weeklyOffDays.length || isNaN(year) || isNaN(month)) return 0;
-        var count = 0;
-        var daysInMonth = new Date(year, month + 1, 0).getDate();
+        if (!weeklyOffDays.length) return 0;
+        var count = 0, daysInMonth = new Date(year, month + 1, 0).getDate();
         for (var d = 1; d <= daysInMonth; d++) {
-            var dayName = new Date(year, month, d)
-                .toLocaleDateString("en-US", { weekday: "long" }).toLowerCase();
-            if (weeklyOffDays.includes(dayName)) count++;
+            var dn = new Date(year, month, d).toLocaleDateString("en-US", { weekday:"long" }).toLowerCase();
+            if (weeklyOffDays.includes(dn)) count++;
         }
         return count;
     }
-
-    // ── resetRowToPresent ──────────────────────────────────────────────────
-    function resetRowToPresent(row, dateKey, subtype) {
-        row.querySelectorAll('input[name="status_' + dateKey + '"]').forEach(function (r) {
-            r.disabled = false; r.checked = false;
+    function countCurrentWeeklyOff() {
+        var count = 0;
+        Object.values(attendanceTableData).forEach(function (rec) {
+            if (rec && rec.mode === "full" && rec.status === "Weekly Off") count++;
         });
-        row.querySelectorAll('input[name="p_subtype_' + dateKey + '"]').forEach(function (r) {
-            r.disabled = false; r.checked = (r.value === subtype);
-        });
-        row.querySelectorAll('input[name="a_subtype_' + dateKey + '"]').forEach(function (r) {
-            r.disabled = true; r.checked = false;
-        });
-        attendanceTableData[dateKey] = subtype;
-        applyRowClass(row, "Present");
-        row.classList.remove("ma-override-row");
+        return count;
     }
 
-    // ── buildRow ───────────────────────────────────────────────────────────
-    function buildRow(dateKey, dayName, currentDate, savedStatus, rawStatus,
-        isHoliday, isDefaultWeeklyOff, isFuture) {
+    // ════════════════════════════════════════════════════════════════════════
+    //  COUNT UPDATE
+    // ════════════════════════════════════════════════════════════════════════
+    function updateCounts() {
+        var cnt = { present:0, regular:0, ontour:0, eco:0, absent:0, el:0, cl:0, coff:0, lwp:0, holiday:0, wo:0, hd_total:0 };
+        Object.values(attendanceTableData).forEach(function (rec) {
+            if (!rec) return;
+            if (rec.mode === "half") {
+                cnt.hd_total++;
+                [rec.first_half, rec.second_half].forEach(function (h) {
+                    if (!h) return;
+                    if      (h === "Present")           { cnt.present += 0.5; cnt.regular += 0.5; }
+                    else if (h === "On Tour")           { cnt.present += 0.5; cnt.ontour  += 0.5; }
+                    else if (h === "Earned Comp Off")   { cnt.present += 0.5; cnt.eco     += 0.5; }
+                    else if (h === "Absent")              cnt.absent   += 0.5;
+                    else if (h === "Earned Leave")        cnt.el       += 0.5;
+                    else if (h === "Casual Leave")        cnt.cl       += 0.5;
+                    else if (h === "Comp Off")            cnt.coff     += 0.5;
+                    else if (h === "LWP")                 cnt.lwp      += 0.5;
+                });
+            } else {
+                var s = rec.status || "";
+                if      (s === "Present")           { cnt.present++; cnt.regular++; }
+                else if (s === "On Tour")           { cnt.present++; cnt.ontour++;  }
+                else if (s === "Earned Comp Off")   { cnt.present++; cnt.eco++;     }
+                else if (s === "Absent")              cnt.absent++;
+                else if (s === "Earned Leave")        cnt.el++;
+                else if (s === "Casual Leave")        cnt.cl++;
+                else if (s === "Comp Off")            cnt.coff++;
+                else if (s === "LWP")                 cnt.lwp++;
+                else if (s === "Holiday")             cnt.holiday++;
+                else if (s === "Weekly Off")          cnt.wo++;
+            }
+        });
+        function fmt(n) { return (n % 1 === 0) ? String(n) : n.toFixed(1); }
+        document.getElementById("ma_cnt_regular").textContent  = fmt(cnt.regular);
+        document.getElementById("ma_cnt_ontour").textContent   = fmt(cnt.ontour);
+        document.getElementById("ma_cnt_eco").textContent      = fmt(cnt.eco);
+        document.getElementById("ma_cnt_absent").textContent   = fmt(cnt.absent);
+        document.getElementById("ma_cnt_el").textContent       = fmt(cnt.el);
+        document.getElementById("ma_cnt_cl").textContent       = fmt(cnt.cl);
+        document.getElementById("ma_cnt_coff").textContent     = fmt(cnt.coff);
+        document.getElementById("ma_cnt_lwp").textContent      = fmt(cnt.lwp);
+        document.getElementById("ma_cnt_holiday").textContent  = fmt(cnt.holiday);
+        document.getElementById("ma_cnt_wo").textContent       = fmt(cnt.wo);
+        document.getElementById("ma_cnt_hd_total").textContent = fmt(cnt.hd_total);
+    }
 
-        var row = document.createElement("tr");
+    // ════════════════════════════════════════════════════════════════════════
+    //  DIRTY TRACKING
+    // ════════════════════════════════════════════════════════════════════════
+    function markDirty(dateKey) {
+        dirtyDates.add(dateKey);
+        var row = document.querySelector('tr[data-date="' + dateKey + '"]');
+        if (row) row.classList.add("ma-row-dirty");
+        refreshDotDirty(dateKey);
+    }
+    function refreshDotDirty(dateKey) {
+        var row = document.querySelector('tr[data-date="' + dateKey + '"]');
+        if (!row) return;
+        var isDirty = dirtyDates.has(dateKey);
+        row.querySelectorAll(".ma-col-dot").forEach(function(dot) {
+            dot.classList.toggle("ma-dot-dirty", isDirty);
+        });
+    }
+    function clearDirtyAll() {
+        dirtyDates.clear();
+        document.querySelectorAll(".ma-row-dirty").forEach(function(r){ r.classList.remove("ma-row-dirty"); });
+        document.querySelectorAll(".ma-dot-dirty").forEach(function(d){ d.classList.remove("ma-dot-dirty"); });
+    }
 
-        var isRestDay = isHoliday || isDefaultWeeklyOff;
-        var isOverridden = isRestDay && rawStatus && rawStatus !== "Holiday" && rawStatus !== "Weekly Off";
+    // ════════════════════════════════════════════════════════════════════════
+    //  HALF-DAY DROPDOWN
+    // ════════════════════════════════════════════════════════════════════════
+    function openHdDropdown(dateKey, half) {
+        var row = document.querySelector('tr[data-date="' + dateKey + '"]');
+        if (!row) return;
+        var cellEl = row.querySelector(half === "first" ? ".ma-hd1-cell" : ".ma-hd2-cell");
+        if (!cellEl) return;
 
-        var toggleChecked = isRestDay && !isOverridden;
-        var radiosDisabled = toggleChecked || isFuture;
+        var rec    = attendanceTableData[dateKey] || {};
+        var curVal = (rec.mode === "half") ? (half === "first" ? rec.first_half : rec.second_half) : "";
+        hdDropdown.querySelectorAll(".ma-hd-option").forEach(function (opt) {
+            opt.classList.toggle("active", opt.dataset.value === curVal);
+        });
+        var rect = cellEl.getBoundingClientRect();
+        hdDropdown.style.display  = "block";
+        hdDropdown.style.position = "fixed";
+        hdDropdown.style.top      = (rect.bottom + 4) + "px";
+        hdDropdown.style.left     = rect.left + "px";
+        hdDropdown.style.minWidth = Math.max(rect.width, 160) + "px";
+        hdDropdownTarget = { dateKey: dateKey, half: half };
+    }
+    function closeHdDropdown() { hdDropdown.style.display = "none"; hdDropdownTarget = null; }
+    function applyHdChoice(value) {
+        if (!hdDropdownTarget) return;
+        var dateKey = hdDropdownTarget.dateKey, half = hdDropdownTarget.half;
+        closeHdDropdown();
+        var rec = attendanceTableData[dateKey];
+        if (!rec || rec.mode !== "half") {
+            rec = { mode:"half", first_half:"", second_half:"" };
+        }
+        if (half === "first") rec.first_half = value;
+        else rec.second_half = value;
+        attendanceTableData[dateKey] = rec;
+        markDirty(dateKey);
+        refreshRowVisuals(dateKey);
+        updateCounts();
+    }
+    hdDropdown.querySelectorAll(".ma-hd-option").forEach(function (opt) {
+        opt.addEventListener("click", function (e) { e.stopPropagation(); applyHdChoice(this.dataset.value); });
+    });
+    document.addEventListener("click", function (e) {
+        if (hdDropdownTarget && !hdDropdown.contains(e.target)) {
+            var target = e.target.closest(".ma-hd-cell");
+            if (!target) closeHdDropdown();
+        }
+    });
 
-        if (isFuture) row.classList.add("ma-future-row");
-        else if (isHoliday && toggleChecked) row.classList.add("ma-holiday-row");
-        else if (isDefaultWeeklyOff && toggleChecked) row.classList.add("ma-weekly-off-row");
-        else if (isRestDay && !toggleChecked) row.classList.add("ma-override-row");
+    // ════════════════════════════════════════════════════════════════════════
+    //  DOT / BADGE HELPERS
+    // ════════════════════════════════════════════════════════════════════════
+    function getDotClass(status) {
+        if (PRESENT_TYPE.has(status)) return "active present-dot";
+        if (ABSENT_TYPE.has(status))  return "active absent-dot";
+        if (status === "Weekly Off")  return "active wo-dot";
+        if (status === "Holiday")     return "active holiday-dot";
+        return "active";
+    }
+    function statusBadge(status) {
+        if (!status) return '<span class="ma-hd-badge ma-hd-badge-empty">—</span>';
+        var extraClass = "";
+        if (PRESENT_TYPE.has(status)) extraClass = " ma-badge-present";
+        else if (ABSENT_TYPE.has(status)) extraClass = " ma-badge-absent";
+        var label = { "Present":"Present","On Tour":"On Tour","Earned Comp Off":"ECO",
+            "Absent":"Absent","Earned Leave":"EL","Casual Leave":"CL","Comp Off":"CO","LWP":"LWP"
+        }[status] || status.substring(0, 3);
+        return '<span class="ma-hd-badge' + extraClass + '">' + label + '</span>';
+    }
 
-        var presentSubtype = isPresentSubtype(savedStatus) ? savedStatus
-            : (savedStatus === "Present" ? "Regular"
-            : (savedStatus === "Earned Comp Off" ? "Earned Comp Off" : ""));
-        var pSubDisabled = radiosDisabled;
-
-        var isAbsentStatus = savedStatus === "Absent" || isAbsentSubtype(savedStatus);
-        var absentSubtype = isAbsentSubtype(savedStatus) ? savedStatus : "";
-        var aSubDisabled = radiosDisabled || !isAbsentStatus;
-
-        var toggleCell;
-        if (isRestDay && !isFuture) {
-            var restLabel = isHoliday ? "Holiday" : "Weekly Off";
-            toggleCell =
-                '<td class="text-center ma-toggle-cell" style="padding:8px;">' +
-                '<label class="ma-toggle" title="' + restLabel + ' — uncheck to override">' +
-                '<input type="checkbox" class="ma-weekly-off-toggle" data-date="' + dateKey + '"' +
-                (toggleChecked ? ' checked' : '') + '>' +
-                '<span class="ma-toggle-slider"></span>' +
-                '</label></td>';
+    // ════════════════════════════════════════════════════════════════════════
+    //  CELL ENABLE / DISABLE
+    // ════════════════════════════════════════════════════════════════════════
+    function setAllStatusCellsEnabled(row, enabled) {
+        if (enabled) {
+            row.classList.remove("ma-status-cells-disabled");
         } else {
-            toggleCell = '<td class="text-center ma-no-toggle-cell">&#8212;</td>';
+            row.classList.add("ma-status-cells-disabled");
+        }
+    }
+
+    // ════════════════════════════════════════════════════════════════════════
+    //  ROW VISUAL REFRESH
+    // ════════════════════════════════════════════════════════════════════════
+    function refreshRowVisuals(dateKey) {
+        var row = document.querySelector('tr[data-date="' + dateKey + '"]');
+        if (!row) return;
+        var rec = attendanceTableData[dateKey] || {};
+
+        row.classList.remove("ma-row-halfday", "ma-row-override");
+
+        if (rec.mode === "half") {
+            row.classList.add("ma-row-halfday");
+            var hd1Cell = row.querySelector(".ma-hd1-cell");
+            var hd2Cell = row.querySelector(".ma-hd2-cell");
+            if (hd1Cell) hd1Cell.innerHTML = statusBadge(rec.first_half)  + ' <span class="ma-hd-caret">▾</span>';
+            if (hd2Cell) hd2Cell.innerHTML = statusBadge(rec.second_half) + ' <span class="ma-hd-caret">▾</span>';
+            row.querySelectorAll(".ma-col-dot").forEach(function (dot) { dot.className = "ma-col-dot"; });
+        } else {
+            var s = rec.status || "";
+            row.querySelectorAll(".ma-col-dot").forEach(function (dot) {
+                dot.className = "ma-col-dot" + (dot.dataset.status === s ? " " + getDotClass(s) : "");
+            });
+            var hd1Cell = row.querySelector(".ma-hd1-cell");
+            var hd2Cell = row.querySelector(".ma-hd2-cell");
+            if (hd1Cell) hd1Cell.innerHTML = statusBadge("") + ' <span class="ma-hd-caret">▾</span>';
+            if (hd2Cell) hd2Cell.innerHTML = statusBadge("") + ' <span class="ma-hd-caret">▾</span>';
         }
 
-        row.innerHTML =
-            '<td class="ma-day-cell">' + dayName + '</td>' +
-            '<td class="ma-date-cell">' +
-            currentDate.getDate() + ' ' +
-            currentDate.toLocaleDateString("en-US", { month: "long" }) + ' ' +
-            currentDate.getFullYear() +
-            '</td>' +
-            toggleCell +
-            '<td class="text-center">' +
-            '<input type="radio" name="status_' + dateKey + '" value="Half Day"' +
-            (savedStatus === "Half Day" ? " checked" : "") + (radiosDisabled ? " disabled" : "") + '>' +
-            '</td>' +
-            '<td class="text-center ma-psubtype-cell">' +
-            '<input type="radio" name="p_subtype_' + dateKey + '" value="Regular"' +
-            (presentSubtype === "Regular" ? " checked" : "") + (pSubDisabled ? " disabled" : "") +
-            ' class="ma-psubtype-radio">' +
-            '</td>' +
-            '<td class="text-center ma-psubtype-cell">' +
-            '<input type="radio" name="p_subtype_' + dateKey + '" value="On Tour"' +
-            (presentSubtype === "On Tour" ? " checked" : "") + (pSubDisabled ? " disabled" : "") +
-            ' class="ma-psubtype-radio">' +
-            '</td>' +
-            // Earned Comp Off is in the SAME radio group as Regular and On Tour
-            // so only one of the three can be checked at a time
-            '<td class="text-center ma-psubtype-cell ma-eco-cell">' +
-            '<input type="radio" name="p_subtype_' + dateKey + '" value="Earned Comp Off"' +
-            (savedStatus === "Earned Comp Off" ? " checked" : "") + (pSubDisabled ? " disabled" : "") +
-            ' class="ma-psubtype-radio">' +
-            '</td>' +
-            '<td class="text-center">' +
-            '<input type="radio" name="status_' + dateKey + '" value="Absent"' +
-            (isAbsentStatus ? " checked" : "") + (radiosDisabled ? " disabled" : "") + '>' +
-            '</td>' +
-            '<td class="text-center ma-subtype-cell">' +
-            '<input type="radio" name="a_subtype_' + dateKey + '" value="LWP"' +
-            (absentSubtype === "LWP" ? " checked" : "") + (aSubDisabled ? " disabled" : "") +
-            ' class="ma-subtype-radio">' +
-            '</td>' +
-            '<td class="text-center ma-subtype-cell">' +
-            '<input type="radio" name="a_subtype_' + dateKey + '" value="Earned Leave"' +
-            (absentSubtype === "Earned Leave" ? " checked" : "") + (aSubDisabled ? " disabled" : "") +
-            ' class="ma-subtype-radio">' +
-            '</td>' +
-            '<td class="text-center ma-subtype-cell">' +
-            '<input type="radio" name="a_subtype_' + dateKey + '" value="Casual Leave"' +
-            (absentSubtype === "Casual Leave" ? " checked" : "") + (aSubDisabled ? " disabled" : "") +
-            ' class="ma-subtype-radio">' +
-            '</td>' +
-            '<td class="text-center ma-subtype-cell">' +
-            '<input type="radio" name="a_subtype_' + dateKey + '" value="Comp Off"' +
-            (absentSubtype === "Comp Off" ? " checked" : "") + (aSubDisabled ? " disabled" : "") +
-            ' class="ma-subtype-radio">' +
-            '</td>' +
-            '<td class="text-center ma-wo-cell">' +
-            '<input type="radio" name="status_' + dateKey + '" value="Weekly Off"' +
-            (savedStatus === "Weekly Off" ? " checked" : "") + (radiosDisabled ? " disabled" : "") + '>' +
-            '</td>' +
-            '<td class="text-center ma-holiday-cell">' +
-            '<input type="radio" name="status_' + dateKey + '" value="Holiday"' +
-            (savedStatus === "Holiday" ? " checked" : "") + (radiosDisabled ? " disabled" : "") + '>' +
-            '</td>';
+        var toggle = row.querySelector(".ma-override-toggle");
+        if (toggle) {
+            var restStatus    = toggle.dataset.reststatus;
+            var currentIsRest = (rec.mode === "full") && (rec.status === restStatus);
 
-        if (!isFuture) {
-            var toggleInput = row.querySelector(".ma-weekly-off-toggle");
-            if (toggleInput) {
-                toggleInput.addEventListener("change", function () {
-                    var isNowChecked = this.checked;
-                    if (isNowChecked) {
-                        var restStatus = isHoliday ? "Holiday" : "Weekly Off";
+            toggle.checked = currentIsRest;
+            toggle.closest("label").title = currentIsRest
+                ? "Click to override " + restStatus
+                : "Click to restore " + restStatus;
 
-                        if (restStatus === "Weekly Off") {
-                            var limit = maxWeeklyOffInMonth();
-                            var prevSt = attendanceTableData[dateKey] || "";
-                            var currentWo = countWeeklyOffInMonth();
-                            var woAfter = prevSt === "Weekly Off" ? currentWo : currentWo + 1;
-
-                            if (limit > 0 && woAfter > limit) {
-                                this.checked = false;
-                                var monthName = new Date(
-                                    parseInt(yearSel.value), parseInt(monthSel.value), 1
-                                ).toLocaleDateString("en-US", { month: "long" });
-                                frappe.show_alert({
-                                    message: "Weekly Off limit reached — " + monthName +
-                                        " allows a maximum of <strong>" + limit + " Weekly Off" +
-                                        (limit === 1 ? "" : "s") + "</strong>.",
-                                    indicator: "red"
-                                });
-                                return;
-                            }
-                        }
-
-                        disableAllRadios(row, dateKey);
-                        var restRadio = row.querySelector('input[name="status_' + dateKey + '"][value="' + restStatus + '"]');
-                        if (restRadio) restRadio.checked = true;
-                        // Remove from eco tracking when restoring to Weekly Off
-                        weeklyOffOverrideDates.delete(dateKey);
-                        row.classList.remove("ma-override-row");
-                        applyRowClass(row, restStatus);
-                        attendanceTableData[dateKey] = restStatus;
-                    } else {
-                        // CHANGED: when overriding a Weekly Off day, auto-check Regular
-                        // AND show Earned Comp Off indicator checked (like Absent + LWP pattern)
-                        enableMainRadios(row, dateKey);
-                        row.querySelectorAll('input[name="status_' + dateKey + '"]').forEach(function (r) { r.checked = false; });
-                        row.classList.remove("ma-holiday-row", "ma-weekly-off-row");
-                        row.classList.add("ma-override-row");
-
-                        // Just enable radios — user will manually pick Regular or On Tour
-                        attendanceTableData[dateKey] = "";
-                    }
-                    updateCounts();
-                });
+            row.classList.remove("ma-row-wo", "ma-row-holiday");
+            if (currentIsRest) {
+                if (restStatus === "Holiday")    row.classList.add("ma-row-holiday");
+                if (restStatus === "Weekly Off") row.classList.add("ma-row-wo");
+            } else {
+                if (rec.mode === "full" && !rec.status) row.classList.add("ma-row-override");
             }
 
-            row.querySelectorAll('input[name="status_' + dateKey + '"]').forEach(function (inp) {
-                inp.addEventListener("change", function () {
-                    var val = this.value;
-                    var pSubRadios = row.querySelectorAll('input[name="p_subtype_' + dateKey + '"]');
-                    var aSubRadios = row.querySelectorAll('input[name="a_subtype_' + dateKey + '"]');
-
-                    if (val === "Absent") {
-                        aSubRadios.forEach(function (r) { r.disabled = false; });
-                        pSubRadios.forEach(function (r) { r.disabled = false; r.checked = false; });
-                        var checkedASub = row.querySelector('input[name="a_subtype_' + dateKey + '"]:checked');
-                        attendanceTableData[dateKey] = checkedASub ? checkedASub.value : "Absent";
-                    } else {
-                        pSubRadios.forEach(function (r) { r.disabled = false; r.checked = false; });
-                        aSubRadios.forEach(function (r) { r.disabled = true; r.checked = false; });
-
-                        if (val === "Weekly Off") {
-                            var limit = maxWeeklyOffInMonth();
-                            var prevStatus = attendanceTableData[dateKey] || "";
-                            var currentWo = countWeeklyOffInMonth();
-                            var woAfter = prevStatus === "Weekly Off" ? currentWo : currentWo + 1;
-
-                            if (limit > 0 && woAfter > limit) {
-                                this.checked = false;
-                                var prevRadio = row.querySelector(
-                                    'input[name="status_' + dateKey + '"][value="' + prevStatus + '"]'
-                                );
-                                if (prevRadio) prevRadio.checked = true;
-
-                                var monthName = new Date(
-                                    parseInt(yearSel.value), parseInt(monthSel.value), 1
-                                ).toLocaleDateString("en-US", { month: "long" });
-
-                                frappe.show_alert({
-                                    message: "Weekly Off limit reached — " + monthName +
-                                        " allows a maximum of <strong>" + limit + " Weekly Off" +
-                                        (limit === 1 ? "" : "s") + "</strong>.",
-                                    indicator: "red"
-                                });
-                                return;
-                            }
-                        }
-
-                        attendanceTableData[dateKey] = val;
-                    }
-
-                    applyRowClass(row, val);
-                    if (val !== "Weekly Off" && val !== "Holiday") {
-                        row.classList.remove("ma-override-row");
-                    }
-                    updateCounts();
-                });
-            });
-
-            row.querySelectorAll('input[name="p_subtype_' + dateKey + '"]').forEach(function (inp) {
-                inp.addEventListener("change", function () {
-                    var val = this.value;
-                    row.querySelectorAll('input[name="status_' + dateKey + '"]').forEach(function (r) {
-                        r.checked = false; r.disabled = false;
-                    });
-                    row.querySelectorAll('input[name="p_subtype_' + dateKey + '"]').forEach(function (r) {
-                        r.disabled = false;
-                        if (r !== inp) r.checked = false;
-                    });
-                    row.querySelectorAll('input[name="a_subtype_' + dateKey + '"]').forEach(function (r) {
-                        r.checked = false; r.disabled = true;
-                    });
-                    // Store value directly — Earned Comp Off saves as "Earned Comp Off" in DB
-                    attendanceTableData[dateKey] = val;
-                    // Track eco: Earned Comp Off on a Weekly Off day
-                    if (isDefaultWeeklyOff && !isHoliday) {
-                        if (val === "Earned Comp Off") {
-                            weeklyOffOverrideDates.add(dateKey);
-                        } else {
-                            weeklyOffOverrideDates.delete(dateKey);
-                        }
-                    }
-                    applyRowClass(row, "Present");
-                    row.classList.remove("ma-override-row");
-                    updateCounts();
-                });
-            });
-
-            row.querySelectorAll('input[name="a_subtype_' + dateKey + '"]').forEach(function (inp) {
-                inp.addEventListener("change", function () {
-                    row.querySelectorAll('input[name="p_subtype_' + dateKey + '"]').forEach(function (r) {
-                        r.checked = false; r.disabled = false;
-                    });
-                    attendanceTableData[dateKey] = this.value;
-                    updateCounts();
-                });
-            });
+            setAllStatusCellsEnabled(row, !currentIsRest);
         }
+
+        refreshDotDirty(dateKey);
+    }
+
+    // ════════════════════════════════════════════════════════════════════════
+    //  KEYBOARD NAVIGATION
+    // ════════════════════════════════════════════════════════════════════════
+    function getRowByIdx(rowIdx) {
+        return tbody.querySelector('tr[data-rowidx="' + rowIdx + '"]');
+    }
+    function getCellAt(rowIdx, colIdx) {
+        var row = getRowByIdx(rowIdx);
+        if (!row) return null;
+        return row.querySelector('[data-colidx="' + colIdx + '"]');
+    }
+    function setFocusCell(rowIdx, colIdx) {
+        tbody.querySelectorAll(".ma-cell-focused").forEach(function(el){ el.classList.remove("ma-cell-focused"); });
+        focusedCell = { rowIdx: rowIdx, colIdx: colIdx };
+        var td = getCellAt(rowIdx, colIdx);
+        if (td) { td.classList.add("ma-cell-focused"); td.scrollIntoView({ block:"nearest", inline:"nearest" }); }
+    }
+    tbody.addEventListener("keydown", function(e) {
+        if (!focusedCell) return;
+        var r = focusedCell.rowIdx, c = focusedCell.colIdx;
+        var maxRow = tbody.querySelectorAll("tr[data-rowidx]").length - 1;
+        var maxCol = TOTAL_STATUS_COLS - 1;
+        if (e.key === "ArrowDown") {
+            e.preventDefault(); if (r < maxRow) setFocusCell(r + 1, c);
+        } else if (e.key === "ArrowUp") {
+            e.preventDefault(); if (r > 0) setFocusCell(r - 1, c);
+        } else if (e.key === "ArrowRight") {
+            e.preventDefault();
+            if (c < maxCol) setFocusCell(r, c + 1); else if (r < maxRow) setFocusCell(r + 1, 0);
+        } else if (e.key === "ArrowLeft") {
+            e.preventDefault();
+            if (c > 0) setFocusCell(r, c - 1); else if (r > 0) setFocusCell(r - 1, maxCol);
+        } else if (e.key === "Tab") {
+            e.preventDefault();
+            if (!e.shiftKey) { if (c < maxCol) setFocusCell(r, c + 1); else if (r < maxRow) setFocusCell(r + 1, 0); }
+            else             { if (c > 0) setFocusCell(r, c - 1); else if (r > 0) setFocusCell(r - 1, maxCol); }
+        } else if (e.key === "Enter" || e.key === " ") {
+            e.preventDefault();
+            var td = getCellAt(r, c); if (td) td.click();
+        }
+    });
+
+    // ════════════════════════════════════════════════════════════════════════
+    //  BUILD ROW
+    // ════════════════════════════════════════════════════════════════════════
+    function buildRow(dateKey, dayName, currentDate, savedRec, isHoliday, isDefaultWeeklyOff, isFuture, rowIdx) {
+        var row = document.createElement("tr");
+        row.setAttribute("data-date",   dateKey);
+        row.setAttribute("data-rowidx", rowIdx);
+
+        var isRestDay  = isHoliday || isDefaultWeeklyOff;
+        var restStatus = isHoliday ? "Holiday" : (isDefaultWeeklyOff ? "Weekly Off" : "");
+        var isRestMode = isRestDay && savedRec.mode === "full" &&
+                         (savedRec.status === "Holiday" || savedRec.status === "Weekly Off");
+
+        rowMetaMap[dateKey] = { isRestDay: isRestDay, restStatus: restStatus,
+                                isHoliday: isHoliday, isDefaultWeeklyOff: isDefaultWeeklyOff };
+
+        var cellsLocked = isFuture || (isRestDay && isRestMode);
+
+        if (isFuture) {
+            row.classList.add("ma-future-row");
+        } else if (savedRec.mode === "full") {
+            if (savedRec.status === "Weekly Off") row.classList.add("ma-row-wo");
+            if (savedRec.status === "Holiday")    row.classList.add("ma-row-holiday");
+            if (isRestDay && !isRestMode)         row.classList.add("ma-row-override");
+        } else if (savedRec.mode === "half") {
+            row.classList.add("ma-row-halfday");
+        }
+        if (cellsLocked) row.classList.add("ma-status-cells-disabled");
+
+        var day = currentDate.getDate();
+        var dateLabel = String(day).padStart(2, "0") + " " +
+            currentDate.toLocaleDateString("en-US", { month:"long" }) + " " +
+            currentDate.getFullYear();
+
+        // Date cell
+        var dateTd = document.createElement("td");
+        dateTd.className = "ma-date-cell";
+        if (isDefaultWeeklyOff && !isHoliday) dateTd.classList.add("ma-date-wo");
+        else if (isHoliday) dateTd.classList.add("ma-date-holiday");
+        dateTd.textContent = dateLabel;
+        row.appendChild(dateTd);
+
+        // Day cell
+        var dayTd = document.createElement("td");
+        dayTd.className = "ma-day-cell";
+        if (isDefaultWeeklyOff && !isHoliday) dayTd.classList.add("ma-date-wo");
+        else if (isHoliday) dayTd.classList.add("ma-date-holiday");
+        dayTd.textContent = dayName;
+        row.appendChild(dayTd);
+
+        // Override toggle
+        var overrideTd = document.createElement("td");
+        overrideTd.className = "ma-override-cell";
+        if (isRestDay && !isFuture) {
+            var lbl = document.createElement("label");
+            lbl.className = "ma-toggle" + (restStatus === "Holiday" ? " ma-toggle-holiday" : "");
+            lbl.title = isRestMode ? "Click to override " + restStatus : "Click to restore " + restStatus;
+            var chk = document.createElement("input");
+            chk.type      = "checkbox";
+            chk.className = "ma-override-toggle";
+            chk.checked   = isRestMode;
+            chk.dataset.isrestday  = "true";
+            chk.dataset.reststatus = restStatus;
+            chk.dataset.datekey    = dateKey;
+            chk.addEventListener("change", function () {
+                var nowChecked = this.checked;
+                if (nowChecked) {
+                    if (restStatus === "Weekly Off") {
+                        var limit   = calcMaxWeeklyOffInMonth();
+                        var current = countCurrentWeeklyOff();
+                        if (limit > 0 && current + 1 > limit) {
+                            this.checked = false;
+                            frappe.show_alert({ message:"Weekly Off cannot exceed <b>" + limit + " days</b> in this month.", indicator:"red" });
+                            return;
+                        }
+                    }
+                    attendanceTableData[dateKey] = { mode:"full", status: restStatus };
+                } else {
+                    attendanceTableData[dateKey] = { mode:"full", status: "" };
+                }
+                markDirty(dateKey);
+                refreshRowVisuals(dateKey);
+                updateCounts();
+            });
+            var slider = document.createElement("span");
+            slider.className = "ma-toggle-slider";
+            lbl.appendChild(chk); lbl.appendChild(slider);
+            overrideTd.appendChild(lbl);
+        } else {
+            overrideTd.innerHTML = '<span class="ma-no-override">—</span>';
+        }
+        row.appendChild(overrideTd);
+
+        // Full-day status columns
+        FULL_DAY_STATUSES.forEach(function (status, colIdx) {
+            var td = document.createElement("td");
+            td.className = "ma-status-cell ma-cell-" + status.toLowerCase().replace(/ /g, "_");
+            td.setAttribute("data-status", status);
+            td.setAttribute("data-colidx", colIdx);
+
+            var isActive = (savedRec.mode === "full" && savedRec.status === status);
+            var dot = document.createElement("div");
+            dot.className = "ma-col-dot" + (isActive ? " " + getDotClass(status) : "");
+            dot.setAttribute("data-status", status);
+
+            if (!isActive) {
+                if (status === "Weekly Off" && isDefaultWeeklyOff) dot.classList.add("ma-dot-wo-hint");
+                if (status === "Holiday"    && isHoliday)          dot.classList.add("ma-dot-holiday-hint");
+            }
+
+            td.addEventListener("click", function () {
+                var parentRow = td.closest("tr");
+                if (parentRow && parentRow.classList.contains("ma-status-cells-disabled")) return;
+                onFullDayClick(dateKey, status, isHoliday, isDefaultWeeklyOff);
+            });
+            td.addEventListener("mousedown", function() { setFocusCell(rowIdx, colIdx); });
+            td.appendChild(dot);
+            row.appendChild(td);
+        });
+
+        // Half Day – First Half
+        var hd1Td = document.createElement("td");
+        hd1Td.className = "ma-status-cell ma-hd-cell ma-hd1-cell";
+        hd1Td.setAttribute("data-colidx", FULL_DAY_STATUSES.length);
+        var h1Val = (savedRec.mode === "half") ? savedRec.first_half  : "";
+        var h2Val = (savedRec.mode === "half") ? savedRec.second_half : "";
+        hd1Td.innerHTML = statusBadge(h1Val) + ' <span class="ma-hd-caret">▾</span>';
+        hd1Td.addEventListener("click", function (e) {
+            e.stopPropagation();
+            var parentRow = hd1Td.closest("tr");
+            if (parentRow && parentRow.classList.contains("ma-status-cells-disabled")) return;
+            ensureHalfDayMode(dateKey);
+            openHdDropdown(dateKey, "first");
+        });
+        hd1Td.addEventListener("mousedown", function() { setFocusCell(rowIdx, FULL_DAY_STATUSES.length); });
+        row.appendChild(hd1Td);
+
+        // Half Day – Second Half
+        var hd2Td = document.createElement("td");
+        hd2Td.className = "ma-status-cell ma-hd-cell ma-hd2-cell";
+        hd2Td.setAttribute("data-colidx", FULL_DAY_STATUSES.length + 1);
+        hd2Td.innerHTML = statusBadge(h2Val) + ' <span class="ma-hd-caret">▾</span>';
+        hd2Td.addEventListener("click", function (e) {
+            e.stopPropagation();
+            var parentRow = hd2Td.closest("tr");
+            if (parentRow && parentRow.classList.contains("ma-status-cells-disabled")) return;
+            ensureHalfDayMode(dateKey);
+            openHdDropdown(dateKey, "second");
+        });
+        hd2Td.addEventListener("mousedown", function() { setFocusCell(rowIdx, FULL_DAY_STATUSES.length + 1); });
+        row.appendChild(hd2Td);
 
         return row;
     }
 
-    // ── Comp Off balance ───────────────────────────────────────────────────
+    // ════════════════════════════════════════════════════════════════════════
+    //  CLICK HANDLERS
+    // ════════════════════════════════════════════════════════════════════════
+    function onFullDayClick(dateKey, status, isHoliday, isDefaultWeeklyOff) {
+        var rec = attendanceTableData[dateKey] || {};
+
+        if (status === "Weekly Off") {
+            var limit = calcMaxWeeklyOffInMonth();
+            var cur   = countCurrentWeeklyOff();
+            var alreadyWo = (rec.mode === "full" && rec.status === "Weekly Off");
+            if (limit > 0 && !alreadyWo && cur + 1 > limit) {
+                frappe.show_alert({ message:"Weekly Off cannot exceed <b>" + limit + " days</b> in this month.", indicator:"red" });
+                return;
+            }
+        }
+
+        if (rec.mode === "half") {
+            attendanceTableData[dateKey] = { mode:"full", status: status };
+            markDirty(dateKey); refreshRowVisuals(dateKey); updateCounts(); return;
+        }
+
+        if (rec.mode === "full" && rec.status === status) {
+            var def = isHoliday ? "Holiday" : (isDefaultWeeklyOff ? "Weekly Off" : "");
+            attendanceTableData[dateKey] = def ? { mode:"full", status:def } : { mode:"full", status:"" };
+        } else {
+            attendanceTableData[dateKey] = { mode:"full", status: status };
+        }
+        markDirty(dateKey); refreshRowVisuals(dateKey); updateCounts();
+    }
+
+    function ensureHalfDayMode(dateKey) {
+        var rec = attendanceTableData[dateKey] || {};
+        if (rec.mode === "half") return;
+        attendanceTableData[dateKey] = { mode:"half", first_half: "", second_half: "" };
+        markDirty(dateKey); refreshRowVisuals(dateKey); updateCounts();
+    }
+
+    // ════════════════════════════════════════════════════════════════════════
+    //  COMP OFF BALANCE
+    // ════════════════════════════════════════════════════════════════════════
     function loadCompOffBalance(employee) {
         var ecoAvailable = document.getElementById("ma_eco_available");
-        var ecoEarned  = document.getElementById("ma_eco_earned");
-        var ecoUsed    = document.getElementById("ma_eco_used");
-        var ecoBalance = document.getElementById("ma_eco_balance");
-        var elTaken    = document.getElementById("ma_el_taken");
-        var clTaken    = document.getElementById("ma_cl_taken");
+        var ecoEarned    = document.getElementById("ma_eco_earned");
+        var ecoUsed      = document.getElementById("ma_eco_used");
+        var ecoBalance   = document.getElementById("ma_eco_balance");
+        var elTaken      = document.getElementById("ma_el_taken");
+        var clTaken      = document.getElementById("ma_cl_taken");
         if (!ecoEarned) return;
-        if (ecoAvailable) ecoAvailable.textContent = "…";
-        ecoEarned.textContent  = "…";
-        ecoUsed.textContent    = "…";
-        ecoBalance.textContent = "…";
-        if (elTaken) elTaken.textContent = "…";
-        if (clTaken) clTaken.textContent = "…";
-
+        [ecoAvailable,ecoEarned,ecoUsed,ecoBalance,elTaken,clTaken].forEach(function(el){ if(el) el.textContent="…"; });
         frappe.call({
             method: "saral_hr.saral_hr.page.mark_attendance.mark_attendance.get_comp_off_balance",
             args: { employee: employee, year: yearSel.value, month: monthSel.value },
             callback: function (r) {
-                var data = (r && r.message) ? r.message : { available: 0, earned: 0, used: 0, balance: 0, el_taken: 0, cl_taken: 0 };
+                var data = (r && r.message) ? r.message : { available:0, earned:0, used:0, balance:0, el_taken:0, cl_taken:0 };
                 if (ecoAvailable) ecoAvailable.textContent = data.available || 0;
                 ecoEarned.textContent  = data.earned  || 0;
                 ecoUsed.textContent    = data.used    || 0;
@@ -968,59 +1093,51 @@ function init_mark_attendance($main) {
                 if (clTaken) clTaken.textContent = data.cl_taken || 0;
             },
             error: function () {
-                if (ecoAvailable) ecoAvailable.textContent = "0";
-                if (ecoEarned)  ecoEarned.textContent  = "0";
-                if (ecoUsed)    ecoUsed.textContent    = "0";
-                if (ecoBalance) ecoBalance.textContent = "0";
-                if (elTaken) elTaken.textContent = "0";
-                if (clTaken) clTaken.textContent = "0";
+                [ecoAvailable,ecoEarned,ecoUsed,ecoBalance,elTaken,clTaken].forEach(function(el){ if(el) el.textContent="0"; });
             }
         });
     }
-
     function clearCompOffBalance() {
-        var ecoAvailable = document.getElementById("ma_eco_available");
-        var ecoEarned  = document.getElementById("ma_eco_earned");
-        var ecoUsed    = document.getElementById("ma_eco_used");
-        var ecoBalance = document.getElementById("ma_eco_balance");
-        var elTaken    = document.getElementById("ma_el_taken");
-        var clTaken    = document.getElementById("ma_cl_taken");
-        if (ecoAvailable) ecoAvailable.textContent = "0";
-        if (ecoEarned)  ecoEarned.textContent  = "0";
-        if (ecoUsed)    ecoUsed.textContent    = "0";
-        if (ecoBalance) ecoBalance.textContent = "0";
-        if (elTaken) elTaken.textContent = "0";
-        if (clTaken) clTaken.textContent = "0";
+        ["ma_eco_available","ma_eco_earned","ma_eco_used","ma_eco_balance","ma_el_taken","ma_cl_taken"]
+            .forEach(function(id){ var el=document.getElementById(id); if(el) el.textContent="0"; });
     }
 
-    // ── Loading ────────────────────────────────────────────────────────────
-    function showTableLoading() {
-        tableEl.style.display = "none";
-        tableLoading.style.display = "flex";
-    }
-
+    // ════════════════════════════════════════════════════════════════════════
+    //  LOADING
+    // ════════════════════════════════════════════════════════════════════════
+    function showTableLoading() { tableEl.style.display="none"; tableLoading.style.display="flex"; }
     function hideTableLoading() {
-        tableLoading.style.display = "none";
-        tableEl.style.display = "table";
+        tableLoading.style.display="none";
+        tableEl.style.display="table";
+        // Recalculate scroll height after table becomes visible
+        setTimeout(updateScrollHeight, 50);
     }
 
-    // ── generateTable ──────────────────────────────────────────────────────
-    function generateTable() {
-        var employee = employeeSel.value;
-        var startDate = startDateInput.value;
-        var endDate = endDateInput.value;
-        if (!employee || !startDate || !endDate) {
-            tableLoading.style.display = "none";
-            return;
+    // ════════════════════════════════════════════════════════════════════════
+    //  GENERATE TABLE
+    // ════════════════════════════════════════════════════════════════════════
+    function resolveInitialRec(rawStatus, isHoliday, isDefaultWeeklyOff) {
+        if (!rawStatus) {
+            if (isHoliday)          return { mode:"full", status:"Holiday" };
+            if (isDefaultWeeklyOff) return { mode:"full", status:"Weekly Off" };
+            return { mode:"full", status:"" };
         }
+        if (typeof rawStatus === "object" && rawStatus.mode === "half") return rawStatus;
+        return { mode:"full", status: rawStatus };
+    }
+
+    function generateTable() {
+        var employee  = employeeSel.value;
+        var startDate = startDateInput.value;
+        var endDate   = endDateInput.value;
+        if (!employee || !startDate || !endDate) { tableLoading.style.display="none"; return; }
 
         var weeklyOffDays = employeeWeeklyOffMap[employee] || [];
-        var company = employeeCompanyMap[employee];
-        var tbody = document.getElementById("ma_table_body");
+        var company       = employeeCompanyMap[employee];
+        var joiningDate   = parseDateLocal(joiningDateMap[employee]);
+        var leftDate      = parseDateLocal(leftDateMap[employee]);
 
-        var joiningDate = parseDateLocal(joiningDateMap[employee]);
-        var leftDate    = parseDateLocal(leftDateMap[employee]);
-
+        focusedCell = null; rowMetaMap = {};
         showTableLoading();
 
         frappe.call({
@@ -1035,55 +1152,45 @@ function init_mark_attendance($main) {
                     args: { employee: employee, start_date: startDate, end_date: endDate },
                     callback: function (res) {
                         var attendanceMap = res.message || {};
-                        attendanceTableData = {};
-                        originalAttendanceData = {};
-                        weeklyOffOverrideDates = new Set();
-                        tbody.innerHTML = "";
+                        attendanceTableData = {}; originalAttendanceData = {};
+                        dirtyDates.clear(); tbody.innerHTML = "";
 
                         var current = new Date(startDate);
-                        var end = new Date(endDate);
-                        var today = new Date();
-                        today.setHours(0, 0, 0, 0);
+                        var end     = new Date(endDate);
+                        var today   = new Date(); today.setHours(0,0,0,0);
+                        var rowIdx  = 0;
 
                         while (current <= end) {
-                            var currentDate = new Date(current);
-                            currentDate.setHours(0, 0, 0, 0);
-
-                            var dayName = currentDate.toLocaleDateString("en-US", { weekday: "long" });
-                            var dateKey = currentDate.getFullYear() + "-" +
-                                String(currentDate.getMonth() + 1).padStart(2, "0") + "-" +
-                                String(currentDate.getDate()).padStart(2, "0");
+                            var cd = new Date(current); cd.setHours(0,0,0,0);
+                            var dayName = cd.toLocaleDateString("en-US", { weekday:"long" });
+                            var dateKey = cd.getFullYear() + "-" +
+                                String(cd.getMonth()+1).padStart(2,"0") + "-" +
+                                String(cd.getDate()).padStart(2,"0");
 
                             var isDefaultWeeklyOff = weeklyOffDays.includes(dayName.toLowerCase());
-                            var isHoliday = holidayDates[dateKey] === true;
-                            var isFuture = currentDate > today;
+                            var isHoliday          = holidayDates[dateKey] === true;
+                            var isFuture           = cd > today;
+                            var isBeforeJoining    = joiningDate ? (cd < joiningDate) : false;
+                            var isAfterLeft        = leftDate    ? (cd > leftDate)    : false;
 
-                            var isBeforeJoining = joiningDate ? (currentDate < joiningDate) : false;
-                            var isAfterLeft     = leftDate    ? (currentDate > leftDate)    : false;
+                            var raw      = attendanceMap[dateKey];
+                            var savedRec = resolveInitialRec(raw, isHoliday, isDefaultWeeklyOff);
 
-                            var rawStatus = attendanceMap[dateKey] || "";
-                            var savedStatus = resolveStatus(rawStatus, isHoliday, isDefaultWeeklyOff);
-
-                            attendanceTableData[dateKey] = savedStatus;
-                            if (rawStatus) originalAttendanceData[dateKey] = savedStatus;
-
-                            // If this was a Weekly Off day already saved as Earned Comp Off → eco earned
-                            if (isDefaultWeeklyOff && !isHoliday &&
-                                (rawStatus === "Earned Comp Off")) {
-                                weeklyOffOverrideDates.add(dateKey);
-                            }
+                            attendanceTableData[dateKey] = savedRec;
+                            if (raw) originalAttendanceData[dateKey] = JSON.parse(JSON.stringify(savedRec));
 
                             tbody.appendChild(buildRow(
-                                dateKey, dayName, currentDate,
-                                savedStatus, rawStatus,
+                                dateKey, dayName, cd, savedRec,
                                 isHoliday, isDefaultWeeklyOff,
-                                isFuture || isBeforeJoining || isAfterLeft
+                                isFuture || isBeforeJoining || isAfterLeft,
+                                rowIdx++
                             ));
                             current.setDate(current.getDate() + 1);
                         }
 
                         hideTableLoading();
                         updateCounts();
+                        updateScrollHeight();
                     },
                     error: function () { hideTableLoading(); }
                 });
@@ -1092,587 +1199,537 @@ function init_mark_attendance($main) {
         });
     }
 
-    // ── bulkMark ───────────────────────────────────────────────────────────
+    // ════════════════════════════════════════════════════════════════════════
+    //  BULK MARK
+    // ════════════════════════════════════════════════════════════════════════
     function bulkMark(status) {
         var employee = employeeSel.value;
-        var startDate = startDateInput.value;
-        if (!employee || !startDate) {
-            frappe.show_alert({ message: "Please select an employee and month first", indicator: "orange" });
-            return;
+        if (!employee || !startDateInput.value) {
+            frappe.show_alert({ message:"Please select an employee and month first", indicator:"orange" }); return;
         }
+        Object.keys(attendanceTableData).forEach(function (dateKey) {
+            if (originalAttendanceData[dateKey]) return;
+            var rec = attendanceTableData[dateKey] || {};
+            var cur = rec.mode === "full" ? rec.status : null;
+            if (cur === "Weekly Off" || cur === "Holiday") return;
+            var rowEl = document.querySelector('tr[data-date="' + dateKey + '"]');
+            if (rowEl && rowEl.classList.contains("ma-future-row")) return;
 
-        Object.keys(attendanceTableData).forEach(function (date) {
-            if (originalAttendanceData[date]) return;
-            var current = attendanceTableData[date];
-            if (current === "Weekly Off" || current === "Holiday") return;
-
-            var mainRadios = document.querySelectorAll('input[name="status_' + date + '"]');
-            var pSubRadios = document.querySelectorAll('input[name="p_subtype_' + date + '"]');
-            var aSubRadios = document.querySelectorAll('input[name="a_subtype_' + date + '"]');
-            if (!mainRadios.length || mainRadios[0].disabled) return;
-
-            mainRadios.forEach(function (r) { r.checked = false; r.disabled = false; });
-            pSubRadios.forEach(function (r) { r.checked = false; r.disabled = false; });
-            aSubRadios.forEach(function (r) { r.checked = false; r.disabled = true; });
-
-            if (status === "Present" || status === "Regular") {
-                pSubRadios.forEach(function (r) { r.disabled = false; r.checked = (r.value === "Regular"); });
-                aSubRadios.forEach(function (r) { r.disabled = true; r.checked = false; });
-                attendanceTableData[date] = "Regular";
-            } else if (isPresentSubtype(status)) {
-                pSubRadios.forEach(function (r) { r.disabled = false; r.checked = (r.value === status); });
-                aSubRadios.forEach(function (r) { r.disabled = true; r.checked = false; });
-                attendanceTableData[date] = status;
-            } else if (isAbsentSubtype(status)) {
-                mainRadios.forEach(function (r) { r.checked = (r.value === "Absent"); });
-                pSubRadios.forEach(function (r) { r.disabled = false; r.checked = false; });
-                aSubRadios.forEach(function (r) { r.disabled = false; r.checked = (r.value === status); });
-                attendanceTableData[date] = status;
-            } else if (status === "Absent") {
-                mainRadios.forEach(function (r) { r.checked = (r.value === "Absent"); });
-                pSubRadios.forEach(function (r) { r.disabled = false; r.checked = false; });
-                aSubRadios.forEach(function (r) { r.disabled = false; r.checked = false; });
-                attendanceTableData[date] = "Absent";
-            } else {
-                mainRadios.forEach(function (r) { r.checked = (r.value === status); });
-                pSubRadios.forEach(function (r) { r.disabled = false; r.checked = false; });
-                aSubRadios.forEach(function (r) { r.disabled = true; r.checked = false; });
-                attendanceTableData[date] = status;
-            }
-
-            var row = mainRadios[0] ? mainRadios[0].closest("tr") : null;
-            if (row) applyRowClass(row, status);
+            attendanceTableData[dateKey] = status === "Half Day"
+                ? { mode:"half", first_half:"", second_half:"" }
+                : { mode:"full", status: status };
+            markDirty(dateKey);
+            refreshRowVisuals(dateKey);
         });
         updateCounts();
     }
 
-    document.getElementById("ma_mark_present").onclick = function () { bulkMark("Regular"); };
-    document.getElementById("ma_mark_absent").onclick = function () { bulkMark("Absent"); };
-    document.getElementById("ma_mark_halfday").onclick = function () { bulkMark("Half Day"); };
-    document.getElementById("ma_mark_lwp").onclick = function () { bulkMark("LWP"); };
+    document.getElementById("ma_mark_present").onclick  = function () { bulkMark("Present"); };
+    document.getElementById("ma_mark_absent").onclick   = function () { bulkMark("Absent"); };
+    document.getElementById("ma_mark_halfday").onclick  = function () { bulkMark("Half Day"); };
+    document.getElementById("ma_mark_lwp").onclick      = function () { bulkMark("LWP"); };
 
-    // ── Audio ──────────────────────────────────────────────────────────────
+    // ════════════════════════════════════════════════════════════════════════
+    //  SAVE
+    // ════════════════════════════════════════════════════════════════════════
     function playSaveSound() {
-        try {
-            var audio = document.getElementById("ma-sound-click");
-            if (audio) { audio.volume = 0.2; audio.play(); }
-        } catch (e) { }
+        try { var audio = document.getElementById("ma-sound-click"); if (audio) { audio.volume=0.2; audio.play(); } } catch(e) {}
     }
-
-    // ── doSave ─────────────────────────────────────────────────────────────
+    function recsAreEqual(a, b) {
+        if (!a && !b) return true;
+        if (!a || !b) return false;
+        if (a.mode !== b.mode) return false;
+        if (a.mode === "full") return a.status === b.status;
+        return a.first_half === b.first_half && a.second_half === b.second_half;
+    }
     function doSave() {
         if (isSaving) return;
-
         var employee = employeeSel.value;
-        if (!employee) {
-            frappe.show_alert({ message: "Please select an employee first", indicator: "orange" });
-            return;
-        }
-        if (!startDateInput.value || !endDateInput.value) {
-            frappe.show_alert({ message: "Please select a year and month first", indicator: "orange" });
-            return;
-        }
+        if (!employee) { frappe.show_alert({ message:"Please select an employee first", indicator:"orange" }); return; }
+        if (!startDateInput.value || !endDateInput.value) { frappe.show_alert({ message:"Please select a year and month first", indicator:"orange" }); return; }
 
-        var changedData = [];
-        var unchangedCnt = 0;
-
+        var changedData = [], unchangedCnt = 0;
         Object.entries(attendanceTableData).forEach(function (entry) {
-            var date = entry[0];
-            var status = (entry[1] || "").trim();
-            var original = (originalAttendanceData[date] || "").trim();
-
-            if (!status) return;
-            if (status === original) { unchangedCnt++; return; }
-            changedData.push({ employee: employee, attendance_date: date, status: status });
+            var dateKey = entry[0], rec = entry[1];
+            if (!rec) return;
+            var orig = originalAttendanceData[dateKey];
+            if (recsAreEqual(rec, orig)) { unchangedCnt++; return; }
+            if (rec.mode === "full") {
+                if (!rec.status) return;
+                changedData.push({ employee:employee, attendance_date:dateKey, mode:"full", status:rec.status });
+            } else if (rec.mode === "half") {
+                changedData.push({ employee:employee, attendance_date:dateKey, mode:"half", first_half:rec.first_half||"", second_half:rec.second_half||"" });
+            }
         });
 
         if (!changedData.length) {
-            frappe.show_alert({
-                message: unchangedCnt > 0
-                    ? "No changes to save. All attendance is already up to date."
-                    : "Nothing to save. Please mark attendance for at least one day.",
-                indicator: unchangedCnt > 0 ? "blue" : "orange"
-            });
+            frappe.show_alert({ message: unchangedCnt > 0 ? "No changes to save." : "Nothing to save.", indicator: unchangedCnt > 0 ? "blue" : "orange" });
             return;
         }
 
-        isSaving = true;
-        playSaveSound();
-        var scrollPos = document.querySelector(".ma-table-scroll").scrollTop;
+        isSaving = true; playSaveSound();
+        var scrollPos = tableScroll ? tableScroll.scrollTop : 0;
 
         frappe.call({
             method: "saral_hr.saral_hr.page.mark_attendance.mark_attendance.save_attendance_batch",
-            args: { attendance_data: changedData },
+            args:   { attendance_data: changedData },
             callback: function (r) {
                 isSaving = false;
                 if (r.message && r.message.success) {
-                    var saved = r.message.saved_count || changedData.length;
-                    var errors = r.message.errors;
+                    var saved = r.message.saved_count || changedData.length, errors = r.message.errors;
                     frappe.show_alert({
                         message: errors && errors.length
                             ? saved + " record(s) saved. " + errors.length + " failed."
-                            : saved + " attendance record" + (saved === 1 ? "" : "s") + " saved successfully.",
+                            : saved + " attendance record" + (saved===1?"":"s") + " saved successfully.",
                         indicator: errors && errors.length ? "yellow" : "green"
                     });
                     setTimeout(function () {
-                        generateTable();
-                        loadCompOffBalance(employee);
-                        setTimeout(function () {
-                            document.querySelector(".ma-table-scroll").scrollTop = scrollPos;
-                        }, 100);
+                        generateTable(); loadCompOffBalance(employee);
+                        setTimeout(function () { if (tableScroll) tableScroll.scrollTop = scrollPos; }, 100);
                     }, 300);
                 } else {
-                    var errMsg = (r.message && r.message.error) ? r.message.error : "Error saving attendance";
-                    frappe.show_alert({ message: errMsg, indicator: "red" });
+                    frappe.show_alert({ message:(r.message && r.message.error) || "Error saving attendance", indicator:"red" });
                 }
             },
-            error: function () {
-                isSaving = false;
-                frappe.show_alert({ message: "Error saving attendance. Please try again.", indicator: "red" });
-            }
+            error: function () { isSaving=false; frappe.show_alert({ message:"Error saving attendance. Please try again.", indicator:"red" }); }
         });
     }
 
-    document.getElementById("ma_save_attendance").addEventListener("click", doSave);
+    var saveBtn = document.getElementById("ma_save_attendance");
+    saveBtn.addEventListener("mousedown", function(e) { e.preventDefault(); });
+    saveBtn.addEventListener("click", doSave);
 
     document.getElementById("ma_goto_attendance").addEventListener("click", function (e) {
         e.preventDefault();
         window.open(frappe.urllib.get_full_url("/app/attendance"), "_blank");
     });
 
-    // ── Calendar modal ─────────────────────────────────────────────────────
+    // ════════════════════════════════════════════════════════════════════════
+    //  CALENDAR MODAL
+    // ════════════════════════════════════════════════════════════════════════
     function normalizeDateKey(dateStr) {
         if (!dateStr) return null;
         if (dateStr instanceof Date) {
-            return dateStr.getFullYear() + "-" +
-                String(dateStr.getMonth() + 1).padStart(2, "0") + "-" +
-                String(dateStr.getDate()).padStart(2, "0");
+            return dateStr.getFullYear() + "-" + String(dateStr.getMonth()+1).padStart(2,"0") + "-" + String(dateStr.getDate()).padStart(2,"0");
         }
         var parts = dateStr.toString().split("-");
-        if (parts.length === 3) return parts[0] + "-" + parts[1].padStart(2, "0") + "-" + parts[2].padStart(2, "0");
+        if (parts.length === 3) return parts[0]+"-"+parts[1].padStart(2,"0")+"-"+parts[2].padStart(2,"0");
         return dateStr;
     }
-
     function openCalendarModal() {
         var employee = employeeSel.value;
-        if (!employee) {
-            frappe.show_alert({ message: "Please select an employee first", indicator: "orange" });
-            return;
-        }
+        if (!employee) { frappe.show_alert({ message:"Please select an employee first", indicator:"orange" }); return; }
         document.getElementById("ma_cal_modal").classList.add("show");
         currentCalendarYear = parseInt(yearSel.value) || new Date().getFullYear();
         document.getElementById("ma_cal_year").textContent = currentCalendarYear;
         loadYearAttendance();
     }
-
-    function closeCalendarModal() {
-        document.getElementById("ma_cal_modal").classList.remove("show");
-    }
-
-    function changeYear(dir) {
-        currentCalendarYear += dir;
-        document.getElementById("ma_cal_year").textContent = currentCalendarYear;
-        loadYearAttendance();
-    }
-
+    function closeCalendarModal() { document.getElementById("ma_cal_modal").classList.remove("show"); }
+    function changeYear(dir) { currentCalendarYear += dir; document.getElementById("ma_cal_year").textContent = currentCalendarYear; loadYearAttendance(); }
     function loadYearAttendance() {
-        var employee = employeeSel.value;
-        var company = employeeCompanyMap[employee];
+        var employee = employeeSel.value, company = employeeCompanyMap[employee];
         if (!employee) return;
-
         var cacheKey = employee + "|" + currentCalendarYear;
         if (calendarCache[cacheKey]) {
             yearHolidayData = calendarCache[cacheKey].holidays;
             yearAttendanceData = calendarCache[cacheKey].attendance;
-            renderMonthsGrid();
-            return;
+            renderMonthsGrid(); return;
         }
-
-        var startDate = currentCalendarYear + "-01-01";
-        var endDate = currentCalendarYear + "-12-31";
-
+        var startDate = currentCalendarYear + "-01-01", endDate = currentCalendarYear + "-12-31";
         frappe.call({
             method: "saral_hr.saral_hr.page.mark_attendance.mark_attendance.get_holidays_between_dates",
-            args: { company: company, start_date: startDate, end_date: endDate },
+            args: { company:company, start_date:startDate, end_date:endDate },
             callback: function (holidayRes) {
                 var holidays = {};
-                (holidayRes.message || []).forEach(function (h) {
-                    var n = normalizeDateKey(h);
-                    if (n) holidays[n] = true;
-                });
+                (holidayRes.message || []).forEach(function (h) { var n=normalizeDateKey(h); if(n) holidays[n]=true; });
                 frappe.call({
                     method: "saral_hr.saral_hr.page.mark_attendance.mark_attendance.get_attendance_between_dates",
-                    args: { employee: employee, start_date: startDate, end_date: endDate },
+                    args: { employee:employee, start_date:startDate, end_date:endDate },
                     callback: function (res) {
                         var attendance = {};
                         Object.entries(res.message || {}).forEach(function (entry) {
                             var n = normalizeDateKey(entry[0]);
-                            if (n) attendance[n] = entry[1];
+                            if (n) { var val=entry[1]; attendance[n]=(typeof val==="object"&&val.mode==="half")?"Half Day":val; }
                         });
-                        calendarCache[cacheKey] = { holidays: holidays, attendance: attendance };
-                        yearHolidayData = holidays;
-                        yearAttendanceData = attendance;
+                        calendarCache[cacheKey] = { holidays:holidays, attendance:attendance };
+                        yearHolidayData=holidays; yearAttendanceData=attendance;
                         renderMonthsGrid();
                     }
                 });
             }
         });
     }
-
     function invalidateCalendarCache() {
         var employee = employeeSel.value;
         var year = parseInt(yearSel.value) || new Date().getFullYear();
         delete calendarCache[employee + "|" + year];
     }
-
     function renderMonthsGrid() {
-        var employee = employeeSel.value;
-        var weeklyOffDays = employeeWeeklyOffMap[employee] || [];
+        var employee = employeeSel.value, weeklyOffDays = employeeWeeklyOffMap[employee] || [];
         var monthsGrid = document.getElementById("ma_months_grid");
-        var monthNames = ["January", "February", "March", "April", "May", "June",
-            "July", "August", "September", "October", "November", "December"];
-        var dayNames = ["S", "M", "T", "W", "T", "F", "S"];
+        var monthNames = ["January","February","March","April","May","June","July","August","September","October","November","December"];
+        var dayNames   = ["S","M","T","W","T","F","S"];
         monthsGrid.innerHTML = "";
-
         monthNames.forEach(function (monthName, monthIndex) {
             var card = document.createElement("div");
             card.className = "ma-month-card";
-            card.onclick = function () { selectMonth(monthIndex); };
-
-            var firstDay = new Date(currentCalendarYear, monthIndex, 1);
-            var lastDay = new Date(currentCalendarYear, monthIndex + 1, 0);
-            var startDay = firstDay.getDay();
-            var daysInMonth = lastDay.getDate();
-
-            var html = '<div class="ma-month-name">' + monthName + '</div><div class="ma-mini-cal">';
-            dayNames.forEach(function (d) { html += '<div class="ma-mini-hdr">' + d + '</div>'; });
-            for (var i = 0; i < startDay; i++) html += '<div class="ma-mini-day empty"></div>';
-
-            var today = new Date();
-            for (var day = 1; day <= daysInMonth; day++) {
-                var date = new Date(currentCalendarYear, monthIndex, day);
-                var dateKey = normalizeDateKey(date);
-                var isToday = date.toDateString() === today.toDateString();
-                var dayName = date.toLocaleDateString("en-US", { weekday: "long" }).toLowerCase();
-                var isDefaultWeeklyOff = weeklyOffDays.includes(dayName);
-                var isHoliday = yearHolidayData[dateKey] === true;
-                var status = yearAttendanceData[dateKey];
-
-                var cls = "ma-mini-day";
-                if (isToday) cls += " today";
-                if (isHoliday || status === "Holiday") cls += " holiday";
-                else if (status === "Present" || status === "Regular") cls += " present";
-                else if (status === "On Tour") cls += " on-tour";
-                // CHANGED: added Earned Comp Off styling in calendar
-                else if (status === "Earned Comp Off") cls += " eco";
-                else if (status === "Absent") cls += " absent";
-                else if (status === "Half Day") cls += " halfday";
-                else if (status === "LWP") cls += " lwp";
-                else if (status === "Earned Leave") cls += " el";
-                else if (status === "Casual Leave") cls += " cl";
-                else if (status === "Comp Off") cls += " coff";
-                else if (status === "Weekly Off" || isDefaultWeeklyOff) cls += " weekend";
-
-                html += '<div class="' + cls + '">' + day + '</div>';
+            card.onclick   = function () { selectMonth(monthIndex); };
+            var firstDay=new Date(currentCalendarYear,monthIndex,1), lastDay=new Date(currentCalendarYear,monthIndex+1,0);
+            var startDay=firstDay.getDay(), daysInMonth=lastDay.getDate();
+            var html = '<div class="ma-month-name">'+monthName+'</div><div class="ma-mini-cal">';
+            dayNames.forEach(function(d){ html+='<div class="ma-mini-hdr">'+d+'</div>'; });
+            for(var i=0;i<startDay;i++) html+='<div class="ma-mini-day empty"></div>';
+            var today=new Date();
+            for(var day=1;day<=daysInMonth;day++){
+                var date=new Date(currentCalendarYear,monthIndex,day), dateKey=normalizeDateKey(date);
+                var isToday=date.toDateString()===today.toDateString();
+                var dn=date.toLocaleDateString("en-US",{weekday:"long"}).toLowerCase();
+                var isDefaultWeeklyOff=weeklyOffDays.includes(dn), isHoliday=yearHolidayData[dateKey]===true;
+                var status=yearAttendanceData[dateKey];
+                var cls="ma-mini-day";
+                if(isToday)                                   cls+=" today";
+                else if(isHoliday||status==="Holiday")        cls+=" holiday";
+                else if(status==="Present"||status==="Regular") cls+=" present";
+                else if(status==="On Tour")                   cls+=" on-tour";
+                else if(status==="Earned Comp Off")           cls+=" eco";
+                else if(status==="Absent")                    cls+=" absent";
+                else if(status==="Half Day")                  cls+=" halfday";
+                else if(status==="LWP")                       cls+=" lwp";
+                else if(status==="Earned Leave")              cls+=" el";
+                else if(status==="Casual Leave")              cls+=" cl";
+                else if(status==="Comp Off")                  cls+=" coff";
+                else if(status==="Weekly Off"||isDefaultWeeklyOff) cls+=" weekend";
+                html+='<div class="'+cls+'">'+day+'</div>';
             }
-            html += '</div>';
-            card.innerHTML = html;
-            monthsGrid.appendChild(card);
+            html+='</div>';
+            card.innerHTML=html; monthsGrid.appendChild(card);
         });
     }
-
     function selectMonth(monthIndex) {
-        yearSel.value = currentCalendarYear;
-        monthSel.value = monthIndex;
-        monthSel.dispatchEvent(new Event("change"));
-        closeCalendarModal();
+        yearSel.value=currentCalendarYear; monthSel.value=monthIndex;
+        monthSel.dispatchEvent(new Event("change")); closeCalendarModal();
     }
 
-    document.getElementById("ma_get_info").addEventListener("click", openCalendarModal);
+    document.getElementById("ma_get_info").addEventListener("click",  openCalendarModal);
     document.getElementById("ma_cal_close").addEventListener("click", closeCalendarModal);
     document.getElementById("ma_year_prev").addEventListener("click", function () { changeYear(-1); });
     document.getElementById("ma_year_next").addEventListener("click", function () { changeYear(1); });
-    document.getElementById("ma_cal_modal").addEventListener("click", function (e) {
-        if (e.target === this) closeCalendarModal();
-    });
+    document.getElementById("ma_cal_modal").addEventListener("click", function (e) { if(e.target===this) closeCalendarModal(); });
 
     document.addEventListener("keydown", function (e) {
         if (e.key === "Escape") closeCalendarModal();
-        if ((e.ctrlKey || e.metaKey) && e.key === "s") {
-            e.preventDefault();
-            doSave();
-        }
+        if ((e.ctrlKey || e.metaKey) && e.key === "s") { e.preventDefault(); doSave(); }
     });
 
     var _origGenerateTable = generateTable;
-    generateTable = function () {
-        invalidateCalendarCache();
-        _origGenerateTable();
-    };
+    generateTable = function () { invalidateCalendarCache(); _origGenerateTable(); };
 }
 
-// ── Audio injection ────────────────────────────────────────────────────────
+// ════════════════════════════════════════════════════════════════════════════
+//  AUDIO
+// ════════════════════════════════════════════════════════════════════════════
 function inject_ma_audio() {
     if (document.getElementById("ma-sound-click")) return;
-    ["click", "submit", "cancel"].forEach(function (name) {
+    ["click","submit","cancel"].forEach(function (name) {
         var audio = document.createElement("audio");
-        audio.id = "ma-sound-" + name;
-        audio.src = "/assets/frappe/sounds/" + name + ".mp3";
-        audio.preload = "auto";
-        audio.style.display = "none";
-        document.body.appendChild(audio);
+        audio.id = "ma-sound-"+name; audio.src="/assets/frappe/sounds/"+name+".mp3";
+        audio.preload="auto"; audio.style.display="none"; document.body.appendChild(audio);
     });
 }
 
-// ── Style injection ────────────────────────────────────────────────────────
+// ════════════════════════════════════════════════════════════════════════════
+//  STYLES
+// ════════════════════════════════════════════════════════════════════════════
 function inject_ma_styles() {
     if (document.getElementById("ma-styles")) return;
     var style = document.createElement("style");
     style.id = "ma-styles";
     style.innerHTML = `
-        .ma-wrap { padding: 0 4px; }
 
+        /* ══════════════════════════════════════════════════════
+           CSS VARIABLES
+           ══════════════════════════════════════════════════════ */
+        :root {
+            --ma-sticky-bar-h: 120px;   /* updated dynamically by JS */
+            --ma-thead-row1-h: 52px;
+        }
+
+        /* ── Layout ── */
+        .ma-wrap {
+            padding: 0 4px;
+            display: flex;
+            flex-direction: column;
+            /* Fill the main section completely */
+            height: 100%;
+        }
+
+        /* ══════════════════════════════════════════════════════
+           STICKY TOP CONTROLS BAR
+           Stays fixed at top; does NOT scroll with the table.
+           ══════════════════════════════════════════════════════ */
         .ma-sticky {
-            position: sticky; top: 0;
+            flex-shrink: 0;          /* never shrink */
             background: var(--card-bg, #fff);
-            z-index: 100;
             padding-bottom: 12px;
             border-bottom: 1px solid var(--border-color, #e5e7eb);
-            margin-bottom: 12px;
+            margin-bottom: 0;
+            z-index: 100;
         }
 
-        .ma-header-actions { display: flex; align-items: center; gap: 10px; margin-left: 20px; }
-        .ma-link {
-            font-size: 12px; color: #2d6be4; cursor: pointer;
-            text-decoration: underline; text-underline-offset: 2px;
-            background: none; border: none; padding: 0;
-            font-weight: 500; transition: color 0.2s; white-space: nowrap;
+        .ma-header-actions { display:flex; align-items:center; gap:10px; margin-left:20px; }
+        .ma-link { font-size:12px; color:var(--text-on-light-blue); cursor:pointer; text-decoration:underline; text-underline-offset:2px; background:none; border:none; padding:0; font-weight:500; transition:color 0.2s; white-space:nowrap; }
+        .ma-link:hover { color:var(--blue-600); }
+        .ma-link-sep { color:var(--text-muted); font-size:12px; }
+
+        /* Save button */
+        .ma-btn { background:var(--control-bg,#f4f5f6); color:var(--text-color); border:1px solid var(--border-color,#d1d8dd); border-radius:5px; padding:6px 14px; font-weight:500; cursor:pointer; transition:background 0.15s; font-size:13px; white-space:nowrap; user-select:none; }
+        .ma-btn-primary { background:var(--primary) !important; color:#fff !important; border-color:var(--primary) !important; }
+        .ma-btn-primary:hover { opacity:0.88; }
+        .ma-btn-primary:focus,
+        .ma-btn-primary:active { outline:none; background:var(--primary) !important; color:#fff !important; border-color:var(--primary) !important; opacity:1; box-shadow:none; }
+        .ma-btn:hover:not(.ma-btn-primary) { background:var(--control-bg-on-gray,#eee); }
+        .ma-btn:active:not(.ma-btn-primary) { transform:scale(0.98); }
+
+        /* ── Top controls ── */
+        .ma-top-wrap { display:flex; gap:14px; align-items:stretch; }
+        .ma-left-block { flex:1; min-width:0; display:flex; flex-direction:column; gap:10px; }
+        .ma-row1 { display:flex; gap:14px; align-items:flex-end; flex:1; }
+        .ma-r1-employee { flex:2; min-width:0; position:relative; }
+        .ma-r1-company { flex:2; min-width:0; position:relative; }
+        .ma-r1-weeklyoff { flex:1; min-width:120px; }
+        .ma-row2 { display:flex; gap:14px; align-items:flex-end; }
+        .ma-r2-year { flex:0 0 110px; }
+        .ma-r2-month { flex:0 0 150px; }
+        .ma-r2-buttons { flex:0 0 auto; }
+        .ma-r1-leave { flex:0 0 auto; display:flex; align-items:stretch; }
+        .ma-wrap .ma-label, label.ma-label { display:block !important; font-size:11px !important; font-weight:500 !important; color:var(--text-muted) !important; margin-bottom:4px !important; text-transform:uppercase !important; letter-spacing:0.04em !important; line-height:1.4 !important; }
+        .ma-input { width:100%; padding:0 10px; height:32px; line-height:32px; border:1px solid var(--border-color,#d1d8dd); border-radius:4px; font-size:13px; background:var(--card-bg,#fff); color:var(--text-color); box-sizing:border-box; }
+        .ma-input:focus { outline:none; border-color:var(--primary); box-shadow:0 0 0 2px rgba(var(--primary-rgb,45,108,223),0.12); }
+        .ma-input[readonly] { background:var(--control-bg,#f8f9fa); color:var(--text-muted); }
+
+        /* ── Search ── */
+        .ma-search-wrapper { position:relative; }
+        .ma-search-input { padding-right:30px; }
+        .ma-clear-btn { position:absolute; right:8px; top:50%; transform:translateY(-50%); width:18px; height:18px; border-radius:50%; background:var(--text-muted); border:none; color:#fff; font-size:11px; cursor:pointer; display:none; align-items:center; justify-content:center; transition:all 0.2s; padding:0; line-height:1; }
+        .ma-clear-btn::before { content:'\\2715'; }
+        .ma-clear-btn.show { display:flex !important; }
+        .ma-clear-btn:hover { background:var(--text-color); }
+        .ma-search-dropdown { display:none; position:absolute; top:100%; left:0; right:0; background:var(--card-bg,#fff); border:1px solid var(--border-color,#d1d8dd); border-top:none; border-radius:0 0 4px 4px; max-height:280px; overflow-y:auto; z-index:1000; box-shadow:0 4px 12px rgba(0,0,0,0.08); }
+        .ma-search-dropdown.show { display:block; }
+        .ma-result-item { padding:8px 14px; cursor:pointer; border-bottom:1px solid var(--border-color,#f0f0f0); transition:background 0.1s; }
+        .ma-result-item:last-child { border-bottom:none; }
+        .ma-result-item:hover, .ma-result-item.selected { background:var(--control-bg,#f4f5f6); }
+        .ma-result-name { font-size:13px; font-weight:500; color:var(--text-color); }
+        .ma-result-id { font-size:11px; color:var(--text-muted); margin-top:1px; }
+        .ma-highlight { font-weight:700; color:var(--text-color); }
+        .ma-no-results { padding:12px 14px; font-size:13px; color:var(--text-muted); text-align:center; }
+        .ma-bulk-btns { display:flex; align-items:center; gap:6px; flex-wrap:wrap; }
+
+        /* ══════════════════════════════════════════════════════
+           TABLE SCROLL CONTAINER
+           KEY FIX: This div has a calculated fixed height so it
+           scrolls independently from the page. The sticky bar
+           above it never scrolls away.
+           ══════════════════════════════════════════════════════ */
+        .ma-table-scroll {
+            flex: 1 1 auto;
+            overflow-x: auto;
+            overflow-y: auto;
+            /* Height is set by JS via updateScrollHeight().
+               This fallback calc is a safety net. */
+            min-height: 200px;
+            border-top: 1px solid var(--border-color, #e5e7eb);
+            /* Needed so sticky thead works inside this scroll container */
+            position: relative;
         }
-        .ma-link:hover { color: #1a4fb5; }
-        .ma-link-sep { color: var(--text-muted); font-size: 12px; }
 
-        .ma-btn           { background: #e6e6e6; color: #222; border: none; border-radius: 4px; padding: 6px 14px; font-weight: 500; cursor: pointer; transition: all 0.2s; font-size: 13px; white-space: nowrap; }
-        .ma-btn-primary   { background: #2d2d2d; color: #fff; }
-        .ma-btn:hover         { background: #d4d4d4; }
-        .ma-btn-primary:hover { background: #1a1a1a; }
-        .ma-btn:active        { transform: scale(0.98); }
+        .ma-table { width:100%; border-collapse:collapse; font-size:12px; }
 
-        .ma-top-wrap     { display: flex; gap: 14px; align-items: stretch; }
-        .ma-left-block   { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 10px; }
-        .ma-row1         { display: flex; gap: 14px; align-items: flex-end; flex: 1; }
-        .ma-r1-employee  { flex: 2; min-width: 0; position: relative; }
-        .ma-r1-company   { flex: 2; min-width: 0; position: relative; }
-        .ma-r1-weeklyoff { flex: 1; min-width: 120px; }
-        .ma-row2         { display: flex; gap: 14px; align-items: flex-end; }
-        .ma-r2-year      { flex: 0 0 110px; }
-        .ma-r2-month     { flex: 0 0 150px; }
-        .ma-r2-buttons   { flex: 0 0 auto; }
-        .ma-r1-leave     { flex: 0 0 auto; display: flex; align-items: stretch; }
+        /* All body cells: transparent background */
+        .ma-table td { border:1px solid var(--border-color,#d1d8dd); padding:5px 7px; background:transparent; }
+        /* Subtle alternating row tint */
+        .ma-table tbody tr:nth-child(even) td { background:rgba(0,0,0,0.013); }
 
-        .ma-wrap .ma-label, label.ma-label {
-            display: block !important; font-size: 11px !important; font-weight: 500 !important;
-            color: var(--text-muted) !important; margin-bottom: 4px !important;
-            text-transform: uppercase !important; letter-spacing: 0.04em !important; line-height: 1.4 !important;
-        }
-        .ma-input {
-            width: 100%; padding: 0 10px; height: 32px; line-height: 32px;
-            border: 1px solid var(--border-color, #d1d8dd); border-radius: 4px; font-size: 13px;
-            background: var(--card-bg, #fff); color: var(--text-color); box-sizing: border-box;
-        }
-        .ma-input:focus     { outline: none; border-color: #666; box-shadow: 0 0 0 2px rgba(45,45,45,0.1); }
-        .ma-input[readonly] { background: var(--control-bg, #f8f9fa); color: var(--text-muted); }
+        /* ── Spinner ── */
+        .ma-table-loading { display:flex; flex-direction:column; align-items:center; justify-content:center; padding:48px 0; gap:14px; }
+        .ma-spinner { width:32px; height:32px; border:3px solid var(--border-color,#e5e7eb); border-top-color:var(--primary,#2d2d2d); border-radius:50%; animation:ma-spin 0.7s linear infinite; }
+        @keyframes ma-spin { to { transform:rotate(360deg); } }
+        .ma-loading-text { font-size:13px; color:var(--text-muted); }
 
-        .ma-search-wrapper  { position: relative; }
-        .ma-search-input    { padding-right: 30px; }
-        .ma-clear-btn {
-            position: absolute; right: 8px; top: 50%; transform: translateY(-50%);
-            width: 18px; height: 18px; border-radius: 50%; background: #999; border: none; color: #fff;
-            font-size: 11px; cursor: pointer; display: none; align-items: center; justify-content: center;
-            transition: all 0.2s; padding: 0; line-height: 1;
-        }
-        .ma-clear-btn::before { content: '\\2715'; }
-        .ma-clear-btn.show    { display: flex !important; }
-        .ma-clear-btn:hover   { background: #666; }
-
-        .ma-search-dropdown {
-            display: none; position: absolute; top: 100%; left: 0; right: 0;
-            background: var(--card-bg, #fff); border: 1px solid var(--border-color, #d1d8dd);
-            border-top: none; border-radius: 0 0 4px 4px; max-height: 280px; overflow-y: auto;
-            z-index: 1000; box-shadow: 0 4px 8px rgba(0,0,0,0.1);
-        }
-        .ma-search-dropdown.show { display: block; }
-        .ma-result-item { padding: 10px 14px; cursor: pointer; border-bottom: 1px solid var(--border-color, #f0f0f0); transition: background 0.15s; }
-        .ma-result-item:last-child { border-bottom: none; }
-        .ma-result-item:hover,
-        .ma-result-item.selected  { background: var(--control-bg, #f4f5f6); }
-        .ma-result-name { font-size: 13px; font-weight: 500; color: var(--text-color); }
-        .ma-result-id   { font-size: 11px; color: var(--text-muted); margin-top: 1px; }
-        .ma-highlight   { font-weight: 700; color: #2d2d2d; }
-        .ma-no-results  { padding: 12px 14px; font-size: 13px; color: var(--text-muted); text-align: center; }
-
-        .ma-bulk-btns { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
-        .ma-th-small  { display: block; font-size: 10px; font-weight: 400; color: var(--text-muted); margin-top: 2px; white-space: nowrap; }
-
-        .ma-table-scroll { max-height: 520px; overflow-y: auto; overflow-x: auto; position: relative; }
-        .ma-table        { width: 100%; border-collapse: collapse; }
-        .ma-table td {
+        /* ══════════════════════════════════════════════════════
+           STICKY TABLE HEADER
+           Sticks to top of .ma-table-scroll (the scroll container),
+           NOT to the page. This works because .ma-table-scroll has
+           overflow:auto, which creates a new scroll context.
+           Row 1: top:0  Row 2: top: var(--ma-thead-row1-h)
+           ══════════════════════════════════════════════════════ */
+        .ma-table thead tr.ma-thead-row th {
+            position: sticky;
+            top: 0;
+            z-index: 50;
+            background: var(--control-bg, #f7f7f7);
             border: 1px solid var(--border-color, #d1d8dd);
-            padding: 6px 10px; font-size: 13px;
-            background: var(--card-bg, #fff);
+            box-shadow: 0 1px 0 var(--border-color, #d1d8dd);
+        }
+        .ma-table thead tr.ma-thead-row2 th {
+            position: sticky;
+            top: var(--ma-thead-row1-h, 52px);
+            z-index: 49;
+            background: var(--control-bg, #f7f7f7);
+            border: 1px solid var(--border-color, #d1d8dd);
+            box-shadow: 0 1px 0 var(--border-color, #d1d8dd);
         }
 
-        .ma-table-loading {
+        /* ── th inner layout ── */
+        .ma-table thead th { padding:0; text-align:center; vertical-align:middle; }
+        .ma-th-inner {
             display: flex; flex-direction: column;
-            align-items: center; justify-content: center;
-            padding: 48px 0; gap: 14px;
+            align-items: center; justify-content: space-between;
+            height: var(--ma-thead-row1-h, 52px);
+            padding: 7px 6px 5px; box-sizing: border-box;
         }
-        .ma-spinner {
-            width: 36px; height: 36px;
-            border: 3px solid var(--border-color, #e5e7eb);
-            border-top-color: #2d2d2d;
-            border-radius: 50%;
-            animation: ma-spin 0.7s linear infinite;
+        .ma-th-left { align-items:flex-start; padding-left:10px; }
+        .ma-th-sub  { height:28px; justify-content:center; padding:4px 6px; }
+
+        /* Half Day group header */
+        .ma-th-hd-group { min-width:200px; border-bottom:none !important; }
+        .ma-th-hd-top-wrap {
+            display:flex; flex-direction:column;
+            align-items:center; justify-content:space-between;
+            height:var(--ma-thead-row1-h, 52px);
+            padding:7px 6px 5px; box-sizing:border-box;
         }
-        @keyframes ma-spin { to { transform: rotate(360deg); } }
-        .ma-loading-text { font-size: 13px; color: var(--text-muted); }
 
-        .ma-present-group-th  { background: #f0fdf4 !important; color: #166534 !important; padding: 0 !important; vertical-align: top !important; }
-        .ma-present-group-label { font-size: 11px; font-weight: 600; color: #166534; text-align: center; padding: 6px 10px 2px; border-bottom: 1px solid var(--border-color, #d1d8dd); }
-        .ma-present-sub-row   { display: flex; width: 100%; }
-        .ma-present-sub-cell  { flex: 1; text-align: center; font-size: 11px; font-weight: 600; color: #166534; padding: 5px 4px; border-right: 1px solid var(--border-color, #d1d8dd); }
-        .ma-present-sub-cell:last-child { border-right: none; }
-        .ma-psubtype-cell     { background: #dcfce7 !important; }
-        .ma-psubtype-cell input:disabled { opacity: 0.25; cursor: not-allowed; }
-        .ma-group-total { font-size: 11px; font-weight: 400; color: #166534; margin-left: 4px; }
+        .ma-th-label { font-size:11px; font-weight:600; color:var(--text-muted); line-height:1.3; text-align:center; white-space:normal; }
+        .ma-col-count { font-size:11px; font-weight:700; color:var(--text-color); line-height:1; }
 
-        /* CHANGED: Earned Comp Off cell gets a distinct teal tint inside the green present group */
-        .ma-eco-cell { background: #ccfbf1 !important; }
-        .ma-eco-cell input:disabled { opacity: 0.25; cursor: not-allowed; }
+        /* Column widths */
+        .ma-th-date     { width:148px; min-width:148px; }
+        .ma-th-day      { width:100px; min-width:100px; }
+        .ma-th-override { width:80px;  min-width:80px; }
+        .ma-th-status   { width:66px;  min-width:66px; }
+        .ma-th-hd1, .ma-th-hd2 { width:100px; min-width:100px; border-top:none !important; }
 
-        .ma-absent-group-th  { background: #fef3f2 !important; color: #c0392b !important; padding: 0 !important; vertical-align: top !important; }
-        .ma-absent-group-label { font-size: 11px; font-weight: 600; color: #c0392b; text-align: center; padding: 6px 10px 4px; border-bottom: 1px solid var(--border-color, #d1d8dd); }
-        .ma-absent-sub-row   { display: flex; width: 100%; }
-        .ma-absent-sub-cell  { flex: 1; text-align: center; font-size: 11px; font-weight: 600; color: #c0392b; padding: 5px 4px; border-right: 1px solid var(--border-color, #d1d8dd); }
-        .ma-absent-sub-cell:last-child { border-right: none; }
-        .ma-subtype-cell              { background: #fef9f9 !important; }
-        .ma-subtype-cell input:disabled { opacity: 0.25; cursor: not-allowed; }
-
-        .ma-wo-cell      { background: #eff6ff !important; }
-        .ma-holiday-cell { background: #fff7ed !important; }
-        .ma-no-toggle-cell { color: var(--text-muted); font-size: 16px; vertical-align: middle; }
-
-        .ma-holiday-row    td { background: #fff3e0 !important; color: #e65100 !important; font-weight: 500; }
-        .ma-weekly-off-row td { background: var(--control-bg, #f5f5f5) !important; color: var(--text-muted) !important; }
-        .ma-override-row   td:first-child { border-left: 3px solid #f59e0b !important; }
-        .ma-future-row        { opacity: 0.5; }
-        .ma-future-row     td { background: var(--control-bg, #f9f9f9) !important; color: var(--text-muted) !important; }
-
-        .text-center { text-align: center; }
-
-        .ma-table thead tr th {
-            position: sticky; top: 0; z-index: 50;
-            background: var(--control-bg, #f7f7f7); border: 1px solid var(--border-color, #d1d8dd);
-            padding: 8px 10px; font-size: 12px; font-weight: 600; vertical-align: middle;
-            box-shadow: 0 2px 2px -1px rgba(0,0,0,0.08);
+        /* ══════════════════════════════════════════════════════
+           ROW STATES
+           ══════════════════════════════════════════════════════ */
+        .ma-date-wo { color:#b8860b !important; font-weight:600 !important; }
+        .ma-dot-wo-hint { border-color:#d4a017 !important; background:rgba(212,160,23,0.12) !important; }
+        .ma-date-holiday { color:#c05800 !important; font-weight:600 !important; }
+        .ma-dot-holiday-hint { border-color:#e09a2a !important; background:rgba(224,154,42,0.12) !important; }
+        .ma-row-halfday td { background:rgba(59,130,246,0.035) !important; }
+        .ma-table tbody tr.ma-future-row td { opacity:0.4; }
+        .ma-row-dirty td { background:rgba(245,158,11,0.07) !important; }
+        .ma-row-dirty:nth-child(even) td { background:rgba(245,158,11,0.1) !important; }
+        .ma-row-override td { background:rgba(139,92,246,0.04) !important; }
+        .ma-status-cells-disabled .ma-status-cell {
+            opacity: 0.2 !important;
+            pointer-events: none !important;
+            cursor: default !important;
         }
-        .ma-col-override { width: 90px; }
-        .ma-col-wo       { background: #e8f2ff !important; color: #1e40af !important; }
-        .ma-col-holiday  { background: #fff1e6 !important; color: #9a3412 !important; }
 
-        .ma-toggle        { position: relative; display: inline-block; width: 50px; height: 26px; margin: 0; }
-        .ma-toggle input  { opacity: 0; width: 0; height: 0; }
-        .ma-toggle-slider {
-            position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0;
-            background: #ccc; border-radius: 26px; border: 1px solid #bbb; transition: 0.3s;
-        }
-        .ma-toggle-slider:before {
-            position: absolute; content: ""; height: 20px; width: 20px;
-            left: 2px; bottom: 2px; background: #fff; border-radius: 50%; transition: 0.3s;
-        }
-        .ma-toggle input:checked + .ma-toggle-slider        { background: #2d2d2d; border-color: #2d2d2d; }
-        .ma-toggle input:checked + .ma-toggle-slider:before { transform: translateX(24px); }
-        .ma-toggle input:not(:checked) + .ma-toggle-slider  { background: #d1fae5; border-color: #059669; }
+        /* ── Status cells & dots ── */
+        .ma-status-cell { text-align:center; padding:4px 3px !important; vertical-align:middle; cursor:pointer; }
+        .ma-status-cell:not(.ma-hd-cell):hover { background:rgba(0,0,0,0.04) !important; }
+        .ma-col-dot { width:14px; height:14px; border-radius:50%; border:2px solid #c0c6cc; margin:0 auto; transition:all 0.12s; background:transparent; box-sizing:border-box; }
+        .ma-col-dot.active        { border-color:transparent; }
+        .ma-col-dot.present-dot   { background:#28a745; border-color:#28a745; }
+        .ma-col-dot.absent-dot    { background:#e74c3c; border-color:#e74c3c; }
+        .ma-col-dot.wo-dot        { background:#b8860b; border-color:#b8860b; }
+        .ma-col-dot.holiday-dot   { background:#e09a2a; border-color:#e09a2a; }
+        .ma-col-dot.ma-dot-dirty.active { box-shadow: 0 0 0 2px var(--card-bg,#fff), 0 0 0 4px #f59e0b; }
+        .ma-cell-focused { outline:2px solid var(--primary,#2d6adf) !important; outline-offset:-2px; background:rgba(45,106,223,0.06) !important; }
 
-        .ma-cal-modal      { display: none; position: fixed; z-index: 2000; left: 0; top: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.6); backdrop-filter: blur(4px); }
-        .ma-cal-modal.show { display: flex; align-items: center; justify-content: center; }
-        .ma-cal-content    { background: #fff; border-radius: 12px; width: 95%; max-width: 900px; max-height: 85vh; overflow: hidden; box-shadow: 0 20px 60px rgba(0,0,0,0.3); position: relative; }
-        .ma-cal-close      { position: absolute; top: 12px; right: 12px; z-index: 10; background: #e5e7eb; border: none; color: #374151; width: 28px; height: 28px; border-radius: 50%; font-size: 14px; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: background 0.2s; }
-        .ma-cal-close:hover { background: #d1d5db; color: #111; }
-        .ma-cal-body       { padding: 20px 16px; overflow-y: auto; max-height: 85vh; }
+        /* ── Cell typography ── */
+        .ma-date-cell { font-size:12px; font-weight:500; padding:5px 10px !important; white-space:nowrap; min-width:140px; color:var(--text-color); }
+        .ma-day-cell  { font-size:12px; color:var(--text-muted); padding:5px 8px !important; white-space:nowrap; min-width:100px; }
 
-        .ma-year-selector { display: flex; align-items: center; justify-content: center; gap: 16px; margin-bottom: 14px; }
-        .ma-year-center   { display: flex; flex-direction: column; align-items: center; min-width: 90px; }
-        .ma-year-num      { font-size: 22px; font-weight: 700; color: #111; line-height: 1.1; }
-        .ma-year-sub      { font-size: 10px; color: #9ca3af; font-weight: 400; letter-spacing: 0.03em; margin-top: 1px; }
-        .ma-year-nav {
-            background: var(--control-bg, #f3f4f6); border: 1px solid var(--border-color, #e5e7eb);
-            width: 28px; height: 28px; border-radius: 50%; font-size: 18px;
-            cursor: pointer; display: flex; align-items: center; justify-content: center;
-            color: #374151; transition: all 0.2s; flex-shrink: 0;
-        }
-        .ma-year-nav:hover { background: #2d2d2d; color: #fff; border-color: #2d2d2d; }
+        /* ── Half-day cells ── */
+        .ma-hd-cell { width:100px; min-width:90px; cursor:pointer; }
+        .ma-hd-badge { display:inline-flex; align-items:center; justify-content:center; min-width:36px; padding:2px 6px; border-radius:3px; font-size:10px; font-weight:600; border:1px solid var(--border-color,#d1d5db); background:var(--control-bg,#f3f4f6); color:var(--text-muted); vertical-align:middle; }
+        .ma-hd-badge-empty { border-style:dashed; color:var(--text-muted); background:transparent; }
+        .ma-hd-badge.ma-badge-present { background:#eafaf1; color:#1a7a3c; border-color:#a3d9b1; }
+        .ma-hd-badge.ma-badge-absent  { background:#fdf3f2; color:#c0392b; border-color:#f5b7b1; }
+        .ma-hd-caret { font-size:9px; color:var(--text-muted); margin-left:2px; vertical-align:middle; }
+        .ma-hd-cell:hover { background:rgba(0,0,0,0.04) !important; }
 
-        .ma-cal-legend  { display: flex; gap: 14px; justify-content: center; margin-bottom: 16px; flex-wrap: wrap; font-size: 12px; }
-        .ma-legend-item { display: flex; align-items: center; gap: 5px; color: var(--text-muted); }
-        .ma-legend-dot  { width: 13px; height: 13px; border-radius: 3px; display: inline-block; box-sizing: border-box; }
-        .ma-legend-dot.present  { background: #d1fae5; border: 2px solid #059669; }
-        .ma-legend-dot.on-tour  { background: #d1fae5; border: 2px solid #0d9488; border-style: dashed; }
-        /* CHANGED: Earned Comp Off legend dot - teal color to distinguish from regular present */
-        .ma-legend-dot.eco      { background: #ccfbf1; border: 2px solid #0d9488; }
-        .ma-legend-dot.absent   { background: #fee2e2; border: 2px solid #dc2626; }
-        .ma-legend-dot.halfday  { background: #fef9c3; border: 2px solid #ca8a04; }
-        .ma-legend-dot.lwp      { background: #f3e8ff; border: 2px solid #9333ea; }
-        .ma-legend-dot.el       { background: #dbeafe; border: 2px solid #2563eb; }
-        .ma-legend-dot.cl       { background: #cffafe; border: 2px solid #0891b2; }
-        .ma-legend-dot.coff     { background: #fdf4ff; border: 2px solid #a855f7; }
-        .ma-legend-dot.holiday  { background: #ffedd5; border: 2px solid #ea580c; }
-        .ma-legend-dot.weekend  { background: #eff6ff; border: 2px solid #93c5fd; }
+        /* ── Half-day dropdown ── */
+        .ma-hd-dropdown { z-index:3000; background:var(--card-bg,#fff); border:1px solid var(--border-color,#d1d8dd); border-radius:6px; box-shadow:0 6px 20px rgba(0,0,0,0.1); overflow:hidden; }
+        .ma-hd-dropdown-inner { padding:4px 0; }
+        .ma-hd-option { padding:7px 14px; font-size:12px; cursor:pointer; color:var(--text-color); transition:background 0.1s; white-space:nowrap; }
+        .ma-hd-option:first-child { color:var(--text-muted); }
+        .ma-hd-option:hover { background:var(--control-bg,#f4f5f6); }
+        .ma-hd-option.active { background:var(--blue-50,#eff6ff); color:var(--primary); font-weight:600; }
 
-        .ma-months-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }
-        .ma-month-card  { background: #fff; border: 2px solid var(--border-color, #e5e7eb); border-radius: 8px; padding: 12px; cursor: pointer; transition: all 0.2s; }
-        .ma-month-card:hover { border-color: #2d2d2d; box-shadow: 0 4px 12px rgba(0,0,0,0.1); transform: translateY(-2px); }
-        .ma-month-name  { font-size: 15px; font-weight: 600; color: #111; margin-bottom: 10px; }
-        .ma-mini-cal    { display: grid; grid-template-columns: repeat(7,1fr); gap: 1px; }
-        .ma-mini-hdr    { font-size: 9px; font-weight: 600; color: #6b7280; text-align: center; padding: 2px; }
-        .ma-mini-day    { font-size: 10px; text-align: center; padding: 3px 1px; color: #374151; border-radius: 2px; }
-        .ma-mini-day.empty   { visibility: hidden; }
-        .ma-mini-day.today   { background: #2d2d2d !important; color: #fff !important; font-weight: 700; border-radius: 3px; }
-        .ma-mini-day.present { background: #d1fae5 !important; color: #065f46 !important; font-weight: 700; border: 2px solid #059669 !important; border-radius: 3px; box-sizing: border-box; }
-        .ma-mini-day.on-tour { background: #ccfbf1 !important; color: #134e4a !important; font-weight: 700; border: 2px dashed #0d9488 !important; border-radius: 3px; box-sizing: border-box; }
-        /* CHANGED: Earned Comp Off calendar day - solid teal border to distinguish from on-tour dashed */
-        .ma-mini-day.eco     { background: #ccfbf1 !important; color: #134e4a !important; font-weight: 700; border: 2px solid #0d9488 !important; border-radius: 3px; box-sizing: border-box; }
-        .ma-mini-day.absent  { background: #fee2e2 !important; color: #991b1b !important; font-weight: 700; border: 2px solid #dc2626 !important; border-radius: 3px; box-sizing: border-box; }
-        .ma-mini-day.halfday { background: #fef9c3 !important; color: #854d0e !important; font-weight: 700; border: 2px solid #ca8a04 !important; border-radius: 3px; box-sizing: border-box; }
-        .ma-mini-day.lwp     { background: #f3e8ff !important; color: #6b21a8 !important; font-weight: 700; border: 2px solid #9333ea !important; border-radius: 3px; box-sizing: border-box; }
-        .ma-mini-day.el      { background: #dbeafe !important; color: #1e40af !important; font-weight: 700; border: 2px solid #2563eb !important; border-radius: 3px; box-sizing: border-box; }
-        .ma-mini-day.cl      { background: #cffafe !important; color: #155e75 !important; font-weight: 700; border: 2px solid #0891b2 !important; border-radius: 3px; box-sizing: border-box; }
-        .ma-mini-day.coff    { background: #fdf4ff !important; color: #701a75 !important; font-weight: 700; border: 2px solid #a855f7 !important; border-radius: 3px; box-sizing: border-box; }
-        .ma-mini-day.holiday { background: #ffedd5 !important; color: #9a3412 !important; font-weight: 700; border: 2px solid #ea580c !important; border-radius: 3px; box-sizing: border-box; }
-        .ma-mini-day.weekend { background: #eff6ff !important; color: #1e3a8a !important; font-weight: 600; border: 2px solid #93c5fd !important; border-radius: 3px; box-sizing: border-box; }
+        /* ── Override toggle ── */
+        .ma-override-cell { text-align:center; vertical-align:middle; width:80px; min-width:80px; }
+        .ma-no-override { color:var(--border-color); font-size:15px; }
+        .ma-toggle { position:relative; display:inline-block; width:38px; height:20px; margin:0; cursor:pointer; }
+        .ma-toggle input { opacity:0; width:0; height:0; }
+        .ma-toggle-slider { position:absolute; top:0; left:0; right:0; bottom:0; background:var(--control-bg-on-gray,#d1d5db); border-radius:20px; border:1px solid var(--border-color); transition:0.2s; }
+        .ma-toggle-slider:before { position:absolute; content:""; height:14px; width:14px; left:2px; bottom:2px; background:#fff; border-radius:50%; transition:0.2s; box-shadow:0 1px 3px rgba(0,0,0,0.2); }
+        .ma-toggle input:checked + .ma-toggle-slider { background:#28a745; border-color:#28a745; }
+        .ma-toggle input:checked + .ma-toggle-slider:before { transform:translateX(18px); }
+        .ma-toggle input:not(:checked) + .ma-toggle-slider { background:#f0ad4e; border-color:#e09a2a; }
+        .ma-toggle-holiday input:not(:checked) + .ma-toggle-slider { background:#e74c3c; border-color:#c0392b; }
 
-        .page-head-content { padding: 8px 17px 0px 0px !important; }
+        /* ── Calendar modal ── */
+        .ma-cal-modal { display:none; position:fixed; z-index:2000; left:0; top:0; width:100%; height:100%; background:rgba(0,0,0,0.5); backdrop-filter:blur(3px); }
+        .ma-cal-modal.show { display:flex; align-items:center; justify-content:center; }
+        .ma-cal-content { background:var(--card-bg,#fff); border-radius:10px; width:95%; max-width:900px; max-height:85vh; overflow:hidden; box-shadow:0 16px 48px rgba(0,0,0,0.2); position:relative; }
+        .ma-cal-close { position:absolute; top:10px; right:10px; z-index:10; background:var(--control-bg,#e5e7eb); border:none; color:var(--text-muted); width:26px; height:26px; border-radius:50%; font-size:13px; cursor:pointer; display:flex; align-items:center; justify-content:center; transition:background 0.15s; }
+        .ma-cal-close:hover { background:var(--border-color); color:var(--text-color); }
+        .ma-cal-body { padding:20px 16px; overflow-y:auto; max-height:85vh; }
+        .ma-year-selector { display:flex; align-items:center; justify-content:center; gap:16px; margin-bottom:14px; }
+        .ma-year-center { display:flex; flex-direction:column; align-items:center; min-width:90px; }
+        .ma-year-num { font-size:22px; font-weight:700; color:var(--text-color); line-height:1.1; }
+        .ma-year-sub { font-size:10px; color:var(--text-muted); font-weight:400; letter-spacing:0.03em; margin-top:1px; }
+        .ma-year-nav { background:var(--control-bg,#f3f4f6); border:1px solid var(--border-color); width:28px; height:28px; border-radius:50%; font-size:18px; cursor:pointer; display:flex; align-items:center; justify-content:center; color:var(--text-muted); transition:all 0.15s; flex-shrink:0; }
+        .ma-year-nav:hover { background:var(--primary); color:#fff; border-color:var(--primary); }
+        .ma-cal-legend { display:flex; gap:12px; justify-content:center; margin-bottom:16px; flex-wrap:wrap; font-size:12px; }
+        .ma-legend-item { display:flex; align-items:center; gap:5px; color:var(--text-muted); }
+        .ma-legend-dot { width:12px; height:12px; border-radius:3px; display:inline-block; box-sizing:border-box; }
+        .ma-legend-dot.present  { background:#28a745; border-radius:50%; }
+        .ma-legend-dot.on-tour  { background:#28a745; border-radius:50%; opacity:0.65; }
+        .ma-legend-dot.eco      { background:#20c997; border-radius:50%; }
+        .ma-legend-dot.absent   { background:#e74c3c; border-radius:50%; }
+        .ma-legend-dot.halfday  { background:#f0ad4e; border-radius:50%; }
+        .ma-legend-dot.lwp      { background:#e74c3c; border-radius:50%; opacity:0.6; }
+        .ma-legend-dot.el       { background:#e74c3c; border-radius:50%; opacity:0.75; }
+        .ma-legend-dot.cl       { background:#e74c3c; border-radius:50%; opacity:0.85; }
+        .ma-legend-dot.coff     { background:#868e96; border-radius:50%; }
+        .ma-legend-dot.holiday  { background:#fff8f0; border:2px solid #e09a2a; }
+        .ma-legend-dot.weekend  { background:var(--control-bg); border:1px solid var(--border-color); }
+        .ma-months-grid { display:grid; grid-template-columns:repeat(4,1fr); gap:12px; }
+        .ma-month-card { background:var(--card-bg,#fff); border:1px solid var(--border-color,#e5e7eb); border-radius:6px; padding:12px; cursor:pointer; transition:all 0.15s; }
+        .ma-month-card:hover { border-color:var(--primary); box-shadow:0 2px 8px rgba(0,0,0,0.08); transform:translateY(-1px); }
+        .ma-month-name { font-size:14px; font-weight:600; color:var(--text-color); margin-bottom:8px; }
+        .ma-mini-cal { display:grid; grid-template-columns:repeat(7,1fr); gap:1px; }
+        .ma-mini-hdr { font-size:9px; font-weight:600; color:var(--text-muted); text-align:center; padding:2px; }
+        .ma-mini-day { font-size:10px; text-align:center; padding:3px 1px; color:var(--text-color); border-radius:2px; }
+        .ma-mini-day.empty   { visibility:hidden; }
+        .ma-mini-day.today   { background:var(--primary,#2d2d2d) !important; color:#fff !important; font-weight:700; border-radius:3px; }
+        .ma-mini-day.present { background:#28a745 !important; color:#fff !important; font-weight:700; border-radius:50%; }
+        .ma-mini-day.on-tour { background:#28a745 !important; color:#fff !important; font-weight:700; border-radius:50%; opacity:0.7; }
+        .ma-mini-day.eco     { background:#20c997 !important; color:#fff !important; font-weight:700; border-radius:50%; }
+        .ma-mini-day.absent  { background:#e74c3c !important; color:#fff !important; font-weight:700; border-radius:50%; }
+        .ma-mini-day.halfday { background:#f0ad4e !important; color:#fff !important; font-weight:700; border-radius:50%; }
+        .ma-mini-day.lwp     { background:#e74c3c !important; color:#fff !important; font-weight:700; border-radius:50%; opacity:0.6; }
+        .ma-mini-day.el      { background:#e74c3c !important; color:#fff !important; font-weight:700; border-radius:50%; opacity:0.75; }
+        .ma-mini-day.cl      { background:#e74c3c !important; color:#fff !important; font-weight:700; border-radius:50%; opacity:0.85; }
+        .ma-mini-day.coff    { background:#868e96 !important; color:#fff !important; font-weight:700; border-radius:50%; }
+        .ma-mini-day.holiday { background:#fff8f0 !important; color:#8a3a00 !important; font-weight:700; border:1px solid #e09a2a !important; border-radius:2px; box-sizing:border-box; }
+        .ma-mini-day.weekend { background:var(--control-bg) !important; color:var(--text-muted) !important; border-radius:2px; }
+        .page-head-content { padding:8px 17px 0px 0px !important; }
 
-        .ma-leave-table { border-collapse: collapse; height: 100%; }
-        .ma-leave-th {
-            background: var(--control-bg, #f7f7f7); border: 1px solid var(--border-color, #d1d8dd);
-            padding: 4px 14px; font-size: 11px; font-weight: 600; text-align: center;
-            color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.03em; white-space: nowrap;
-        }
-        .ma-leave-th.ma-leave-type-hdr {
-            background: transparent; border: 1px solid var(--border-color, #d1d8dd); border-right: none;
-            font-size: 11px; font-weight: 500; color: var(--text-muted); text-transform: uppercase;
-            letter-spacing: 0.04em; text-align: left; padding: 4px 10px; white-space: nowrap;
-        }
-        .ma-leave-row-label {
-            font-size: 11px; font-weight: 500; color: var(--text-muted); text-transform: uppercase;
-            letter-spacing: 0.03em; padding: 4px 10px;
-            border: 1px solid var(--border-color, #d1d8dd); border-right: none;
-            background: var(--control-bg, #f7f7f7); white-space: nowrap;
-        }
-        .ma-leave-val { text-align: center; font-size: 13px; font-weight: 700; color: var(--text-color, #333); border: 1px solid var(--border-color, #d1d8dd); padding: 4px 14px; background: var(--card-bg, #fff); min-width: 52px; }
-        .ma-leave-bal { color: var(--text-muted); font-weight: 500; font-size: 12px; }
-        .ma-leave-eco-hdr { background: #e0f7f4 !important; color: #0d9488 !important; }
-        .ma-leave-eco-val { background: #f0fdfb !important; color: #0d9488 !important; }
+        /* ── Leave balance table ── */
+        .ma-leave-table { border-collapse:collapse; height:100%; }
+        .ma-leave-th { background:var(--control-bg,#f7f7f7); border:1px solid var(--border-color,#d1d8dd); padding:4px 12px; font-size:11px; font-weight:600; text-align:center; color:var(--text-muted); text-transform:uppercase; letter-spacing:0.03em; white-space:nowrap; }
+        .ma-leave-th.ma-leave-type-hdr { background:transparent; border:1px solid var(--border-color); border-right:none; font-size:11px; font-weight:500; color:var(--text-muted); text-align:left; padding:4px 10px; white-space:nowrap; }
+        .ma-leave-row-label { font-size:11px; font-weight:500; color:var(--text-muted); text-transform:uppercase; letter-spacing:0.03em; padding:4px 10px; border:1px solid var(--border-color); border-right:none; background:var(--control-bg,#f7f7f7); white-space:nowrap; }
+        .ma-leave-val { text-align:center; font-size:13px; font-weight:700; color:var(--text-color); border:1px solid var(--border-color); padding:4px 12px; background:var(--card-bg,#fff); min-width:48px; }
+        .ma-leave-bal { color:var(--text-muted); font-weight:500; font-size:12px; }
+        .ma-leave-eco-hdr { background:var(--control-bg) !important; }
     `;
     document.head.appendChild(style);
 }

@@ -179,6 +179,22 @@ frappe.pages["saral-hr-overview"].on_page_load = function (wrapper) {
 		.badge-purple { background: #faf5ff; color: #7c3aed; border: 1px solid #e9d5ff; }
 		.badge-muted  { background: var(--subtle-fg); color: var(--text-muted); border: 1px solid var(--border-color); }
 
+		/* ── Attendance legend bar ── */
+		.sho-att-legend {
+			display: flex; flex-wrap: wrap; align-items: center;
+			padding: 7px 12px; margin: 0 0 10px 0;
+			background: #f4f5f6; border: 1px solid #d1d8dd;
+			border-radius: 6px; font-family: inherit; flex-shrink: 0;
+		}
+		.sho-att-legend-title {
+			font-weight: 600; font-size: 11px; color: #6c7680;
+			margin-right: 12px; white-space: nowrap;
+		}
+		.sho-att-legend-item {
+			display: inline-flex; align-items: center; gap: 4px;
+			margin-right: 12px; margin-bottom: 2px; white-space: nowrap;
+		}
+
 		/* ── MODAL ── */
 		.sho-modal-backdrop {
 			position: fixed; inset: 0; background: rgba(0,0,0,.45);
@@ -194,33 +210,33 @@ frappe.pages["saral-hr-overview"].on_page_load = function (wrapper) {
 			animation: sho-slide-up .18s ease;
 		}
 		.sho-modal.wide {
-			max-width: 88vw; max-height: 72vh;
+			max-width: 88vw; max-height: 82vh;
 		}
 		.sho-modal-body-pad { padding: 0 20px 20px; }
 		/* Sticky first two cols in wide attendance table */
-.sho-att-table { border-collapse: separate; border-spacing: 0; }
-.sho-att-table td:nth-child(1),
-.sho-att-table th:nth-child(1) {
-    position: sticky; left: 0; z-index: 2;
-    background: var(--fg-color, #fff);
-    border-right: 1px solid var(--border-color);
-    min-width: 110px;
-}
-.sho-att-table td:nth-child(2),
-.sho-att-table th:nth-child(2) {
-    position: sticky; left: 110px; z-index: 2;
-    background: var(--fg-color, #fff);
-    border-right: 2px solid var(--border-color);
-    min-width: 140px;
-}
-.sho-att-table thead th:nth-child(1),
-.sho-att-table thead th:nth-child(2) {
-    background: var(--subtle-fg); z-index: 4;
-}
-.sho-att-table tbody tr:hover td:nth-child(1),
-.sho-att-table tbody tr:hover td:nth-child(2) {
-    background: var(--highlight-color);
-}
+		.sho-att-table { border-collapse: separate; border-spacing: 0; }
+		.sho-att-table td:nth-child(1),
+		.sho-att-table th:nth-child(1) {
+			position: sticky; left: 0; z-index: 2;
+			background: var(--fg-color, #fff);
+			border-right: 1px solid var(--border-color);
+			min-width: 110px;
+		}
+		.sho-att-table td:nth-child(2),
+		.sho-att-table th:nth-child(2) {
+			position: sticky; left: 110px; z-index: 2;
+			background: var(--fg-color, #fff);
+			border-right: 2px solid var(--border-color);
+			min-width: 140px;
+		}
+		.sho-att-table thead th:nth-child(1),
+		.sho-att-table thead th:nth-child(2) {
+			background: var(--subtle-fg); z-index: 4;
+		}
+		.sho-att-table tbody tr:hover td:nth-child(1),
+		.sho-att-table tbody tr:hover td:nth-child(2) {
+			background: var(--highlight-color);
+		}
 		@keyframes sho-slide-up { from { transform: translateY(16px); opacity: 0; } to { transform: none; opacity: 1; } }
 		.sho-modal-header {
 			display: flex; align-items: center; justify-content: space-between;
@@ -287,6 +303,33 @@ frappe.pages["saral-hr-overview"].on_page_load = function (wrapper) {
 		</style>`).appendTo("head");
 	}
 
+	// ── Attendance legend builder (reused in the summary popup) ──────────────
+	function buildAttLegend() {
+		const LEGEND = [
+			{ code:"P",   label:"Present",          color:"#1a6b1a" },
+			{ code:"A",   label:"Absent",           color:"#c0392b" },
+			{ code:"HD",  label:"Half Day",         color:"#e67e22" },
+			{ code:"T",   label:"On Tour",          color:"#2c3e50" },
+			{ code:"H",   label:"Holiday",          color:"#27ae60" },
+			{ code:"WO",  label:"Weekly Off",       color:"#2980b9" },
+			{ code:"LWP", label:"Leave Without Pay",color:"#8e44ad" },
+			{ code:"EL",  label:"Earned Leave",     color:"#d35400" },
+			{ code:"CL",  label:"Casual Leave",     color:"#16a085" },
+			{ code:"CO",  label:"Comp Off",         color:"#7f8c8d" },
+			{ code:"ECO", label:"Earned Comp Off",  color:"#a93226" },
+		];
+		const items = LEGEND.map(({ code, label, color }) =>
+			`<span class="sho-att-legend-item">
+				<span style="font-weight:700;font-size:11px;color:${color};">${code}</span>
+				<span style="font-size:11px;color:#555;">– ${label}</span>
+			</span>`
+		).join("");
+		return `<div class="sho-att-legend">
+			<span class="sho-att-legend-title">Legend :</span>
+			${items}
+		</div>`;
+	}
+
 	// ── Page container ────────────────────────────────────────────────────────
 	const $body = $(wrapper).find(".page-content");
 	$body.empty();
@@ -307,7 +350,6 @@ frappe.pages["saral-hr-overview"].on_page_load = function (wrapper) {
 		).join("");
 	})();
 
-	// Default from/to = current fiscal year
 	const _now     = new Date();
 	const _cy      = _now.getFullYear();
 	const _cm      = _now.getMonth() + 1;
@@ -529,7 +571,6 @@ frappe.pages["saral-hr-overview"].on_page_load = function (wrapper) {
 		$("#sho-masters", wrapper).html(`<div class="sho-kpi-grid">${cards.map(kpiCard).join("")}</div>`);
 	}
 
-	// ── Render: Statutory ─────────────────────────────────────────────────────
 	// ── Render: Gender ────────────────────────────────────────────────────────
 	function renderGender(d) {
 		const gc = d.gender_counts || {};
@@ -584,12 +625,9 @@ frappe.pages["saral-hr-overview"].on_page_load = function (wrapper) {
 			const allOk    = r.emps_with_att >= r.active_count;
 			const someOk   = r.emps_with_att >= r.active_count * 0.6;
 			const covColor = allOk ? "#16a34a" : someOk ? "#ea580c" : "#dc2626";
-			const slipLink = `/app/salary-slip?company=${encodeURIComponent(_company)}&start_date=${r.month_key}-01&docstatus=1`;
 
-			// Active count — clickable to open attendance summary popup
 			const activeCell = `<span class="sho-cell-link" onclick="openAttSummary('${r.month_key}','${r.month}')" title="Click to view attendance summary">${r.active_count} ↗</span>`;
 
-			// Att entered — red if < active, clickable to see who has no attendance
 			const attEnteredCell = r.emps_with_att < r.active_count
 				? `<span class="sho-cell-link" style="color:#dc2626;" onclick="openNoAttPopup('${r.month_key}','${r.month}')" title="Click to see employees with no attendance">${r.emps_with_att} / ${r.active_count} ↗</span>`
 				: `<span style="color:#16a34a;font-weight:700;">${r.emps_with_att} / ${r.active_count}</span>`;
@@ -646,7 +684,7 @@ frappe.pages["saral-hr-overview"].on_page_load = function (wrapper) {
 		</table></div>`);
 	}
 
-	// ── Render: Department headcount ─────────────────────────────────────────
+	// ── Render: Department headcount ──────────────────────────────────────────
 	function renderDeptCount(data) {
 		const rows  = data.rows  || [];
 		const total = data.total || 0;
@@ -685,7 +723,7 @@ frappe.pages["saral-hr-overview"].on_page_load = function (wrapper) {
 			</div>`);
 	}
 
-	// ── Render: Readiness matrix (sticky first col) ───────────────────────────
+	// ── Render: Readiness matrix ──────────────────────────────────────────────
 	function renderReadiness(rows) {
 		if (!rows.length) { $("#sho-readiness", wrapper).html('<div class="sho-empty">No data.</div>'); return; }
 		const checks = [
@@ -721,7 +759,6 @@ frappe.pages["saral-hr-overview"].on_page_load = function (wrapper) {
 		let allRows = rows;
 		const $wrap = $(`<div></div>`);
 
-		// Search bar — only shown when there are rows
 		const $sb = $(searchBar("Search employee or structure…")).appendTo($wrap);
 		const $tableWrap = $(`<div class="sho-expiry-outer"><div class="sho-expiry-scroll">
 			<table class="sho-expiry-table">
@@ -885,7 +922,6 @@ frappe.pages["saral-hr-overview"].on_page_load = function (wrapper) {
 				const generated    = data.generated    || [];
 				const notGenerated = data.not_generated || [];
 
-				// Combine into one list with a "status" field for searching/filtering
 				const allRows = [
 					...generated.map(e => ({
 						...e,
@@ -901,7 +937,6 @@ frappe.pages["saral-hr-overview"].on_page_load = function (wrapper) {
 					}))
 				];
 
-				// Use openModal with a custom render — section headers inside body
 				$(".sho-modal-backdrop").remove();
 				const $backdrop = $('<div class="sho-modal-backdrop"></div>').appendTo("body");
 				const $modal    = $('<div class="sho-modal"></div>').appendTo($backdrop);
@@ -915,7 +950,6 @@ frappe.pages["saral-hr-overview"].on_page_load = function (wrapper) {
 						<button class="sho-modal-close" title="Close">✕</button>
 					</div>`);
 
-				// Search toolbar
 				const $toolbar = $(`<div class="sho-modal-toolbar">
 					<div style="flex:1;">
 						<div class="sho-search-inner">
@@ -948,7 +982,6 @@ frappe.pages["saral-hr-overview"].on_page_load = function (wrapper) {
 					const gen    = list.filter(r => r._status === "generated");
 					const notGen = list.filter(r => r._status === "not_generated");
 
-					// ── Generated section ──────────────────────────────────
 					$body.append(`<div style="font-size:11px;font-weight:700;color:var(--text-muted);
 						text-transform:uppercase;letter-spacing:.4px;margin:16px 0 8px;">
 						Generated <span class="sho-badge badge-green" style="font-size:10px;">${gen.length}</span>
@@ -974,7 +1007,6 @@ frappe.pages["saral-hr-overview"].on_page_load = function (wrapper) {
 						$body.append('<div class="sho-empty">No salary slips generated.</div>');
 					}
 
-					// ── Not Generated section ──────────────────────────────
 					$body.append(`<div style="font-size:11px;font-weight:700;color:var(--text-muted);
 						text-transform:uppercase;letter-spacing:.4px;margin:20px 0 8px;">
 						Not Generated <span class="sho-badge badge-red" style="font-size:10px;">${notGen.length}</span>
@@ -999,7 +1031,6 @@ frappe.pages["saral-hr-overview"].on_page_load = function (wrapper) {
 
 				buildBody(allRows);
 
-				// Search filters both sections
 				$toolbar.find(".sho-search-input").on("input", function () {
 					const q = $(this).val().toLowerCase();
 					buildBody(q ? allRows.filter(r =>
@@ -1118,7 +1149,7 @@ frappe.pages["saral-hr-overview"].on_page_load = function (wrapper) {
 		});
 	};
 
-	// ── Popup: Attendance Summary ─────────────────────────────────────────────
+	// ── Popup: Attendance Summary (WITH LEGEND) ───────────────────────────────
 	window.openAttSummary = function (monthKey, monthLabel) {
 		frappe.call({
 			method: "saral_hr.saral_hr.page.saral_hr_overview.saral_hr_overview.get_month_attendance_summary",
@@ -1128,7 +1159,6 @@ frappe.pages["saral-hr-overview"].on_page_load = function (wrapper) {
 				const rows      = data.rows || [];
 				const totalDays = data.total_days || 31;
 
-				// Status color map matching attendance report
 				const COLOR_CLASS = {
 					"P":   "att-P",   "A":  "att-A",  "HD":  "att-HD",
 					"T":   "att-T",   "H":  "att-H",  "WO":  "att-WO",
@@ -1136,7 +1166,6 @@ frappe.pages["saral-hr-overview"].on_page_load = function (wrapper) {
 					"CO":  "att-CO",  "ECO":"att-ECO"
 				};
 
-				// Summary cols at the right — same as attendance report
 				const SUMM = [
 					{ label:"P",   key:"present",        title:"Present" },
 					{ label:"A",   key:"absent",         title:"Absent" },
@@ -1151,7 +1180,6 @@ frappe.pages["saral-hr-overview"].on_page_load = function (wrapper) {
 					{ label:"LWP", key:"lwp",            title:"LWP" },
 				];
 
-				// ── Build modal manually (not via openModal) for full control ──
 				$(".sho-modal-backdrop").remove();
 				const $backdrop = $('<div class="sho-modal-backdrop"></div>').appendTo("body");
 				const $modal    = $('<div class="sho-modal wide"></div>').appendTo($backdrop);
@@ -1165,6 +1193,9 @@ frappe.pages["saral-hr-overview"].on_page_load = function (wrapper) {
 						<button class="sho-modal-close" title="Close">✕</button>
 					</div>`);
 
+				// ── Legend bar — injected just below header, above toolbar ──
+				$modal.append(buildAttLegend());
+
 				const $toolbar = $(`<div class="sho-modal-toolbar">
 					<div style="flex:1;">
 						<div class="sho-search-inner">
@@ -1175,11 +1206,10 @@ frappe.pages["saral-hr-overview"].on_page_load = function (wrapper) {
 				</div>`).appendTo($modal);
 
 				const $body   = $('<div class="sho-modal-body"></div>').appendTo($modal);
-		$body.css('padding', '0 20px 20px');
+				$body.css('padding', '0 20px 20px');
 				const $footer = $('<div class="sho-modal-footer"></div>').appendTo($modal);
 				const $count  = $(`<span class="sho-modal-count">${rows.length} employees</span>`).appendTo($footer);
 				$(`<button class="sho-btn-export">⬇ Export CSV</button>`).appendTo($footer).on("click", () => {
-					// Export with days + summary
 					const headers = ["Employee ID","Name",...Array.from({length:totalDays},(_,i)=>`Day ${i+1}`),...SUMM.map(s=>s.title)];
 					const body = rows.map(r => [
 						r.employee, r.full_name,
@@ -1196,12 +1226,10 @@ frappe.pages["saral-hr-overview"].on_page_load = function (wrapper) {
 				function buildTable(list) {
 					$count.text(`${list.length} employee${list.length !== 1 ? "s" : ""}`);
 
-					// Day headers
 					const dayHeaders = Array.from({length: totalDays}, (_, i) =>
 						`<th class="r" style="min-width:28px;padding:6px 4px;">${i+1}</th>`
 					).join("");
 
-					// Summary headers with color
 					const summHeaders = SUMM.map(s =>
 						`<th class="r" style="min-width:34px;padding:6px 5px;" title="${s.title}"><span class="${COLOR_CLASS[s.label]}">${s.label}</span></th>`
 					).join("");
@@ -1276,7 +1304,6 @@ frappe.pages["saral-hr-overview"].on_page_load = function (wrapper) {
 				const subtitle = skillType
 					? `${category} · ${skillType} · ${_company}`
 					: `${category} · ${_company}`;
-				// Only show skill_type col if category has subtypes
 				const hasSkill = rows.some(r => r.skill_type && r.skill_type !== "—");
 				const columns  = [
 					{ label: "Employee ID",    key: "employee",        cls: "muted" },

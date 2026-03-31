@@ -8,6 +8,8 @@
  "field_order": [
   "notification_number",
   "currency",
+  "column_break_pkbp",
+  "daily_wage_multiplier",
   "section_break_sdqg",
   "from_year",
   "to_year",
@@ -196,12 +198,23 @@
    "fieldtype": "HTML",
    "label": "Total vb and da",
    "options": "<div style=\"font-size:13px;font-weight:700;color:var(--text-color);padding:4px 0 8px;\">Total (Variable Basic + Variable DA)</div>"
+  },
+  {
+   "fieldname": "column_break_pkbp",
+   "fieldtype": "Column Break"
+  },
+  {
+   "default": "26",
+   "fieldname": "daily_wage_multiplier",
+   "fieldtype": "Float",
+   "label": "Daily Wage Multiplier",
+   "precision": "2"
   }
  ],
  "index_web_pages_for_search": 1,
  "is_submittable": 1,
  "links": [],
- "modified": "2026-03-20 17:11:47.074532",
+ "modified": "2026-03-26 16:07:28.496060",
  "modified_by": "Administrator",
  "module": "Saral Hr",
  "name": "Skill Rate Revision",

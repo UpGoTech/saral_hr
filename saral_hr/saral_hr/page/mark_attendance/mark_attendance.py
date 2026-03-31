@@ -45,7 +45,6 @@ def search_employees(query, company=None):
         pluck="for_value"
     )
 
-    # If a specific company is passed, use it (must be within permitted)
     if company:
         companies = [company] if (not permitted or company in permitted) else []
     else:
@@ -105,9 +104,16 @@ def search_employees(query, company=None):
 
 @frappe.whitelist()
 def get_attendance_between_dates(employee, start_date, end_date):
+    """
+    Returns a dict  { "YYYY-MM-DD": <value> }  where <value> is either:
+      - a plain string status  (for full-day records)
+      - a dict { "mode": "half", "first_half": "...", "second_half": "..." }
+        for half-day records that have custom_first_half / custom_second_half stored
+    """
     start_date = getdate(start_date)
     end_date   = getdate(end_date)
 
+    # Fetch both the main status and the half-day fields in one query
     attendance_records = frappe.db.get_all(
         "Attendance",
         filters={
@@ -115,37 +121,47 @@ def get_attendance_between_dates(employee, start_date, end_date):
             "attendance_date": ["between", [start_date, end_date]],
             "docstatus":       ["<", 2],
         },
-        fields=["attendance_date", "status"]
+        fields=["attendance_date", "status", "custom_first_half", "custom_second_half"]
     )
 
     result = {}
     for row in attendance_records:
-        result[str(row.attendance_date)] = row.status
+        date_str = str(row.attendance_date)
+        if row.status == "Half Day" and (row.custom_first_half or row.custom_second_half):
+            # Return structured half-day record so JS can populate both dropdown cells
+            result[date_str] = {
+                "mode":        "half",
+                "first_half":  row.custom_first_half  or "",
+                "second_half": row.custom_second_half or "",
+            }
+        else:
+            result[date_str] = row.status
 
     return result
 
 
 # ---------------------------------------------------------------------------
-# UI status → DB status mapping
+# Status constants
 # ---------------------------------------------------------------------------
-UI_TO_DB_STATUS = {
-    "Regular": "Present",
+
+# Full-day UI statuses that map directly to DB
+VALID_FULL_STATUSES = {
+    "Present", "On Tour", "Earned Comp Off",
+    "Absent", "Earned Leave", "Casual Leave", "Comp Off",
+    "LWP", "Holiday", "Weekly Off",
 }
 
-# "Earned Comp Off" saves directly as "Earned Comp Off" in DB
-VALID_UI_STATUSES = {
-    "Present",
-    "Regular",
-    "On Tour",
-    "Earned Comp Off",
-    "Absent",
-    "Half Day",
-    "Holiday",
-    "Weekly Off",
-    "LWP",
-    "Earned Leave",
-    "Casual Leave",
-    "Comp Off",
+# Valid statuses for each half of a half-day record
+VALID_HALF_STATUSES = {
+    "Present", "On Tour", "Earned Comp Off",
+    "Absent", "Earned Leave", "Casual Leave", "Comp Off", "LWP",
+    "",  # empty / not set
+}
+
+# UI label → DB status overrides for full-day records
+UI_TO_DB_STATUS = {
+    # "Regular" was used in the old UI — keep mapping for safety
+    "Regular": "Present",
 }
 
 
@@ -153,8 +169,23 @@ def resolve_db_status(ui_status):
     return UI_TO_DB_STATUS.get(ui_status, ui_status)
 
 
+# ---------------------------------------------------------------------------
+# Save batch  (handles both full-day and half-day records)
+# ---------------------------------------------------------------------------
+
 @frappe.whitelist()
 def save_attendance_batch(attendance_data):
+    """
+    Accepts a list of records.  Each record is either:
+
+    Full-day:
+        { "employee": "...", "attendance_date": "YYYY-MM-DD",
+          "mode": "full", "status": "<FULL_DAY_STATUS>" }
+
+    Half-day:
+        { "employee": "...", "attendance_date": "YYYY-MM-DD",
+          "mode": "half", "first_half": "<HALF_STATUS>", "second_half": "<HALF_STATUS>" }
+    """
     user = frappe.session.user
 
     if isinstance(attendance_data, str):
@@ -184,17 +215,41 @@ def save_attendance_batch(attendance_data):
             try:
                 employee        = record.get("employee")
                 attendance_date = getdate(record.get("attendance_date"))
-                ui_status       = record.get("status", "").strip()
-
-                if not ui_status or ui_status not in VALID_UI_STATUSES:
-                    continue
-
-                db_status = resolve_db_status(ui_status)
+                mode            = record.get("mode", "full")
 
                 if permitted_employees is not None and employee not in permitted_employees:
                     errors.append(f"Not permitted for employee {employee} on {attendance_date}")
                     continue
 
+                # ── Determine DB values ────────────────────────────────
+                if mode == "half":
+                    first_half  = (record.get("first_half")  or "").strip()
+                    second_half = (record.get("second_half") or "").strip()
+
+                    if first_half  not in VALID_HALF_STATUSES:
+                        errors.append(f"Invalid first_half '{first_half}' for {employee} on {attendance_date}")
+                        continue
+                    if second_half not in VALID_HALF_STATUSES:
+                        errors.append(f"Invalid second_half '{second_half}' for {employee} on {attendance_date}")
+                        continue
+
+                    db_status    = "Half Day"
+                    extra_fields = {
+                        "custom_first_half":  first_half,
+                        "custom_second_half": second_half,
+                    }
+
+                else:  # mode == "full"
+                    ui_status = record.get("status", "").strip()
+                    if not ui_status or ui_status not in VALID_FULL_STATUSES:
+                        continue
+                    db_status    = resolve_db_status(ui_status)
+                    extra_fields = {
+                        "custom_first_half":  "",
+                        "custom_second_half": "",
+                    }
+
+                # ── Upsert attendance record ───────────────────────────
                 existing = frappe.db.get_value(
                     "Attendance",
                     {
@@ -206,8 +261,9 @@ def save_attendance_batch(attendance_data):
                 )
 
                 if existing:
+                    update_vals = {"status": db_status, **extra_fields}
                     frappe.db.set_value(
-                        "Attendance", existing, "status", db_status, update_modified=True
+                        "Attendance", existing, update_vals, update_modified=True
                     )
                 else:
                     doc = frappe.get_doc({
@@ -215,6 +271,7 @@ def save_attendance_batch(attendance_data):
                         "employee":        employee,
                         "attendance_date": attendance_date,
                         "status":          db_status,
+                        **extra_fields,
                     })
                     doc.flags.ignore_validate  = True
                     doc.flags.ignore_mandatory = True
@@ -243,6 +300,10 @@ def save_attendance_batch(attendance_data):
         return {"success": False, "error": str(e)}
 
 
+# ---------------------------------------------------------------------------
+# Holidays
+# ---------------------------------------------------------------------------
+
 @frappe.whitelist()
 def get_holidays_between_dates(company, start_date, end_date):
     if not company:
@@ -264,11 +325,14 @@ def get_holidays_between_dates(company, start_date, end_date):
     return [str(h) for h in holidays]
 
 
+# ---------------------------------------------------------------------------
+# Comp Off / Leave balance
+# ---------------------------------------------------------------------------
+
 @frappe.whitelist()
 def get_comp_off_balance(employee, year=None, month=None):
     import datetime
 
-    # If year/month provided and valid, calculate month boundaries
     try:
         year_int  = int(year)  if year  not in (None, "", "None") else None
         month_int = int(month) if month not in (None, "", "None") else None
@@ -277,7 +341,6 @@ def get_comp_off_balance(employee, year=None, month=None):
         month_int = None
 
     if year_int is not None and month_int is not None:
-        # month_int is 0-based from JS (0=Jan … 11=Dec)
         month_1based = month_int + 1
         month_start  = datetime.date(year_int, month_1based, 1)
         if month_1based == 12:
@@ -285,7 +348,6 @@ def get_comp_off_balance(employee, year=None, month=None):
         else:
             month_end = datetime.date(year_int, month_1based + 1, 1) - datetime.timedelta(days=1)
 
-        # Available = all earned before this month − all used before this month
         earned_before = frappe.db.count("Attendance", filters={
             "employee": employee, "status": "Earned Comp Off",
             "attendance_date": ["<", month_start], "docstatus": ["<", 2],
@@ -304,21 +366,17 @@ def get_comp_off_balance(employee, year=None, month=None):
             "employee": employee, "status": "Comp Off",
             "attendance_date": ["between", [month_start, month_end]], "docstatus": ["<", 2],
         })
-        # Earned Leave taken this month
         el_taken = frappe.db.count("Attendance", filters={
             "employee": employee, "status": "Earned Leave",
             "attendance_date": ["between", [month_start, month_end]], "docstatus": ["<", 2],
         })
-        # Casual Leave taken this month
         cl_taken = frappe.db.count("Attendance", filters={
             "employee": employee, "status": "Casual Leave",
             "attendance_date": ["between", [month_start, month_end]], "docstatus": ["<", 2],
         })
-
         balance = max(0, available + earned - used)
 
     else:
-        # No month selected — show all-time totals
         available = 0
         earned = frappe.db.count("Attendance", filters={
             "employee": employee, "status": "Earned Comp Off", "docstatus": ["<", 2],
@@ -344,9 +402,10 @@ def get_comp_off_balance(employee, year=None, month=None):
     }
 
 
-# ── fetch joining date AND left date from Company Link ─────────────────────
-# joining date itself → CAN mark  (only strictly before is blocked)
-# left date itself    → CAN mark  (only strictly after is blocked)
+# ---------------------------------------------------------------------------
+# Joining / left date
+# ---------------------------------------------------------------------------
+
 @frappe.whitelist()
 def get_employee_joining_date(employee):
     result = frappe.db.get_value(

@@ -181,6 +181,7 @@ function inject_ep_styles() {
         .ep-day.casualleave  { background:#fbcfe8; color:#831843; border:2px solid #db2777; box-shadow:inset 0 0 0 2px #f9a8d4; }
         .ep-day.ontour     { background:#bbf7d0; color:#14532d; border:2px solid #16a34a;  box-shadow:inset 0 0 0 2px #86efac; }
         .ep-day.compoff    { background:#e9d5ff; color:#4c1d95; border:2px solid #9333ea;  box-shadow:inset 0 0 0 2px #d8b4fe; }
+        .ep-day.earnedcompoff { background:#ccfbf1; color:#134e4a; border:2px solid #14b8a6; box-shadow:inset 0 0 0 2px #5eead4; }
 
         .ep-tooltip {
             position:fixed; z-index:9999; pointer-events:none;
@@ -207,6 +208,7 @@ function inject_ep_styles() {
         .ep-legend-dot.casualleave { background:#fbcfe8; border-color:#db2777; }
         .ep-legend-dot.ontour      { background:#bbf7d0; border-color:#16a34a; }
         .ep-legend-dot.compoff     { background:#e9d5ff; border-color:#9333ea; }
+        .ep-legend-dot.earnedcompoff { background:#ccfbf1; border-color:#14b8a6; }
         .ep-legend-dot.future      { background:#f3f4f6; border-color:#e5e7eb; }
         .ep-legend-label { font-weight:500; }
         .ep-legend-label.present     { color:#16a34a; }
@@ -219,9 +221,10 @@ function inject_ep_styles() {
         .ep-legend-label.casualleave { color:#db2777; }
         .ep-legend-label.ontour      { color:#16a34a; }
         .ep-legend-label.compoff     { color:#9333ea; }
+        .ep-legend-label.earnedcompoff { color:#0d9488; }
         .ep-legend-label.future      { color:#9ca3af; }
 
-        .ep-att-summary { display:grid; grid-template-columns:repeat(5,1fr); gap:8px; margin-top:14px; }
+        .ep-att-summary { display:grid; grid-template-columns:repeat(6,1fr); gap:8px; margin-top:14px; }
         .ep-att-box     { background:var(--control-bg,#f9fafb); border-radius:6px; padding:10px 6px; text-align:center; }
         .ep-att-val     { font-size:18px; font-weight:700; }
         .ep-att-label   { font-size:10px; color:var(--text-muted); margin-top:2px; }
@@ -610,29 +613,32 @@ function calc_age(dob_str) {
     return age;
 }
 
+// ── Status maps — updated to include Earned Comp Off ─────────────────────────
 var STATUS_COLORS = {
-    "Present": "present",
-    "Absent": "absent",
-    "Half Day": "halfday",
-    "LWP": "lwp",
-    "Holiday": "holiday",
-    "Weekly Off": "weeklyoff",
-    "Earned Leave": "earnedleave",
-    "Casual Leave": "casualleave",
-    "On Tour": "ontour",
-    "Comp Off": "compoff"
+    "Present":          "present",
+    "Absent":           "absent",
+    "Half Day":         "halfday",
+    "LWP":              "lwp",
+    "Holiday":          "holiday",
+    "Weekly Off":       "weeklyoff",
+    "Earned Leave":     "earnedleave",
+    "Casual Leave":     "casualleave",
+    "On Tour":          "ontour",
+    "Comp Off":         "compoff",
+    "Earned Comp Off":  "earnedcompoff"
 };
 var STATUS_HEX = {
-    "present": "#16a34a",
-    "absent": "#dc2626",
-    "halfday": "#ca8a04",
-    "lwp": "#ea580c",
-    "holiday": "#2563eb",
-    "weeklyoff": "#9333ea",
-    "earnedleave": "#0d9488",
-    "casualleave": "#db2777",
-    "ontour": "#16a34a",
-    "compoff": "#9333ea"
+    "present":       "#16a34a",
+    "absent":        "#dc2626",
+    "halfday":       "#ca8a04",
+    "lwp":           "#ea580c",
+    "holiday":       "#2563eb",
+    "weeklyoff":     "#9333ea",
+    "earnedleave":   "#0d9488",
+    "casualleave":   "#db2777",
+    "ontour":        "#16a34a",
+    "compoff":       "#9333ea",
+    "earnedcompoff": "#14b8a6"
 };
 var MONTH_NAMES = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
@@ -881,10 +887,12 @@ function render_heatmap($w, att_map, year, active_month) {
     year = parseInt(year);
     active_month = active_month || "all";
     var today_str = new Date().toISOString().split("T")[0];
+
+    // All counters — now includes earned_comp_off
     var summary = {
-        present: 0, absent: 0, half_day: 0, lwp: 0,
-        holiday: 0, weekly_off: 0, earned_leave: 0, casual_leave: 0,
-        on_tour: 0, comp_off: 0
+        present:0, absent:0, half_day:0, lwp:0,
+        holiday:0, weekly_off:0, earned_leave:0, casual_leave:0,
+        on_tour:0, comp_off:0, earned_comp_off:0
     };
     var total_counted = 0;
     var selected_month = (active_month === "all") ? null : parseInt(active_month);
@@ -923,16 +931,17 @@ function render_heatmap($w, att_map, year, active_month) {
                     cls = "ep-day " + ccls;
                     title_attr = day_str + ": " + status;
                     if (selected_month === null || selected_month === month_num) {
-                        if (status === "Present") { summary.present++; total_counted++; }
-                        else if (status === "Absent") { summary.absent++; total_counted++; }
-                        else if (status === "Half Day") { summary.half_day++; total_counted++; }
-                        else if (status === "LWP") { summary.lwp++; total_counted++; }
-                        else if (status === "Holiday") { summary.holiday++; total_counted++; }
-                        else if (status === "Weekly Off") { summary.weekly_off++; total_counted++; }
-                        else if (status === "Earned Leave") { summary.earned_leave++; total_counted++; }
-                        else if (status === "Casual Leave") { summary.casual_leave++; total_counted++; }
-                        else if (status === "On Tour") { summary.on_tour++; total_counted++; }
-                        else if (status === "Comp Off") { summary.comp_off++; total_counted++; }
+                        if      (status === "Present")          { summary.present++;       total_counted++; }
+                        else if (status === "Absent")           { summary.absent++;        total_counted++; }
+                        else if (status === "Half Day")         { summary.half_day++;      total_counted++; }
+                        else if (status === "LWP")              { summary.lwp++;           total_counted++; }
+                        else if (status === "Holiday")          { summary.holiday++;       total_counted++; }
+                        else if (status === "Weekly Off")       { summary.weekly_off++;    total_counted++; }
+                        else if (status === "Earned Leave")     { summary.earned_leave++;  total_counted++; }
+                        else if (status === "Casual Leave")     { summary.casual_leave++;  total_counted++; }
+                        else if (status === "On Tour")          { summary.on_tour++;       total_counted++; }
+                        else if (status === "Comp Off")         { summary.comp_off++;      total_counted++; }
+                        else if (status === "Earned Comp Off")  { summary.earned_comp_off++; total_counted++; }
                     }
                 } else {
                     cls = "ep-day future"; title_attr = day_str + " (no record)";
@@ -945,11 +954,13 @@ function render_heatmap($w, att_map, year, active_month) {
     }
     inner += "</div></div>";
 
+    // Legend — added Earned Comp Off
     var legend_items = [
-        ["present", "Present"], ["absent", "Absent"], ["halfday", "Half Day"],
-        ["lwp", "LWP"], ["holiday", "Holiday"], ["weeklyoff", "Weekly Off"],
-        ["earnedleave", "Earned Leave"], ["casualleave", "Casual Leave"],
-        ["ontour", "On Tour"], ["compoff", "Comp Off"], ["future", "No Record"]
+        ["present","Present"],["absent","Absent"],["halfday","Half Day"],
+        ["lwp","LWP"],["holiday","Holiday"],["weeklyoff","Weekly Off"],
+        ["earnedleave","Earned Leave"],["casualleave","Casual Leave"],
+        ["ontour","On Tour"],["compoff","Comp Off"],["earnedcompoff","Earned Comp Off"],
+        ["future","No Record"]
     ];
     var legend = "<div class='ep-legend'>";
     legend_items.forEach(function (li) {
@@ -957,17 +968,19 @@ function render_heatmap($w, att_map, year, active_month) {
     });
     legend += "</div>";
 
+    // Summary boxes — updated to include Earned Comp Off, now 6 columns
     var boxes = [
-        [summary.present, "Present", "#16a34a", true],
-        [summary.absent, "Absent", "#dc2626", true],
-        [summary.half_day, "Half Day", "#ca8a04", false],
-        [summary.lwp, "LWP", "#ea580c", false],
-        [summary.holiday, "Holiday", "#2563eb", false],
-        [summary.weekly_off, "Weekly Off", "#9333ea", false],
-        [summary.earned_leave, "Earned Leave", "#0d9488", false],
-        [summary.casual_leave, "Casual Leave", "#db2777", false],
-        [summary.on_tour, "On Tour", "#16a34a", false],
-        [summary.comp_off, "Comp Off", "#9333ea", false]
+        [summary.present,          "Present",          "#16a34a", true],
+        [summary.absent,           "Absent",           "#dc2626", true],
+        [summary.on_tour,          "On Tour",          "#16a34a", false],
+        [summary.earned_comp_off,  "Earned Comp Off",  "#14b8a6", false],
+        [summary.half_day,         "Half Day",         "#ca8a04", false],
+        [summary.lwp,              "LWP",              "#ea580c", false],
+        [summary.holiday,          "Holiday",          "#2563eb", false],
+        [summary.weekly_off,       "Weekly Off",       "#9333ea", false],
+        [summary.earned_leave,     "Earned Leave",     "#0d9488", false],
+        [summary.casual_leave,     "Casual Leave",     "#db2777", false],
+        [summary.comp_off,         "Comp Off",         "#9333ea", false]
     ];
     var summ = "<div class='ep-att-summary'>";
     boxes.forEach(function (b) {
@@ -1106,7 +1119,7 @@ function render_ssa_panel_html(latest_ssa, cancelled_ssas, company_link) {
         html += "<span class='ep-ssa-cancelled-title'>Previous Assignments <span class='ep-ssa-cancelled-count'>" + cancelled_ssas.length + "</span></span>";
         html += "<span class='ep-ssa-toggle-icon'>&#9660;</span></div>";
         html += "<div class='ep-ssa-cancelled-list'>";
-        cancelled_ssas.forEach(function (rec, idx) {
+        cancelled_ssas.forEach(function(rec) {
             var dp = [];
             if (rec.from_date) dp.push(fmt_date_human(rec.from_date));
             dp.push(rec.to_date ? fmt_date_human(rec.to_date) : "—");

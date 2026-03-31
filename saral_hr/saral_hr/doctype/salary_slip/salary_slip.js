@@ -35,8 +35,8 @@ frappe.ui.form.on("Salary Slip", {
         frappe.call({
             method: "saral_hr.saral_hr.doctype.salary_slip.salary_slip.get_attendance_and_days",
             args: {
-                employee:                        frm.doc.employee,
-                start_date:                      frm.doc.start_date,
+                employee: frm.doc.employee,
+                start_date: frm.doc.start_date,
                 working_days_calculation_method: frm.doc.working_days_calculation_method
             },
             callback(r) { if (r.message) apply_attendance(frm, r.message); }
@@ -45,17 +45,40 @@ frappe.ui.form.on("Salary Slip", {
 });
 
 frappe.ui.form.on("Salary Details", {
-    amount(frm)                  { recalculate_salary(frm); },
-    earnings_remove(frm)         { recalculate_salary(frm); },
-    deductions_remove(frm)       { recalculate_salary(frm); },
-    employer_share_remove(frm)   { recalculate_salary(frm); }
+    amount(frm) { recalculate_salary(frm); },
+    earnings_remove(frm) { recalculate_salary(frm); },
+    deductions_remove(frm) { recalculate_salary(frm); },
+    employer_share_remove(frm) { recalculate_salary(frm); }
 });
+
+// ─── Attendance Allowance detection ───────────────────────────────────────────
+
+const ATTENDANCE_ALLOWANCE_COMPONENT = "Attendance Allowance";
+
+function is_attendance_allowance(comp_name) {
+    return (comp_name || "").trim() === ATTENDANCE_ALLOWANCE_COMPONENT;
+}
+
+/**
+ * Returns the Attendance Allowance amount given the current attendance data.
+ *  - base == 0  → 0  (not configured in SSA, do nothing)
+ *  - February   → full amount if phd >= working_days, else 0
+ *  - Other months → full amount if phd >= 25, else 0
+ */
+function calc_attendance_allowance(base, phd, wd, slip_month) {
+    if (!base || base === 0) return 0;
+    if (slip_month === 2) {
+        return phd >= wd ? base : 0;
+    } else {
+        return phd >= 25 ? base : 0;
+    }
+}
 
 // ─── DA detection ─────────────────────────────────────────────────────────────
 
 function is_da_component(comp_name, abbr) {
     const n = (comp_name || '').toLowerCase();
-    const a = (abbr     || '').toLowerCase().trim();
+    const a = (abbr || '').toLowerCase().trim();
     return n.includes('dearness') || n === 'da'
         || a === 'da' || a.startsWith('da-') || a.startsWith('da ')
         || a === 'da - dr' || a.startsWith('da-dr');
@@ -110,15 +133,12 @@ function fetch_and_validate_all(frm) {
     frm.clear_table("employer_share");
 
     let attendance_data = null;
-    let vpa_status      = null;
-    let vpa_percentage  = 0;
+    let vpa_status = null;
+    let vpa_percentage = 0;
     let additional_data = { earnings: [], deductions: [] };
 
     // Loan/advance deduction rows fetched in parallel with other data.
-    // Each item: { salary_component, abbr, amount, is_deferred,
-    //              loan_advance_name, schedule_row_name }
-    // is_deferred=1 means the month was deferred — amount will be 0,
-    // Is Deferred checkbox will be checked in the deductions table.
+    // is_deferred=1 means the month was deferred — amount=0, Is Deferred checkbox checked.
     // is_deducted is updated only on salary slip SUBMIT/CANCEL.
     let loan_advance_data = [];
 
@@ -129,9 +149,9 @@ function fetch_and_validate_all(frm) {
         if (--pending > 0) return;
 
         const att_args = attendance_data ? {
-            working_days:            attendance_data.working_days,
-            payment_days:            attendance_data.payment_days,
-            physical_working_days:   attendance_data.physical_working_days || 0,
+            working_days: attendance_data.working_days,
+            payment_days: attendance_data.payment_days,
+            physical_working_days: attendance_data.physical_working_days || 0,
             variable_pay_percentage: vpa_percentage
         } : {};
 
@@ -169,37 +189,37 @@ function fetch_and_validate_all(frm) {
 
                 apply_salary_structure(frm, salary_data);
 
-                // Add additional salary earnings (arrears etc.)
                 (additional_data.earnings || []).forEach(row => {
                     const e = frm.add_child("earnings");
-                    e.salary_component                 = row.salary_component;
-                    e.abbr                             = row.abbr || "";
-                    e.amount                           = flt(row.amount);
-                    e.base_amount                      = flt(row.amount);
-                    e.depends_on_payment_days          = 0;
+                    e.salary_component = row.salary_component;
+                    e.abbr = row.abbr || "";
+                    e.amount = flt(row.amount);
+                    e.base_amount = flt(row.amount);
+                    e.depends_on_payment_days = 0;
                     e.depends_on_physical_working_days = 0;
-                    e._is_additional                   = true;
+                    e.daily_wage_component = 0;
+                    e.per_day_rate = 0;
+                    e._is_additional = true;
                 });
 
-                // Add additional deductions (manual deductions)
                 (additional_data.deductions || []).forEach(row => {
                     const d = frm.add_child("deductions");
-                    d.salary_component                 = row.salary_component;
-                    d.abbr                             = row.abbr || "";
-                    d.amount                           = flt(row.amount);
-                    d.base_amount                      = flt(row.amount);
-                    d.employer_contribution            = 0;
-                    d.depends_on_payment_days          = 0;
+                    d.salary_component = row.salary_component;
+                    d.abbr = row.abbr || "";
+                    d.amount = flt(row.amount);
+                    d.base_amount = flt(row.amount);
+                    d.employer_contribution = 0;
+                    d.depends_on_payment_days = 0;
                     d.depends_on_physical_working_days = 0;
-                    d._is_additional                   = true;
+                    d.daily_wage_component = 0;
+                    d.per_day_rate = 0;
+                    d._is_additional = true;
                 });
 
-                // Add Loan-I / Loan-II / Advance deduction rows.
+                // ── Loan & Advance deduction rows ─────────────────────────────
                 // Amount is fixed — never prorated by payment days.
-                // is_deferred=1 means the month was deferred in the loan schedule:
-                //   - amount will be 0
-                //   - Is Deferred checkbox will be checked in the deductions table
-                // is_deducted on the loan doc is updated only on slip SUBMIT/CANCEL.
+                // is_deferred=1 → amount=0, Is Deferred checkbox checked.
+                // is_deducted on the loan doc updated only on slip SUBMIT/CANCEL.
                 (loan_advance_data || []).forEach(item => {
                     const d = frm.add_child("deductions");
                     d.salary_component                 = item.salary_component; // "Loan-I" / "Loan-II" / "Advance"
@@ -209,7 +229,7 @@ function fetch_and_validate_all(frm) {
                     d.employer_contribution            = 0;
                     d.depends_on_payment_days          = 0;                     // Never prorate loan/advance
                     d.depends_on_physical_working_days = 0;                     // Never prorate loan/advance
-                    d.is_deferred                      = item.is_deferred || 0; // Show Is Deferred checkbox if deferred
+                    d.is_deferred                      = item.is_deferred || 0; // Show Is Deferred if deferred
                 });
 
                 frm.refresh_fields(["earnings", "deductions", "employer_share"]);
@@ -226,16 +246,16 @@ function fetch_and_validate_all(frm) {
     // ── VPA check ────────────────────────────────────────────────────────
     frappe.call({
         method: "saral_hr.saral_hr.doctype.salary_slip.salary_slip.check_variable_pay_assignment",
-        args:   { employee: frm.doc.employee, start_date: frm.doc.start_date },
+        args: { employee: frm.doc.employee, start_date: frm.doc.start_date },
         callback(r) {
             vpa_status = r.message || { status: "ok" };
             if (vpa_status.status === "ok") {
                 pending++;
                 frappe.call({
                     method: "saral_hr.saral_hr.doctype.salary_slip.salary_slip.get_variable_pay_percentage",
-                    args:   { employee: frm.doc.employee, start_date: frm.doc.start_date },
+                    args: { employee: frm.doc.employee, start_date: frm.doc.start_date },
                     callback(vr) { vpa_percentage = flt(vr.message || 0); try_finalize(); },
-                    error()      { vpa_percentage = 0;                    try_finalize(); }
+                    error() { vpa_percentage = 0; try_finalize(); }
                 });
             }
             try_finalize();
@@ -246,16 +266,16 @@ function fetch_and_validate_all(frm) {
     // ── Attendance ───────────────────────────────────────────────────────
     frappe.call({
         method: "saral_hr.saral_hr.doctype.salary_slip.salary_slip.get_attendance_and_days",
-        args:   {
-            employee:                        frm.doc.employee,
-            start_date:                      frm.doc.start_date,
+        args: {
+            employee: frm.doc.employee,
+            start_date: frm.doc.start_date,
             working_days_calculation_method: frm.doc.working_days_calculation_method
         },
         callback(r) { attendance_data = r.message || null; try_finalize(); },
-        error()     { attendance_data = null;              try_finalize(); }
+        error() { attendance_data = null; try_finalize(); }
     });
 
-    // ── Additional components (arrears / manual deductions) ───────────────
+   // ── Additional components (arrears / manual deductions) ───────────────
     frappe.call({
         method: "saral_hr.saral_hr.doctype.salary_slip.salary_slip.get_additional_components_api",
         args:   { employee: frm.doc.employee, start_date: frm.doc.start_date },
@@ -285,23 +305,29 @@ function apply_salary_structure(frm, data) {
     (data.earnings || []).forEach(row => {
         const e = frm.add_child("earnings");
         Object.assign(e, row);
-        e.base_amount    = row.base_amount !== undefined ? row.base_amount : row.amount;
+        e.base_amount = row.base_amount !== undefined ? row.base_amount : row.amount;
+        e.per_day_rate = flt(row.per_day_rate || 0);
+        e.daily_wage_component = parseInt(row.daily_wage_component || 0);
         e._is_additional = false;
     });
 
     (data.deductions || []).forEach(row => {
         const d = frm.add_child("deductions");
         Object.assign(d, row);
-        d.base_amount    = row.base_amount !== undefined ? row.base_amount : row.amount;
+        d.base_amount = row.base_amount !== undefined ? row.base_amount : row.amount;
+        d.per_day_rate = flt(row.per_day_rate || 0);
+        d.daily_wage_component = parseInt(row.daily_wage_component || 0);
         d._is_additional = false;
     });
 
     (data.employer_share || []).forEach(row => {
         const s = frm.add_child("employer_share");
         Object.assign(s, row);
-        s.base_amount           = row.base_amount !== undefined ? row.base_amount : row.amount;
+        s.base_amount = row.base_amount !== undefined ? row.base_amount : row.amount;
+        s.per_day_rate = flt(row.per_day_rate || 0);
+        s.daily_wage_component = parseInt(row.daily_wage_component || 0);
         s.employer_contribution = 1;
-        s._is_additional        = false;
+        s._is_additional = false;
     });
 
     frm.refresh_fields(["earnings", "deductions", "employer_share"]);
@@ -311,22 +337,22 @@ function apply_salary_structure(frm, data) {
 
 function apply_attendance(frm, d, variable_pay_pct) {
     frm.set_value({
-        month_days:            d.total_days            || 0,
-        weekly_offs_count:     d.weekly_offs            || 0,
-        total_holidays:        d.total_holidays         || 0,
-        present_days:          d.present_days           || 0,
-        total_on_tour:         d.total_on_tour          || 0,
-        total_half_days:       d.total_half_days        || 0,
-        total_earned_leaves:   d.total_earned_leaves    || 0,
-        total_casual_leaves:   d.total_casual_leaves    || 0,
-        total_comp_off:        d.total_comp_off         || 0,
-        total_earned_comp_off: d.total_earned_comp_off  || 0,
-        absent_days:           d.absent_days            || 0,
-        total_lwp:             d.total_lwp              || 0,
-        total_working_days:    d.working_days,
-        payment_days:          d.payment_days,
-        physical_working_days: d.physical_working_days  || 0,
-        total_unpaid_days:     d.total_unpaid_days      || 0,
+        month_days: d.total_days || 0,
+        weekly_offs_count: d.weekly_offs || 0,
+        total_holidays: d.total_holidays || 0,
+        present_days: d.present_days || 0,
+        total_on_tour: d.total_on_tour || 0,
+        total_half_days: d.total_half_days || 0,
+        total_earned_leaves: d.total_earned_leaves || 0,
+        total_casual_leaves: d.total_casual_leaves || 0,
+        total_comp_off: d.total_comp_off || 0,
+        total_earned_comp_off: d.total_earned_comp_off || 0,
+        absent_days: d.absent_days || 0,
+        total_lwp: d.total_lwp || 0,
+        total_working_days: d.working_days,
+        payment_days: d.payment_days,
+        physical_working_days: d.physical_working_days || 0,
+        total_unpaid_days: d.total_unpaid_days || 0,
     });
 
     if (variable_pay_pct !== undefined) frm.variable_pay_percentage = variable_pay_pct;
@@ -334,14 +360,23 @@ function apply_attendance(frm, d, variable_pay_pct) {
 }
 
 // ─── Salary Calculation ───────────────────────────────────────────────────────
-// NOTE: Loan-I / Loan-II / Advance rows have depends_on_payment_days = 0
-// so they fall into the final `else` branch and are returned as-is.
-// No special handling needed here — calculation is untouched.
+//
+//  Priority order for each row:
+//  1. Attendance Allowance         → hard-coded threshold: phd >= 25 (or full Feb wd) → full, else 0
+//  2. Variable pay component       → ratio-based on payment_days × variable_pct
+//  3. Daily wage component         → per_day_rate × physical_working_days  (if depends_on_physical_working_days)
+//                                    per_day_rate × payment_days            (otherwise, including depends_on_payment_days)
+//  4. depends_on_physical_working_days (non-daily-wage) → (base / wd) × phd
+//  5. depends_on_payment_days (non-daily-wage)          → (base / wd) × pd
+//  6. Otherwise                    → base (fixed)
+//
+//  Statutory components always use their stored base_amount (already computed
+//  server-side against the correct wage). PT uses the month-specific fixed amount.
 
 function recalculate_salary(frm, wd_override, pd_override, phd_override) {
-    const wd           = flt(wd_override  !== undefined ? wd_override  : frm.doc.total_working_days);
-    const pd           = flt(pd_override  !== undefined ? pd_override  : frm.doc.payment_days);
-    const phd          = flt(phd_override !== undefined ? phd_override : frm.doc.physical_working_days);
+    const wd = flt(wd_override !== undefined ? wd_override : frm.doc.total_working_days);
+    const pd = flt(pd_override !== undefined ? pd_override : frm.doc.payment_days);
+    const phd = flt(phd_override !== undefined ? phd_override : frm.doc.physical_working_days);
     const variable_pct = flt(frm.variable_pay_percentage || 0);
 
     let slip_month = null;
@@ -349,82 +384,137 @@ function recalculate_salary(frm, wd_override, pd_override, phd_override) {
         slip_month = parseInt(frm.doc.start_date.split('-')[1], 10);
     }
 
-    let total_earnings              = 0;
-    let total_deductions            = 0;
+    let total_earnings = 0;
+    let total_deductions = 0;
     let total_employer_contribution = 0;
-    let basic_amount                = 0;
-    let da_amount                   = 0;
-    let retention                   = 0;
+    let basic_amount = 0;
+    let da_amount = 0;
+    let retention = 0;
 
+    // ── Earnings ──────────────────────────────────────────────────────────────
     (frm.doc.earnings || []).forEach(row => {
         const base = flt(row.base_amount != null ? row.base_amount : row.amount);
         row.base_amount = base;
         const comp = (row.salary_component || "").toLowerCase();
+        const is_daily_wage = parseInt(row.daily_wage_component || 0);
+        const per_day_rate = flt(row.per_day_rate || 0);
 
         let amount;
-        if (comp.includes("variable")) {
-            amount = pd === 0 ? 0
-                : (wd > 0 && row.depends_on_payment_days) ? (base / wd) * pd * variable_pct
-                : base * variable_pct;
+
+        if (is_attendance_allowance(row.salary_component)) {
+            // Hard-coded Attendance Allowance: base == 0 → skip (not in SSA)
+            amount = calc_attendance_allowance(base, phd, wd, slip_month);
+
+        } else if (comp.includes("variable")) {
+            // Variable pay: ratio-based, never daily-wage
+            if (pd === 0) {
+                amount = 0;
+            } else if (wd > 0 && row.depends_on_payment_days) {
+                amount = (base / wd) * pd * variable_pct;
+            } else {
+                amount = base * variable_pct;
+            }
+
+        } else if (is_daily_wage && per_day_rate > 0) {
+            // ── Daily wage: per_day_rate × days ──────────────────────────────
+            // depends_on_physical_working_days → use physical_working_days
+            // everything else (including depends_on_payment_days) → use payment_days
+            if (row.depends_on_physical_working_days) {
+                amount = per_day_rate * phd;
+            } else {
+                amount = per_day_rate * pd;
+            }
+
         } else if (row.depends_on_physical_working_days && wd > 0) {
             amount = (base / wd) * phd;
+
         } else if (row.depends_on_payment_days && wd > 0) {
             amount = (base / wd) * pd;
+
         } else {
             amount = base;
         }
 
-        row.amount      = flt(amount, 2);
+        row.amount = flt(amount, 2);
         total_earnings += row.amount;
 
-        if (comp.includes("basic"))                               basic_amount = row.amount;
-        if (is_da_component(row.salary_component, row.abbr))     da_amount    = row.amount;
+        if (comp.includes("basic")) basic_amount = row.amount;
+        if (is_da_component(row.salary_component, row.abbr)) da_amount = row.amount;
     });
 
+    // ── Deductions ────────────────────────────────────────────────────────────
     (frm.doc.deductions || []).forEach(row => {
-        const base      = flt(row.base_amount != null ? row.base_amount : row.amount);
+        const base = flt(row.base_amount != null ? row.base_amount : row.amount);
         row.base_amount = base;
+        const is_daily_wage = parseInt(row.daily_wage_component || 0);
+        const per_day_rate = flt(row.per_day_rate || 0);
         const statutory = is_statutory(row.salary_component);
-        const pt        = is_pt(row.salary_component);
+        const pt = is_pt(row.salary_component);
 
         let amount;
+
         if (pt) {
-            // Professional Tax: fixed slab per month
+            // PT fixed amount by month
             amount = slip_month === 2 ? 300 : 200;
+
         } else if (statutory) {
-            // Statutory components (PF, ESIC etc.): use base as-is
+            // Statutory components: use stored base_amount (server-computed)
             amount = base;
+
+        } else if (is_daily_wage && per_day_rate > 0) {
+            if (row.depends_on_physical_working_days) {
+                amount = per_day_rate * phd;
+            } else {
+                amount = per_day_rate * pd;
+            }
+
         } else if (row.depends_on_physical_working_days && wd > 0 && base > 0) {
             amount = (base / wd) * phd;
+
         } else if (row.depends_on_payment_days && wd > 0 && base > 0) {
             amount = (base / wd) * pd;
+
         } else {
-            // Loan-I, Loan-II, Advance and all other fixed deductions:
-            // depends_on_payment_days = 0, so they land here — amount unchanged.
-            // Deferred rows have amount=0 naturally — no special case needed.
             amount = base;
         }
 
-        row.amount        = flt(amount, 2);
+        row.amount = flt(amount, 2);
         total_deductions += row.amount;
 
         if ((row.salary_component || "").toLowerCase().includes("retention")) retention += row.amount;
     });
 
+    // ── Employer share ────────────────────────────────────────────────────────
     (frm.doc.employer_share || []).forEach(row => {
         const base = flt(row.base_amount != null ? row.base_amount : row.amount);
         row.base_amount = base;
-        row.amount      = flt(base, 2);
+        const is_daily_wage = parseInt(row.daily_wage_component || 0);
+        const per_day_rate = flt(row.per_day_rate || 0);
+
+        let amount;
+
+        if (is_daily_wage && per_day_rate > 0) {
+            if (row.depends_on_physical_working_days) {
+                amount = per_day_rate * phd;
+            } else {
+                amount = per_day_rate * pd;
+            }
+        } else {
+            // Employer share is statutory — always use the stored base
+            amount = base;
+        }
+
+        row.amount = flt(amount, 2);
         total_employer_contribution += row.amount;
     });
 
     frm.set_value({
-        total_earnings:              flt(total_earnings, 2),
-        total_deductions:            flt(total_deductions, 2),
-        net_salary:                  flt(total_earnings - total_deductions, 2),
-        total_basic_da:              flt(basic_amount + da_amount, 2),
+        total_earnings: flt(total_earnings, 2),
+        total_deductions: flt(total_deductions, 2),
+        net_salary: flt(total_earnings - total_deductions, 2),
+        total_basic_da: flt(basic_amount + da_amount, 2),
         total_employer_contribution: flt(total_employer_contribution, 2),
-        retention:                   flt(retention, 2)
+        retention: flt(retention, 2)
     });
 
     frm.refresh_fields(["earnings", "deductions", "employer_share"]);
@@ -437,28 +527,28 @@ function reset_form(frm) {
     frm.clear_table("deductions");
     frm.clear_table("employer_share");
     frm.set_value({
-        month_days:            0,
-        weekly_offs_count:     0,
-        total_holidays:        0,
-        present_days:          0,
-        total_on_tour:         0,
-        total_half_days:       0,
-        total_earned_leaves:   0,
-        total_casual_leaves:   0,
-        total_comp_off:        0,
+        month_days: 0,
+        weekly_offs_count: 0,
+        total_holidays: 0,
+        present_days: 0,
+        total_on_tour: 0,
+        total_half_days: 0,
+        total_earned_leaves: 0,
+        total_casual_leaves: 0,
+        total_comp_off: 0,
         total_earned_comp_off: 0,
-        absent_days:           0,
-        total_lwp:             0,
-        total_working_days:    0,
-        payment_days:          0,
+        absent_days: 0,
+        total_lwp: 0,
+        total_working_days: 0,
+        payment_days: 0,
         physical_working_days: 0,
-        total_unpaid_days:     0,
-        total_earnings:              0,
-        total_deductions:            0,
-        net_salary:                  0,
-        total_basic_da:              0,
+        total_unpaid_days: 0,
+        total_earnings: 0,
+        total_deductions: 0,
+        net_salary: 0,
+        total_basic_da: 0,
         total_employer_contribution: 0,
-        retention:                   0,
+        retention: 0,
         working_days_calculation_method: ""
     });
     frm.variable_pay_percentage = 0;

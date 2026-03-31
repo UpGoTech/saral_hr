@@ -72,16 +72,17 @@ def _fmt(v):
 
 def _get_data(f):
     cols = [
-        _col("Earnings",      "description",     w=200),
+        _col("Earnings",      "description",     w=255),
         _col("Amount",        "amount",  "Float", 130, precision=2),
         {"label": " ", "fieldname": "spacer",  "fieldtype": "Data", "width": 12},
-        _col("Deductions",    "ded_description", w=200),
+        _col("Deductions",    "ded_description", w=255),
         _col("Amount",        "ded_amount", "Float", 130, precision=2),
         {"label": " ", "fieldname": "spacer2", "fieldtype": "Data", "width": 12},
-        _col("Other Details", "oth_description", w=180),
+        _col("Other Details", "oth_description", w=255),
         _col("Value",         "oth_amount", "Float", 120, precision=2),
     ]
 
+    # No company selected — return empty
     if not f.get("company"):
         return cols, []
 
@@ -114,6 +115,15 @@ def _get_data(f):
         )
 
     w = " AND ".join(conds)
+
+    # ── FIX: check if any salary slips exist before doing anything else ──
+    slip_count = frappe.db.sql(
+        f"SELECT COUNT(*) FROM `tabSalary Slip` ss WHERE {w}", p
+    )[0][0]
+
+    if not slip_count:
+        return cols, []
+    # ────────────────────────────────────────────────────────────────────
 
     def _comps(field, xj=""):
         return [
@@ -153,7 +163,7 @@ def _get_data(f):
     ge = sum(v for _, v in er)
     gd = sum(v for _, v in dr)
 
-    # Aggregate stats — added el, cl, comp_off, physical_working_days, present_days
+    # Aggregate stats
     st = (frappe.db.sql(
         f"SELECT COUNT(DISTINCT ss.employee) AS te, SUM(ss.net_salary) AS ns, "
         f"SUM(ss.total_lwp) AS tl, SUM(ss.absent_days) AS ta, "
@@ -234,12 +244,21 @@ def _build_html(cols, data, co, mo, yr):
         f'</div>'
     )
 
+    # No data — show blank report with header only
+    if not data:
+        return (
+            f'<!DOCTYPE html><html><head><meta charset="UTF-8">{_CSS}</head>'
+            f'<body>{hdr}'
+            f'<p style="text-align:center;padding:30px;color:#888;font-size:13px;">'
+            f'No salary slips found for this period.</p>'
+            f'{_SIG}</body></html>'
+        )
+
     earn = [r for r in data if r.get("_row_type") == "component" and r.get("description")]
     ded  = [r for r in data if r.get("_row_type") == "component" and r.get("ded_description")]
     gt   = next((r for r in data if r.get("_row_type") == "grand_total"), {})
     oth  = [r for r in data if r.get("_row_type") == "component" and r.get("oth_description")]
 
-    # Bigger fonts, more padding, no colour — grey alternating rows
     ROW_COLOURS = ["#ffffff", "#f0f0f0"]
 
     HD  = f"border:{B};padding:8px 10px;font-size:14px;font-weight:700;background:#e8e8e8;color:#000;text-align:center;letter-spacing:0.5px;"

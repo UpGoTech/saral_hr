@@ -14,9 +14,32 @@ class CompanyLink(Document):
         self.handle_employee_transfer()
 
     def validate(self):
+        self.validate_skill_type_if_required()
         self.sync_holiday_list_from_company()
         self.validate_left_date()
         self.validate_unique_active_employee()
+
+    def validate_skill_type_if_required(self):
+        """
+        Skill Type is mandatory ONLY when the selected Category has has_subtype = 1.
+        For categories without sub-types (e.g. Staff), skill_type is not required.
+        """
+        if not self.category:
+            return
+
+        # Explicit int cast — get_value can return "0", 0, 1, "1", or None
+        has_subtype = frappe.db.get_value("Category", self.category, "has_subtype")
+        if not int(has_subtype or 0):
+            # Category does not have subtypes — clear any stale skill_type and return
+            return
+
+        # Category has subtypes — skill_type is required
+        if not self.skill_type:
+            frappe.throw(
+                _("Skill Type is mandatory for category <b>{0}</b> "
+                  "because it has skill sub-types enabled.").format(self.category),
+                title=_("Missing Skill Type")
+            )
 
     def validate_unique_active_employee(self):
         if not self.employee or not self.is_active:
@@ -73,8 +96,6 @@ class CompanyLink(Document):
         new_archive_name = "{0}-{1}".format(self.employee, suffix)
 
         # Step 2: Rename the old record to archived name
-        # NOTE: rename_doc cascades and will set employee field = new_archive_name
-        # We fix this in Step 3 with direct SQL
         frappe.rename_doc(
             "Company Link",
             old_name,
@@ -113,7 +134,6 @@ class CompanyLink(Document):
             indicator="green"
         )
 
-        # New record takes the plain employee ID via autoname
         self.is_active = 1
 
     def get_next_archive_suffix(self, employee):

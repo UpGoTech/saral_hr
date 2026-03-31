@@ -17,6 +17,10 @@
   "company",
   "attendance_date",
   "holiday",
+  "half_day_section",
+  "custom_first_half",
+  "column_break_fxqu",
+  "custom_second_half",
   "details_section",
   "shift",
   "in_time",
@@ -73,6 +77,28 @@
    "fieldtype": "Date",
    "label": "Attendance Date",
    "reqd": 1
+  },
+  {
+   "depends_on": "eval:doc.status == 'Half Day'",
+   "fieldname": "half_day_section",
+   "fieldtype": "Section Break",
+   "label": "Half Day Details"
+  },
+  {
+   "depends_on": "eval:doc.status == 'Half Day'",
+   "description": "Status for the first half of the day",
+   "fieldname": "custom_first_half",
+   "fieldtype": "Select",
+   "label": "First Half",
+   "options": "\nPresent\nOn Tour\nEarned Comp Off\nAbsent\nEarned Leave\nCasual Leave\nComp Off\nLWP"
+  },
+  {
+   "depends_on": "eval:doc.status == 'Half Day'",
+   "description": "Status for the second half of the day",
+   "fieldname": "custom_second_half",
+   "fieldtype": "Select",
+   "label": "Second Half",
+   "options": "\nPresent\nOn Tour\nEarned Comp Off\nAbsent\nEarned Leave\nCasual Leave\nComp Off\nLWP"
   },
   {
    "fieldname": "shift",
@@ -135,11 +161,15 @@
    "fieldtype": "Data",
    "in_list_view": 1,
    "label": "Holiday"
+  },
+  {
+   "fieldname": "column_break_fxqu",
+   "fieldtype": "Column Break"
   }
  ],
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-03-18 14:50:54.347612",
+ "modified": "2026-03-30 12:35:29.980172",
  "modified_by": "Administrator",
  "module": "Saral Hr",
  "name": "Attendance",

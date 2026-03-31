@@ -223,7 +223,8 @@
    "description": "For reference only. Not used in ESIC calculation.",
    "fieldname": "esic_wage_limit",
    "fieldtype": "Currency",
-   "label": "ESIC Wage Limit (Reference Only)"
+   "label": "ESIC Wage Limit (Reference Only)",
+   "precision": "2"
   },
   {
    "fieldname": "column_break_esic_rates",
@@ -238,8 +239,7 @@
   {
    "fieldname": "esic_employer_contribution",
    "fieldtype": "Float",
-   "label": "Employer Contribution %",
-   "precision": "2"
+   "label": "Employer Contribution %"
   },
   {
    "description": "Add the Earning components used to compute the PF wage basis. Formula: sum of all listed components. For Limited PF employees the result is capped at the wage limit below.",
@@ -302,7 +302,7 @@
  ],
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-03-12 20:16:49.484549",
+ "modified": "2026-03-31 18:04:46.287743",
  "modified_by": "Administrator",
  "module": "Saral Hr",
  "name": "Company",

@@ -137,7 +137,7 @@ def _get_data(f):
         p["employees"] = tuple(em_filter)
         conds.append("ss.employee IN %(employees)s")
 
-    cat = f.get("category")
+    cat  = f.get("category")
     catj = ""
     if cat:
         p["category"] = cat
@@ -155,32 +155,30 @@ def _get_data(f):
 
     earn_comps, emp_ded_comps, empr_comps = _get_components(w, p)
 
-    # Screen columns
     cols = [
-        _col("Employee",        "employee",         w=110),
-        _col("Employee Name",   "employee_name",    w=160),
-        _col("Designation",     "designation",      w=120),
-        _col("Department",      "department",       w=120),
-        _col("Payment Days",    "payment_days",     "Float", 80,  precision=2),
-        _col("Present Days",    "present_days",     "Float", 80,  precision=2),
-        _col("Absent Days",     "absent_days",      "Float", 70,  precision=2),
-        _col("LWP",             "total_lwp",        "Float", 55,  precision=2),
-        _col("Earned Leaves",   "total_earned_leaves",  "Float", 70, precision=2),
-        _col("Casual Leaves",   "total_casual_leaves",  "Float", 70, precision=2),
-        _col("Comp Off",        "total_comp_off",   "Float", 70,  precision=2),
+        _col("Employee",        "employee",              w=150),
+        _col("Employee Name",   "employee_name",         w=200),
+        _col("Designation",     "designation",           w=150),
+        _col("Department",      "department",            w=150),
+        _col("Payment Days",    "payment_days",          "Float", 120,  precision=2),
+        _col("Present Days",    "present_days",          "Float", 120,  precision=2),
+        _col("Absent Days",     "absent_days",           "Float", 120,  precision=2),
+        _col("LWP",             "total_lwp",             "Float", 120,  precision=2),
+        _col("Earned Leaves",   "total_earned_leaves",   "Float", 160,  precision=2),
+        _col("Casual Leaves",   "total_casual_leaves",   "Float", 160,  precision=2),
+        _col("Comp Off",        "total_comp_off",        "Float", 120,  precision=2),
     ]
     for name, abbr in earn_comps:
-        cols.append(_col(f"{name} ({abbr})", _fn("e", abbr), "Float", 110, precision=2))
-    cols.append(_col("Gross Earnings",   "gross_earnings",   "Float", 110, precision=2))
+        cols.append(_col(f"{name} ({abbr})", _fn("e", abbr), "Float", 190, precision=2))
+    cols.append(_col("Gross Earnings",   "gross_earnings",   "Float", 190, precision=2))
     for name, abbr in emp_ded_comps:
-        cols.append(_col(f"{name} ({abbr})", _fn("d", abbr), "Float", 110, precision=2))
-    cols.append(_col("Total Deductions", "total_deductions", "Float", 110, precision=2))
+        cols.append(_col(f"{name} ({abbr})", _fn("d", abbr), "Float", 190, precision=2))
+    cols.append(_col("Total Deductions", "total_deductions", "Float", 190, precision=2))
     for name, abbr in empr_comps:
-        cols.append(_col(f"{name} ({abbr})", _fn("r", abbr), "Float", 110, precision=2))
-    cols.append(_col("Employer Total",   "employer_total",   "Float", 110, precision=2))
-    cols.append(_col("Net Salary",       "net_salary",       "Float", 110, precision=2))
+        cols.append(_col(f"{name} ({abbr})", _fn("r", abbr), "Float", 190, precision=2))
+    cols.append(_col("Employer Total",   "employer_total",   "Float", 190, precision=2))
+    cols.append(_col("Net Salary",       "net_salary",       "Float", 190, precision=2))
 
-    # Fetch slips — include attendance + designation/department
     slips = frappe.db.sql(
         f"""
         SELECT ss.name AS slip, ss.employee, ss.employee_name,
@@ -216,20 +214,20 @@ def _get_data(f):
         grand[_fn("r", abbr)] = 0.0
 
     for sl in slips:
-        sc = comp_map.get(sl["slip"], {})
+        sc  = comp_map.get(sl["slip"], {})
         row = {
             "employee":            sl["employee"],
             "employee_name":       sl["employee_name"],
             "designation":         sl.get("designation") or "",
             "department":          sl.get("department")  or "",
-            "payment_days":        flt(sl["payment_days"],            2),
-            "absent_days":         flt(sl.get("absent_days") or 0,    2),
-            "total_lwp":           flt(sl["total_lwp"] or 0,          2),
-            "present_days":        flt(sl.get("present_days") or 0,   2),
-            "total_earned_leaves": flt(sl.get("total_earned_leaves") or 0, 2),
-            "total_casual_leaves": flt(sl.get("total_casual_leaves") or 0, 2),
-            "total_comp_off":      flt(sl.get("total_comp_off") or 0, 2),
-            "net_salary":          flt(sl["net_salary"],              2),
+            "payment_days":        flt(sl["payment_days"],                  2),
+            "absent_days":         flt(sl.get("absent_days") or 0,          2),
+            "total_lwp":           flt(sl["total_lwp"] or 0,                2),
+            "present_days":        flt(sl.get("present_days") or 0,         2),
+            "total_earned_leaves": flt(sl.get("total_earned_leaves") or 0,  2),
+            "total_casual_leaves": flt(sl.get("total_casual_leaves") or 0,  2),
+            "total_comp_off":      flt(sl.get("total_comp_off") or 0,       2),
+            "net_salary":          flt(sl["net_salary"],                    2),
         }
 
         ge = 0.0
@@ -267,9 +265,11 @@ def _get_data(f):
 
     if data:
         data.append({
-            "employee": "", "employee_name": "Grand Total",
-            "designation": "", "department": "",
-            "_bold": 1,
+            "employee":      "",
+            "employee_name": "Grand Total",
+            "designation":   "",
+            "department":    "",
+            "_bold":         1,
             **{k: flt(v, 2) for k, v in grand.items()},
         })
 
@@ -281,27 +281,42 @@ def execute(filters=None):
 
 
 # ---------------------------------------------------------------------------
-# PDF — same 3-row-per-employee design as Transaction Checklist
+# PDF
 # ---------------------------------------------------------------------------
 
+# FIX 4: body width:100% so flex sig container spans full page width
 _CSS = """<style>
 *{margin:0;padding:0;box-sizing:border-box}
-body{font-family:Arial,sans-serif;font-size:13px;color:#000;background:#fff}
+body{font-family:Arial,sans-serif;font-size:13px;color:#000;background:#fff;width:100%;}
 .hdr{text-align:center;border-bottom:2px solid #000;padding:10px 4px 8px;margin-bottom:8px}
 .hdr .co{font-size:24px;font-weight:900;letter-spacing:1px;text-transform:uppercase}
 .hdr .ttl{font-size:18px;font-weight:700;margin-top:5px}
 .hdr .per{font-size:15px;margin-top:4px}
-.sig{display:flex;justify-content:space-between;margin-top:24px;padding-top:8px}
-.sig-b{text-align:center;width:160px}
-.sig-l{border-top:1px solid #000;margin-bottom:4px}
-.sig-t{font-size:13px;color:#333}
 table{width:100%;border-collapse:collapse;table-layout:fixed;}
 </style>"""
 
-_SIG = '<div class="sig">' + "".join(
-    f'<div class="sig-b"><div class="sig-l"></div><div class="sig-t">{l}</div></div>'
-    for l in ["Prepared By", "Checked By", "Authorised Signatory"]
-) + '</div>'
+# FIX 4: inline width:100% on sig container — prevents wkhtmltopdf
+# collapsing the flex div to content width, shifting sigs left
+_SIG = """
+<!--SIG_START-->
+<div style="display:flex;justify-content:space-between;
+            width:100%;margin-top:24px;padding-top:8px;
+            box-sizing:border-box;">
+    <div style="text-align:center;width:180px;">
+        <div style="border-top:1px solid #000;margin-bottom:4px;"></div>
+        <div style="font-size:13px;color:#333;">Prepared By</div>
+    </div>
+    <div style="text-align:center;width:180px;">
+        <div style="border-top:1px solid #000;margin-bottom:4px;"></div>
+        <div style="font-size:13px;color:#333;">Checked By</div>
+    </div>
+    <div style="text-align:center;width:180px;">
+        <div style="border-top:1px solid #000;margin-bottom:4px;"></div>
+        <div style="font-size:13px;color:#333;">Authorised Signatory</div>
+    </div>
+</div>
+<!--SIG_END-->
+"""
 
 C_GRAND = "#e8e8e8"
 
@@ -339,6 +354,7 @@ def _build_html(cols, data, co, mo, yr,
     if earn_comps is None or emp_ded_comps is None or empr_comps is None:
         earn_comps, emp_ded_comps, empr_comps = _comps_from_cols(cols)
 
+    # Company/title header — only shown on page 1
     hdr_html = (
         f'<div class="hdr">'
         f'<div class="co">{co}</div>'
@@ -358,38 +374,39 @@ def _build_html(cols, data, co, mo, yr,
     detail_rows = [r for r in data if not r.get("_bold")]
     grand_row   = next((r for r in data if r.get("_bold")), {})
 
-    ne = len(earn_comps)
-    nd = len(emp_ded_comps)
-    nr = len(empr_comps)
+    ne     = len(earn_comps)
+    nd     = len(emp_ded_comps)
+    nr     = len(empr_comps)
     n_cols = max(ne, nd, nr)
 
-    # Column widths — generous sizing for readability
+    # FIX 3: reduced W_NET and W_TOT slightly so Net Salary column
+    # is not clipped on the right edge of landscape A4
     W_SR   = 24
-    W_EMP  = 130
-    W_DAY1 = 48
-    W_DAY2 = 48
-    W_COMP = 62
-    W_TOT  = 80
-    W_NET  = 80
+    W_EMP  = 120
+    W_DAY1 = 45
+    W_DAY2 = 45
+    W_COMP = 60
+    W_TOT  = 75
+    W_NET  = 75
 
-    HDR_BG      = "#e8e8e8"   # grey header
-    ROW_COLOURS = ["#ffffff", "#f0f0f0"]  # white / light grey alternating — no colour
+    HDR_BG      = "#e8e8e8"
+    ROW_COLOURS = ["#ffffff", "#f0f0f0"]
     PAD         = "padding:7px 9px;"
     FS          = "font-size:13px;"
-    FS_SM       = "font-size:12px;"
-    FS_HDR      = "font-size:13px;"
 
-    # ── thead ──────────────────────────────────────────────────────────
+    # ── thead (repeats on every page — correct behaviour) ──────────────
     def _thead():
-        THL = f"border:{B};padding:7px 9px;font-size:13px;font-weight:700;background:{HDR_BG};text-align:left;white-space:normal;vertical-align:middle;"
-        THR = f"border:{B};padding:7px 9px;font-size:13px;font-weight:700;background:{HDR_BG};text-align:right;white-space:normal;vertical-align:middle;"
+        THL = (f"border:{B};padding:7px 9px;font-size:13px;font-weight:700;"
+               f"background:{HDR_BG};text-align:left;white-space:normal;vertical-align:middle;")
+        THR = (f"border:{B};padding:7px 9px;font-size:13px;font-weight:700;"
+               f"background:{HDR_BG};text-align:right;white-space:normal;vertical-align:middle;")
 
-        h = '<thead>'
+        h  = '<thead>'
 
-        # Row 1 — Earnings component names
+        # Row 1 — Earnings names
         h += '<tr>'
         h += f'<th rowspan="3" style="{THR}width:{W_SR}px;text-align:center;">Sr</th>'
-        h += f'<th rowspan="2" style="{THL}width:{W_EMP}px;">Emp Name<br><span style="font-size:13px;font-weight:400;">Designation</span></th>'
+        h += f'<th rowspan="2" style="{THL}width:{W_EMP}px;">Emp Name<br><span style="font-size:12px;font-weight:400;">Designation</span></th>'
         h += f'<th style="{THR}width:{W_DAY1}px;">Pay Days</th>'
         h += f'<th style="{THR}width:{W_DAY2}px;">Present</th>'
         for i in range(n_cols):
@@ -399,7 +416,7 @@ def _build_html(cols, data, co, mo, yr,
         h += f'<th rowspan="3" style="{THR}width:{W_NET}px;">Net Salary</th>'
         h += '</tr>'
 
-        # Row 2 — Deduction component names
+        # Row 2 — Deduction names
         h += '<tr>'
         h += f'<th style="{THR}width:{W_DAY1}px;">Absent</th>'
         h += f'<th style="{THR}width:{W_DAY2}px;">EL / CL</th>'
@@ -409,7 +426,7 @@ def _build_html(cols, data, co, mo, yr,
         h += f'<th style="{THR}width:{W_TOT}px;">Total Deductions</th>'
         h += '</tr>'
 
-        # Row 3 — Employer component names + Emp ID row
+        # Row 3 — Employer names + Emp ID
         h += '<tr>'
         h += f'<th style="{THL}width:{W_EMP}px;font-size:12px;">Emp ID / Dept</th>'
         h += f'<th style="{THR}width:{W_DAY1}px;">LWP</th>'
@@ -423,7 +440,8 @@ def _build_html(cols, data, co, mo, yr,
         h += '</thead>'
         return h
 
-    # ── helpers ────────────────────────────────────────────────────────
+    # ── Cell helpers ────────────────────────────────────────────────────
+
     def _comp_cell(val, bg, bold):
         fw = "font-weight:700;" if bold else ""
         return (
@@ -432,7 +450,6 @@ def _build_html(cols, data, co, mo, yr,
         )
 
     def _tot_cell(val, bg, bold):
-        fw = "font-weight:700;" if bold else ""
         return (
             f'<td style="border:{B};{PAD}{FS}font-weight:700;background:{bg};'
             f'width:{W_TOT}px;text-align:right;vertical-align:middle;">{val}</td>'
@@ -458,18 +475,18 @@ def _build_html(cols, data, co, mo, yr,
     def _emp_cell(row_num, name, code, desig, dept, bg, bold):
         fw = "font-weight:700;" if bold else ""
         if row_num == 1:
-            bt, bb = B, "none"
+            bt, bb  = B, "none"
             content = f'<strong style="font-size:15px;">{name}</strong>'
             if desig:
-                content += f'<br><span style="font-size:13px;font-weight:400;">{desig}</span>'
+                content += f'<br><span style="font-size:12px;font-weight:400;">{desig}</span>'
         elif row_num == 2:
-            bt, bb = "none", "none"
+            bt, bb  = "none", "none"
             content = "&nbsp;"
         else:
-            bt, bb = "none", B
-            parts = []
-            if code: parts.append(f'<span style="font-size:13px;color:#333;">{code}</span>')
-            if dept: parts.append(f'<span style="font-size:13px;color:#333;">{dept}</span>')
+            bt, bb  = "none", B
+            parts   = []
+            if code: parts.append(f'<span style="font-size:12px;color:#333;">{code}</span>')
+            if dept: parts.append(f'<span style="font-size:12px;color:#333;">{dept}</span>')
             content = "<br>".join(parts) if parts else "&nbsp;"
         return (
             f'<td style="border-top:{bt};border-bottom:{bb};'
@@ -481,9 +498,9 @@ def _build_html(cols, data, co, mo, yr,
 
     def _sr_cell(row_num, sr_val, bg, bold):
         fw = "font-weight:700;" if bold else ""
-        if row_num == 1: bt, bb = B, "none"
+        if row_num == 1:   bt, bb = B, "none"
         elif row_num == 2: bt, bb = "none", "none"
-        else: bt, bb = "none", B
+        else:              bt, bb = "none", B
         content = str(sr_val) if (row_num == 1 and sr_val != "") else "&nbsp;"
         return (
             f'<td style="border-top:{bt};border-bottom:{bb};'
@@ -493,11 +510,13 @@ def _build_html(cols, data, co, mo, yr,
         )
 
     def _net_cell(row_num, ns, bg):
-        if row_num == 1: bt, bb, content = B, "none", "&nbsp;"
+        if row_num == 1:
+            bt, bb, content = B, "none", "&nbsp;"
         elif row_num == 2:
-            bt, bb = "none", "none"
-            content = f'<span style="font-size:16px;font-weight:700;">{ns}</span>'
-        else: bt, bb, content = "none", B, "&nbsp;"
+            bt, bb  = "none", "none"
+            content = f'<span style="font-size:15px;font-weight:700;">{ns}</span>'
+        else:
+            bt, bb, content = "none", B, "&nbsp;"
         return (
             f'<td style="border-top:{bt};border-bottom:{bb};'
             f'border-left:{B};border-right:{B};'
@@ -537,39 +556,39 @@ def _build_html(cols, data, co, mo, yr,
         ns  = _fmt(row.get("net_salary"))       or "—"
 
         # Row 1 — Earnings
-        r1 = '<tr>'
+        r1  = '<tr>'
         r1 += _sr_cell(1, sr, bg, bold)
         r1 += _emp_cell(1, name, code, desig, dept, bg, bold)
         r1 += _fixed_cell(pd,   W_DAY1, 1, bg, bold, force_border=True)
         r1 += _fixed_cell(pr,   W_DAY2, 1, bg, bold, force_border=True)
         for i in range(n_cols):
-            v = (_fmt(row.get(_fn("e", earn_comps[i][1]))) or "—") if i < ne else "&nbsp;"
+            v   = (_fmt(row.get(_fn("e", earn_comps[i][1]))) or "—") if i < ne else "&nbsp;"
             r1 += _comp_cell(v, bg, bold)
         r1 += _tot_cell(ge, bg, bold)
         r1 += _net_cell(1, ns, bg)
         r1 += '</tr>'
 
         # Row 2 — Employee Deductions
-        r2 = '<tr>'
+        r2  = '<tr>'
         r2 += _sr_cell(2, sr, bg, bold)
         r2 += _emp_cell(2, name, code, desig, dept, bg, bold)
         r2 += _fixed_cell(ab,   W_DAY1, 2, bg, bold, force_border=True)
         r2 += _fixed_cell(elcl, W_DAY2, 2, bg, bold, force_border=True)
         for i in range(n_cols):
-            v = (_fmt(row.get(_fn("d", emp_ded_comps[i][1]))) or "—") if i < nd else "&nbsp;"
+            v   = (_fmt(row.get(_fn("d", emp_ded_comps[i][1]))) or "—") if i < nd else "&nbsp;"
             r2 += _comp_cell(v, bg, bold)
         r2 += _tot_cell(td2, bg, bold)
         r2 += _net_cell(2, ns, bg)
         r2 += '</tr>'
 
         # Row 3 — Employer
-        r3 = '<tr>'
+        r3  = '<tr>'
         r3 += _sr_cell(3, sr, bg, bold)
         r3 += _emp_cell(3, name, code, desig, dept, bg, bold)
         r3 += _fixed_cell(lwp, W_DAY1, 3, bg, bold, force_border=True)
         r3 += _fixed_cell(co2, W_DAY2, 3, bg, bold, force_border=True)
         for i in range(n_cols):
-            v = (_fmt(row.get(_fn("r", empr_comps[i][1]))) or "—") if i < nr else "&nbsp;"
+            v   = (_fmt(row.get(_fn("r", empr_comps[i][1]))) or "—") if i < nr else "&nbsp;"
             r3 += _comp_cell(v, bg, bold)
         r3 += _tot_cell(et2, bg, bold)
         r3 += _net_cell(3, ns, bg)
@@ -578,7 +597,11 @@ def _build_html(cols, data, co, mo, yr,
         return r1 + r2 + r3
 
     # ── Pagination ──────────────────────────────────────────────────────
-    FIRST, OTHER = 10, 15
+    # Each employee = 3 HTML rows.
+    # FIX 2: reduced limits so employees don't split across pages.
+    # Page 1 has the title header so fewer employees fit (8).
+    # Subsequent pages have more room (13).
+    FIRST, OTHER = 8, 13
     pages, idx, first = [], 0, True
     while idx < len(detail_rows):
         lim = FIRST if first else OTHER
@@ -596,6 +619,10 @@ def _build_html(cols, data, co, mo, yr,
         pb   = '<div style="page-break-before:always;"></div>' if pn > 0 else ""
         last = (pn == len(pages) - 1)
 
+        # FIX 1: company title header only on page 1;
+        # column headers (_thead) still repeat on every page
+        page_hdr = hdr_html if pn == 0 else ""
+
         pg_footer = (
             f'<div style="text-align:right;font-size:12px;'
             f'margin-top:6px;padding-right:2px;">'
@@ -611,7 +638,7 @@ def _build_html(cols, data, co, mo, yr,
         body += '</tbody>'
 
         parts.append(
-            f'{pb}{hdr_html}'
+            f'{pb}{page_hdr}'
             f'<table>{_thead()}{body}</table>'
             f'{pg_footer}'
         )
@@ -668,15 +695,18 @@ def print_report(filters):
     if co:
         p["companies"] = tuple(co)
         conds.append("ss.company IN %(companies)s")
+
     em_filter = _parse_list(filters.get("employee"))
     if em_filter:
         p["employees"] = tuple(em_filter)
         conds.append("ss.employee IN %(employees)s")
-    cat = filters.get("category")
+
+    cat  = filters.get("category")
     catj = ""
     if cat:
         p["category"] = cat
         catj = "INNER JOIN `tabCompany Link` cl_cat ON cl_cat.name=ss.employee AND cl_cat.category=%(category)s"
+
     divs = _parse_list(filters.get("division"))
     if divs:
         p["divisions"] = tuple(divs)
@@ -684,6 +714,7 @@ def print_report(filters):
             "ss.employee IN (SELECT name FROM `tabCompany Link` "
             "WHERE division IN %(divisions)s OR department IN %(divisions)s)"
         )
+
     w = " AND ".join(conds)
 
     earn_comps, emp_ded_comps, empr_comps = _get_components(w, p)
