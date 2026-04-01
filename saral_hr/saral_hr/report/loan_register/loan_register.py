@@ -19,13 +19,13 @@ def execute(filters=None):
 # ------------------------------------------------------------------ #
 
 def get_columns():
-    return [
-        {"label": _("Employee ID"),    "fieldname": "employee",             "fieldtype": "Link", "options": "Employee", "width": 140},
-        {"label": _("Employee Name"),  "fieldname": "employee_name",        "fieldtype": "Data",                        "width": 180},
-        {"label": _("Loan Type"),      "fieldname": "type",                 "fieldtype": "Data",                        "width": 100},
-        {"label": _("Total Loan"),     "fieldname": "total_loan",           "fieldtype": "Float",                       "width": 140},
-        {"label": _("Loan Recovered"), "fieldname": "recovered_this_month", "fieldtype": "Float",                       "width": 160},
-        {"label": _("Loan Balance"),   "fieldname": "loan_balance",         "fieldtype": "Float",                       "width": 140},
+     return [
+        {"label": _("Employee ID"),    "fieldname": "employee",             "fieldtype": "Link", "options": "Employee", "width": 200},
+        {"label": _("Employee Name"),  "fieldname": "employee_name",        "fieldtype": "Data",                        "width": 250},
+        {"label": _("Loan Type"),      "fieldname": "type",                 "fieldtype": "Data",                        "width": 150},
+        {"label": _("Total Loan"),     "fieldname": "total_loan",           "fieldtype": "Float",                       "width": 180},
+        {"label": _("Loan Recovered"), "fieldname": "recovered_this_month", "fieldtype": "Float",                       "width": 220},
+        {"label": _("Loan Balance"),   "fieldname": "loan_balance",         "fieldtype": "Float",                       "width": 220},
     ]
 
 

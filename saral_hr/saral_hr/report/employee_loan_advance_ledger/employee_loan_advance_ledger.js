@@ -41,10 +41,58 @@ frappe.query_reports["Employee Loan Advance Ledger"] = {
         },
     ],
 
-   onload(report) {
+  onload(report) {
     const emp_field = report.get_filter("employee");
     if (emp_field && emp_field.df) emp_field.df.only_select = 1;
     setTimeout(() => frappe.query_report.refresh(), 300);
+
+    report.page.set_primary_action(__("Print"), function () {
+        const f = report.get_values();
+
+        if (!f.company) {
+            frappe.msgprint({
+                title:     __("Missing Filters"),
+                message:   __("Please select Company before printing."),
+                indicator: "orange",
+            });
+            return;
+        }
+
+        frappe.dom.freeze(__("Generating PDF…"));
+
+        frappe.call({
+            method: "saral_hr.saral_hr.report.employee_loan_advance_ledger.employee_loan_advance_ledger.print_report",
+            args: {
+                filters: JSON.stringify({
+                    company:  f.company  || "",
+                    employee: f.employee || "",
+                    type:     f.type     || "",
+                    status:   f.status   || "",
+                }),
+            },
+            callback(r) {
+                frappe.dom.unfreeze();
+                if (r.message) {
+                    const a = Object.assign(document.createElement("a"), {
+                        href:   frappe.urllib.get_full_url(r.message),
+                        target: "_blank",
+                        rel:    "noopener noreferrer",
+                    });
+                    document.body.appendChild(a);
+                    a.click();
+                    document.body.removeChild(a);
+                }
+            },
+            error() {
+                frappe.dom.unfreeze();
+                frappe.msgprint({
+                    title:     __("Error"),
+                    message:   __("Failed to generate PDF."),
+                    indicator: "red",
+                });
+            },
+        });
+    }, "printer");
 },
     formatter(value, row, column, data, default_formatter) {
         value = default_formatter(value, row, column, data);
@@ -303,17 +351,33 @@ window._show_loan_modal = function (event, loan_id) {
                             </div>
                         </div>
                     </div>
-                    <button onclick="window._ela_close_modal()"
-                            style="width:30px;height:30px;border-radius:6px;
-                                   background:rgba(255,255,255,0.12);border:none;
-                                   cursor:pointer;display:flex;align-items:center;
-                                   justify-content:center;flex-shrink:0;">
-                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none"
-                             stroke="white" stroke-width="2.5" stroke-linecap="round">
-                            <line x1="18" y1="6" x2="6" y2="18"/>
-                            <line x1="6" y1="6" x2="18" y2="18"/>
-                        </svg>
-                    </button>
+                    <div style="display:flex;align-items:center;gap:8px;">
+                        <button onclick="window._ela_print_schedule('${loan_id}')"
+                                style="display:inline-flex;align-items:center;gap:6px;
+                                       padding:6px 14px;border-radius:6px;
+                                       background:rgba(255,255,255,0.15);border:1px solid rgba(255,255,255,0.25);
+                                       cursor:pointer;color:#fff;font-size:12px;font-weight:600;
+                                       letter-spacing:0.3px;">
+                            <svg width="13" height="13" viewBox="0 0 24 24" fill="none"
+                                 stroke="white" stroke-width="2.5" stroke-linecap="round">
+                                <polyline points="6 9 6 2 18 2 18 9"/>
+                                <path d="M6 18H4a2 2 0 01-2-2v-5a2 2 0 012-2h16a2 2 0 012 2v5a2 2 0 01-2 2h-2"/>
+                                <rect x="6" y="14" width="12" height="8"/>
+                            </svg>
+                            Print
+                        </button>
+                        <button onclick="window._ela_close_modal()"
+                                style="width:30px;height:30px;border-radius:6px;
+                                       background:rgba(255,255,255,0.12);border:none;
+                                       cursor:pointer;display:flex;align-items:center;
+                                       justify-content:center;flex-shrink:0;">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none"
+                                 stroke="white" stroke-width="2.5" stroke-linecap="round">
+                                <line x1="18" y1="6" x2="6" y2="18"/>
+                                <line x1="6" y1="6" x2="18" y2="18"/>
+                            </svg>
+                        </button>
+                    </div>
                 </div>
             </div>
 
@@ -528,4 +592,29 @@ window._show_loan_modal = function (event, loan_id) {
                 </div>`;
         },
     });
+
+   window._ela_print_schedule = function(loan_id) {
+    frappe.dom.freeze(__("Generating PDF…"));
+    frappe.call({
+        method: "saral_hr.saral_hr.report.employee_loan_advance_ledger.employee_loan_advance_ledger.print_loan_schedule",
+        args: { loan_id: loan_id },
+        callback(r) {
+            frappe.dom.unfreeze();
+            if (r.message) {
+                const a = Object.assign(document.createElement("a"), {
+                    href:   frappe.urllib.get_full_url(r.message),
+                    target: "_blank",
+                    rel:    "noopener noreferrer",
+                });
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+            }
+        },
+        error() {
+            frappe.dom.unfreeze();
+            frappe.msgprint({ title: __("Error"), message: __("Failed to generate PDF."), indicator: "red" });
+        }
+    });
+};
 };

@@ -17,11 +17,11 @@ def execute(filters=None):
 
 def get_columns():
     return [
-        {"fieldname": "employee",          "label": "Employee ID",         "fieldtype": "Link",  "options": "Employee", "width": 130},
-        {"fieldname": "employee_name",     "label": "Employee Name",       "fieldtype": "Data",                         "width": 200},
-        {"fieldname": "total_advance",     "label": "Total Advance",       "fieldtype": "Float",                        "width": 160},
-        {"fieldname": "recovered_advance", "label": "Recovered Advance",   "fieldtype": "Float",                        "width": 180},
-        {"fieldname": "pending_advance",   "label": "Pending Advance",     "fieldtype": "Float",                        "width": 170},
+        {"fieldname": "employee",          "label": "Employee ID",         "fieldtype": "Link",  "options": "Employee", "width": 300},
+        {"fieldname": "employee_name",     "label": "Employee Name",       "fieldtype": "Data",                         "width": 300},
+        {"fieldname": "total_advance",     "label": "Total Advance",       "fieldtype": "Float",                        "width": 200},
+        {"fieldname": "recovered_advance", "label": "Recovered Advance",   "fieldtype": "Float",                        "width": 200},
+        {"fieldname": "pending_advance",   "label": "Pending Advance",     "fieldtype": "Float",                        "width": 200},
     ]
 
 

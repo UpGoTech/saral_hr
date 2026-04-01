@@ -197,23 +197,50 @@ def _strip_sig(html):
     return html.strip()
 
 
+# ── Modes that use large fonts in their own _build_html ──────────────────────
+_LARGE_FONT_MODES = {"loan_register", "advance_register"}
+
+_LARGE_FONT_OVERRIDE = """
+<style>
+  .lr-wrap th, .lr-wrap td {
+    font-size: 14px !important;
+    padding: 8px 10px !important;
+  }
+  .lr-wrap .hdr .co  { font-size: 22px !important; }
+  .lr-wrap .hdr .ttl { font-size: 16px !important; }
+  .lr-wrap .hdr .per { font-size: 13px !important; }
+</style>
+"""
+
 def _render_section(mode, cols, data, co, mo, yr):
     """
     Delegate to sub-report's _build_html(), strip its signature block,
     return clean inner HTML only. payroll_report adds its own _SIG after.
+    For loan_register and advance_register, wrap in a scoped div that
+    restores their larger font sizes (otherwise the global _CSS 10px wins).
     """
     build_fn = _import_print_html(mode)
     if build_fn:
         try:
             if mode == "income_tax":
                 raw = build_fn(cols, data, {"company": co, "month": mo, "year": yr})
+            elif mode == "advance_register":
+                raw = build_fn(cols, data, co, "Advance Register", mo, yr)
+            elif mode == "loan_register":
+                raw = build_fn(cols, data, co, "Loan Register", mo, yr)
             else:
                 raw = build_fn(cols, data, co, mo, yr)
-            return _strip_sig(raw)
+
+            inner = _strip_sig(raw)
+
+            # Wrap large-font reports so their styles win over global _CSS
+            if mode in _LARGE_FONT_MODES:
+                inner = f'{_LARGE_FONT_OVERRIDE}<div class="lr-wrap">{inner}</div>'
+
+            return inner
         except Exception:
             frappe.log_error(f"payroll_report._render_section: {mode}", "Payroll Report")
     return f'<p style="color:#888;padding:12px;">Could not render {REPORT_LABELS.get(mode, mode)}</p>'
-
 
 def _build_all_html(sections, co, mo, yr):
     parts = []
