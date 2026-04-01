@@ -28,13 +28,18 @@ class Employee(Document):
                     f"Aadhar Number <b>{self.aadhar_number}</b> already exists for Employee <b>{duplicate}</b>."
                 )
 
-        # ✅ Fetch and save active companies from Company Link
+    def after_insert(self):
+        self.sync_active_company()
+
+    def on_update(self):
+        self.sync_active_company()
+
+    def sync_active_company(self):
         companies = frappe.get_all(
             "Company Link",
             filters={"employee": self.name, "is_active": 1},
             fields=["company"]
         )
-        if companies:
-            self.active_company = "\n".join([c.company for c in companies])
-        else:
-            self.active_company = ""
+        val = "\n".join([c.company for c in companies]) if companies else "No Active Company"
+        frappe.db.set_value("Employee", self.name, "active_company", val)
+        frappe.db.commit()

@@ -174,3 +174,31 @@ class CompanyLink(Document):
     def validate_left_date(self):
         if self.left_date and self.is_active:
             self.is_active = 0
+    
+    
+    def after_insert(self):
+        self._safe_sync()
+
+    def on_update(self):
+        self._safe_sync()
+
+    def on_trash(self):
+        self._safe_sync()
+
+    def _safe_sync(self):
+        try:
+            employee = self.employee
+            if not employee:
+                return
+            if not frappe.db.exists("Employee", employee):
+                return
+            companies = frappe.get_all(
+                "Company Link",
+                filters={"employee": employee, "is_active": 1},
+                fields=["company"]
+            )
+            val = "\n".join([c.company for c in companies]) if companies else "No Active Company"
+            frappe.db.set_value("Employee", employee, "active_company", val)
+            frappe.db.commit()
+        except Exception as e:
+            frappe.log_error(str(e), "CompanyLink Sync Error")
