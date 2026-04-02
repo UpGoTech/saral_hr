@@ -246,18 +246,31 @@ function get_ma_html() {
         </div>
     </div>
 
-    <!-- Half-day dropdown portal -->
-    <div id="ma_hd_dropdown" class="ma-hd-dropdown" style="display:none;">
-        <div class="ma-hd-dropdown-inner">
-            <div class="ma-hd-option" data-value="">— None —</div>
-            <div class="ma-hd-option" data-value="Present">Present</div>
-            <div class="ma-hd-option" data-value="On Tour">On Tour</div>
-            <div class="ma-hd-option" data-value="Earned Comp Off">Earned Comp Off</div>
-            <div class="ma-hd-option" data-value="Absent">Absent</div>
-            <div class="ma-hd-option" data-value="Earned Leave">Earned Leave</div>
-            <div class="ma-hd-option" data-value="Casual Leave">Casual Leave</div>
-            <div class="ma-hd-option" data-value="Comp Off">Comp Off</div>
-            <div class="ma-hd-option" data-value="LWP">LWP</div>
+    <!-- Half-day panel portal -->
+    <div id="ma_hd_panel" class="ma-hd-panel" style="display:none;">
+        <div class="ma-hd-panel-inner">
+            <div class="ma-hd-panel-header">
+                <div class="ma-hd-panel-header-info">
+                    <span class="ma-hd-panel-title" id="ma_hd_panel_title">Half Day</span>
+                    <span class="ma-hd-panel-date" id="ma_hd_panel_date"></span>
+                </div>
+                <button class="ma-hd-panel-close" id="ma_hd_panel_close">&#x2715;</button>
+            </div>
+            <div class="ma-hd-panel-body">
+                <div class="ma-hd-col">
+                    <div class="ma-hd-col-label">First Half</div>
+                    <div class="ma-hd-options" id="ma_hd_opts_first"></div>
+                </div>
+                <div class="ma-hd-divider"></div>
+                <div class="ma-hd-col">
+                    <div class="ma-hd-col-label">Second Half</div>
+                    <div class="ma-hd-options" id="ma_hd_opts_second"></div>
+                </div>
+            </div>
+            <div class="ma-hd-panel-footer">
+                <button class="ma-btn" id="ma_hd_clear_btn">Clear</button>
+                <button class="ma-btn ma-btn-primary" id="ma_hd_apply_btn">Apply</button>
+            </div>
         </div>
     </div>
 
@@ -319,8 +332,12 @@ function init_mark_attendance($main) {
     var holidayDates           = {};
     var rowMetaMap             = {};
 
-    var hdDropdownTarget = null;
-    var focusedCell      = null;
+    // ── Half-day panel state ──
+    var hdPanelTarget    = null;   // { dateKey, dayLabel, dateLabel }
+    var hdPanelFirstVal  = "";
+    var hdPanelSecondVal = "";
+
+    var focusedCell = null;
 
     var FULL_DAY_STATUSES = [
         "Present", "On Tour", "Earned Comp Off",
@@ -337,6 +354,29 @@ function init_mark_attendance($main) {
     var PRESENT_TYPE = new Set(["Present", "On Tour", "Earned Comp Off"]);
     var ABSENT_TYPE  = new Set(["Absent", "LWP", "Earned Leave", "Casual Leave", "Comp Off"]);
 
+    // ── half-day status → pill color class ──
+    var HD_PILL_CLASS = {
+        "Present":         "ma-hd-pill-present",
+        "On Tour":         "ma-hd-pill-ontour",
+        "Earned Comp Off": "ma-hd-pill-eco",
+        "Absent":          "ma-hd-pill-absent",
+        "Earned Leave":    "ma-hd-pill-el",
+        "Casual Leave":    "ma-hd-pill-cl",
+        "Comp Off":        "ma-hd-pill-coff",
+        "LWP":             "ma-hd-pill-lwp",
+    };
+    // status → dot color
+    var HD_DOT_COLOR = {
+        "Present":         "#28a745",
+        "On Tour":         "#28a745",
+        "Earned Comp Off": "#20c997",
+        "Absent":          "#e74c3c",
+        "Earned Leave":    "#378add",
+        "Casual Leave":    "#378add",
+        "Comp Off":        "#868e96",
+        "LWP":             "#f0ad4e",
+    };
+
     var searchInput    = document.getElementById("ma_employee_search");
     var searchResults  = document.getElementById("ma_search_results");
     var employeeSel    = document.getElementById("ma_employee");
@@ -348,35 +388,23 @@ function init_mark_attendance($main) {
     var endDateInput   = document.getElementById("ma_end_date");
     var tableLoading   = document.getElementById("ma_table_loading");
     var tableEl        = document.getElementById("ma_table");
-    var hdDropdown     = document.getElementById("ma_hd_dropdown");
     var tbody          = document.getElementById("ma_table_body");
     var stickyBar      = document.getElementById("ma_sticky_bar");
     var tableScroll    = document.getElementById("ma_table_scroll");
+    var hdPanel        = document.getElementById("ma_hd_panel");
 
     var allEmployees = [];
 
-    // ── KEY FIX: Set table-scroll height so it fills remaining viewport ──
-    // The sticky bar height is measured; table-scroll gets the leftover height.
-    // This makes the table scroll independently while controls stay fixed.
     function updateScrollHeight() {
         if (!stickyBar || !tableScroll) return;
-        var stickyH = stickyBar.offsetHeight;
-
-        // Frappe page header height (the bar with title + Save button)
-        var pageHead = document.querySelector(".page-head");
+        var stickyH   = stickyBar.offsetHeight;
+        var pageHead  = document.querySelector(".page-head");
         var pageHeadH = pageHead ? pageHead.offsetHeight : 60;
-
-        // Extra bottom padding
         var BOTTOM_PAD = 16;
-
         var availableH = window.innerHeight - pageHeadH - stickyH - BOTTOM_PAD;
         tableScroll.style.height = Math.max(availableH, 200) + "px";
-
-        // Also update the CSS var used by sticky thead
         document.documentElement.style.setProperty("--ma-sticky-bar-h", stickyH + "px");
     }
-
-    // Run after short delay (DOM paint) and on every resize
     setTimeout(updateScrollHeight, 80);
     window.addEventListener("resize", updateScrollHeight);
 
@@ -431,7 +459,7 @@ function init_mark_attendance($main) {
     });
 
     // ════════════════════════════════════════════════════════════════════════
-    //  SEARCH
+    //  SEARCH (unchanged)
     // ════════════════════════════════════════════════════════════════════════
     function localSearch(term) {
         if (!term) return employees;
@@ -703,52 +731,100 @@ function init_mark_attendance($main) {
     }
 
     // ════════════════════════════════════════════════════════════════════════
-    //  HALF-DAY DROPDOWN
+    //  HALF-DAY PANEL  (replaces old dropdown)
     // ════════════════════════════════════════════════════════════════════════
-    function openHdDropdown(dateKey, half) {
-        var row = document.querySelector('tr[data-date="' + dateKey + '"]');
-        if (!row) return;
-        var cellEl = row.querySelector(half === "first" ? ".ma-hd1-cell" : ".ma-hd2-cell");
-        if (!cellEl) return;
 
-        var rec    = attendanceTableData[dateKey] || {};
-        var curVal = (rec.mode === "half") ? (half === "first" ? rec.first_half : rec.second_half) : "";
-        hdDropdown.querySelectorAll(".ma-hd-option").forEach(function (opt) {
-            opt.classList.toggle("active", opt.dataset.value === curVal);
+    function buildHdOption(status, currentVal, half) {
+        var dotColor = HD_DOT_COLOR[status] || "#aaa";
+        var isSelected = (currentVal === status);
+        var div = document.createElement("div");
+        div.className = "ma-hd-opt" + (isSelected ? " ma-hd-opt-selected" : "");
+        div.innerHTML =
+            '<span class="ma-hd-opt-dot" style="background:' + dotColor + '"></span>' +
+            '<span class="ma-hd-opt-label">' + status + '</span>' +
+            '<span class="ma-hd-opt-radio' + (isSelected ? " ma-hd-opt-radio-on" : "") + '"></span>';
+        div.addEventListener("click", function () {
+            if (half === "first") {
+                hdPanelFirstVal = isSelected ? "" : status;
+            } else {
+                hdPanelSecondVal = isSelected ? "" : status;
+            }
+            renderHdPanelOptions();
         });
-        var rect = cellEl.getBoundingClientRect();
-        hdDropdown.style.display  = "block";
-        hdDropdown.style.position = "fixed";
-        hdDropdown.style.top      = (rect.bottom + 4) + "px";
-        hdDropdown.style.left     = rect.left + "px";
-        hdDropdown.style.minWidth = Math.max(rect.width, 160) + "px";
-        hdDropdownTarget = { dateKey: dateKey, half: half };
+        return div;
     }
-    function closeHdDropdown() { hdDropdown.style.display = "none"; hdDropdownTarget = null; }
-    function applyHdChoice(value) {
-        if (!hdDropdownTarget) return;
-        var dateKey = hdDropdownTarget.dateKey, half = hdDropdownTarget.half;
-        closeHdDropdown();
-        var rec = attendanceTableData[dateKey];
-        if (!rec || rec.mode !== "half") {
-            rec = { mode:"half", first_half:"", second_half:"" };
-        }
-        if (half === "first") rec.first_half = value;
-        else rec.second_half = value;
-        attendanceTableData[dateKey] = rec;
+
+    function renderHdPanelOptions() {
+        var firstContainer  = document.getElementById("ma_hd_opts_first");
+        var secondContainer = document.getElementById("ma_hd_opts_second");
+        if (!firstContainer || !secondContainer) return;
+        firstContainer.innerHTML  = "";
+        secondContainer.innerHTML = "";
+        HALF_OPTIONS.forEach(function (status) {
+            firstContainer.appendChild(buildHdOption(status, hdPanelFirstVal,  "first"));
+            secondContainer.appendChild(buildHdOption(status, hdPanelSecondVal, "second"));
+        });
+    }
+
+    function openHdPanel(dateKey, dayLabel, dateLabel) {
+        var rec = attendanceTableData[dateKey] || {};
+        hdPanelTarget    = { dateKey: dateKey };
+        hdPanelFirstVal  = (rec.mode === "half") ? (rec.first_half  || "") : "";
+        hdPanelSecondVal = (rec.mode === "half") ? (rec.second_half || "") : "";
+
+        document.getElementById("ma_hd_panel_title").textContent = dateLabel;
+        document.getElementById("ma_hd_panel_date").textContent  = dayLabel;
+
+        renderHdPanelOptions();
+        hdPanel.style.display = "flex";
+    }
+
+    function closeHdPanel() {
+        hdPanel.style.display = "none";
+        hdPanelTarget = null;
+    }
+
+    function applyHdPanel() {
+        if (!hdPanelTarget) return;
+        var dateKey = hdPanelTarget.dateKey;
+        attendanceTableData[dateKey] = {
+            mode:        "half",
+            first_half:  hdPanelFirstVal,
+            second_half: hdPanelSecondVal,
+        };
         markDirty(dateKey);
         refreshRowVisuals(dateKey);
         updateCounts();
+        closeHdPanel();
     }
-    hdDropdown.querySelectorAll(".ma-hd-option").forEach(function (opt) {
-        opt.addEventListener("click", function (e) { e.stopPropagation(); applyHdChoice(this.dataset.value); });
+
+    function clearHdPanel() {
+        hdPanelFirstVal  = "";
+        hdPanelSecondVal = "";
+        renderHdPanelOptions();
+    }
+
+    document.getElementById("ma_hd_panel_close").addEventListener("click", closeHdPanel);
+    document.getElementById("ma_hd_apply_btn").addEventListener("click",   applyHdPanel);
+    document.getElementById("ma_hd_clear_btn").addEventListener("click",   clearHdPanel);
+    hdPanel.addEventListener("click", function (e) {
+        if (e.target === hdPanel) closeHdPanel();
     });
-    document.addEventListener("click", function (e) {
-        if (hdDropdownTarget && !hdDropdown.contains(e.target)) {
-            var target = e.target.closest(".ma-hd-cell");
-            if (!target) closeHdDropdown();
+
+    // ════════════════════════════════════════════════════════════════════════
+    //  HALF-DAY PILL HELPER  (replaces statusBadge)
+    // ════════════════════════════════════════════════════════════════════════
+    function hdPillHtml(status) {
+        if (!status) {
+            return '<span class="ma-hd-pill ma-hd-pill-empty">Set half</span>';
         }
-    });
+        var cls      = HD_PILL_CLASS[status] || "";
+        var dotColor = HD_DOT_COLOR[status]  || "#aaa";
+        return '<span class="ma-hd-pill ' + cls + '">' +
+               '<span class="ma-hd-pill-dot" style="background:' + dotColor + '"></span>' +
+               status +
+               '</span>';
+    }
 
     // ════════════════════════════════════════════════════════════════════════
     //  DOT / BADGE HELPERS
@@ -759,16 +835,6 @@ function init_mark_attendance($main) {
         if (status === "Weekly Off")  return "active wo-dot";
         if (status === "Holiday")     return "active holiday-dot";
         return "active";
-    }
-    function statusBadge(status) {
-        if (!status) return '<span class="ma-hd-badge ma-hd-badge-empty">—</span>';
-        var extraClass = "";
-        if (PRESENT_TYPE.has(status)) extraClass = " ma-badge-present";
-        else if (ABSENT_TYPE.has(status)) extraClass = " ma-badge-absent";
-        var label = { "Present":"Present","On Tour":"On Tour","Earned Comp Off":"ECO",
-            "Absent":"Absent","Earned Leave":"EL","Casual Leave":"CL","Comp Off":"CO","LWP":"LWP"
-        }[status] || status.substring(0, 3);
-        return '<span class="ma-hd-badge' + extraClass + '">' + label + '</span>';
     }
 
     // ════════════════════════════════════════════════════════════════════════
@@ -796,8 +862,8 @@ function init_mark_attendance($main) {
             row.classList.add("ma-row-halfday");
             var hd1Cell = row.querySelector(".ma-hd1-cell");
             var hd2Cell = row.querySelector(".ma-hd2-cell");
-            if (hd1Cell) hd1Cell.innerHTML = statusBadge(rec.first_half)  + ' <span class="ma-hd-caret">▾</span>';
-            if (hd2Cell) hd2Cell.innerHTML = statusBadge(rec.second_half) + ' <span class="ma-hd-caret">▾</span>';
+            if (hd1Cell) hd1Cell.innerHTML = hdPillHtml(rec.first_half);
+            if (hd2Cell) hd2Cell.innerHTML = hdPillHtml(rec.second_half);
             row.querySelectorAll(".ma-col-dot").forEach(function (dot) { dot.className = "ma-col-dot"; });
         } else {
             var s = rec.status || "";
@@ -806,20 +872,18 @@ function init_mark_attendance($main) {
             });
             var hd1Cell = row.querySelector(".ma-hd1-cell");
             var hd2Cell = row.querySelector(".ma-hd2-cell");
-            if (hd1Cell) hd1Cell.innerHTML = statusBadge("") + ' <span class="ma-hd-caret">▾</span>';
-            if (hd2Cell) hd2Cell.innerHTML = statusBadge("") + ' <span class="ma-hd-caret">▾</span>';
+            if (hd1Cell) hd1Cell.innerHTML = hdPillHtml("");
+            if (hd2Cell) hd2Cell.innerHTML = hdPillHtml("");
         }
 
         var toggle = row.querySelector(".ma-override-toggle");
         if (toggle) {
             var restStatus    = toggle.dataset.reststatus;
             var currentIsRest = (rec.mode === "full") && (rec.status === restStatus);
-
             toggle.checked = currentIsRest;
             toggle.closest("label").title = currentIsRest
                 ? "Click to override " + restStatus
                 : "Click to restore " + restStatus;
-
             row.classList.remove("ma-row-wo", "ma-row-holiday");
             if (currentIsRest) {
                 if (restStatus === "Holiday")    row.classList.add("ma-row-holiday");
@@ -827,10 +891,8 @@ function init_mark_attendance($main) {
             } else {
                 if (rec.mode === "full" && !rec.status) row.classList.add("ma-row-override");
             }
-
             setAllStatusCellsEnabled(row, !currentIsRest);
         }
-
         refreshDotDirty(dateKey);
     }
 
@@ -996,34 +1058,34 @@ function init_mark_attendance($main) {
             row.appendChild(td);
         });
 
-        // Half Day – First Half
+        // Half Day – First Half (pill, opens panel)
         var hd1Td = document.createElement("td");
         hd1Td.className = "ma-status-cell ma-hd-cell ma-hd1-cell";
         hd1Td.setAttribute("data-colidx", FULL_DAY_STATUSES.length);
         var h1Val = (savedRec.mode === "half") ? savedRec.first_half  : "";
         var h2Val = (savedRec.mode === "half") ? savedRec.second_half : "";
-        hd1Td.innerHTML = statusBadge(h1Val) + ' <span class="ma-hd-caret">▾</span>';
+        hd1Td.innerHTML = hdPillHtml(h1Val);
         hd1Td.addEventListener("click", function (e) {
             e.stopPropagation();
             var parentRow = hd1Td.closest("tr");
             if (parentRow && parentRow.classList.contains("ma-status-cells-disabled")) return;
             ensureHalfDayMode(dateKey);
-            openHdDropdown(dateKey, "first");
+            openHdPanel(dateKey, dayName, dateLabel);
         });
         hd1Td.addEventListener("mousedown", function() { setFocusCell(rowIdx, FULL_DAY_STATUSES.length); });
         row.appendChild(hd1Td);
 
-        // Half Day – Second Half
+        // Half Day – Second Half (pill, opens panel)
         var hd2Td = document.createElement("td");
         hd2Td.className = "ma-status-cell ma-hd-cell ma-hd2-cell";
         hd2Td.setAttribute("data-colidx", FULL_DAY_STATUSES.length + 1);
-        hd2Td.innerHTML = statusBadge(h2Val) + ' <span class="ma-hd-caret">▾</span>';
+        hd2Td.innerHTML = hdPillHtml(h2Val);
         hd2Td.addEventListener("click", function (e) {
             e.stopPropagation();
             var parentRow = hd2Td.closest("tr");
             if (parentRow && parentRow.classList.contains("ma-status-cells-disabled")) return;
             ensureHalfDayMode(dateKey);
-            openHdDropdown(dateKey, "second");
+            openHdPanel(dateKey, dayName, dateLabel);
         });
         hd2Td.addEventListener("mousedown", function() { setFocusCell(rowIdx, FULL_DAY_STATUSES.length + 1); });
         row.appendChild(hd2Td);
@@ -1109,7 +1171,6 @@ function init_mark_attendance($main) {
     function hideTableLoading() {
         tableLoading.style.display="none";
         tableEl.style.display="table";
-        // Recalculate scroll height after table becomes visible
         setTimeout(updateScrollHeight, 50);
     }
 
@@ -1305,7 +1366,7 @@ function init_mark_attendance($main) {
     });
 
     // ════════════════════════════════════════════════════════════════════════
-    //  CALENDAR MODAL
+    //  CALENDAR MODAL  (unchanged)
     // ════════════════════════════════════════════════════════════════════════
     function normalizeDateKey(dateStr) {
         if (!dateStr) return null;
@@ -1417,7 +1478,7 @@ function init_mark_attendance($main) {
     document.getElementById("ma_cal_modal").addEventListener("click", function (e) { if(e.target===this) closeCalendarModal(); });
 
     document.addEventListener("keydown", function (e) {
-        if (e.key === "Escape") closeCalendarModal();
+        if (e.key === "Escape") { closeCalendarModal(); closeHdPanel(); }
         if ((e.ctrlKey || e.metaKey) && e.key === "s") { e.preventDefault(); doSave(); }
     });
 
@@ -1450,25 +1511,18 @@ function inject_ma_styles() {
            CSS VARIABLES
            ══════════════════════════════════════════════════════ */
         :root {
-            --ma-sticky-bar-h: 120px;   /* updated dynamically by JS */
+            --ma-sticky-bar-h: 120px;
             --ma-thead-row1-h: 52px;
         }
 
-        /* ── Layout ── */
         .ma-wrap {
             padding: 0 4px;
             display: flex;
             flex-direction: column;
-            /* Fill the main section completely */
             height: 100%;
         }
-
-        /* ══════════════════════════════════════════════════════
-           STICKY TOP CONTROLS BAR
-           Stays fixed at top; does NOT scroll with the table.
-           ══════════════════════════════════════════════════════ */
         .ma-sticky {
-            flex-shrink: 0;          /* never shrink */
+            flex-shrink: 0;
             background: var(--card-bg, #fff);
             padding-bottom: 12px;
             border-bottom: 1px solid var(--border-color, #e5e7eb);
@@ -1481,16 +1535,13 @@ function inject_ma_styles() {
         .ma-link:hover { color:var(--blue-600); }
         .ma-link-sep { color:var(--text-muted); font-size:12px; }
 
-        /* Save button */
         .ma-btn { background:var(--control-bg,#f4f5f6); color:var(--text-color); border:1px solid var(--border-color,#d1d8dd); border-radius:5px; padding:6px 14px; font-weight:500; cursor:pointer; transition:background 0.15s; font-size:13px; white-space:nowrap; user-select:none; }
         .ma-btn-primary { background:var(--primary) !important; color:#fff !important; border-color:var(--primary) !important; }
         .ma-btn-primary:hover { opacity:0.88; }
-        .ma-btn-primary:focus,
-        .ma-btn-primary:active { outline:none; background:var(--primary) !important; color:#fff !important; border-color:var(--primary) !important; opacity:1; box-shadow:none; }
+        .ma-btn-primary:focus, .ma-btn-primary:active { outline:none; background:var(--primary) !important; color:#fff !important; border-color:var(--primary) !important; opacity:1; box-shadow:none; }
         .ma-btn:hover:not(.ma-btn-primary) { background:var(--control-bg-on-gray,#eee); }
         .ma-btn:active:not(.ma-btn-primary) { transform:scale(0.98); }
 
-        /* ── Top controls ── */
         .ma-top-wrap { display:flex; gap:14px; align-items:stretch; }
         .ma-left-block { flex:1; min-width:0; display:flex; flex-direction:column; gap:10px; }
         .ma-row1 { display:flex; gap:14px; align-items:flex-end; flex:1; }
@@ -1507,7 +1558,6 @@ function inject_ma_styles() {
         .ma-input:focus { outline:none; border-color:var(--primary); box-shadow:0 0 0 2px rgba(var(--primary-rgb,45,108,223),0.12); }
         .ma-input[readonly] { background:var(--control-bg,#f8f9fa); color:var(--text-muted); }
 
-        /* ── Search ── */
         .ma-search-wrapper { position:relative; }
         .ma-search-input { padding-right:30px; }
         .ma-clear-btn { position:absolute; right:8px; top:50%; transform:translateY(-50%); width:18px; height:18px; border-radius:50%; background:var(--text-muted); border:none; color:#fff; font-size:11px; cursor:pointer; display:none; align-items:center; justify-content:center; transition:all 0.2s; padding:0; line-height:1; }
@@ -1527,88 +1577,52 @@ function inject_ma_styles() {
 
         /* ══════════════════════════════════════════════════════
            TABLE SCROLL CONTAINER
-           KEY FIX: This div has a calculated fixed height so it
-           scrolls independently from the page. The sticky bar
-           above it never scrolls away.
            ══════════════════════════════════════════════════════ */
         .ma-table-scroll {
             flex: 1 1 auto;
             overflow-x: auto;
             overflow-y: auto;
-            /* Height is set by JS via updateScrollHeight().
-               This fallback calc is a safety net. */
             min-height: 200px;
             border-top: 1px solid var(--border-color, #e5e7eb);
-            /* Needed so sticky thead works inside this scroll container */
             position: relative;
         }
 
         .ma-table { width:100%; border-collapse:collapse; font-size:12px; }
-
-        /* All body cells: transparent background */
         .ma-table td { border:1px solid var(--border-color,#d1d8dd); padding:5px 7px; background:transparent; }
-        /* Subtle alternating row tint */
         .ma-table tbody tr:nth-child(even) td { background:rgba(0,0,0,0.013); }
 
-        /* ── Spinner ── */
         .ma-table-loading { display:flex; flex-direction:column; align-items:center; justify-content:center; padding:48px 0; gap:14px; }
         .ma-spinner { width:32px; height:32px; border:3px solid var(--border-color,#e5e7eb); border-top-color:var(--primary,#2d2d2d); border-radius:50%; animation:ma-spin 0.7s linear infinite; }
         @keyframes ma-spin { to { transform:rotate(360deg); } }
         .ma-loading-text { font-size:13px; color:var(--text-muted); }
 
-        /* ══════════════════════════════════════════════════════
-           STICKY TABLE HEADER
-           Sticks to top of .ma-table-scroll (the scroll container),
-           NOT to the page. This works because .ma-table-scroll has
-           overflow:auto, which creates a new scroll context.
-           Row 1: top:0  Row 2: top: var(--ma-thead-row1-h)
-           ══════════════════════════════════════════════════════ */
         .ma-table thead tr.ma-thead-row th {
-            position: sticky;
-            top: 0;
-            z-index: 50;
+            position: sticky; top: 0; z-index: 50;
             background: var(--control-bg, #f7f7f7);
             border: 1px solid var(--border-color, #d1d8dd);
             box-shadow: 0 1px 0 var(--border-color, #d1d8dd);
         }
         .ma-table thead tr.ma-thead-row2 th {
-            position: sticky;
-            top: var(--ma-thead-row1-h, 52px);
-            z-index: 49;
+            position: sticky; top: var(--ma-thead-row1-h, 52px); z-index: 49;
             background: var(--control-bg, #f7f7f7);
             border: 1px solid var(--border-color, #d1d8dd);
             box-shadow: 0 1px 0 var(--border-color, #d1d8dd);
         }
 
-        /* ── th inner layout ── */
         .ma-table thead th { padding:0; text-align:center; vertical-align:middle; }
-        .ma-th-inner {
-            display: flex; flex-direction: column;
-            align-items: center; justify-content: space-between;
-            height: var(--ma-thead-row1-h, 52px);
-            padding: 7px 6px 5px; box-sizing: border-box;
-        }
+        .ma-th-inner { display:flex; flex-direction:column; align-items:center; justify-content:space-between; height:var(--ma-thead-row1-h, 52px); padding:7px 6px 5px; box-sizing:border-box; }
         .ma-th-left { align-items:flex-start; padding-left:10px; }
         .ma-th-sub  { height:28px; justify-content:center; padding:4px 6px; }
-
-        /* Half Day group header */
-        .ma-th-hd-group { min-width:200px; border-bottom:none !important; }
-        .ma-th-hd-top-wrap {
-            display:flex; flex-direction:column;
-            align-items:center; justify-content:space-between;
-            height:var(--ma-thead-row1-h, 52px);
-            padding:7px 6px 5px; box-sizing:border-box;
-        }
-
+        .ma-th-hd-group { min-width:240px; border-bottom:none !important; }
+        .ma-th-hd-top-wrap { display:flex; flex-direction:column; align-items:center; justify-content:space-between; height:var(--ma-thead-row1-h, 52px); padding:7px 6px 5px; box-sizing:border-box; }
         .ma-th-label { font-size:11px; font-weight:600; color:var(--text-muted); line-height:1.3; text-align:center; white-space:normal; }
         .ma-col-count { font-size:11px; font-weight:700; color:var(--text-color); line-height:1; }
 
-        /* Column widths */
         .ma-th-date     { width:148px; min-width:148px; }
         .ma-th-day      { width:100px; min-width:100px; }
         .ma-th-override { width:80px;  min-width:80px; }
         .ma-th-status   { width:66px;  min-width:66px; }
-        .ma-th-hd1, .ma-th-hd2 { width:100px; min-width:100px; border-top:none !important; }
+        .ma-th-hd1, .ma-th-hd2 { width:120px; min-width:120px; border-top:none !important; }
 
         /* ══════════════════════════════════════════════════════
            ROW STATES
@@ -1622,13 +1636,8 @@ function inject_ma_styles() {
         .ma-row-dirty td { background:rgba(245,158,11,0.07) !important; }
         .ma-row-dirty:nth-child(even) td { background:rgba(245,158,11,0.1) !important; }
         .ma-row-override td { background:rgba(139,92,246,0.04) !important; }
-        .ma-status-cells-disabled .ma-status-cell {
-            opacity: 0.2 !important;
-            pointer-events: none !important;
-            cursor: default !important;
-        }
+        .ma-status-cells-disabled .ma-status-cell { opacity:0.2 !important; pointer-events:none !important; cursor:default !important; }
 
-        /* ── Status cells & dots ── */
         .ma-status-cell { text-align:center; padding:4px 3px !important; vertical-align:middle; cursor:pointer; }
         .ma-status-cell:not(.ma-hd-cell):hover { background:rgba(0,0,0,0.04) !important; }
         .ma-col-dot { width:14px; height:14px; border-radius:50%; border:2px solid #c0c6cc; margin:0 auto; transition:all 0.12s; background:transparent; box-sizing:border-box; }
@@ -1637,29 +1646,162 @@ function inject_ma_styles() {
         .ma-col-dot.absent-dot    { background:#e74c3c; border-color:#e74c3c; }
         .ma-col-dot.wo-dot        { background:#b8860b; border-color:#b8860b; }
         .ma-col-dot.holiday-dot   { background:#e09a2a; border-color:#e09a2a; }
-        .ma-col-dot.ma-dot-dirty.active { box-shadow: 0 0 0 2px var(--card-bg,#fff), 0 0 0 4px #f59e0b; }
+        .ma-col-dot.ma-dot-dirty.active { box-shadow:0 0 0 2px var(--card-bg,#fff), 0 0 0 4px #f59e0b; }
         .ma-cell-focused { outline:2px solid var(--primary,#2d6adf) !important; outline-offset:-2px; background:rgba(45,106,223,0.06) !important; }
 
-        /* ── Cell typography ── */
         .ma-date-cell { font-size:12px; font-weight:500; padding:5px 10px !important; white-space:nowrap; min-width:140px; color:var(--text-color); }
         .ma-day-cell  { font-size:12px; color:var(--text-muted); padding:5px 8px !important; white-space:nowrap; min-width:100px; }
 
-        /* ── Half-day cells ── */
-        .ma-hd-cell { width:100px; min-width:90px; cursor:pointer; }
-        .ma-hd-badge { display:inline-flex; align-items:center; justify-content:center; min-width:36px; padding:2px 6px; border-radius:3px; font-size:10px; font-weight:600; border:1px solid var(--border-color,#d1d5db); background:var(--control-bg,#f3f4f6); color:var(--text-muted); vertical-align:middle; }
-        .ma-hd-badge-empty { border-style:dashed; color:var(--text-muted); background:transparent; }
-        .ma-hd-badge.ma-badge-present { background:#eafaf1; color:#1a7a3c; border-color:#a3d9b1; }
-        .ma-hd-badge.ma-badge-absent  { background:#fdf3f2; color:#c0392b; border-color:#f5b7b1; }
-        .ma-hd-caret { font-size:9px; color:var(--text-muted); margin-left:2px; vertical-align:middle; }
+        /* ══════════════════════════════════════════════════════
+           HALF-DAY PILL  (replaces badge+caret)
+           ══════════════════════════════════════════════════════ */
+        .ma-hd-cell { width:120px; min-width:110px; cursor:pointer; padding:4px 6px !important; }
         .ma-hd-cell:hover { background:rgba(0,0,0,0.04) !important; }
 
-        /* ── Half-day dropdown ── */
-        .ma-hd-dropdown { z-index:3000; background:var(--card-bg,#fff); border:1px solid var(--border-color,#d1d8dd); border-radius:6px; box-shadow:0 6px 20px rgba(0,0,0,0.1); overflow:hidden; }
-        .ma-hd-dropdown-inner { padding:4px 0; }
-        .ma-hd-option { padding:7px 14px; font-size:12px; cursor:pointer; color:var(--text-color); transition:background 0.1s; white-space:nowrap; }
-        .ma-hd-option:first-child { color:var(--text-muted); }
-        .ma-hd-option:hover { background:var(--control-bg,#f4f5f6); }
-        .ma-hd-option.active { background:var(--blue-50,#eff6ff); color:var(--primary); font-weight:600; }
+        .ma-hd-pill {
+            display: inline-flex;
+            align-items: center;
+            gap: 5px;
+            padding: 3px 9px 3px 7px;
+            border-radius: 20px;
+            font-size: 11px;
+            font-weight: 500;
+            white-space: nowrap;
+            border: 1px solid transparent;
+            transition: box-shadow 0.12s;
+            cursor: pointer;
+            max-width: 100%;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        .ma-hd-pill-dot {
+            width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0;
+        }
+        .ma-hd-pill-empty {
+            background: var(--control-bg, #f3f4f6);
+            color: var(--text-muted);
+            border: 1px dashed var(--border-color, #d1d5db);
+            font-size: 11px;
+            font-style: italic;
+        }
+        .ma-hd-pill-present   { background:#eafaf1; color:#1a7a3c; border-color:#a3d9b1; }
+        .ma-hd-pill-ontour    { background:#e8f8ef; color:#1a6e40; border-color:#89d4aa; }
+        .ma-hd-pill-eco       { background:#e0f7f1; color:#0d6e56; border-color:#5dcaa5; }
+        .ma-hd-pill-absent    { background:#fdf3f2; color:#c0392b; border-color:#f5b7b1; }
+        .ma-hd-pill-el        { background:#e8f2fb; color:#1558a0; border-color:#90bce8; }
+        .ma-hd-pill-cl        { background:#edf4fb; color:#1960a8; border-color:#9fc5e8; }
+        .ma-hd-pill-coff      { background:#f3f4f6; color:#4b5563; border-color:#d1d5db; }
+        .ma-hd-pill-lwp       { background:#fffbeb; color:#92660a; border-color:#fcd34d; }
+        .ma-hd-cell:hover .ma-hd-pill { box-shadow:0 0 0 2px var(--border-color,#d1d8dd); }
+
+        /* ══════════════════════════════════════════════════════
+           HALF-DAY PANEL  (full-screen overlay)
+           ══════════════════════════════════════════════════════ */
+        .ma-hd-panel {
+            position: fixed;
+            inset: 0;
+            z-index: 2500;
+            background: rgba(0,0,0,0.42);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .ma-hd-panel-inner {
+            background: var(--card-bg, #fff);
+            border-radius: 10px;
+            width: 95%;
+            max-width: 560px;
+            box-shadow: 0 12px 40px rgba(0,0,0,0.18);
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+        }
+        .ma-hd-panel-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 14px 18px 12px;
+            border-bottom: 1px solid var(--border-color, #e5e7eb);
+            background: var(--control-bg, #f8f9fa);
+        }
+        .ma-hd-panel-header-info { display:flex; flex-direction:column; gap:2px; }
+        .ma-hd-panel-title { font-size:14px; font-weight:600; color:var(--text-color); }
+        .ma-hd-panel-date  { font-size:12px; color:var(--text-muted); }
+        .ma-hd-panel-close {
+            width: 26px; height: 26px; border-radius: 50%;
+            background: var(--control-bg-on-gray, #e5e7eb);
+            border: none; color: var(--text-muted); font-size:13px;
+            cursor: pointer; display:flex; align-items:center; justify-content:center;
+            transition: background 0.15s;
+        }
+        .ma-hd-panel-close:hover { background:var(--border-color); color:var(--text-color); }
+
+        .ma-hd-panel-body {
+            display: grid;
+            grid-template-columns: 1fr auto 1fr;
+            gap: 0;
+            padding: 16px 20px;
+        }
+        .ma-hd-divider {
+            width: 1px;
+            background: var(--border-color, #e5e7eb);
+            margin: 0 16px;
+            border-radius: 1px;
+        }
+        .ma-hd-col {}
+        .ma-hd-col-label {
+            font-size: 11px; font-weight: 600; text-transform: uppercase;
+            letter-spacing: 0.05em; color: var(--text-muted);
+            margin-bottom: 10px; padding-bottom: 8px;
+            border-bottom: 1px solid var(--border-color, #e5e7eb);
+        }
+        .ma-hd-options { display:flex; flex-direction:column; gap:3px; }
+
+        .ma-hd-opt {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 8px 10px;
+            border-radius: 7px;
+            cursor: pointer;
+            transition: background 0.1s;
+            border: 1px solid transparent;
+        }
+        .ma-hd-opt:hover { background: var(--control-bg, #f4f5f6); }
+        .ma-hd-opt-selected {
+            background: rgba(45,108,223,0.06);
+            border-color: rgba(45,108,223,0.2);
+        }
+        .ma-hd-opt-selected .ma-hd-opt-label {
+            color: var(--primary, #2d6adf);
+            font-weight: 600;
+        }
+        .ma-hd-opt-dot {
+            width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0;
+        }
+        .ma-hd-opt-label {
+            font-size: 13px; color: var(--text-color); flex: 1;
+        }
+        .ma-hd-opt-radio {
+            width: 16px; height: 16px; border-radius: 50%;
+            border: 1.5px solid var(--border-color, #d1d8dd);
+            flex-shrink: 0; display:flex; align-items:center; justify-content:center;
+            background: var(--card-bg, #fff);
+            transition: border-color 0.12s;
+        }
+        .ma-hd-opt-radio-on {
+            border-color: var(--primary, #2d6adf);
+            background: var(--primary, #2d6adf);
+            box-shadow: inset 0 0 0 3px var(--card-bg, #fff);
+        }
+        .ma-hd-opt:hover .ma-hd-opt-radio { border-color: var(--primary, #2d6adf); }
+
+        .ma-hd-panel-footer {
+            display: flex; align-items:center; justify-content:flex-end; gap:8px;
+            padding: 12px 20px;
+            border-top: 1px solid var(--border-color, #e5e7eb);
+            background: var(--control-bg, #f8f9fa);
+        }
 
         /* ── Override toggle ── */
         .ma-override-cell { text-align:center; vertical-align:middle; width:80px; min-width:80px; }
