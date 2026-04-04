@@ -1,7 +1,7 @@
 {
  "charts": [],
- "content": "[{\"id\":\"quLY2RmqsK\",\"type\":\"header\",\"data\":{\"text\":\"<span class=\\\"h4\\\">Saral HR</span>\",\"col\":12}},{\"id\":\"vX7k3MjFpF\",\"type\":\"card\",\"data\":{\"card_name\":\"Companies Master Data\",\"col\":4}},{\"id\":\"tcNJEXnjQA\",\"type\":\"card\",\"data\":{\"card_name\":\"Salaries Master Data\",\"col\":4}},{\"id\":\"s7XR35vZsk\",\"type\":\"card\",\"data\":{\"card_name\":\"Monthly Transactions\",\"col\":4}},{\"id\":\"cLCTEGWswg\",\"type\":\"card\",\"data\":{\"card_name\":\"Leaves Process\",\"col\":4}},{\"id\":\"2AtGjch4al\",\"type\":\"card\",\"data\":{\"card_name\":\"Report\",\"col\":4}},{\"id\":\"ad8Ylo2JQq\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"View Salary Insight\",\"col\":3}},{\"id\":\"0meWuWmuDh\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Bulk Mark Attendance\",\"col\":3}},{\"id\":\"5CJdLnloTi\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"View Payroll Report\",\"col\":3}},{\"id\":\"DzpOy7QolO\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"View Salary Statistics\",\"col\":3}},{\"id\":\"I8XwI9v3a9\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"View Attendance Dashboard\",\"col\":3}},{\"id\":\"h0lo5909XG\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"HR Workforce & Payroll Overview\",\"col\":3}}]",
- "creation": "2026-04-01 11:55:29.816442",
+ "content": "[{\"id\":\"quLY2RmqsK\",\"type\":\"header\",\"data\":{\"text\":\"<span class=\\\"h4\\\">Saral HR</span>\",\"col\":12}},{\"id\":\"vX7k3MjFpF\",\"type\":\"card\",\"data\":{\"card_name\":\"Companies Master Data\",\"col\":4}},{\"id\":\"UXBG6dAVhA\",\"type\":\"card\",\"data\":{\"card_name\":\"Employees Master Data\",\"col\":4}},{\"id\":\"tcNJEXnjQA\",\"type\":\"card\",\"data\":{\"card_name\":\"Salaries Master Data\",\"col\":4}},{\"id\":\"s7XR35vZsk\",\"type\":\"card\",\"data\":{\"card_name\":\"Monthly Transactions\",\"col\":4}},{\"id\":\"cLCTEGWswg\",\"type\":\"card\",\"data\":{\"card_name\":\"Leaves Process\",\"col\":4}},{\"id\":\"2AtGjch4al\",\"type\":\"card\",\"data\":{\"card_name\":\"Report\",\"col\":4}},{\"id\":\"ad8Ylo2JQq\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"View Salary Insight\",\"col\":3}},{\"id\":\"0meWuWmuDh\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Bulk Mark Attendance\",\"col\":3}},{\"id\":\"5CJdLnloTi\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"View Payroll Report\",\"col\":3}},{\"id\":\"DzpOy7QolO\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"View Salary Statistics\",\"col\":3}},{\"id\":\"I8XwI9v3a9\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"View Attendance Dashboard\",\"col\":3}},{\"id\":\"h0lo5909XG\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"HR Workforce & Payroll Overview\",\"col\":3}}]",
+ "creation": "2026-04-02 13:41:33.243409",
  "custom_blocks": [],
  "docstatus": 0,
  "doctype": "Workspace",
@@ -124,6 +124,35 @@
   {
    "hidden": 0,
    "is_query_report": 0,
+   "label": "Salaries Master Data",
+   "link_count": 2,
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Card Break"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Salary Component ",
+   "link_count": 0,
+   "link_to": "Salary Component",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Salary Structure ",
+   "link_count": 0,
+   "link_to": "Salary Structure",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
    "label": "Leaves Process",
    "link_count": 3,
    "link_type": "DocType",
@@ -163,8 +192,8 @@
   {
    "hidden": 0,
    "is_query_report": 0,
-   "label": "Salaries Master Data",
-   "link_count": 4,
+   "label": "Employees Master Data",
+   "link_count": 6,
    "link_type": "DocType",
    "onboard": 0,
    "type": "Card Break"
@@ -172,29 +201,49 @@
   {
    "hidden": 0,
    "is_query_report": 0,
-   "label": "Salary Component ",
-   "link_count": 0,
-   "link_to": "Salary Component",
-   "link_type": "DocType",
-   "onboard": 0,
-   "type": "Link"
-  },
-  {
-   "hidden": 0,
-   "is_query_report": 0,
-   "label": "Salary Structure ",
-   "link_count": 0,
-   "link_to": "Salary Structure",
-   "link_type": "DocType",
-   "onboard": 0,
-   "type": "Link"
-  },
-  {
-   "hidden": 0,
-   "is_query_report": 0,
    "label": "Employee",
    "link_count": 0,
    "link_to": "Employee",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Grade",
+   "link_count": 0,
+   "link_to": "Grade",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Designation",
+   "link_count": 0,
+   "link_to": "Designation",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Company Link",
+   "link_count": 0,
+   "link_to": "Company Link",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Salary Structure Assignment",
+   "link_count": 0,
+   "link_to": "Salary Structure Assignment",
    "link_type": "DocType",
    "onboard": 0,
    "type": "Link"
@@ -213,7 +262,7 @@
    "hidden": 0,
    "is_query_report": 0,
    "label": "Report",
-   "link_count": 6,
+   "link_count": 4,
    "link_type": "DocType",
    "onboard": 0,
    "type": "Card Break"
@@ -252,28 +301,6 @@
   {
    "hidden": 0,
    "is_query_report": 0,
-   "label": "Loan Register",
-   "link_count": 0,
-   "link_to": "Loan Register",
-   "link_type": "Report",
-   "onboard": 0,
-   "report_ref_doctype": "Employee Loan Advance",
-   "type": "Link"
-  },
-  {
-   "hidden": 0,
-   "is_query_report": 0,
-   "label": "Advance Register",
-   "link_count": 0,
-   "link_to": "Advance Register",
-   "link_type": "Report",
-   "onboard": 0,
-   "report_ref_doctype": "Employee Loan Advance",
-   "type": "Link"
-  },
-  {
-   "hidden": 0,
-   "is_query_report": 0,
    "label": "Employee Loan Advance Ledger",
    "link_count": 0,
    "link_to": "Employee Loan Advance Ledger",
@@ -283,7 +310,7 @@
    "type": "Link"
   }
  ],
- "modified": "2026-04-01 14:10:01.835343",
+ "modified": "2026-04-04 11:34:12.695783",
  "modified_by": "Administrator",
  "module": "Saral Hr",
  "name": "Saral HR",
