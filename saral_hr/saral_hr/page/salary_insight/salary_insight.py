@@ -323,10 +323,10 @@ def get_all_slip_deductions(slip_names):
 
     return result
 # ── SSA Export ────────────────────────────────────────────────────────────────
-
 @frappe.whitelist()
 def export_ssa_to_excel(status_filter=None):
     import openpyxl
+    import io
     from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
     from openpyxl.utils import get_column_letter
 
@@ -396,7 +396,7 @@ def export_ssa_to_excel(status_filter=None):
 
     STATUS_MAP = {0: "Draft", 1: "Submitted", 2: "Cancelled"}
 
-    # Data rows — one per SSA, earnings/deductions flattened as columns
+    # Data rows
     rows = []
     for a in assignments:
         base = [
@@ -439,7 +439,7 @@ def export_ssa_to_excel(status_filter=None):
     }
     alt_fill = PatternFill("solid", start_color="F7F7F7")
 
-    def col_section(idx):   # 0-based
+    def col_section(idx):
         if idx < len(base_headers):                                         return "base"
         if idx < len(base_headers) + len(earn_headers):                    return "earn"
         if idx < len(base_headers) + len(earn_headers) + len(ded_headers): return "ded"
@@ -448,11 +448,10 @@ def export_ssa_to_excel(status_filter=None):
     # Row 1 — group labels
     ws.row_dimensions[1].height = 16
     groups = [
-        ("BASE INFO",     1,                          len(base_headers),                                    "3D3D3D"),
-        ("EARNINGS",      len(base_headers)+1,        len(base_headers)+len(earn_headers),                  "27803E"),
-        ("DEDUCTIONS",    len(base_headers)+len(earn_headers)+1,
-                          len(base_headers)+len(earn_headers)+len(ded_headers),                             "A02020"),
-        ("CALCULATIONS",  len(all_headers)-len(calc_headers)+1, len(all_headers),                          "1E4F80"),
+        ("BASE INFO",    1,                                                        len(base_headers),                                    "3D3D3D"),
+        ("EARNINGS",     len(base_headers)+1,                                      len(base_headers)+len(earn_headers),                  "27803E"),
+        ("DEDUCTIONS",   len(base_headers)+len(earn_headers)+1,                    len(base_headers)+len(earn_headers)+len(ded_headers), "A02020"),
+        ("CALCULATIONS", len(all_headers)-len(calc_headers)+1,                    len(all_headers),                                     "1E4F80"),
     ]
     for label, sc, ec, color in groups:
         if sc > ec:
@@ -499,7 +498,7 @@ def export_ssa_to_excel(status_filter=None):
             else:
                 cell.alignment = left
 
-    # Auto column widths (sample first 100 data rows)
+    # Auto column widths
     for ci, hdr in enumerate(all_headers, start=1):
         max_len = len(str(hdr))
         for ri in range(3, min(3 + len(rows), 103)):
@@ -510,7 +509,29 @@ def export_ssa_to_excel(status_filter=None):
 
     ws.freeze_panes = "C3"
 
-    out_path = frappe.get_site_path("private", "files", "ssa_export.xlsx")
-    wb.save(out_path)
+    # ── Save to bytes buffer ──────────────────────────────────────────────────
+    buffer = io.BytesIO()
+    wb.save(buffer)
+    buffer.seek(0)
+    file_content = buffer.read()
 
-    return {"file_url": "/private/files/ssa_export.xlsx", "rows": len(rows)}
+    # ── Delete previous export if exists ─────────────────────────────────────
+    existing = frappe.db.get_value(
+        "File",
+        {"file_name": "ssa_export.xlsx", "is_private": 1},
+        "name"
+    )
+    if existing:
+        frappe.delete_doc("File", existing, force=True)
+
+    # ── Save as proper Frappe File doc (private, session-authenticated) ───────
+    file_doc = frappe.get_doc({
+        "doctype": "File",
+        "file_name": "ssa_export.xlsx",
+        "is_private": 1,
+        "content": file_content,
+        "decode": False
+    })
+    file_doc.save(ignore_permissions=True)
+
+    return {"file_url": file_doc.file_url, "rows": len(rows)}

@@ -882,7 +882,15 @@ function _init_ssa_export($root) {
                 $loading.removeClass('show');
                 if (r.message && r.message.file_url) {
                     frappe.show_alert({ message: r.message.rows + ' records exported.', indicator: 'green' });
-                    window.open(r.message.file_url, '_blank');
+
+                    // ✅ Replace window.open with this
+                    var a = document.createElement('a');
+                    a.href = r.message.file_url;
+                    a.download = 'ssa_export.xlsx';
+                    document.body.appendChild(a);
+                    a.click();
+                    document.body.removeChild(a);
+
                 } else {
                     frappe.show_alert({ message: 'Export failed.', indicator: 'red' });
                 }
@@ -1210,7 +1218,7 @@ function render_deduction_breakdown_table($main, slips) {
             }
 
             function formatLoanDisplay(loan_info) {
-                var loan_total    = loan_info.total    || 0;
+                var loan_total = loan_info.total || 0;
                 var loan_deferred = loan_info.deferred || false;
 
                 if (loan_total <= 0) return '—';
@@ -1248,9 +1256,9 @@ function render_deduction_breakdown_table($main, slips) {
                 var d = all_data[s.name];
                 if (!d) return '';
 
-                var absent  = d.absent_days || 0;
-                var total_d = d.total_days  || 0;
-                var paid_d  = d.paid_days   || 0;
+                var absent = d.absent_days || 0;
+                var total_d = d.total_days || 0;
+                var paid_d = d.paid_days || 0;
 
                 function td(val, color, bold) {
                     return '<td style="text-align:right;padding:7px 10px;' +
@@ -1265,22 +1273,22 @@ function render_deduction_breakdown_table($main, slips) {
                         'font-weight:' + (bold ? '700' : '400') + ';">' + val + '</td>';
                 }
 
-                var loan_info    = d.loan || {};
-                var loan_total   = loan_info.total || 0;
+                var loan_info = d.loan || {};
+                var loan_total = loan_info.total || 0;
                 var loan_display = formatLoanDisplay(loan_info);
 
-                var retention_total    = d.retention || 0;
-                var add_salary_html    = formatAdditionalComponents(d.additional_salary);
+                var retention_total = d.retention || 0;
+                var add_salary_html = formatAdditionalComponents(d.additional_salary);
                 var add_deduction_html = formatAdditionalComponents(d.additional_deductions);
 
                 var ssa_net = d.ssa_net || 0;
-                var ss_net  = d.ss_net  || 0;
+                var ss_net = d.ss_net || 0;
 
                 var row = '<tr data-name="' + pp_esc(s.name) + '" style="cursor:pointer;">';
 
                 row += '<td style="padding:8px 12px;border-bottom:1px solid var(--border-color);">' +
                     '<div class="pp-emp-name">' + pp_esc(d.employee_name || d.employee) + '</div>' +
-                    '<div class="pp-emp-id">'   + pp_esc(d.employee) + '</div></td>';
+                    '<div class="pp-emp-id">' + pp_esc(d.employee) + '</div></td>';
 
                 // Net Salary (Assignment)
                 row += '<td style="text-align:right;padding:7px 10px;border-bottom:1px solid var(--border-color);color:#15803d;font-weight:700;">' + money(ssa_net) + '</td>';
@@ -1289,13 +1297,13 @@ function render_deduction_breakdown_table($main, slips) {
                 row += '<td style="text-align:right;padding:7px 10px;border-bottom:1px solid var(--border-color);color:#dc2626;font-weight:700;">' + money(ss_net) + '</td>';
 
                 row += tdC(total_d, 'var(--text-color)', false);
-                row += tdC(absent,  absent > 0 ? '#dc2626' : 'var(--text-muted)', absent > 0);
-                row += tdC(paid_d,  '#15803d', true);
+                row += tdC(absent, absent > 0 ? '#dc2626' : 'var(--text-muted)', absent > 0);
+                row += tdC(paid_d, '#15803d', true);
 
                 // Loan — centered, combined total only
                 row += '<td style="text-align:center;padding:7px 10px;' +
-                       'border-bottom:1px solid var(--border-color);' +
-                       'vertical-align:middle;">' + loan_display + '</td>';
+                    'border-bottom:1px solid var(--border-color);' +
+                    'vertical-align:middle;">' + loan_display + '</td>';
 
                 row += td(
                     retention_total > 0 ? money(retention_total) : '—',
