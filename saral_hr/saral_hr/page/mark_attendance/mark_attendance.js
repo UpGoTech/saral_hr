@@ -312,29 +312,29 @@ function get_ma_html() {
 // ════════════════════════════════════════════════════════════════════════════
 function init_mark_attendance($main) {
 
-    var employees            = [];
-    var filteredEmployees    = [];
-    var selectedIndex        = -1;
-    var searchDebounceTimer  = null;
-    var isSaving             = false;
-    var currentCalendarYear  = new Date().getFullYear();
-    var yearAttendanceData   = {};
-    var yearHolidayData      = {};
-    var employeeCompanyMap   = {};
+    var employees = [];
+    var filteredEmployees = [];
+    var selectedIndex = -1;
+    var searchDebounceTimer = null;
+    var isSaving = false;
+    var currentCalendarYear = new Date().getFullYear();
+    var yearAttendanceData = {};
+    var yearHolidayData = {};
+    var employeeCompanyMap = {};
     var employeeWeeklyOffMap = {};
-    var calendarCache        = {};
-    var joiningDateMap       = {};
-    var leftDateMap          = {};
+    var calendarCache = {};
+    var joiningDateMap = {};
+    var leftDateMap = {};
 
-    var attendanceTableData    = {};
+    var attendanceTableData = {};
     var originalAttendanceData = {};
-    var dirtyDates             = new Set();
-    var holidayDates           = {};
-    var rowMetaMap             = {};
+    var dirtyDates = new Set();
+    var holidayDates = {};
+    var rowMetaMap = {};
 
     // ── Half-day panel state ──
-    var hdPanelTarget    = null;   // { dateKey, dayLabel, dateLabel }
-    var hdPanelFirstVal  = "";
+    var hdPanelTarget = null;   // { dateKey, dayLabel, dateLabel }
+    var hdPanelFirstVal = "";
     var hdPanelSecondVal = "";
 
     var focusedCell = null;
@@ -352,53 +352,53 @@ function init_mark_attendance($main) {
     var TOTAL_STATUS_COLS = FULL_DAY_STATUSES.length + 2; // 12
 
     var PRESENT_TYPE = new Set(["Present", "On Tour", "Earned Comp Off"]);
-    var ABSENT_TYPE  = new Set(["Absent", "LWP", "Earned Leave", "Casual Leave", "Comp Off"]);
+    var ABSENT_TYPE = new Set(["Absent", "LWP", "Earned Leave", "Casual Leave", "Comp Off"]);
 
     // ── half-day status → pill color class ──
     var HD_PILL_CLASS = {
-        "Present":         "ma-hd-pill-present",
-        "On Tour":         "ma-hd-pill-ontour",
+        "Present": "ma-hd-pill-present",
+        "On Tour": "ma-hd-pill-ontour",
         "Earned Comp Off": "ma-hd-pill-eco",
-        "Absent":          "ma-hd-pill-absent",
-        "Earned Leave":    "ma-hd-pill-el",
-        "Casual Leave":    "ma-hd-pill-cl",
-        "Comp Off":        "ma-hd-pill-coff",
-        "LWP":             "ma-hd-pill-lwp",
+        "Absent": "ma-hd-pill-absent",
+        "Earned Leave": "ma-hd-pill-el",
+        "Casual Leave": "ma-hd-pill-cl",
+        "Comp Off": "ma-hd-pill-coff",
+        "LWP": "ma-hd-pill-lwp",
     };
     // status → dot color
     var HD_DOT_COLOR = {
-        "Present":         "#28a745",
-        "On Tour":         "#28a745",
+        "Present": "#28a745",
+        "On Tour": "#28a745",
         "Earned Comp Off": "#20c997",
-        "Absent":          "#e74c3c",
-        "Earned Leave":    "#378add",
-        "Casual Leave":    "#378add",
-        "Comp Off":        "#868e96",
-        "LWP":             "#f0ad4e",
+        "Absent": "#e74c3c",
+        "Earned Leave": "#378add",
+        "Casual Leave": "#378add",
+        "Comp Off": "#868e96",
+        "LWP": "#f0ad4e",
     };
 
-    var searchInput    = document.getElementById("ma_employee_search");
-    var searchResults  = document.getElementById("ma_search_results");
-    var employeeSel    = document.getElementById("ma_employee");
-    var clearBtn       = document.getElementById("ma_clear_search");
-    var companySel     = document.getElementById("ma_company");
-    var yearSel        = document.getElementById("ma_year");
-    var monthSel       = document.getElementById("ma_month");
+    var searchInput = document.getElementById("ma_employee_search");
+    var searchResults = document.getElementById("ma_search_results");
+    var employeeSel = document.getElementById("ma_employee");
+    var clearBtn = document.getElementById("ma_clear_search");
+    var companySel = document.getElementById("ma_company");
+    var yearSel = document.getElementById("ma_year");
+    var monthSel = document.getElementById("ma_month");
     var startDateInput = document.getElementById("ma_start_date");
-    var endDateInput   = document.getElementById("ma_end_date");
-    var tableLoading   = document.getElementById("ma_table_loading");
-    var tableEl        = document.getElementById("ma_table");
-    var tbody          = document.getElementById("ma_table_body");
-    var stickyBar      = document.getElementById("ma_sticky_bar");
-    var tableScroll    = document.getElementById("ma_table_scroll");
-    var hdPanel        = document.getElementById("ma_hd_panel");
+    var endDateInput = document.getElementById("ma_end_date");
+    var tableLoading = document.getElementById("ma_table_loading");
+    var tableEl = document.getElementById("ma_table");
+    var tbody = document.getElementById("ma_table_body");
+    var stickyBar = document.getElementById("ma_sticky_bar");
+    var tableScroll = document.getElementById("ma_table_scroll");
+    var hdPanel = document.getElementById("ma_hd_panel");
 
     var allEmployees = [];
 
     function updateScrollHeight() {
         if (!stickyBar || !tableScroll) return;
-        var stickyH   = stickyBar.offsetHeight;
-        var pageHead  = document.querySelector(".page-head");
+        var stickyH = stickyBar.offsetHeight;
+        var pageHead = document.querySelector(".page-head");
         var pageHeadH = pageHead ? pageHead.offsetHeight : 60;
         var BOTTOM_PAD = 16;
         var availableH = window.innerHeight - pageHeadH - stickyH - BOTTOM_PAD;
@@ -418,9 +418,9 @@ function init_mark_attendance($main) {
             r.message.forEach(function (row) {
                 var opt = document.createElement("option");
                 opt.value = row.name;
-                opt.text  = row.full_name + (row.aadhaar_number ? " (" + row.aadhaar_number + ")" : "");
+                opt.text = row.full_name + (row.aadhaar_number ? " (" + row.aadhaar_number + ")" : "");
                 employeeSel.appendChild(opt);
-                employeeCompanyMap[row.name]   = row.company;
+                employeeCompanyMap[row.name] = row.company;
                 employeeWeeklyOffMap[row.name] = row.weekly_off
                     ? [row.weekly_off.trim().toLowerCase()] : [];
             });
@@ -428,8 +428,10 @@ function init_mark_attendance($main) {
                 .filter(function (o) { return o.value; })
                 .map(function (o) {
                     var row = r.message.find(function (e) { return e.name === o.value; }) || {};
-                    return { value: o.value, name: o.text.trim(),
-                             emp_id: row.employee || o.value, company: row.company || "" };
+                    return {
+                        value: o.value, name: o.text.trim(),
+                        emp_id: row.employee || o.value, company: row.company || ""
+                    };
                 });
             var seen = {};
             r.message.forEach(function (row) {
@@ -474,10 +476,12 @@ function init_mark_attendance($main) {
             args: { query: term, company: companySel.value || "" }, freeze: false,
             callback: function (r) {
                 callback(r.message ? r.message.map(function (row) {
-                    return { value: row.name, name: row.full_name,
-                             emp_id: row.emp_id || row.employee || row.name,
-                             company: row.company, weekly_off: row.weekly_off,
-                             aadhaar_number: row.aadhaar_number };
+                    return {
+                        value: row.name, name: row.full_name,
+                        emp_id: row.emp_id || row.employee || row.name,
+                        company: row.company, weekly_off: row.weekly_off,
+                        aadhaar_number: row.aadhaar_number
+                    };
                 }) : []);
             },
             error: function () { callback([]); }
@@ -505,7 +509,7 @@ function init_mark_attendance($main) {
     function escapeHtml(text) {
         if (!text) return "";
         return text.replace(/[&<>"']/g, function (m) {
-            return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#039;"}[m];
+            return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#039;" }[m];
         });
     }
     function highlightMatch(text, term) {
@@ -522,14 +526,14 @@ function init_mark_attendance($main) {
         searchResults.innerHTML = results.map(function (emp, i) {
             return '<div class="ma-result-item" data-index="' + i + '" data-value="' + emp.value + '">' +
                 '<div class="ma-result-name">' + highlightMatch(emp.name, term) + '</div>' +
-                '<div class="ma-result-id">'   + highlightMatch(emp.emp_id, term) + '</div>' +
+                '<div class="ma-result-id">' + highlightMatch(emp.emp_id, term) + '</div>' +
                 '</div>';
         }).join("");
         searchResults.classList.add("show");
         searchResults.querySelectorAll(".ma-result-item").forEach(function (item) {
             item.addEventListener("click", function () {
                 var emp = filteredEmployees.find(function (e) { return e.value === item.dataset.value; })
-                       || employees.find(function (e) { return e.value === item.dataset.value; });
+                    || employees.find(function (e) { return e.value === item.dataset.value; });
                 if (emp) selectEmployee(emp);
             });
             item.addEventListener("mouseenter", function () {
@@ -546,7 +550,7 @@ function init_mark_attendance($main) {
         searchInput.value = emp.name; employeeSel.value = emp.value;
         searchResults.classList.remove("show"); selectedIndex = -1;
         clearBtn.classList.add("show"); clearTimeout(searchDebounceTimer);
-        if (emp.company    !== undefined) employeeCompanyMap[emp.value]   = emp.company;
+        if (emp.company !== undefined) employeeCompanyMap[emp.value] = emp.company;
         if (emp.weekly_off !== undefined) employeeWeeklyOffMap[emp.value] =
             emp.weekly_off ? [emp.weekly_off.trim().toLowerCase()] : [];
         document.getElementById("ma_weekly_off").value =
@@ -557,11 +561,11 @@ function init_mark_attendance($main) {
         } else {
             frappe.call({
                 method: "saral_hr.saral_hr.page.mark_attendance.mark_attendance.get_employee_joining_date",
-                args:   { employee: emp.value },
+                args: { employee: emp.value },
                 callback: function (r) {
                     var data = r.message || {};
                     joiningDateMap[emp.value] = data.joining_date || null;
-                    leftDateMap[emp.value]    = data.left_date    || null;
+                    leftDateMap[emp.value] = data.left_date || null;
                     generateTable(); loadCompOffBalance(emp.value);
                 }
             });
@@ -619,13 +623,13 @@ function init_mark_attendance($main) {
         var year = yearSel.value, month = Number(monthSel.value);
         var lastDay = new Date(year, month + 1, 0);
         startDateInput.value = year + "-" + String(month + 1).padStart(2, "0") + "-01";
-        endDateInput.value   = year + "-" + String(month + 1).padStart(2, "0") + "-" +
-                               String(lastDay.getDate()).padStart(2, "0");
+        endDateInput.value = year + "-" + String(month + 1).padStart(2, "0") + "-" +
+            String(lastDay.getDate()).padStart(2, "0");
         generateTable();
         var emp = employeeSel.value;
         if (emp) loadCompOffBalance(emp);
     }
-    yearSel.addEventListener("change",  updateDatesFromMonthYear);
+    yearSel.addEventListener("change", updateDatesFromMonthYear);
     monthSel.addEventListener("change", updateDatesFromMonthYear);
 
     function parseDateLocal(str) {
@@ -646,7 +650,7 @@ function init_mark_attendance($main) {
         if (!weeklyOffDays.length) return 0;
         var count = 0, daysInMonth = new Date(year, month + 1, 0).getDate();
         for (var d = 1; d <= daysInMonth; d++) {
-            var dn = new Date(year, month, d).toLocaleDateString("en-US", { weekday:"long" }).toLowerCase();
+            var dn = new Date(year, month, d).toLocaleDateString("en-US", { weekday: "long" }).toLowerCase();
             if (weeklyOffDays.includes(dn)) count++;
         }
         return count;
@@ -663,47 +667,47 @@ function init_mark_attendance($main) {
     //  COUNT UPDATE
     // ════════════════════════════════════════════════════════════════════════
     function updateCounts() {
-        var cnt = { present:0, regular:0, ontour:0, eco:0, absent:0, el:0, cl:0, coff:0, lwp:0, holiday:0, wo:0, hd_total:0 };
+        var cnt = { present: 0, regular: 0, ontour: 0, eco: 0, absent: 0, el: 0, cl: 0, coff: 0, lwp: 0, holiday: 0, wo: 0, hd_total: 0 };
         Object.values(attendanceTableData).forEach(function (rec) {
             if (!rec) return;
             if (rec.mode === "half") {
                 cnt.hd_total++;
                 [rec.first_half, rec.second_half].forEach(function (h) {
                     if (!h) return;
-                    if      (h === "Present")           { cnt.present += 0.5; cnt.regular += 0.5; }
-                    else if (h === "On Tour")           { cnt.present += 0.5; cnt.ontour  += 0.5; }
-                    else if (h === "Earned Comp Off")   { cnt.present += 0.5; cnt.eco     += 0.5; }
-                    else if (h === "Absent")              cnt.absent   += 0.5;
-                    else if (h === "Earned Leave")        cnt.el       += 0.5;
-                    else if (h === "Casual Leave")        cnt.cl       += 0.5;
-                    else if (h === "Comp Off")            cnt.coff     += 0.5;
-                    else if (h === "LWP")                 cnt.lwp      += 0.5;
+                    if (h === "Present") { cnt.present += 0.5; cnt.regular += 0.5; }
+                    else if (h === "On Tour") { cnt.present += 0.5; cnt.ontour += 0.5; }
+                    else if (h === "Earned Comp Off") { cnt.present += 0.5; cnt.eco += 0.5; }
+                    else if (h === "Absent") cnt.absent += 0.5;
+                    else if (h === "Earned Leave") cnt.el += 0.5;
+                    else if (h === "Casual Leave") cnt.cl += 0.5;
+                    else if (h === "Comp Off") cnt.coff += 0.5;
+                    else if (h === "LWP") cnt.lwp += 0.5;
                 });
             } else {
                 var s = rec.status || "";
-                if      (s === "Present")           { cnt.present++; cnt.regular++; }
-                else if (s === "On Tour")           { cnt.present++; cnt.ontour++;  }
-                else if (s === "Earned Comp Off")   { cnt.present++; cnt.eco++;     }
-                else if (s === "Absent")              cnt.absent++;
-                else if (s === "Earned Leave")        cnt.el++;
-                else if (s === "Casual Leave")        cnt.cl++;
-                else if (s === "Comp Off")            cnt.coff++;
-                else if (s === "LWP")                 cnt.lwp++;
-                else if (s === "Holiday")             cnt.holiday++;
-                else if (s === "Weekly Off")          cnt.wo++;
+                if (s === "Present") { cnt.present++; cnt.regular++; }
+                else if (s === "On Tour") { cnt.present++; cnt.ontour++; }
+                else if (s === "Earned Comp Off") { cnt.present++; cnt.eco++; }
+                else if (s === "Absent") cnt.absent++;
+                else if (s === "Earned Leave") cnt.el++;
+                else if (s === "Casual Leave") cnt.cl++;
+                else if (s === "Comp Off") cnt.coff++;
+                else if (s === "LWP") cnt.lwp++;
+                else if (s === "Holiday") cnt.holiday++;
+                else if (s === "Weekly Off") cnt.wo++;
             }
         });
         function fmt(n) { return (n % 1 === 0) ? String(n) : n.toFixed(1); }
-        document.getElementById("ma_cnt_regular").textContent  = fmt(cnt.regular);
-        document.getElementById("ma_cnt_ontour").textContent   = fmt(cnt.ontour);
-        document.getElementById("ma_cnt_eco").textContent      = fmt(cnt.eco);
-        document.getElementById("ma_cnt_absent").textContent   = fmt(cnt.absent);
-        document.getElementById("ma_cnt_el").textContent       = fmt(cnt.el);
-        document.getElementById("ma_cnt_cl").textContent       = fmt(cnt.cl);
-        document.getElementById("ma_cnt_coff").textContent     = fmt(cnt.coff);
-        document.getElementById("ma_cnt_lwp").textContent      = fmt(cnt.lwp);
-        document.getElementById("ma_cnt_holiday").textContent  = fmt(cnt.holiday);
-        document.getElementById("ma_cnt_wo").textContent       = fmt(cnt.wo);
+        document.getElementById("ma_cnt_regular").textContent = fmt(cnt.regular);
+        document.getElementById("ma_cnt_ontour").textContent = fmt(cnt.ontour);
+        document.getElementById("ma_cnt_eco").textContent = fmt(cnt.eco);
+        document.getElementById("ma_cnt_absent").textContent = fmt(cnt.absent);
+        document.getElementById("ma_cnt_el").textContent = fmt(cnt.el);
+        document.getElementById("ma_cnt_cl").textContent = fmt(cnt.cl);
+        document.getElementById("ma_cnt_coff").textContent = fmt(cnt.coff);
+        document.getElementById("ma_cnt_lwp").textContent = fmt(cnt.lwp);
+        document.getElementById("ma_cnt_holiday").textContent = fmt(cnt.holiday);
+        document.getElementById("ma_cnt_wo").textContent = fmt(cnt.wo);
         document.getElementById("ma_cnt_hd_total").textContent = fmt(cnt.hd_total);
     }
 
@@ -720,14 +724,14 @@ function init_mark_attendance($main) {
         var row = document.querySelector('tr[data-date="' + dateKey + '"]');
         if (!row) return;
         var isDirty = dirtyDates.has(dateKey);
-        row.querySelectorAll(".ma-col-dot").forEach(function(dot) {
+        row.querySelectorAll(".ma-col-dot").forEach(function (dot) {
             dot.classList.toggle("ma-dot-dirty", isDirty);
         });
     }
     function clearDirtyAll() {
         dirtyDates.clear();
-        document.querySelectorAll(".ma-row-dirty").forEach(function(r){ r.classList.remove("ma-row-dirty"); });
-        document.querySelectorAll(".ma-dot-dirty").forEach(function(d){ d.classList.remove("ma-dot-dirty"); });
+        document.querySelectorAll(".ma-row-dirty").forEach(function (r) { r.classList.remove("ma-row-dirty"); });
+        document.querySelectorAll(".ma-dot-dirty").forEach(function (d) { d.classList.remove("ma-dot-dirty"); });
     }
 
     // ════════════════════════════════════════════════════════════════════════
@@ -755,25 +759,25 @@ function init_mark_attendance($main) {
     }
 
     function renderHdPanelOptions() {
-        var firstContainer  = document.getElementById("ma_hd_opts_first");
+        var firstContainer = document.getElementById("ma_hd_opts_first");
         var secondContainer = document.getElementById("ma_hd_opts_second");
         if (!firstContainer || !secondContainer) return;
-        firstContainer.innerHTML  = "";
+        firstContainer.innerHTML = "";
         secondContainer.innerHTML = "";
         HALF_OPTIONS.forEach(function (status) {
-            firstContainer.appendChild(buildHdOption(status, hdPanelFirstVal,  "first"));
+            firstContainer.appendChild(buildHdOption(status, hdPanelFirstVal, "first"));
             secondContainer.appendChild(buildHdOption(status, hdPanelSecondVal, "second"));
         });
     }
 
     function openHdPanel(dateKey, dayLabel, dateLabel) {
         var rec = attendanceTableData[dateKey] || {};
-        hdPanelTarget    = { dateKey: dateKey };
-        hdPanelFirstVal  = (rec.mode === "half") ? (rec.first_half  || "") : "";
+        hdPanelTarget = { dateKey: dateKey };
+        hdPanelFirstVal = (rec.mode === "half") ? (rec.first_half || "") : "";
         hdPanelSecondVal = (rec.mode === "half") ? (rec.second_half || "") : "";
 
         document.getElementById("ma_hd_panel_title").textContent = dateLabel;
-        document.getElementById("ma_hd_panel_date").textContent  = dayLabel;
+        document.getElementById("ma_hd_panel_date").textContent = dayLabel;
 
         renderHdPanelOptions();
         hdPanel.style.display = "flex";
@@ -788,8 +792,8 @@ function init_mark_attendance($main) {
         if (!hdPanelTarget) return;
         var dateKey = hdPanelTarget.dateKey;
         attendanceTableData[dateKey] = {
-            mode:        "half",
-            first_half:  hdPanelFirstVal,
+            mode: "half",
+            first_half: hdPanelFirstVal,
             second_half: hdPanelSecondVal,
         };
         markDirty(dateKey);
@@ -799,14 +803,14 @@ function init_mark_attendance($main) {
     }
 
     function clearHdPanel() {
-        hdPanelFirstVal  = "";
+        hdPanelFirstVal = "";
         hdPanelSecondVal = "";
         renderHdPanelOptions();
     }
 
     document.getElementById("ma_hd_panel_close").addEventListener("click", closeHdPanel);
-    document.getElementById("ma_hd_apply_btn").addEventListener("click",   applyHdPanel);
-    document.getElementById("ma_hd_clear_btn").addEventListener("click",   clearHdPanel);
+    document.getElementById("ma_hd_apply_btn").addEventListener("click", applyHdPanel);
+    document.getElementById("ma_hd_clear_btn").addEventListener("click", clearHdPanel);
     hdPanel.addEventListener("click", function (e) {
         if (e.target === hdPanel) closeHdPanel();
     });
@@ -818,12 +822,12 @@ function init_mark_attendance($main) {
         if (!status) {
             return '<span class="ma-hd-pill ma-hd-pill-empty">Set half</span>';
         }
-        var cls      = HD_PILL_CLASS[status] || "";
-        var dotColor = HD_DOT_COLOR[status]  || "#aaa";
+        var cls = HD_PILL_CLASS[status] || "";
+        var dotColor = HD_DOT_COLOR[status] || "#aaa";
         return '<span class="ma-hd-pill ' + cls + '">' +
-               '<span class="ma-hd-pill-dot" style="background:' + dotColor + '"></span>' +
-               status +
-               '</span>';
+            '<span class="ma-hd-pill-dot" style="background:' + dotColor + '"></span>' +
+            status +
+            '</span>';
     }
 
     // ════════════════════════════════════════════════════════════════════════
@@ -831,9 +835,9 @@ function init_mark_attendance($main) {
     // ════════════════════════════════════════════════════════════════════════
     function getDotClass(status) {
         if (PRESENT_TYPE.has(status)) return "active present-dot";
-        if (ABSENT_TYPE.has(status))  return "active absent-dot";
-        if (status === "Weekly Off")  return "active wo-dot";
-        if (status === "Holiday")     return "active holiday-dot";
+        if (ABSENT_TYPE.has(status)) return "active absent-dot";
+        if (status === "Weekly Off") return "active wo-dot";
+        if (status === "Holiday") return "active holiday-dot";
         return "active";
     }
 
@@ -878,7 +882,7 @@ function init_mark_attendance($main) {
 
         var toggle = row.querySelector(".ma-override-toggle");
         if (toggle) {
-            var restStatus    = toggle.dataset.reststatus;
+            var restStatus = toggle.dataset.reststatus;
             var currentIsRest = (rec.mode === "full") && (rec.status === restStatus);
             toggle.checked = currentIsRest;
             toggle.closest("label").title = currentIsRest
@@ -886,7 +890,7 @@ function init_mark_attendance($main) {
                 : "Click to restore " + restStatus;
             row.classList.remove("ma-row-wo", "ma-row-holiday");
             if (currentIsRest) {
-                if (restStatus === "Holiday")    row.classList.add("ma-row-holiday");
+                if (restStatus === "Holiday") row.classList.add("ma-row-holiday");
                 if (restStatus === "Weekly Off") row.classList.add("ma-row-wo");
             } else {
                 if (rec.mode === "full" && !rec.status) row.classList.add("ma-row-override");
@@ -908,12 +912,12 @@ function init_mark_attendance($main) {
         return row.querySelector('[data-colidx="' + colIdx + '"]');
     }
     function setFocusCell(rowIdx, colIdx) {
-        tbody.querySelectorAll(".ma-cell-focused").forEach(function(el){ el.classList.remove("ma-cell-focused"); });
+        tbody.querySelectorAll(".ma-cell-focused").forEach(function (el) { el.classList.remove("ma-cell-focused"); });
         focusedCell = { rowIdx: rowIdx, colIdx: colIdx };
         var td = getCellAt(rowIdx, colIdx);
-        if (td) { td.classList.add("ma-cell-focused"); td.scrollIntoView({ block:"nearest", inline:"nearest" }); }
+        if (td) { td.classList.add("ma-cell-focused"); td.scrollIntoView({ block: "nearest", inline: "nearest" }); }
     }
-    tbody.addEventListener("keydown", function(e) {
+    tbody.addEventListener("keydown", function (e) {
         if (!focusedCell) return;
         var r = focusedCell.rowIdx, c = focusedCell.colIdx;
         var maxRow = tbody.querySelectorAll("tr[data-rowidx]").length - 1;
@@ -931,7 +935,7 @@ function init_mark_attendance($main) {
         } else if (e.key === "Tab") {
             e.preventDefault();
             if (!e.shiftKey) { if (c < maxCol) setFocusCell(r, c + 1); else if (r < maxRow) setFocusCell(r + 1, 0); }
-            else             { if (c > 0) setFocusCell(r, c - 1); else if (r > 0) setFocusCell(r - 1, maxCol); }
+            else { if (c > 0) setFocusCell(r, c - 1); else if (r > 0) setFocusCell(r - 1, maxCol); }
         } else if (e.key === "Enter" || e.key === " ") {
             e.preventDefault();
             var td = getCellAt(r, c); if (td) td.click();
@@ -943,16 +947,18 @@ function init_mark_attendance($main) {
     // ════════════════════════════════════════════════════════════════════════
     function buildRow(dateKey, dayName, currentDate, savedRec, isHoliday, isDefaultWeeklyOff, isFuture, rowIdx) {
         var row = document.createElement("tr");
-        row.setAttribute("data-date",   dateKey);
+        row.setAttribute("data-date", dateKey);
         row.setAttribute("data-rowidx", rowIdx);
 
-        var isRestDay  = isHoliday || isDefaultWeeklyOff;
+        var isRestDay = isHoliday || isDefaultWeeklyOff;
         var restStatus = isHoliday ? "Holiday" : (isDefaultWeeklyOff ? "Weekly Off" : "");
         var isRestMode = isRestDay && savedRec.mode === "full" &&
-                         (savedRec.status === "Holiday" || savedRec.status === "Weekly Off");
+            (savedRec.status === "Holiday" || savedRec.status === "Weekly Off");
 
-        rowMetaMap[dateKey] = { isRestDay: isRestDay, restStatus: restStatus,
-                                isHoliday: isHoliday, isDefaultWeeklyOff: isDefaultWeeklyOff };
+        rowMetaMap[dateKey] = {
+            isRestDay: isRestDay, restStatus: restStatus,
+            isHoliday: isHoliday, isDefaultWeeklyOff: isDefaultWeeklyOff
+        };
 
         var cellsLocked = isFuture || (isRestDay && isRestMode);
 
@@ -960,8 +966,8 @@ function init_mark_attendance($main) {
             row.classList.add("ma-future-row");
         } else if (savedRec.mode === "full") {
             if (savedRec.status === "Weekly Off") row.classList.add("ma-row-wo");
-            if (savedRec.status === "Holiday")    row.classList.add("ma-row-holiday");
-            if (isRestDay && !isRestMode)         row.classList.add("ma-row-override");
+            if (savedRec.status === "Holiday") row.classList.add("ma-row-holiday");
+            if (isRestDay && !isRestMode) row.classList.add("ma-row-override");
         } else if (savedRec.mode === "half") {
             row.classList.add("ma-row-halfday");
         }
@@ -969,7 +975,7 @@ function init_mark_attendance($main) {
 
         var day = currentDate.getDate();
         var dateLabel = String(day).padStart(2, "0") + " " +
-            currentDate.toLocaleDateString("en-US", { month:"long" }) + " " +
+            currentDate.toLocaleDateString("en-US", { month: "long" }) + " " +
             currentDate.getFullYear();
 
         // Date cell
@@ -996,27 +1002,27 @@ function init_mark_attendance($main) {
             lbl.className = "ma-toggle" + (restStatus === "Holiday" ? " ma-toggle-holiday" : "");
             lbl.title = isRestMode ? "Click to override " + restStatus : "Click to restore " + restStatus;
             var chk = document.createElement("input");
-            chk.type      = "checkbox";
+            chk.type = "checkbox";
             chk.className = "ma-override-toggle";
-            chk.checked   = isRestMode;
-            chk.dataset.isrestday  = "true";
+            chk.checked = isRestMode;
+            chk.dataset.isrestday = "true";
             chk.dataset.reststatus = restStatus;
-            chk.dataset.datekey    = dateKey;
+            chk.dataset.datekey = dateKey;
             chk.addEventListener("change", function () {
                 var nowChecked = this.checked;
                 if (nowChecked) {
                     if (restStatus === "Weekly Off") {
-                        var limit   = calcMaxWeeklyOffInMonth();
+                        var limit = calcMaxWeeklyOffInMonth();
                         var current = countCurrentWeeklyOff();
                         if (limit > 0 && current + 1 > limit) {
                             this.checked = false;
-                            frappe.show_alert({ message:"Weekly Off cannot exceed <b>" + limit + " days</b> in this month.", indicator:"red" });
+                            frappe.show_alert({ message: "Weekly Off cannot exceed <b>" + limit + " days</b> in this month.", indicator: "red" });
                             return;
                         }
                     }
-                    attendanceTableData[dateKey] = { mode:"full", status: restStatus };
+                    attendanceTableData[dateKey] = { mode: "full", status: restStatus };
                 } else {
-                    attendanceTableData[dateKey] = { mode:"full", status: "" };
+                    attendanceTableData[dateKey] = { mode: "full", status: "" };
                 }
                 markDirty(dateKey);
                 refreshRowVisuals(dateKey);
@@ -1045,7 +1051,7 @@ function init_mark_attendance($main) {
 
             if (!isActive) {
                 if (status === "Weekly Off" && isDefaultWeeklyOff) dot.classList.add("ma-dot-wo-hint");
-                if (status === "Holiday"    && isHoliday)          dot.classList.add("ma-dot-holiday-hint");
+                if (status === "Holiday" && isHoliday) dot.classList.add("ma-dot-holiday-hint");
             }
 
             td.addEventListener("click", function () {
@@ -1053,7 +1059,7 @@ function init_mark_attendance($main) {
                 if (parentRow && parentRow.classList.contains("ma-status-cells-disabled")) return;
                 onFullDayClick(dateKey, status, isHoliday, isDefaultWeeklyOff);
             });
-            td.addEventListener("mousedown", function() { setFocusCell(rowIdx, colIdx); });
+            td.addEventListener("mousedown", function () { setFocusCell(rowIdx, colIdx); });
             td.appendChild(dot);
             row.appendChild(td);
         });
@@ -1062,7 +1068,7 @@ function init_mark_attendance($main) {
         var hd1Td = document.createElement("td");
         hd1Td.className = "ma-status-cell ma-hd-cell ma-hd1-cell";
         hd1Td.setAttribute("data-colidx", FULL_DAY_STATUSES.length);
-        var h1Val = (savedRec.mode === "half") ? savedRec.first_half  : "";
+        var h1Val = (savedRec.mode === "half") ? savedRec.first_half : "";
         var h2Val = (savedRec.mode === "half") ? savedRec.second_half : "";
         hd1Td.innerHTML = hdPillHtml(h1Val);
         hd1Td.addEventListener("click", function (e) {
@@ -1072,7 +1078,7 @@ function init_mark_attendance($main) {
             ensureHalfDayMode(dateKey);
             openHdPanel(dateKey, dayName, dateLabel);
         });
-        hd1Td.addEventListener("mousedown", function() { setFocusCell(rowIdx, FULL_DAY_STATUSES.length); });
+        hd1Td.addEventListener("mousedown", function () { setFocusCell(rowIdx, FULL_DAY_STATUSES.length); });
         row.appendChild(hd1Td);
 
         // Half Day – Second Half (pill, opens panel)
@@ -1087,7 +1093,7 @@ function init_mark_attendance($main) {
             ensureHalfDayMode(dateKey);
             openHdPanel(dateKey, dayName, dateLabel);
         });
-        hd2Td.addEventListener("mousedown", function() { setFocusCell(rowIdx, FULL_DAY_STATUSES.length + 1); });
+        hd2Td.addEventListener("mousedown", function () { setFocusCell(rowIdx, FULL_DAY_STATUSES.length + 1); });
         row.appendChild(hd2Td);
 
         return row;
@@ -1101,24 +1107,24 @@ function init_mark_attendance($main) {
 
         if (status === "Weekly Off") {
             var limit = calcMaxWeeklyOffInMonth();
-            var cur   = countCurrentWeeklyOff();
+            var cur = countCurrentWeeklyOff();
             var alreadyWo = (rec.mode === "full" && rec.status === "Weekly Off");
             if (limit > 0 && !alreadyWo && cur + 1 > limit) {
-                frappe.show_alert({ message:"Weekly Off cannot exceed <b>" + limit + " days</b> in this month.", indicator:"red" });
+                frappe.show_alert({ message: "Weekly Off cannot exceed <b>" + limit + " days</b> in this month.", indicator: "red" });
                 return;
             }
         }
 
         if (rec.mode === "half") {
-            attendanceTableData[dateKey] = { mode:"full", status: status };
+            attendanceTableData[dateKey] = { mode: "full", status: status };
             markDirty(dateKey); refreshRowVisuals(dateKey); updateCounts(); return;
         }
 
         if (rec.mode === "full" && rec.status === status) {
             var def = isHoliday ? "Holiday" : (isDefaultWeeklyOff ? "Weekly Off" : "");
-            attendanceTableData[dateKey] = def ? { mode:"full", status:def } : { mode:"full", status:"" };
+            attendanceTableData[dateKey] = def ? { mode: "full", status: def } : { mode: "full", status: "" };
         } else {
-            attendanceTableData[dateKey] = { mode:"full", status: status };
+            attendanceTableData[dateKey] = { mode: "full", status: status };
         }
         markDirty(dateKey); refreshRowVisuals(dateKey); updateCounts();
     }
@@ -1126,7 +1132,7 @@ function init_mark_attendance($main) {
     function ensureHalfDayMode(dateKey) {
         var rec = attendanceTableData[dateKey] || {};
         if (rec.mode === "half") return;
-        attendanceTableData[dateKey] = { mode:"half", first_half: "", second_half: "" };
+        attendanceTableData[dateKey] = { mode: "half", first_half: "", second_half: "" };
         markDirty(dateKey); refreshRowVisuals(dateKey); updateCounts();
     }
 
@@ -1135,68 +1141,69 @@ function init_mark_attendance($main) {
     // ════════════════════════════════════════════════════════════════════════
     function loadCompOffBalance(employee) {
         var ecoAvailable = document.getElementById("ma_eco_available");
-        var ecoEarned    = document.getElementById("ma_eco_earned");
-        var ecoUsed      = document.getElementById("ma_eco_used");
-        var ecoBalance   = document.getElementById("ma_eco_balance");
-        var elTaken      = document.getElementById("ma_el_taken");
-        var clTaken      = document.getElementById("ma_cl_taken");
+        var ecoEarned = document.getElementById("ma_eco_earned");
+        var ecoUsed = document.getElementById("ma_eco_used");
+        var ecoBalance = document.getElementById("ma_eco_balance");
+        var elTaken = document.getElementById("ma_el_taken");
+        var clTaken = document.getElementById("ma_cl_taken");
         if (!ecoEarned) return;
-        [ecoAvailable,ecoEarned,ecoUsed,ecoBalance,elTaken,clTaken].forEach(function(el){ if(el) el.textContent="…"; });
+        [ecoAvailable, ecoEarned, ecoUsed, ecoBalance, elTaken, clTaken].forEach(function (el) { if (el) el.textContent = "…"; });
         frappe.call({
             method: "saral_hr.saral_hr.page.mark_attendance.mark_attendance.get_comp_off_balance",
             args: { employee: employee, year: yearSel.value, month: monthSel.value },
             callback: function (r) {
-                var data = (r && r.message) ? r.message : { available:0, earned:0, used:0, balance:0, el_taken:0, cl_taken:0 };
+                var data = (r && r.message) ? r.message : { available: 0, earned: 0, used: 0, balance: 0, el_taken: 0, cl_taken: 0 };
                 if (ecoAvailable) ecoAvailable.textContent = data.available || 0;
-                ecoEarned.textContent  = data.earned  || 0;
-                ecoUsed.textContent    = data.used    || 0;
+                ecoEarned.textContent = data.earned || 0;
+                ecoUsed.textContent = data.used || 0;
                 ecoBalance.textContent = data.balance || 0;
                 if (elTaken) elTaken.textContent = data.el_taken || 0;
                 if (clTaken) clTaken.textContent = data.cl_taken || 0;
             },
             error: function () {
-                [ecoAvailable,ecoEarned,ecoUsed,ecoBalance,elTaken,clTaken].forEach(function(el){ if(el) el.textContent="0"; });
+                [ecoAvailable, ecoEarned, ecoUsed, ecoBalance, elTaken, clTaken].forEach(function (el) { if (el) el.textContent = "0"; });
             }
         });
     }
     function clearCompOffBalance() {
-        ["ma_eco_available","ma_eco_earned","ma_eco_used","ma_eco_balance","ma_el_taken","ma_cl_taken"]
-            .forEach(function(id){ var el=document.getElementById(id); if(el) el.textContent="0"; });
+        ["ma_eco_available", "ma_eco_earned", "ma_eco_used", "ma_eco_balance", "ma_el_taken", "ma_cl_taken"]
+            .forEach(function (id) { var el = document.getElementById(id); if (el) el.textContent = "0"; });
     }
 
     // ════════════════════════════════════════════════════════════════════════
     //  LOADING
     // ════════════════════════════════════════════════════════════════════════
-    function showTableLoading() { tableEl.style.display="none"; tableLoading.style.display="flex"; }
+    function showTableLoading() { tableEl.style.display = "none"; tableLoading.style.display = "flex"; }
     function hideTableLoading() {
-        tableLoading.style.display="none";
-        tableEl.style.display="table";
+        tableLoading.style.display = "none";
+        tableEl.style.display = "table";
         setTimeout(updateScrollHeight, 50);
     }
 
     // ════════════════════════════════════════════════════════════════════════
     //  GENERATE TABLE
     // ════════════════════════════════════════════════════════════════════════
-    function resolveInitialRec(rawStatus, isHoliday, isDefaultWeeklyOff) {
+    function resolveInitialRec(rawStatus, isHoliday, isDefaultWeeklyOff, isOutsideTenure) {
         if (!rawStatus) {
-            if (isHoliday)          return { mode:"full", status:"Holiday" };
-            if (isDefaultWeeklyOff) return { mode:"full", status:"Weekly Off" };
-            return { mode:"full", status:"" };
+            if (!isOutsideTenure) {
+                if (isHoliday) return { mode: "full", status: "Holiday" };
+                if (isDefaultWeeklyOff) return { mode: "full", status: "Weekly Off" };
+            }
+            return { mode: "full", status: "" };
         }
         if (typeof rawStatus === "object" && rawStatus.mode === "half") return rawStatus;
-        return { mode:"full", status: rawStatus };
+        return { mode: "full", status: rawStatus };
     }
-
     function generateTable() {
-        var employee  = employeeSel.value;
+        var employee = employeeSel.value;
         var startDate = startDateInput.value;
-        var endDate   = endDateInput.value;
-        if (!employee || !startDate || !endDate) { tableLoading.style.display="none"; return; }
+        var endDate = endDateInput.value;
+        if (!employee || !startDate || !endDate) { tableLoading.style.display = "none"; return; }
 
         var weeklyOffDays = employeeWeeklyOffMap[employee] || [];
-        var company       = employeeCompanyMap[employee];
-        var joiningDate   = parseDateLocal(joiningDateMap[employee]);
-        var leftDate      = parseDateLocal(leftDateMap[employee]);
+        var company = employeeCompanyMap[employee];
+        var joiningDate = parseDateLocal(joiningDateMap[employee]);
+        var leftDate = parseDateLocal(leftDateMap[employee]);
 
         focusedCell = null; rowMetaMap = {};
         showTableLoading();
@@ -1217,25 +1224,26 @@ function init_mark_attendance($main) {
                         dirtyDates.clear(); tbody.innerHTML = "";
 
                         var current = new Date(startDate);
-                        var end     = new Date(endDate);
-                        var today   = new Date(); today.setHours(0,0,0,0);
-                        var rowIdx  = 0;
+                        var end = new Date(endDate);
+                        var today = new Date(); today.setHours(0, 0, 0, 0);
+                        var rowIdx = 0;
 
                         while (current <= end) {
-                            var cd = new Date(current); cd.setHours(0,0,0,0);
-                            var dayName = cd.toLocaleDateString("en-US", { weekday:"long" });
+                            var cd = new Date(current); cd.setHours(0, 0, 0, 0);
+                            var dayName = cd.toLocaleDateString("en-US", { weekday: "long" });
                             var dateKey = cd.getFullYear() + "-" +
-                                String(cd.getMonth()+1).padStart(2,"0") + "-" +
-                                String(cd.getDate()).padStart(2,"0");
+                                String(cd.getMonth() + 1).padStart(2, "0") + "-" +
+                                String(cd.getDate()).padStart(2, "0");
 
                             var isDefaultWeeklyOff = weeklyOffDays.includes(dayName.toLowerCase());
-                            var isHoliday          = holidayDates[dateKey] === true;
-                            var isFuture           = cd > today;
-                            var isBeforeJoining    = joiningDate ? (cd < joiningDate) : false;
-                            var isAfterLeft        = leftDate    ? (cd > leftDate)    : false;
+                            var isHoliday = holidayDates[dateKey] === true;
+                            var isFuture = cd > today;
+                            var isBeforeJoining = joiningDate ? (cd < joiningDate) : false;
+                            var isAfterLeft = leftDate ? (cd > leftDate) : false;
+                            var isOutsideTenure = isBeforeJoining || isAfterLeft;
 
-                            var raw      = attendanceMap[dateKey];
-                            var savedRec = resolveInitialRec(raw, isHoliday, isDefaultWeeklyOff);
+                            var raw = attendanceMap[dateKey];
+                            var savedRec = resolveInitialRec(raw, isHoliday, isDefaultWeeklyOff, isOutsideTenure);
 
                             attendanceTableData[dateKey] = savedRec;
                             if (raw) originalAttendanceData[dateKey] = JSON.parse(JSON.stringify(savedRec));
@@ -1266,7 +1274,7 @@ function init_mark_attendance($main) {
     function bulkMark(status) {
         var employee = employeeSel.value;
         if (!employee || !startDateInput.value) {
-            frappe.show_alert({ message:"Please select an employee and month first", indicator:"orange" }); return;
+            frappe.show_alert({ message: "Please select an employee and month first", indicator: "orange" }); return;
         }
         Object.keys(attendanceTableData).forEach(function (dateKey) {
             if (originalAttendanceData[dateKey]) return;
@@ -1277,24 +1285,24 @@ function init_mark_attendance($main) {
             if (rowEl && rowEl.classList.contains("ma-future-row")) return;
 
             attendanceTableData[dateKey] = status === "Half Day"
-                ? { mode:"half", first_half:"", second_half:"" }
-                : { mode:"full", status: status };
+                ? { mode: "half", first_half: "", second_half: "" }
+                : { mode: "full", status: status };
             markDirty(dateKey);
             refreshRowVisuals(dateKey);
         });
         updateCounts();
     }
 
-    document.getElementById("ma_mark_present").onclick  = function () { bulkMark("Present"); };
-    document.getElementById("ma_mark_absent").onclick   = function () { bulkMark("Absent"); };
-    document.getElementById("ma_mark_halfday").onclick  = function () { bulkMark("Half Day"); };
-    document.getElementById("ma_mark_lwp").onclick      = function () { bulkMark("LWP"); };
+    document.getElementById("ma_mark_present").onclick = function () { bulkMark("Present"); };
+    document.getElementById("ma_mark_absent").onclick = function () { bulkMark("Absent"); };
+    document.getElementById("ma_mark_halfday").onclick = function () { bulkMark("Half Day"); };
+    document.getElementById("ma_mark_lwp").onclick = function () { bulkMark("LWP"); };
 
     // ════════════════════════════════════════════════════════════════════════
     //  SAVE
     // ════════════════════════════════════════════════════════════════════════
     function playSaveSound() {
-        try { var audio = document.getElementById("ma-sound-click"); if (audio) { audio.volume=0.2; audio.play(); } } catch(e) {}
+        try { var audio = document.getElementById("ma-sound-click"); if (audio) { audio.volume = 0.2; audio.play(); } } catch (e) { }
     }
     function recsAreEqual(a, b) {
         if (!a && !b) return true;
@@ -1306,8 +1314,8 @@ function init_mark_attendance($main) {
     function doSave() {
         if (isSaving) return;
         var employee = employeeSel.value;
-        if (!employee) { frappe.show_alert({ message:"Please select an employee first", indicator:"orange" }); return; }
-        if (!startDateInput.value || !endDateInput.value) { frappe.show_alert({ message:"Please select a year and month first", indicator:"orange" }); return; }
+        if (!employee) { frappe.show_alert({ message: "Please select an employee first", indicator: "orange" }); return; }
+        if (!startDateInput.value || !endDateInput.value) { frappe.show_alert({ message: "Please select a year and month first", indicator: "orange" }); return; }
 
         var changedData = [], unchangedCnt = 0;
         Object.entries(attendanceTableData).forEach(function (entry) {
@@ -1317,9 +1325,9 @@ function init_mark_attendance($main) {
             if (recsAreEqual(rec, orig)) { unchangedCnt++; return; }
             if (rec.mode === "full") {
                 if (!rec.status) return;
-                changedData.push({ employee:employee, attendance_date:dateKey, mode:"full", status:rec.status });
+                changedData.push({ employee: employee, attendance_date: dateKey, mode: "full", status: rec.status });
             } else if (rec.mode === "half") {
-                changedData.push({ employee:employee, attendance_date:dateKey, mode:"half", first_half:rec.first_half||"", second_half:rec.second_half||"" });
+                changedData.push({ employee: employee, attendance_date: dateKey, mode: "half", first_half: rec.first_half || "", second_half: rec.second_half || "" });
             }
         });
 
@@ -1333,7 +1341,7 @@ function init_mark_attendance($main) {
 
         frappe.call({
             method: "saral_hr.saral_hr.page.mark_attendance.mark_attendance.save_attendance_batch",
-            args:   { attendance_data: changedData },
+            args: { attendance_data: changedData },
             callback: function (r) {
                 isSaving = false;
                 if (r.message && r.message.success) {
@@ -1341,7 +1349,7 @@ function init_mark_attendance($main) {
                     frappe.show_alert({
                         message: errors && errors.length
                             ? saved + " record(s) saved. " + errors.length + " failed."
-                            : saved + " attendance record" + (saved===1?"":"s") + " saved successfully.",
+                            : saved + " attendance record" + (saved === 1 ? "" : "s") + " saved successfully.",
                         indicator: errors && errors.length ? "yellow" : "green"
                     });
                     setTimeout(function () {
@@ -1349,15 +1357,15 @@ function init_mark_attendance($main) {
                         setTimeout(function () { if (tableScroll) tableScroll.scrollTop = scrollPos; }, 100);
                     }, 300);
                 } else {
-                    frappe.show_alert({ message:(r.message && r.message.error) || "Error saving attendance", indicator:"red" });
+                    frappe.show_alert({ message: (r.message && r.message.error) || "Error saving attendance", indicator: "red" });
                 }
             },
-            error: function () { isSaving=false; frappe.show_alert({ message:"Error saving attendance. Please try again.", indicator:"red" }); }
+            error: function () { isSaving = false; frappe.show_alert({ message: "Error saving attendance. Please try again.", indicator: "red" }); }
         });
     }
 
     var saveBtn = document.getElementById("ma_save_attendance");
-    saveBtn.addEventListener("mousedown", function(e) { e.preventDefault(); });
+    saveBtn.addEventListener("mousedown", function (e) { e.preventDefault(); });
     saveBtn.addEventListener("click", doSave);
 
     document.getElementById("ma_goto_attendance").addEventListener("click", function (e) {
@@ -1371,15 +1379,15 @@ function init_mark_attendance($main) {
     function normalizeDateKey(dateStr) {
         if (!dateStr) return null;
         if (dateStr instanceof Date) {
-            return dateStr.getFullYear() + "-" + String(dateStr.getMonth()+1).padStart(2,"0") + "-" + String(dateStr.getDate()).padStart(2,"0");
+            return dateStr.getFullYear() + "-" + String(dateStr.getMonth() + 1).padStart(2, "0") + "-" + String(dateStr.getDate()).padStart(2, "0");
         }
         var parts = dateStr.toString().split("-");
-        if (parts.length === 3) return parts[0]+"-"+parts[1].padStart(2,"0")+"-"+parts[2].padStart(2,"0");
+        if (parts.length === 3) return parts[0] + "-" + parts[1].padStart(2, "0") + "-" + parts[2].padStart(2, "0");
         return dateStr;
     }
     function openCalendarModal() {
         var employee = employeeSel.value;
-        if (!employee) { frappe.show_alert({ message:"Please select an employee first", indicator:"orange" }); return; }
+        if (!employee) { frappe.show_alert({ message: "Please select an employee first", indicator: "orange" }); return; }
         document.getElementById("ma_cal_modal").classList.add("show");
         currentCalendarYear = parseInt(yearSel.value) || new Date().getFullYear();
         document.getElementById("ma_cal_year").textContent = currentCalendarYear;
@@ -1399,21 +1407,21 @@ function init_mark_attendance($main) {
         var startDate = currentCalendarYear + "-01-01", endDate = currentCalendarYear + "-12-31";
         frappe.call({
             method: "saral_hr.saral_hr.page.mark_attendance.mark_attendance.get_holidays_between_dates",
-            args: { company:company, start_date:startDate, end_date:endDate },
+            args: { company: company, start_date: startDate, end_date: endDate },
             callback: function (holidayRes) {
                 var holidays = {};
-                (holidayRes.message || []).forEach(function (h) { var n=normalizeDateKey(h); if(n) holidays[n]=true; });
+                (holidayRes.message || []).forEach(function (h) { var n = normalizeDateKey(h); if (n) holidays[n] = true; });
                 frappe.call({
                     method: "saral_hr.saral_hr.page.mark_attendance.mark_attendance.get_attendance_between_dates",
-                    args: { employee:employee, start_date:startDate, end_date:endDate },
+                    args: { employee: employee, start_date: startDate, end_date: endDate },
                     callback: function (res) {
                         var attendance = {};
                         Object.entries(res.message || {}).forEach(function (entry) {
                             var n = normalizeDateKey(entry[0]);
-                            if (n) { var val=entry[1]; attendance[n]=(typeof val==="object"&&val.mode==="half")?"Half Day":val; }
+                            if (n) { var val = entry[1]; attendance[n] = (typeof val === "object" && val.mode === "half") ? "Half Day" : val; }
                         });
-                        calendarCache[cacheKey] = { holidays:holidays, attendance:attendance };
-                        yearHolidayData=holidays; yearAttendanceData=attendance;
+                        calendarCache[cacheKey] = { holidays: holidays, attendance: attendance };
+                        yearHolidayData = holidays; yearAttendanceData = attendance;
                         renderMonthsGrid();
                     }
                 });
@@ -1428,54 +1436,54 @@ function init_mark_attendance($main) {
     function renderMonthsGrid() {
         var employee = employeeSel.value, weeklyOffDays = employeeWeeklyOffMap[employee] || [];
         var monthsGrid = document.getElementById("ma_months_grid");
-        var monthNames = ["January","February","March","April","May","June","July","August","September","October","November","December"];
-        var dayNames   = ["S","M","T","W","T","F","S"];
+        var monthNames = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+        var dayNames = ["S", "M", "T", "W", "T", "F", "S"];
         monthsGrid.innerHTML = "";
         monthNames.forEach(function (monthName, monthIndex) {
             var card = document.createElement("div");
             card.className = "ma-month-card";
-            card.onclick   = function () { selectMonth(monthIndex); };
-            var firstDay=new Date(currentCalendarYear,monthIndex,1), lastDay=new Date(currentCalendarYear,monthIndex+1,0);
-            var startDay=firstDay.getDay(), daysInMonth=lastDay.getDate();
-            var html = '<div class="ma-month-name">'+monthName+'</div><div class="ma-mini-cal">';
-            dayNames.forEach(function(d){ html+='<div class="ma-mini-hdr">'+d+'</div>'; });
-            for(var i=0;i<startDay;i++) html+='<div class="ma-mini-day empty"></div>';
-            var today=new Date();
-            for(var day=1;day<=daysInMonth;day++){
-                var date=new Date(currentCalendarYear,monthIndex,day), dateKey=normalizeDateKey(date);
-                var isToday=date.toDateString()===today.toDateString();
-                var dn=date.toLocaleDateString("en-US",{weekday:"long"}).toLowerCase();
-                var isDefaultWeeklyOff=weeklyOffDays.includes(dn), isHoliday=yearHolidayData[dateKey]===true;
-                var status=yearAttendanceData[dateKey];
-                var cls="ma-mini-day";
-                if(isToday)                                   cls+=" today";
-                else if(isHoliday||status==="Holiday")        cls+=" holiday";
-                else if(status==="Present"||status==="Regular") cls+=" present";
-                else if(status==="On Tour")                   cls+=" on-tour";
-                else if(status==="Earned Comp Off")           cls+=" eco";
-                else if(status==="Absent")                    cls+=" absent";
-                else if(status==="Half Day")                  cls+=" halfday";
-                else if(status==="LWP")                       cls+=" lwp";
-                else if(status==="Earned Leave")              cls+=" el";
-                else if(status==="Casual Leave")              cls+=" cl";
-                else if(status==="Comp Off")                  cls+=" coff";
-                else if(status==="Weekly Off"||isDefaultWeeklyOff) cls+=" weekend";
-                html+='<div class="'+cls+'">'+day+'</div>';
+            card.onclick = function () { selectMonth(monthIndex); };
+            var firstDay = new Date(currentCalendarYear, monthIndex, 1), lastDay = new Date(currentCalendarYear, monthIndex + 1, 0);
+            var startDay = firstDay.getDay(), daysInMonth = lastDay.getDate();
+            var html = '<div class="ma-month-name">' + monthName + '</div><div class="ma-mini-cal">';
+            dayNames.forEach(function (d) { html += '<div class="ma-mini-hdr">' + d + '</div>'; });
+            for (var i = 0; i < startDay; i++) html += '<div class="ma-mini-day empty"></div>';
+            var today = new Date();
+            for (var day = 1; day <= daysInMonth; day++) {
+                var date = new Date(currentCalendarYear, monthIndex, day), dateKey = normalizeDateKey(date);
+                var isToday = date.toDateString() === today.toDateString();
+                var dn = date.toLocaleDateString("en-US", { weekday: "long" }).toLowerCase();
+                var isDefaultWeeklyOff = weeklyOffDays.includes(dn), isHoliday = yearHolidayData[dateKey] === true;
+                var status = yearAttendanceData[dateKey];
+                var cls = "ma-mini-day";
+                if (isToday) cls += " today";
+                else if (isHoliday || status === "Holiday") cls += " holiday";
+                else if (status === "Present" || status === "Regular") cls += " present";
+                else if (status === "On Tour") cls += " on-tour";
+                else if (status === "Earned Comp Off") cls += " eco";
+                else if (status === "Absent") cls += " absent";
+                else if (status === "Half Day") cls += " halfday";
+                else if (status === "LWP") cls += " lwp";
+                else if (status === "Earned Leave") cls += " el";
+                else if (status === "Casual Leave") cls += " cl";
+                else if (status === "Comp Off") cls += " coff";
+                else if (status === "Weekly Off" || isDefaultWeeklyOff) cls += " weekend";
+                html += '<div class="' + cls + '">' + day + '</div>';
             }
-            html+='</div>';
-            card.innerHTML=html; monthsGrid.appendChild(card);
+            html += '</div>';
+            card.innerHTML = html; monthsGrid.appendChild(card);
         });
     }
     function selectMonth(monthIndex) {
-        yearSel.value=currentCalendarYear; monthSel.value=monthIndex;
+        yearSel.value = currentCalendarYear; monthSel.value = monthIndex;
         monthSel.dispatchEvent(new Event("change")); closeCalendarModal();
     }
 
-    document.getElementById("ma_get_info").addEventListener("click",  openCalendarModal);
+    document.getElementById("ma_get_info").addEventListener("click", openCalendarModal);
     document.getElementById("ma_cal_close").addEventListener("click", closeCalendarModal);
     document.getElementById("ma_year_prev").addEventListener("click", function () { changeYear(-1); });
     document.getElementById("ma_year_next").addEventListener("click", function () { changeYear(1); });
-    document.getElementById("ma_cal_modal").addEventListener("click", function (e) { if(e.target===this) closeCalendarModal(); });
+    document.getElementById("ma_cal_modal").addEventListener("click", function (e) { if (e.target === this) closeCalendarModal(); });
 
     document.addEventListener("keydown", function (e) {
         if (e.key === "Escape") { closeCalendarModal(); closeHdPanel(); }
@@ -1491,10 +1499,10 @@ function init_mark_attendance($main) {
 // ════════════════════════════════════════════════════════════════════════════
 function inject_ma_audio() {
     if (document.getElementById("ma-sound-click")) return;
-    ["click","submit","cancel"].forEach(function (name) {
+    ["click", "submit", "cancel"].forEach(function (name) {
         var audio = document.createElement("audio");
-        audio.id = "ma-sound-"+name; audio.src="/assets/frappe/sounds/"+name+".mp3";
-        audio.preload="auto"; audio.style.display="none"; document.body.appendChild(audio);
+        audio.id = "ma-sound-" + name; audio.src = "/assets/frappe/sounds/" + name + ".mp3";
+        audio.preload = "auto"; audio.style.display = "none"; document.body.appendChild(audio);
     });
 }
 
