@@ -17,11 +17,12 @@ def execute(filters=None):
 
 def get_columns():
     return [
-        {"fieldname": "employee",          "label": "Employee ID",         "fieldtype": "Link",  "options": "Employee", "width": 300},
-        {"fieldname": "employee_name",     "label": "Employee Name",       "fieldtype": "Data",                         "width": 300},
+        {"fieldname": "employee",          "label": "Employee ID",         "fieldtype": "Link",  "options": "Employee", "width": 200},
+        {"fieldname": "employee_name",     "label": "Employee Name",       "fieldtype": "Data",                         "width": 200},
+        {"fieldname": "advance_id",        "label": "Advance ID",          "fieldtype": "Link",  "options": "Employee Loan Advance", "width": 250},
         {"fieldname": "total_advance",     "label": "Total Advance",       "fieldtype": "Float",                        "width": 200},
-        {"fieldname": "recovered_advance", "label": "Recovered Advance",   "fieldtype": "Float",                        "width": 200},
-        {"fieldname": "pending_advance",   "label": "Pending Advance",     "fieldtype": "Float",                        "width": 200},
+        {"fieldname": "recovered_advance", "label": "Recovered Advance",   "fieldtype": "Float",                        "width": 180},
+        {"fieldname": "pending_advance",   "label": "Pending Advance",     "fieldtype": "Float",                        "width": 180},
     ]
 
 
@@ -59,6 +60,7 @@ def get_data(filters):
     rows = frappe.db.sql(
         f"""
         SELECT
+            ela.name AS advance_id,
             ela.employee,
             ela.full_name AS employee_name,
             SUM(ela.amount) AS total_advance,
@@ -69,7 +71,7 @@ def get_data(filters):
             ela.type = 'Advance'
             AND ela.docstatus = 1
             {conditions}
-        GROUP BY ela.employee, ela.full_name
+        GROUP BY ela.name, ela.employee, ela.full_name
         ORDER BY ela.employee ASC
         """,
         values,
@@ -194,14 +196,15 @@ def _build_html(cols, data, co, title, mo, yr):
         return (
             f'<!DOCTYPE html><html><head><meta charset="UTF-8">{_CSS}</head>'
             f'<body>{hdr}'
-            f'<table><thead>{_th()}</thead>'
-            f'<tbody><tr><td colspan="{ncols}" class="nd">No data for this period</td></tr></tbody>'
-            f'</table>{_SIG}</body></html>'
+            f'<tr><thead>{_th()}</thead>'
+            f'<tbody><tr><td colspan="{ncols}" class="nd">No data for this period</td></tr>'
+            f'</tbody></tr>{_SIG}</body></html>'
         )
 
     total_row = {
         "employee":          "TOTAL",
         "employee_name":     "",
+        "advance_id":        "",
         "total_advance":     round(sum(r.get("total_advance",     0) or 0 for r in detail_rows), 2),
         "recovered_advance": round(sum(r.get("recovered_advance", 0) or 0 for r in detail_rows), 2),
         "pending_advance":   round(sum(r.get("pending_advance",   0) or 0 for r in detail_rows), 2),
@@ -226,7 +229,7 @@ def _build_html(cols, data, co, title, mo, yr):
             html += _dr(row)
         if last:
             html += _tr(total_row)
-        html += '</tbody></table>'
+        html += '</tbody></tr>'
 
     html += _SIG
     return f'<!DOCTYPE html><html><head><meta charset="UTF-8">{_CSS}</head><body>{html}</body></html>'

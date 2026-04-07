@@ -32,7 +32,7 @@ frappe.query_reports["Loan Register"] = {
             options: (function () {
                 let years = [""];
                 let current = new Date().getFullYear();
-                for (let y = current + 1; y >= current - 5; y--) years.push(String(y));
+                for (let y = current + 1; y >= current - 2; y--) years.push(String(y));
                 return years.join("\n");
             })(),
             // no default — empty on load

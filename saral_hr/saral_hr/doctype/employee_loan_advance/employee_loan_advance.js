@@ -24,7 +24,7 @@ frappe.ui.form.on('Employee Loan Advance', {
     installment_gap: frm => trigger_generate(frm),
 
     type(frm) {
-        if (frm.doc.type === 'Loan-I' || frm.doc.type === 'Loan-II') {
+        if (frm.doc.type === 'Loan-I' || frm.doc.type === 'Loan-II' || frm.doc.type === 'Loan') {
             trigger_generate(frm);
         } else {
             frm.clear_table('schedule');
@@ -442,7 +442,7 @@ function lock_protected_rows(frm) {
  * Validates preconditions and generates the repayment schedule.
  */
 function trigger_generate(frm) {
-    if (frm.doc.type !== 'Loan-I' && frm.doc.type !== 'Loan-II') return;
+    if (frm.doc.type !== 'Loan-I' && frm.doc.type !== 'Loan-II' && frm.doc.type !== 'Loan') return;
     if (!frm.doc.amount || !frm.doc.tenure_months || !frm.doc.start_month || !frm.doc.start_year || !frm.doc.installment_gap) return;
 
     const has_deduction = frm.doc.schedule && frm.doc.schedule.some(row => row.is_deducted);

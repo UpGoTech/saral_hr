@@ -145,11 +145,188 @@ def get_salary_insight_data(company, year, month):
     }
 
 
-# ── SSA Export ────────────────────────────────────────────────────────────────
+@frappe.whitelist()
+def get_all_slip_deductions(slip_names):
+    import json
+    if isinstance(slip_names, str):
+        slip_names = json.loads(slip_names)
 
+    result = {}
+
+    for name in slip_names:
+        try:
+            doc = frappe.get_doc("Salary Slip", name)
+
+            if doc.docstatus != 1:
+                continue
+
+            # ── Attendance ────────────────────────────────────────────────
+            total_days  = flt(getattr(doc, 'total_working_days', None) or
+                               getattr(doc, 'total_days_in_month', None) or 0)
+            absent_days = flt(getattr(doc, 'absent_days', None) or
+                               getattr(doc, 'leave_without_pay', None) or 0)
+            paid_days   = flt(getattr(doc, 'payment_days', None) or 0)
+
+            # ── Net Salary from Salary Slip ───────────────────────────────
+            ss_net = flt(doc.net_salary)
+
+            # ── Net Salary from Salary Structure Assignment ───────────────
+            ssa_net = 0.0
+            try:
+                ssa_name = frappe.db.get_value(
+                    "Salary Structure Assignment",
+                    {"employee": doc.employee, "docstatus": 1},
+                    "name",
+                    order_by="from_date desc"
+                )
+                if ssa_name:
+                    ssa_doc = frappe.get_doc("Salary Structure Assignment", ssa_name)
+                    ssa_earnings   = sum(flt(r.amount) for r in (ssa_doc.earnings   or []))
+                    ssa_deductions = sum(flt(r.amount) for r in (ssa_doc.deductions or []))
+                    ssa_net = ssa_earnings - ssa_deductions
+            except Exception:
+                frappe.log_error(frappe.get_traceback(), f"SSA net fetch failed for {name}")
+
+            # ── Fetch Additional Salary & Deduction components ────────────
+            slip_date = getattr(doc, 'start_date', None)
+            additional_salary_components    = {}
+            additional_deduction_components = {}
+
+            if slip_date:
+                year = str(slip_date.year)
+                month_names = [
+                    "January","February","March","April","May","June",
+                    "July","August","September","October","November","December"
+                ]
+                month = month_names[slip_date.month - 1]
+
+                for rec in frappe.db.get_all(
+                    "Additional Salary",
+                    filters={"employee": doc.employee, "year": year, "month": month, "docstatus": 1},
+                    fields=["name"]
+                ):
+                    add_doc = frappe.get_doc("Additional Salary", rec.name)
+                    for row in add_doc.components or []:
+                        additional_salary_components[row.component_type] = flt(row.amount)
+
+                for rec in frappe.db.get_all(
+                    "Additional Deductions",
+                    filters={"employee": doc.employee, "year": year, "month": month, "docstatus": 1},
+                    fields=["name"]
+                ):
+                    add_doc = frappe.get_doc("Additional Deductions", rec.name)
+                    for row in add_doc.deductions or []:
+                        additional_deduction_components[row.component_type] = flt(row.amount)
+
+            # ── Classify deductions from salary slip ──────────────────────
+            loan_total          = 0.0
+            retention_total     = 0.0
+            loan_breakdown      = {}
+            loan_names_in_slip  = []
+            add_sal_deducted    = {}
+            add_ded_deducted    = {}
+
+            for row in doc.deductions:
+                comp       = row.salary_component or ""
+                amt        = flt(row.amount)
+                comp_lower = comp.lower()
+
+                if comp_lower == "loan" or comp_lower.startswith("loan-"):
+                    loan_total += amt
+                    loan_breakdown[comp] = loan_breakdown.get(comp, 0.0) + amt
+                    loan_ref = (
+                        getattr(row, "loan_name", None) or
+                        getattr(row, "loan_id",   None)
+                    )
+                    if loan_ref and loan_ref not in loan_names_in_slip:
+                        loan_names_in_slip.append(loan_ref)
+
+                elif "retention" in comp_lower:
+                    retention_total += amt
+
+                elif comp in additional_salary_components:
+                    add_sal_deducted[comp] = amt
+
+                elif comp in additional_deduction_components:
+                    add_ded_deducted[comp] = amt
+
+            # ── Scan earnings rows for additional salary components (e.g. OT) ──
+            for row in doc.earnings:
+                comp = row.salary_component or ""
+                amt  = flt(row.amount)
+                if comp in additional_salary_components and comp not in add_sal_deducted:
+                    add_sal_deducted[comp] = amt
+
+            # ── Fill in 0-amount entries so they still appear in the table ──
+            for comp in additional_salary_components:
+                if comp not in add_sal_deducted:
+                    add_sal_deducted[comp] = 0
+
+            for comp in additional_deduction_components:
+                if comp not in add_ded_deducted:
+                    add_ded_deducted[comp] = 0
+
+            # ── Check deferral for Loan ───────────────────────────────────
+            _slip_month   = frappe.utils.formatdate(slip_date, "MMMM YYYY") if slip_date else ""
+            loan_deferred = False
+
+            if loan_total > 0:
+                docs_to_check = loan_names_in_slip
+
+                if not docs_to_check:
+                    docs_to_check = [
+                        r.name for r in frappe.db.get_all(
+                            "Employee Loan Advance",
+                            filters={"employee": doc.employee, "docstatus": 1, "type": "Loan"},
+                            fields=["name"]
+                        )
+                    ]
+
+                for loan_doc_name in docs_to_check:
+                    try:
+                        loan_doc = frappe.get_doc("Employee Loan Advance", loan_doc_name)
+                        for schedule_row in loan_doc.schedule:
+                            if schedule_row.month == _slip_month:
+                                if getattr(schedule_row, 'is_deferred', 0):
+                                    loan_deferred = True
+                                break
+                    except Exception:
+                        pass
+
+                    if loan_deferred:
+                        break
+
+            # ── Build result ──────────────────────────────────────────────
+            result[name] = {
+                "employee":      doc.employee,
+                "employee_name": doc.employee_name,
+                "ssa_net":       round(ssa_net, 2),
+                "ss_net":        round(ss_net,  2),
+                "total_days":    total_days,
+                "absent_days":   absent_days,
+                "paid_days":     paid_days,
+                "loan": {
+                    "total":     round(loan_total, 2),
+                    "deferred":  loan_deferred,
+                    "breakdown": loan_breakdown,
+                },
+                "retention":             round(retention_total, 2),
+                "additional_salary":     add_sal_deducted,
+                "additional_deductions": add_ded_deducted,
+            }
+
+        except Exception:
+            frappe.log_error(
+                frappe.get_traceback(),
+                f"get_all_slip_deductions failed for {name}"
+            )
+
+    return result
+# ── SSA Export ────────────────────────────────────────────────────────────────
 @frappe.whitelist()
 def export_ssa_to_excel(status_filter=None):
     import openpyxl
+    import io
     from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
     from openpyxl.utils import get_column_letter
 
@@ -219,7 +396,7 @@ def export_ssa_to_excel(status_filter=None):
 
     STATUS_MAP = {0: "Draft", 1: "Submitted", 2: "Cancelled"}
 
-    # Data rows — one per SSA, earnings/deductions flattened as columns
+    # Data rows
     rows = []
     for a in assignments:
         base = [
@@ -262,7 +439,7 @@ def export_ssa_to_excel(status_filter=None):
     }
     alt_fill = PatternFill("solid", start_color="F7F7F7")
 
-    def col_section(idx):   # 0-based
+    def col_section(idx):
         if idx < len(base_headers):                                         return "base"
         if idx < len(base_headers) + len(earn_headers):                    return "earn"
         if idx < len(base_headers) + len(earn_headers) + len(ded_headers): return "ded"
@@ -271,11 +448,10 @@ def export_ssa_to_excel(status_filter=None):
     # Row 1 — group labels
     ws.row_dimensions[1].height = 16
     groups = [
-        ("BASE INFO",     1,                          len(base_headers),                                    "3D3D3D"),
-        ("EARNINGS",      len(base_headers)+1,        len(base_headers)+len(earn_headers),                  "27803E"),
-        ("DEDUCTIONS",    len(base_headers)+len(earn_headers)+1,
-                          len(base_headers)+len(earn_headers)+len(ded_headers),                             "A02020"),
-        ("CALCULATIONS",  len(all_headers)-len(calc_headers)+1, len(all_headers),                          "1E4F80"),
+        ("BASE INFO",    1,                                                        len(base_headers),                                    "3D3D3D"),
+        ("EARNINGS",     len(base_headers)+1,                                      len(base_headers)+len(earn_headers),                  "27803E"),
+        ("DEDUCTIONS",   len(base_headers)+len(earn_headers)+1,                    len(base_headers)+len(earn_headers)+len(ded_headers), "A02020"),
+        ("CALCULATIONS", len(all_headers)-len(calc_headers)+1,                    len(all_headers),                                     "1E4F80"),
     ]
     for label, sc, ec, color in groups:
         if sc > ec:
@@ -322,7 +498,7 @@ def export_ssa_to_excel(status_filter=None):
             else:
                 cell.alignment = left
 
-    # Auto column widths (sample first 100 data rows)
+    # Auto column widths
     for ci, hdr in enumerate(all_headers, start=1):
         max_len = len(str(hdr))
         for ri in range(3, min(3 + len(rows), 103)):
@@ -333,7 +509,29 @@ def export_ssa_to_excel(status_filter=None):
 
     ws.freeze_panes = "C3"
 
-    out_path = frappe.get_site_path("private", "files", "ssa_export.xlsx")
-    wb.save(out_path)
+    # ── Save to bytes buffer ──────────────────────────────────────────────────
+    buffer = io.BytesIO()
+    wb.save(buffer)
+    buffer.seek(0)
+    file_content = buffer.read()
 
-    return {"file_url": "/private/files/ssa_export.xlsx", "rows": len(rows)}
+    # ── Delete previous export if exists ─────────────────────────────────────
+    existing = frappe.db.get_value(
+        "File",
+        {"file_name": "ssa_export.xlsx", "is_private": 1},
+        "name"
+    )
+    if existing:
+        frappe.delete_doc("File", existing, force=True)
+
+    # ── Save as proper Frappe File doc (private, session-authenticated) ───────
+    file_doc = frappe.get_doc({
+        "doctype": "File",
+        "file_name": "ssa_export.xlsx",
+        "is_private": 1,
+        "content": file_content,
+        "decode": False
+    })
+    file_doc.save(ignore_permissions=True)
+
+    return {"file_url": file_doc.file_url, "rows": len(rows)}
