@@ -38,64 +38,97 @@ class SalarySlip(Document):
         """
         self._sync_loan_advance_deducted(deducted=False)
 
-    # ── Core helper: sync is_deducted on loan/advance docs ───────────────────
+   # ── Core helper: sync is_deducted on loan/advance docs ───────────────────
     def _sync_loan_advance_deducted(self, deducted):
         d                = getdate(self.start_date)
         slip_month_label = f"{MONTHS_LIST[d.month - 1]} {d.year}"
         flag             = 1 if deducted else 0
 
-        for row in self.deductions:
-            comp = (row.salary_component or "").strip()
+        # ── Collect loan and advance doc names from deduction rows ───────────────
+        loan_doc_names    = set()
+        advance_doc_names = set()
 
-            if comp not in ("Loan-I", "Loan-II", "Advance"):
+        for r in self.deductions:
+            comp = (r.salary_component or "").lower()
+            # Match "Loan", "Loan-0001", "Loan-0002" etc.
+            if "loan" in comp:
+                loan_ref = (
+                    getattr(r, "loan_name", None) or
+                    getattr(r, "loan_id", None)
+                )
+                if loan_ref:
+                    loan_doc_names.add(loan_ref)
+
+            # Match "Advance", "Advance-0001" etc.
+            elif "advance" in comp:
+                adv_ref = (
+                    getattr(r, "loan_name", None) or
+                    getattr(r, "loan_id", None)
+                )
+                if adv_ref:
+                    advance_doc_names.add(adv_ref)
+
+        # ── Fallback: if loan_name field not saved, fetch all loans for employee ─
+        if "loan" in " ".join(
+            (r.salary_component or "").lower() for r in self.deductions
+        ) and not loan_doc_names:
+            rows = frappe.db.get_all(
+                "Employee Loan Advance",
+                filters={"employee": self.employee, "type": "Loan", "docstatus": 1},
+                fields=["name"]
+            )
+            loan_doc_names = {r.name for r in rows}
+
+        if "advance" in " ".join(
+            (r.salary_component or "").lower() for r in self.deductions
+        ) and not advance_doc_names:
+            rows = frappe.db.get_all(
+                "Employee Loan Advance",
+                filters={"employee": self.employee, "type": "Advance", "docstatus": 1},
+                fields=["name"]
+            )
+            advance_doc_names = {r.name for r in rows}
+
+        # ── Process Loans: mark schedule row for this month ──────────────────────
+        for loan_name in loan_doc_names:
+            try:
+                doc = frappe.get_doc("Employee Loan Advance", loan_name)
+            except frappe.DoesNotExistError:
                 continue
 
-            loan_docs = frappe.db.get_all(
-                "Employee Loan Advance",
-                filters={
-                    "employee":  self.employee,
-                    "type":      comp,
-                    "docstatus": 1,
-                },
-                fields=["name", "type"]
-            )
-
-            for loan_rec in loan_docs:
-                doc = frappe.get_doc("Employee Loan Advance", loan_rec.name)
-
-                if comp in ("Loan-I", "Loan-II"):
-                    changed = False
-                    for srow in doc.schedule:
-                        if (srow.month == slip_month_label
-                                and flt(srow.deduction_amount) == flt(row.amount)):
-                            frappe.db.set_value(
-                                srow.doctype, srow.name,
-                                "is_deducted", flag,
-                                update_modified=False
-                            )
-                            changed = True
-                            break
-
-                    if changed:
-                        doc.reload()
-                        doc.calculate_outstanding()
-                        frappe.db.set_value(
-                            "Employee Loan Advance", doc.name,
-                            {
-                                "outstanding_amount": doc.outstanding_amount,
-                                "total_deducted":     doc.total_deducted
-                            },
-                            update_modified=False
-                        )
-
-                elif comp == "Advance":
+            changed = False
+            for srow in doc.schedule:
+                if srow.month == slip_month_label and not srow.is_deferred:
                     frappe.db.set_value(
-                        "Employee Loan Advance", loan_rec.name,
+                        srow.doctype, srow.name,
                         "is_deducted", flag,
                         update_modified=False
                     )
+                    changed = True
 
+            if changed:
+                doc.reload()
+                doc.calculate_outstanding()
+                frappe.db.set_value(
+                    "Employee Loan Advance", doc.name,
+                    {
+                        "outstanding_amount": doc.outstanding_amount,
+                        "total_deducted":     doc.total_deducted
+                    },
+                    update_modified=False
+                )
 
+        # ── Process Advances: mark is_deducted on the doc itself ─────────────────
+        for adv_name in advance_doc_names:
+            try:
+                frappe.db.set_value(
+                    "Employee Loan Advance", adv_name,
+                    "is_deducted", flag,
+                    update_modified=False
+                )
+            except frappe.DoesNotExistError:
+                continue
+        
 def _is_attendance_allowance(comp_name):
     return (comp_name or "").strip() == ATTENDANCE_ALLOWANCE_COMPONENT
 
@@ -644,7 +677,7 @@ def get_loan_advance_deductions(employee, start_date):
         return []
 
     d                = getdate(start_date)
-    slip_month_label = f"{MONTHS_LIST[d.month - 1]} {d.year}"  # e.g. "March 2026"
+    slip_month_label = f"{MONTHS_LIST[d.month - 1]} {d.year}"
 
     records = frappe.db.get_all(
         "Employee Loan Advance",
@@ -657,35 +690,37 @@ def get_loan_advance_deductions(employee, start_date):
     for rec in records:
         doc = frappe.get_doc("Employee Loan Advance", rec.name)
 
-        if doc.type in ("Loan-I", "Loan-II"):
+        if doc.type == "Loan":
             for row in doc.schedule:
                 if row.month == slip_month_label and not row.is_deducted:
+                    # Extract suffix: "HR-EMP-00082-Loan-0002" → "Loan-0002"
+                    loan_suffix = "-".join(doc.name.split("-")[-2:])  # e.g., "Loan-0002"
+
                     deductions.append({
-                        "salary_component":  doc.type,
-                        "abbr":              "LI" if doc.type == "Loan-I" else "LII",
-                        "amount":            flt(row.deduction_amount),
-                        # is_deferred: 1 = month deferred (amount=0, checkbox checked)
-                        #              0 = normal EMI deduction
-                        "is_deferred":       1 if row.is_deferred else 0,
-                        "loan_advance_name": doc.name,
-                        "schedule_row_name": row.name,
+                        "salary_component": loan_suffix,   # shown as component name
+                        "abbr":             loan_suffix,   # shown as abbr
+                        "amount":           flt(row.deduction_amount),
+                        "is_deferred":      int(row.get("is_deferred", 0)),
+                        "loan_name":        doc.name,
+                        "loan_id":          doc.name,
+                        "loan_type":        "Loan"
                     })
 
         elif doc.type == "Advance":
-            # Advance has no schedule — check is_deducted directly.
-            # Advance cannot be deferred, so is_deferred is always 0.
             if not doc.is_deducted:
+                adv_suffix = "-".join(doc.name.split("-")[-2:])  # e.g., "Advance-0001"
+
                 deductions.append({
-                    "salary_component":  "Advance",
-                    "abbr":              "ADV",
-                    "amount":            flt(doc.amount),
-                    "is_deferred":       0,
-                    "loan_advance_name": doc.name,
-                    "schedule_row_name": None,
+                    "salary_component": adv_suffix,
+                    "abbr":             adv_suffix,
+                    "amount":           flt(doc.amount),
+                    "is_deferred":      0,
+                    "loan_name":        doc.name,
+                    "loan_id":          doc.name,
+                    "loan_type":        "Advance"
                 })
 
     return deductions
-
 def _employee_requires_variable_pay(employee):
     return bool(frappe.db.get_value("Company Link", employee, "requires_variable_pay"))
 

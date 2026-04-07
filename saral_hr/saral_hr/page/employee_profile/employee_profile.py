@@ -353,3 +353,155 @@ def get_employee_profile_data(employee):
         "cancelled_ssas":            cancelled_ssas,
         "loan_ledger":               loan_ledger, 
     }
+    
+@frappe.whitelist()
+def get_employee_deduction_breakdown(employee, month, year, start_date):
+    from frappe.utils import flt
+
+    # Find salary slip for this employee + month
+    slip = frappe.db.get_value(
+        "Salary Slip",
+        {"employee": employee, "start_date": start_date, "docstatus": ["in", [0, 1]]},
+        ["name", "docstatus"],
+        as_dict=True
+    )
+
+    if not slip:
+        return None
+
+    doc = frappe.get_doc("Salary Slip", slip.name)
+
+    # ── Attendance ────────────────────────────────────────────────────────────
+    total_days  = flt(getattr(doc, "total_working_days", None) or 0)
+    absent_days = flt(getattr(doc, "absent_days", None) or 0)
+    paid_days   = flt(getattr(doc, "payment_days", None) or 0)
+
+    # ── Net from slip ─────────────────────────────────────────────────────────
+    ss_net = flt(doc.net_salary)
+
+    # ── Net from SSA ──────────────────────────────────────────────────────────
+    ssa_net = 0.0
+    try:
+        ssa_name = frappe.db.get_value(
+            "Salary Structure Assignment",
+            {"employee": employee, "docstatus": 1},
+            "name", order_by="from_date desc"
+        )
+        if ssa_name:
+            ssa_doc = frappe.get_doc("Salary Structure Assignment", ssa_name)
+            ssa_net = sum(flt(r.amount) for r in (ssa_doc.earnings or [])) - \
+                      sum(flt(r.amount) for r in (ssa_doc.deductions or []))
+    except Exception:
+        pass
+
+    # ── Additional components ─────────────────────────────────────────────────
+    additional_salary_components    = {}
+    additional_deduction_components = {}
+
+    for rec in frappe.db.get_all(
+        "Additional Salary",
+        filters={"employee": employee, "year": year, "month": month, "docstatus": 1},
+        fields=["name"]
+    ):
+        add_doc = frappe.get_doc("Additional Salary", rec.name)
+        for row in add_doc.components or []:
+            additional_salary_components[row.component_type] = flt(row.amount)
+
+    for rec in frappe.db.get_all(
+        "Additional Deductions",
+        filters={"employee": employee, "year": year, "month": month, "docstatus": 1},
+        fields=["name"]
+    ):
+        add_doc = frappe.get_doc("Additional Deductions", rec.name)
+        for row in add_doc.deductions or []:
+            additional_deduction_components[row.component_type] = flt(row.amount)
+
+    # ── Classify deductions ───────────────────────────────────────────────────
+    loan_total         = 0.0
+    retention_total    = 0.0
+    loan_breakdown     = {}
+    loan_names_in_slip = []
+    add_sal_deducted   = {}
+    add_ded_deducted   = {}
+
+    for row in doc.deductions:
+        comp       = row.salary_component or ""
+        amt        = flt(row.amount)
+        comp_lower = comp.lower()
+
+        if comp_lower == "loan" or comp_lower.startswith("loan-"):
+            loan_total += amt
+            loan_breakdown[comp] = loan_breakdown.get(comp, 0.0) + amt
+            loan_ref = getattr(row, "loan_name", None) or getattr(row, "loan_id", None)
+            if loan_ref and loan_ref not in loan_names_in_slip:
+                loan_names_in_slip.append(loan_ref)
+
+        elif "retention" in comp_lower:
+            retention_total += amt
+
+        elif comp in additional_salary_components:
+            add_sal_deducted[comp] = amt
+
+        elif comp in additional_deduction_components:
+            add_ded_deducted[comp] = amt
+
+    # ── Scan earnings for additional salary components (e.g. OT) ─────────────
+    for row in doc.earnings:
+        comp = row.salary_component or ""
+        amt  = flt(row.amount)
+        if comp in additional_salary_components and comp not in add_sal_deducted:
+            add_sal_deducted[comp] = amt
+
+    # Fill 0-amount entries
+    for comp in additional_salary_components:
+        if comp not in add_sal_deducted:
+            add_sal_deducted[comp] = 0
+
+    for comp in additional_deduction_components:
+        if comp not in add_ded_deducted:
+            add_ded_deducted[comp] = 0
+
+    # ── Deferral check ────────────────────────────────────────────────────────
+    _slip_month   = frappe.utils.formatdate(doc.start_date, "MMMM YYYY") if doc.start_date else ""
+    loan_deferred = False
+
+    if loan_total > 0:
+        docs_to_check = loan_names_in_slip or [
+            r.name for r in frappe.db.get_all(
+                "Employee Loan Advance",
+                filters={"employee": employee, "docstatus": 1, "type": "Loan"},
+                fields=["name"]
+            )
+        ]
+        for loan_doc_name in docs_to_check:
+            try:
+                loan_doc = frappe.get_doc("Employee Loan Advance", loan_doc_name)
+                for srow in loan_doc.schedule:
+                    if srow.month == _slip_month:
+                        if getattr(srow, "is_deferred", 0):
+                            loan_deferred = True
+                        break
+            except Exception:
+                pass
+            if loan_deferred:
+                break
+
+    return {
+        "employee":      doc.employee,
+        "employee_name": doc.employee_name,
+        "slip_name":     doc.name,
+        "slip_status":   "Submitted" if doc.docstatus == 1 else "Draft",
+        "ssa_net":       round(ssa_net, 2),
+        "ss_net":        round(ss_net, 2),
+        "total_days":    total_days,
+        "absent_days":   absent_days,
+        "paid_days":     paid_days,
+        "loan": {
+            "total":     round(loan_total, 2),
+            "deferred":  loan_deferred,
+            "breakdown": loan_breakdown,
+        },
+        "retention":             round(retention_total, 2),
+        "additional_salary":     add_sal_deducted,
+        "additional_deductions": add_ded_deducted,
+    }

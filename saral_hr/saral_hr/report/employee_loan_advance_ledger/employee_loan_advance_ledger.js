@@ -31,7 +31,7 @@ frappe.query_reports["Employee Loan Advance Ledger"] = {
             fieldname: "type",
             label: __("Loan Type"),
             fieldtype: "Select",
-            options: "\nLoan-I\nLoan-II\nAdvance",
+            options: "\nLoan\nAdvance",
         },
         {
             fieldname: "status",
