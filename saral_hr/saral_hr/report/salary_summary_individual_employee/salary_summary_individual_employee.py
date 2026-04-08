@@ -284,7 +284,6 @@ def execute(filters=None):
 # PDF
 # ---------------------------------------------------------------------------
 
-# FIX 4: body width:100% so flex sig container spans full page width
 _CSS = """<style>
 *{margin:0;padding:0;box-sizing:border-box}
 body{font-family:Arial,sans-serif;font-size:13px;color:#000;background:#fff;width:100%;}
@@ -295,8 +294,6 @@ body{font-family:Arial,sans-serif;font-size:13px;color:#000;background:#fff;widt
 table{width:100%;border-collapse:collapse;table-layout:fixed;}
 </style>"""
 
-# FIX 4: inline width:100% on sig container — prevents wkhtmltopdf
-# collapsing the flex div to content width, shifting sigs left
 _SIG = """
 <!--SIG_START-->
 <div style="display:flex;justify-content:space-between;
@@ -319,6 +316,68 @@ _SIG = """
 """
 
 C_GRAND = "#e8e8e8"
+
+# ---------------------------------------------------------------------------
+# Dynamic width calculation
+# ---------------------------------------------------------------------------
+
+def _compute_widths(n_cols):
+    """
+    Landscape A4 usable width = 277mm (297 - 6mm left - 6mm right - 8mm safety).
+    We work in mm, then convert to px at 3.7795 px/mm for wkhtmltopdf.
+
+    Fixed columns (always present, mm):
+      Sr      : 8
+      Emp     : 32
+      Day1    : 13  (Pay Days / Absent / LWP)
+      Day2    : 13  (Present / EL-CL / Comp Off)
+      Tot     : 20  (Total Earnings / Total Deductions / Total Employer)
+      Net     : 22  (Net Salary)
+
+    Fixed total = 8 + 32 + 13 + 13 + 20 + 22 = 108 mm
+    Remaining for n_cols component columns:
+      remaining = 277 - 108 = 169 mm
+      W_COMP    = remaining / n_cols  (clamped to 14mm min so text is readable)
+
+    If n_cols is 0 we skip component columns entirely.
+    """
+    PX = 3.7795          # px per mm
+    PAGE_MM    = 277.0   # usable landscape A4
+    W_SR_MM    = 8.0
+    W_EMP_MM   = 32.0
+    W_DAY_MM   = 13.0    # each of the two day columns
+    W_TOT_MM   = 20.0
+    W_NET_MM   = 22.0
+
+    fixed_mm = W_SR_MM + W_EMP_MM + (W_DAY_MM * 2) + W_TOT_MM + W_NET_MM
+    avail_mm = PAGE_MM - fixed_mm   # 169 mm for component cols
+
+    if n_cols > 0:
+        comp_mm = max(avail_mm / n_cols, 14.0)
+    else:
+        comp_mm = 14.0
+
+    # If comp columns overflow the page, scale everything down proportionally
+    total_used = fixed_mm + comp_mm * n_cols
+    if total_used > PAGE_MM:
+        scale = PAGE_MM / total_used
+    else:
+        scale = 1.0
+
+    def _px(mm):
+        return round(mm * scale * PX)
+
+    return {
+        "W_SR":   _px(W_SR_MM),
+        "W_EMP":  _px(W_EMP_MM),
+        "W_DAY1": _px(W_DAY_MM),
+        "W_DAY2": _px(W_DAY_MM),
+        "W_COMP": _px(comp_mm),
+        "W_TOT":  _px(W_TOT_MM),
+        "W_NET":  _px(W_NET_MM),
+        # font size: shrink slightly when many columns
+        "FS":     max(9, 13 - max(0, n_cols - 8)),
+    }
 
 
 def _comps_from_cols(cols):
@@ -354,6 +413,22 @@ def _build_html(cols, data, co, mo, yr,
     if earn_comps is None or emp_ded_comps is None or empr_comps is None:
         earn_comps, emp_ded_comps, empr_comps = _comps_from_cols(cols)
 
+    ne     = len(earn_comps)
+    nd     = len(emp_ded_comps)
+    nr     = len(empr_comps)
+    n_cols = max(ne, nd, nr)
+
+    # ── Dynamic widths based on number of component columns ─────────────
+    W = _compute_widths(n_cols)
+    W_SR   = W["W_SR"]
+    W_EMP  = W["W_EMP"]
+    W_DAY1 = W["W_DAY1"]
+    W_DAY2 = W["W_DAY2"]
+    W_COMP = W["W_COMP"]
+    W_TOT  = W["W_TOT"]
+    W_NET  = W["W_NET"]
+    FS     = W["FS"]          # dynamic font size (px)
+
     # Company/title header — only shown on page 1
     hdr_html = (
         f'<div class="hdr">'
@@ -374,31 +449,16 @@ def _build_html(cols, data, co, mo, yr,
     detail_rows = [r for r in data if not r.get("_bold")]
     grand_row   = next((r for r in data if r.get("_bold")), {})
 
-    ne     = len(earn_comps)
-    nd     = len(emp_ded_comps)
-    nr     = len(empr_comps)
-    n_cols = max(ne, nd, nr)
-
-    # FIX 3: reduced W_NET and W_TOT slightly so Net Salary column
-    # is not clipped on the right edge of landscape A4
-    W_SR   = 24
-    W_EMP  = 120
-    W_DAY1 = 45
-    W_DAY2 = 45
-    W_COMP = 60
-    W_TOT  = 75
-    W_NET  = 75
-
     HDR_BG      = "#e8e8e8"
     ROW_COLOURS = ["#ffffff", "#f0f0f0"]
-    PAD         = "padding:7px 9px;"
-    FS          = "font-size:13px;"
+    PAD         = f"padding:5px 6px;"
+    FS_CSS      = f"font-size:{FS}px;"
 
-    # ── thead (repeats on every page — correct behaviour) ──────────────
+    # ── thead (repeats on every page) ───────────────────────────────────
     def _thead():
-        THL = (f"border:{B};padding:7px 9px;font-size:13px;font-weight:700;"
+        THL = (f"border:{B};padding:5px 6px;font-size:{FS}px;font-weight:700;"
                f"background:{HDR_BG};text-align:left;white-space:normal;vertical-align:middle;")
-        THR = (f"border:{B};padding:7px 9px;font-size:13px;font-weight:700;"
+        THR = (f"border:{B};padding:5px 6px;font-size:{FS}px;font-weight:700;"
                f"background:{HDR_BG};text-align:right;white-space:normal;vertical-align:middle;")
 
         h  = '<thead>'
@@ -406,7 +466,7 @@ def _build_html(cols, data, co, mo, yr,
         # Row 1 — Earnings names
         h += '<tr>'
         h += f'<th rowspan="3" style="{THR}width:{W_SR}px;text-align:center;">Sr</th>'
-        h += f'<th rowspan="2" style="{THL}width:{W_EMP}px;">Emp Name<br><span style="font-size:12px;font-weight:400;">Designation</span></th>'
+        h += f'<th rowspan="2" style="{THL}width:{W_EMP}px;">Emp Name<br><span style="font-size:{max(FS-1,8)}px;font-weight:400;">Designation</span></th>'
         h += f'<th style="{THR}width:{W_DAY1}px;">Pay Days</th>'
         h += f'<th style="{THR}width:{W_DAY2}px;">Present</th>'
         for i in range(n_cols):
@@ -428,7 +488,7 @@ def _build_html(cols, data, co, mo, yr,
 
         # Row 3 — Employer names + Emp ID
         h += '<tr>'
-        h += f'<th style="{THL}width:{W_EMP}px;font-size:12px;">Emp ID / Dept</th>'
+        h += f'<th style="{THL}width:{W_EMP}px;font-size:{max(FS-1,8)}px;">Emp ID / Dept</th>'
         h += f'<th style="{THR}width:{W_DAY1}px;">LWP</th>'
         h += f'<th style="{THR}width:{W_DAY2}px;">Comp Off</th>'
         for i in range(n_cols):
@@ -445,13 +505,13 @@ def _build_html(cols, data, co, mo, yr,
     def _comp_cell(val, bg, bold):
         fw = "font-weight:700;" if bold else ""
         return (
-            f'<td style="border:{B};{PAD}{FS}{fw}background:{bg};'
+            f'<td style="border:{B};{PAD}{FS_CSS}{fw}background:{bg};'
             f'text-align:right;vertical-align:middle;">{val}</td>'
         )
 
     def _tot_cell(val, bg, bold):
         return (
-            f'<td style="border:{B};{PAD}{FS}font-weight:700;background:{bg};'
+            f'<td style="border:{B};{PAD}{FS_CSS}font-weight:700;background:{bg};'
             f'width:{W_TOT}px;text-align:right;vertical-align:middle;">{val}</td>'
         )
 
@@ -468,7 +528,7 @@ def _build_html(cols, data, co, mo, yr,
         return (
             f'<td style="border-top:{bt};border-bottom:{bb};'
             f'border-left:{B};border-right:{B};'
-            f'width:{w}px;{PAD}{FS}{fw}background:{bg};'
+            f'width:{w}px;{PAD}{FS_CSS}{fw}background:{bg};'
             f'text-align:right;vertical-align:middle;">{val}</td>'
         )
 
@@ -476,17 +536,17 @@ def _build_html(cols, data, co, mo, yr,
         fw = "font-weight:700;" if bold else ""
         if row_num == 1:
             bt, bb  = B, "none"
-            content = f'<strong style="font-size:15px;">{name}</strong>'
+            content = f'<strong style="font-size:{min(FS+2,15)}px;">{name}</strong>'
             if desig:
-                content += f'<br><span style="font-size:12px;font-weight:400;">{desig}</span>'
+                content += f'<br><span style="font-size:{max(FS-1,8)}px;font-weight:400;">{desig}</span>'
         elif row_num == 2:
             bt, bb  = "none", "none"
             content = "&nbsp;"
         else:
             bt, bb  = "none", B
             parts   = []
-            if code: parts.append(f'<span style="font-size:12px;color:#333;">{code}</span>')
-            if dept: parts.append(f'<span style="font-size:12px;color:#333;">{dept}</span>')
+            if code: parts.append(f'<span style="font-size:{max(FS-1,8)}px;color:#333;">{code}</span>')
+            if dept: parts.append(f'<span style="font-size:{max(FS-1,8)}px;color:#333;">{dept}</span>')
             content = "<br>".join(parts) if parts else "&nbsp;"
         return (
             f'<td style="border-top:{bt};border-bottom:{bb};'
@@ -505,7 +565,7 @@ def _build_html(cols, data, co, mo, yr,
         return (
             f'<td style="border-top:{bt};border-bottom:{bb};'
             f'border-left:{B};border-right:{B};'
-            f'width:{W_SR}px;{PAD}{FS}{fw}background:{bg};'
+            f'width:{W_SR}px;{PAD}{FS_CSS}{fw}background:{bg};'
             f'text-align:center;vertical-align:middle;">{content}</td>'
         )
 
@@ -514,7 +574,7 @@ def _build_html(cols, data, co, mo, yr,
             bt, bb, content = B, "none", "&nbsp;"
         elif row_num == 2:
             bt, bb  = "none", "none"
-            content = f'<span style="font-size:15px;font-weight:700;">{ns}</span>'
+            content = f'<span style="font-size:{min(FS+2,15)}px;font-weight:700;">{ns}</span>'
         else:
             bt, bb, content = "none", B, "&nbsp;"
         return (
@@ -598,10 +658,10 @@ def _build_html(cols, data, co, mo, yr,
 
     # ── Pagination ──────────────────────────────────────────────────────
     # Each employee = 3 HTML rows.
-    # FIX 2: reduced limits so employees don't split across pages.
-    # Page 1 has the title header so fewer employees fit (8).
-    # Subsequent pages have more room (13).
-    FIRST, OTHER = 8, 13
+    # Scale employees-per-page with font size to avoid split employees.
+    FIRST = max(5, 10 - max(0, n_cols - 6))
+    OTHER = max(8, 15 - max(0, n_cols - 6))
+
     pages, idx, first = [], 0, True
     while idx < len(detail_rows):
         lim = FIRST if first else OTHER
@@ -619,8 +679,6 @@ def _build_html(cols, data, co, mo, yr,
         pb   = '<div style="page-break-before:always;"></div>' if pn > 0 else ""
         last = (pn == len(pages) - 1)
 
-        # FIX 1: company title header only on page 1;
-        # column headers (_thead) still repeat on every page
         page_hdr = hdr_html if pn == 0 else ""
 
         pg_footer = (
@@ -643,9 +701,13 @@ def _build_html(cols, data, co, mo, yr,
             f'{pg_footer}'
         )
 
+    sig = _SIG if total_pages == 1 else (
+        '<div style="page-break-before:always;"></div>' + _SIG
+    )
+
     return (
         f'<!DOCTYPE html><html><head><meta charset="UTF-8">{_CSS}</head>'
-        f'<body>{"".join(parts)}{_SIG}</body></html>'
+        f'<body>{"".join(parts)}{sig}</body></html>'
     )
 
 
