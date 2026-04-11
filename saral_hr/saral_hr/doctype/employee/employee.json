@@ -19,6 +19,7 @@
   "column_break_ngyj",
   "aadhar_number",
   "pf_uan_number",
+  "fathers_name",
   "employee_image",
   "section_break_active_companies",
   "active_company",
@@ -255,11 +256,16 @@
    "in_standard_filter": 1,
    "label": "Active Company",
    "read_only": 1
+  },
+  {
+   "fieldname": "fathers_name",
+   "fieldtype": "Data",
+   "label": "Father's Name"
   }
  ],
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-03-16 21:30:25.445139",
+ "modified": "2026-04-11 12:17:48.256201",
  "modified_by": "Administrator",
  "module": "Saral Hr",
  "name": "Employee",
