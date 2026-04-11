@@ -33,9 +33,11 @@ class Employee(Document):
 
     def after_insert(self):
         self.sync_active_company()
+        self.sync_full_name_to_linked_docs()
 
     def on_update(self):
         self.sync_active_company()
+        self.sync_full_name_to_linked_docs()
 
     def sync_active_company(self):
         companies = frappe.get_all(
@@ -45,4 +47,55 @@ class Employee(Document):
         )
         val = "\n".join([c.company for c in companies]) if companies else "No Active Company"
         frappe.db.set_value("Employee", self.name, "active_company", val)
+        frappe.db.commit()
+
+    def sync_full_name_to_linked_docs(self):
+        """
+        When an employee's name changes, push the updated full_name to:
+        1. All Company Link records (active + archived)
+        2. All Attendance records (employee_name field)
+        3. All Salary Slip records (employee_name field)
+        """
+        if not self.employee:
+            return
+
+        # ── 1. Company Link ──────────────────────────────────────────────────
+        all_links = frappe.get_all(
+            "Company Link",
+            filters={"employee": self.name},
+            fields=["name"]
+        )
+        for link in all_links:
+            frappe.db.set_value(
+                "Company Link",
+                link.name,
+                {
+                    "full_name":     self.employee,
+                    "aadhar_number": self.aadhar_number or ""
+                },
+                update_modified=False
+            )
+
+        # ── 2. Attendance ────────────────────────────────────────────────────
+        # employee_name is a fetch_from field — update stored value directly
+        frappe.db.sql("""
+            UPDATE `tabAttendance`
+            SET employee_name = %(name)s
+            WHERE employee IN (
+                SELECT name FROM `tabCompany Link`
+                WHERE employee = %(emp)s
+            )
+        """, {"name": self.employee, "emp": self.name})
+
+        # ── 3. Salary Slip ───────────────────────────────────────────────────
+        # employee_name fetches from Company Link.full_name — update stored value
+        frappe.db.sql("""
+            UPDATE `tabSalary Slip`
+            SET employee_name = %(name)s
+            WHERE employee IN (
+                SELECT name FROM `tabCompany Link`
+                WHERE employee = %(emp)s
+            )
+        """, {"name": self.employee, "emp": self.name})
+
         frappe.db.commit()

@@ -17,12 +17,12 @@ def execute(filters=None):
 
 def get_columns():
     return [
-        {"fieldname": "employee",          "label": "Employee ID",         "fieldtype": "Link",  "options": "Employee", "width": 200},
-        {"fieldname": "employee_name",     "label": "Employee Name",       "fieldtype": "Data",                         "width": 200},
-        {"fieldname": "advance_id",        "label": "Advance ID",          "fieldtype": "Link",  "options": "Employee Loan Advance", "width": 250},
-        {"fieldname": "total_advance",     "label": "Total Advance",       "fieldtype": "Float",                        "width": 200},
-        {"fieldname": "recovered_advance", "label": "Recovered Advance",   "fieldtype": "Float",                        "width": 180},
-        {"fieldname": "pending_advance",   "label": "Pending Advance",     "fieldtype": "Float",                        "width": 180},
+        {"fieldname": "employee",          "label": "Employee ID",       "fieldtype": "Link",  "options": "Employee",              "width": 200},
+        {"fieldname": "employee_name",     "label": "Employee Name",     "fieldtype": "Data",                                       "width": 200},
+        {"fieldname": "advance_id",        "label": "Advance ID",        "fieldtype": "Link",  "options": "Employee Loan Advance",  "width": 250},
+        {"fieldname": "total_advance",     "label": "Total Advance",     "fieldtype": "Float",                                      "width": 200},
+        {"fieldname": "recovered_advance", "label": "Recovered Advance", "fieldtype": "Float",                                      "width": 180},
+        {"fieldname": "pending_advance",   "label": "Pending Advance",   "fieldtype": "Float",                                      "width": 180},
     ]
 
 
@@ -119,25 +119,28 @@ def get_date_range(filters):
 
 
 # ------------------------------------------------------------------ #
-#  Print                                                               #
+#  PDF helpers  (Variable Pay Register style)                          #
 # ------------------------------------------------------------------ #
+
+_NUMERIC_FT = ("Float", "Currency", "Int", "Percent")
 
 _CSS = """<style>
 *{margin:0;padding:0;box-sizing:border-box}
-body{font-family:Arial,sans-serif;font-size:16px;color:#000;background:#fff}
-.hdr{text-align:center;border-bottom:2px solid #000;padding:10px 6px 6px;margin-bottom:6px}
-.hdr .co{font-size:28px;font-weight:900;letter-spacing:1px;text-transform:uppercase}
-.hdr .ttl{font-size:20px;font-weight:700;margin-top:2px}
+body{font-family:Arial,sans-serif;font-size:10px;color:#000;background:#fff}
+.hdr{text-align:center;border-bottom:2px solid #000;padding:8px 4px 6px;margin-bottom:6px}
+.hdr .co{font-size:18px;font-weight:900;letter-spacing:1px;text-transform:uppercase}
+.hdr .ttl{font-size:18px;font-weight:700;margin-top:3px}
 .hdr .per{font-size:16px;margin-top:2px}
-.sig{display:flex;justify-content:space-between;margin-top:16px;padding-top:8px}
-.sig-b{text-align:center;width:180px}
-.sig-l{border-top:1px solid #000;margin-bottom:4px}
-.sig-t{font-size:15px;color:#333}
-table{width:100%;border-collapse:collapse;margin-top:8px}
-th{border:1px solid #000;padding:10px 12px;font-size:16px;font-weight:700;background:#f0f0f0;color:#000;white-space:nowrap;text-align:left}
-td{border:1px solid #000;padding:10px 12px;font-size:16px;vertical-align:middle;color:#000;text-align:left}
+.sig{display:flex;justify-content:space-between;margin-top:24px;padding-top:6px}
+.sig-b{text-align:center;width:160px}
+.sig-l{border-top:1px solid #000;margin-bottom:3px}
+.sig-t{font-size:10px;color:#333}
+table{width:100%;border-collapse:collapse;margin-top:6px}
+th{border:1px solid #000;padding:5px 7px;font-size:10px;font-weight:700;background:#f0f0f0;color:#000;white-space:nowrap}
+td{border:1px solid #000;padding:5px 7px;font-size:10px;vertical-align:middle;color:#000}
 tr.tot td{background:#e8e8e8;font-weight:700}
-.nd{text-align:center;padding:10px;color:#888;font-size:16px}
+.r{text-align:right}.l{text-align:left}
+.nd{text-align:center;padding:18px;color:#888;font-size:10px}
 </style>"""
 
 _SIG = '<div class="sig">' + "".join(
@@ -155,90 +158,75 @@ def _fmt(v):
         return str(v)
 
 
-def _build_html(cols, data, co, title, mo, yr):
+def _build_html(cols, data, co, mo, yr):
     period = f"For the Month of {mo} {yr}" if mo and yr else (f"For the Year {yr}" if yr else "All Records")
 
     hdr = (
         f'<div class="hdr">'
         f'<div class="co">{co}</div>'
-        f'<div class="ttl">{title}</div>'
+        f'<div class="ttl">Advance Register</div>'
         f'<div class="per">{period}</div>'
         f'</div>'
     )
 
-    def _th():
-        return "<tr>" + "".join(f'<th>{c.get("label","")}</th>' for c in cols) + "</tr>"
+    # thead
+    thead = "<tr>"
+    for c in cols:
+        is_n = c.get("fieldtype", "") in _NUMERIC_FT
+        thead += f'<th class="{"r" if is_n else "l"}">{c.get("label", "")}</th>'
+    thead += "</tr>"
 
-    def _dr(row):
-        h = "<tr>"
-        for c in cols:
-            val = row.get(c.get("fieldname", ""), "")
-            h += f'<td>{_fmt(val) if isinstance(val, (int, float)) else (val or "")}</td>'
-        return h + "</tr>"
+    ncols = len(cols) or 1
 
-    def _tr(row):
-        amount_cols = {"total_advance", "recovered_advance", "pending_advance"}
-        h = '<tr class="tot">'
+    if not data:
+        tbody = f'<tr><td colspan="{ncols}" class="nd">No data for this period</td></tr>'
+    else:
+        tbody = ""
+        for row in data:
+            tbody += "<tr>"
+            for c in cols:
+                fn   = c.get("fieldname", "")
+                val  = row.get(fn, "")
+                is_n = c.get("fieldtype", "") in _NUMERIC_FT
+                if is_n:
+                    tbody += f'<td class="r">{_fmt(val) if val not in ("", None) else ""}</td>'
+                else:
+                    tbody += f'<td class="l">{val or ""}</td>'
+            tbody += "</tr>"
+
+        # total row
+        total_row = {
+            "employee":          "TOTAL",
+            "employee_name":     "",
+            "advance_id":        "",
+            "total_advance":     round(sum(r.get("total_advance",     0) or 0 for r in data), 2),
+            "recovered_advance": round(sum(r.get("recovered_advance", 0) or 0 for r in data), 2),
+            "pending_advance":   round(sum(r.get("pending_advance",   0) or 0 for r in data), 2),
+        }
+        tbody += '<tr class="tot">'
         for c in cols:
-            fn = c.get("fieldname", "")
+            fn   = c.get("fieldname", "")
+            val  = total_row.get(fn, "")
+            is_n = c.get("fieldtype", "") in _NUMERIC_FT
             if fn == "employee":
-                h += "<td>TOTAL</td>"
-            elif fn in amount_cols:
-                h += f'<td>{_fmt(row.get(fn, ""))}</td>'
+                tbody += '<td class="l">TOTAL</td>'
+            elif is_n:
+                tbody += f'<td class="r">{_fmt(val)}</td>'
             else:
-                h += "<td></td>"
-        return h + "</tr>"
+                tbody += '<td class="l"></td>'
+        tbody += "</tr>"
 
-    detail_rows = data
-    ncols       = len(cols) or 1
-
-    if not detail_rows:
-        return (
-            f'<!DOCTYPE html><html><head><meta charset="UTF-8">{_CSS}</head>'
-            f'<body>{hdr}'
-            f'<tr><thead>{_th()}</thead>'
-            f'<tbody><tr><td colspan="{ncols}" class="nd">No data for this period</td></tr>'
-            f'</tbody></tr>{_SIG}</body></html>'
-        )
-
-    total_row = {
-        "employee":          "TOTAL",
-        "employee_name":     "",
-        "advance_id":        "",
-        "total_advance":     round(sum(r.get("total_advance",     0) or 0 for r in detail_rows), 2),
-        "recovered_advance": round(sum(r.get("recovered_advance", 0) or 0 for r in detail_rows), 2),
-        "pending_advance":   round(sum(r.get("pending_advance",   0) or 0 for r in detail_rows), 2),
-    }
-
-    FIRST, OTHER = 20, 25
-    pages, idx, first = [], 0, True
-    while idx < len(detail_rows):
-        lim = FIRST if first else OTHER
-        pages.append(detail_rows[idx: idx + lim])
-        idx  += lim
-        first = False
-
-    html = ""
-    for pn, pr in enumerate(pages):
-        last = (pn == len(pages) - 1)
-        if pn > 0:
-            html += '<div style="page-break-before:always;"></div>'
-        html += hdr
-        html += f'<table><thead>{_th()}</thead><tbody>'
-        for row in pr:
-            html += _dr(row)
-        if last:
-            html += _tr(total_row)
-        html += '</tbody></tr>'
-
-    html += _SIG
-    return f'<!DOCTYPE html><html><head><meta charset="UTF-8">{_CSS}</head><body>{html}</body></html>'
+    table = f"<table><thead>{thead}</thead><tbody>{tbody}</tbody></table>"
+    return (
+        f'<!DOCTYPE html><html><head><meta charset="UTF-8">{_CSS}</head>'
+        f'<body>{hdr}{table}{_SIG}</body></html>'
+    )
 
 
 def _save_pdf(html, prefix):
     pdf = get_pdf(html, options={
         "page-size":     "A4",
-        "orientation":   "Portrait",
+        "orientation":   "Landscape",
         "margin-top":    "8mm",
         "margin-right":  "8mm",
         "margin-bottom": "8mm",
@@ -268,10 +256,9 @@ def print_report(filters):
 
     cols, data = execute(filters)
 
-    co    = filters.get("company", "")
-    mo    = filters.get("month",   "")
-    yr    = filters.get("year",    "")
-    title = "Advance Register"
+    co = filters.get("company", "")
+    mo = filters.get("month",   "")
+    yr = filters.get("year",    "")
 
-    html = _build_html(cols, data, co, title, mo, yr)
+    html = _build_html(cols, data, co, mo, yr)
     return _save_pdf(html, "Advance_Register")

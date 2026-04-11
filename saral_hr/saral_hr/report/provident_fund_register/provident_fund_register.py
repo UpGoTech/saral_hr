@@ -23,6 +23,36 @@ PF_ADMIN_COMP = "Employer PF Admin Charges"
 
 B = "1px solid #000"
 
+_CSS = """<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:Arial,sans-serif;font-size:10px;color:#000;background:#fff}
+.hdr{text-align:center;border-bottom:2px solid #000;padding:8px 4px 6px;margin-bottom:6px}
+.hdr .co{font-size:18px;font-weight:900;letter-spacing:1px;text-transform:uppercase}
+.hdr .ttl{font-size:18px;font-weight:700;margin-top:3px}
+.hdr .per{font-size:16px;margin-top:2px}
+.sig{display:flex;justify-content:space-between;margin-top:24px;padding-top:6px}
+.sig-b{text-align:center;width:160px}
+.sig-l{border-top:1px solid #000;margin-bottom:3px}
+.sig-t{font-size:10px;color:#333}
+table{width:100%;border-collapse:collapse;margin-top:6px;table-layout:fixed}
+th{border:1px solid #000;padding:5px 7px;font-size:10px;font-weight:700;background:#f0f0f0;
+   color:#000;white-space:normal;word-wrap:break-word;vertical-align:middle}
+td{border:1px solid #000;padding:5px 7px;font-size:10px;vertical-align:middle;
+   color:#000;white-space:normal;word-wrap:break-word}
+tr.tot td{background:#e8e8e8;font-weight:700}
+.r{text-align:right}.l{text-align:left}
+.nd{text-align:center;padding:18px;color:#888;font-size:10px}
+</style>"""
+
+_SIG = '<div class="sig">' + "".join(
+    f'<div class="sig-b"><div class="sig-l"></div><div class="sig-t">{l}</div></div>'
+    for l in ["Prepared By", "Checked By", "Authorised Signatory"]
+) + '</div>'
+
+_NUMERIC_FT    = ("Float", "Currency", "Int", "Percent")
+_SKIP_ON_TOTAL = {"pf_no", "uan_no", "working_days", "payment_days", "date_of_joining", "date_of_birth"}
+
+
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -91,24 +121,23 @@ def _fmt(v):
 # ---------------------------------------------------------------------------
 
 def _get_data(f):
-    # ── Column order: Employee ID → Employee Name → rest ──────────────────
     cols = [
-        _col("Employee ID",   "employee_id",     w=180),   # <-- moved up
-        _col("Employee Name", "employee_name",   w=200),   # <-- moved up
-        _col("PF No.",        "pf_no",           w=180),
-        _col("UAN No.",       "uan_no",          w=180),
-        _col("Working Days",  "working_days",    "Float", 110, precision=1),
-        _col("Payment Days",  "payment_days",    "Float", 110, precision=1),
-        _col("Gross Salary",  "gross",           "Float", 110, precision=2),
-        _col("Basic + DA",    "basic_da",        "Float", 110, precision=2),
-        _col("Emp PF",        "emp_pf",          "Float", 110,  precision=2),
-        _col("Empr. EPS",     "employer_eps",    "Float", 110,  precision=2),
-        _col("Empr. PF",      "employer_pf",     "Float", 110,  precision=2),
-        _col("Empr. EDLI",    "employer_edli",   "Float", 110,  precision=2),
-        _col("PF Admin",      "employer_admin",  "Float", 110,  precision=2),
-        _col("Total",         "total_amount",    "Float", 110,  precision=2),
-        _col("DOJ",           "date_of_joining", "Date",  110),
-        _col("DOB",           "date_of_birth",   "Date",  110),
+        _col("Employee ID",    "employee_id",     w=180),
+        _col("Employee Name",  "employee_name",   w=200),
+        _col("PF No.",         "pf_no",           w=160),
+        _col("UAN No.",        "uan_no",          w=160),
+        _col("Working Days",   "working_days",    "Float", 100, precision=1),
+        _col("Payment Days",   "payment_days",    "Float", 100, precision=1),
+        _col("Gross Salary",   "gross",           "Float", 110, precision=2),
+        _col("Basic + DA",     "basic_da",        "Float", 110, precision=2),
+        _col("Emp PF",         "emp_pf",          "Float", 100, precision=2),
+        _col("Empr. EPS",      "employer_eps",    "Float", 100, precision=2),
+        _col("Empr. PF",       "employer_pf",     "Float", 100, precision=2),
+        _col("Empr. EDLI",     "employer_edli",   "Float", 100, precision=2),
+        _col("PF Admin",       "employer_admin",  "Float", 100, precision=2),
+        _col("Total",          "total_amount",    "Float", 100, precision=2),
+        _col("DOJ",            "date_of_joining", "Date",  100),
+        _col("DOB",            "date_of_birth",   "Date",  100),
     ]
 
     if not f.get("company"):
@@ -202,12 +231,11 @@ def _get_data(f):
         )
     }
 
-    data       = []
-    tot        = {k: 0.0 for k in [
-        "gross","basic_da","emp_pf","employer_eps",
-        "employer_pf","employer_edli","employer_admin","total_amount"
+    data = []
+    tot  = {k: 0.0 for k in [
+        "gross", "basic_da", "emp_pf", "employer_eps",
+        "employer_pf", "employer_edli", "employer_admin", "total_amount"
     ]}
-    
 
     for s in slips:
         emp  = em.get(s.eid, frappe._dict())
@@ -228,7 +256,7 @@ def _get_data(f):
             tot[k] += v
 
         data.append({
-            "employee_id":     s.eid,          # <-- kept same key, order changed via cols list
+            "employee_id":     s.eid,
             "employee_name":   s.employee_name,
             "pf_no":           emp.get("pf_no")  or "",
             "uan_no":          emp.get("uan_no") or "",
@@ -244,23 +272,21 @@ def _get_data(f):
             "total_amount":    tol,
             "date_of_joining": emp.get("date_of_joining") or "",
             "date_of_birth":   emp.get("date_of_birth")   or "",
-            "_row_type":       "detail",
         })
-    
 
-    data.append({
-        "employee_name": "Total",
-        "employee_id": "",
-        "pf_no": "",
-        "uan_no": "",
-        "working_days": None,
-        "payment_days": None,
-        **{k: flt(v, 2) for k, v in tot.items()},
-        "date_of_joining": "",
-        "date_of_birth": "",
-        "bold": 1,
-        "_row_type": "total",
-    })
+    if data:
+        data.append({
+            "employee_id":     "",
+            "employee_name":   "Total",
+            "pf_no":           "",
+            "uan_no":          "",
+            "working_days":    None,
+            "payment_days":    None,
+            **{k: flt(v, 2) for k, v in tot.items()},
+            "date_of_joining": "",
+            "date_of_birth":   "",
+            "bold":            1,
+        })
 
     return cols, data
 
@@ -277,46 +303,8 @@ def execute(filters=None):
 # PDF
 # ---------------------------------------------------------------------------
 
-_CSS = """<style>
-*{margin:0;padding:0;box-sizing:border-box}
-body{font-family:Arial,sans-serif;font-size:13px;color:#000;background:#fff;width:100%;}
-.hdr{text-align:center;border-bottom:2px solid #000;padding:10px 4px 8px;margin-bottom:8px}
-.hdr .co{font-size:24px;font-weight:900;letter-spacing:1px;text-transform:uppercase}
-.hdr .ttl{font-size:18px;font-weight:700;margin-top:5px}
-.hdr .per{font-size:17px;margin-top:4px}
-table{width:100%;border-collapse:collapse;table-layout:fixed;}
-</style>"""
-
-_SIG = """
-<!--SIG_START-->
-<div style="display:flex;justify-content:space-between;
-            width:100%;margin-top:32px;padding-top:8px;
-            box-sizing:border-box;">
-    <div style="text-align:center;width:180px;">
-        <div style="border-top:1px solid #000;margin-bottom:4px;"></div>
-        <div style="font-size:13px;color:#333;">Prepared By</div>
-    </div>
-    <div style="text-align:center;width:180px;">
-        <div style="border-top:1px solid #000;margin-bottom:4px;"></div>
-        <div style="font-size:13px;color:#333;">Checked By</div>
-    </div>
-    <div style="text-align:center;width:180px;">
-        <div style="border-top:1px solid #000;margin-bottom:4px;"></div>
-        <div style="font-size:13px;color:#333;">Authorised Signatory</div>
-    </div>
-</div>
-<!--SIG_END-->
-"""
-
-HDR_BG      = "#e8e8e8"
-ROW_COLOURS = ["#ffffff", "#f0f0f0"]
-PAD         = "padding:7px 9px;"
-FS          = "font-size:13px;"
-
-
 def _build_html(cols, data, co, mo, yr):
-    # Company/title header
-    hdr_html = (
+    hdr = (
         f'<div class="hdr">'
         f'<div class="co">{co}</div>'
         f'<div class="ttl">Provident Fund Register</div>'
@@ -324,203 +312,39 @@ def _build_html(cols, data, co, mo, yr):
         f'</div>'
     )
 
+    # thead
+    thead = "<tr>"
+    for c in cols:
+        is_n = c.get("fieldtype", "") in _NUMERIC_FT
+        thead += f'<th class="{"r" if is_n else "l"}">{c.get("label", "")}</th>'
+    thead += "</tr>"
+
+    # tbody
     if not data:
-        return (
-            f'<!DOCTYPE html><html><head><meta charset="UTF-8">{_CSS}</head>'
-            f'<body>{hdr_html}'
-            f'<p style="text-align:center;{PAD}{FS}color:#888;">No data for this period</p>'
-            f'{_SIG}</body></html>'
-        )
+        ncols = len(cols)
+        tbody = f'<tr><td colspan="{ncols}" class="nd">No data for this period</td></tr>'
+    else:
+        tbody = ""
+        for row in data:
+            is_tot = bool(row.get("bold"))
+            cls    = ' class="tot"' if is_tot else ""
+            tbody += f"<tr{cls}>"
+            for c in cols:
+                fn   = c.get("fieldname", "")
+                val  = row.get(fn, "")
+                is_n = c.get("fieldtype", "") in _NUMERIC_FT
+                if is_tot and fn in _SKIP_ON_TOTAL:
+                    tbody += f'<td class="{"r" if is_n else "l"}"></td>'
+                elif is_n:
+                    tbody += f'<td class="r">{_fmt(val) if val not in ("", None) else ""}</td>'
+                else:
+                    tbody += f'<td class="l">{val or ""}</td>'
+            tbody += "</tr>"
 
-    detail_rows = [r for r in data if r.get("_row_type") == "detail"]
-    total_row   = next((r for r in data if r.get("bold")), None)
-
-    TH  = (f"border:{B};{PAD}{FS}font-weight:700;background:{HDR_BG};"
-           f"white-space:normal;vertical-align:middle;")
-    THL = TH + "text-align:left;"
-    THR = TH + "text-align:right;"
-
-    # ── Column widths ──────────────────────────────────────────────────────
-    W_EMP_ID = 100   # Employee ID
-    W_NAME   = 160   # Employee Name
-    W_PF     = 90    # PF No. / UAN No.
-    W_DAYS   = 50
-    W_GROSS  = 85
-    W_BDA    = 85
-    W_COMP   = 72
-    W_DOJ    = 78
-
-    # ── thead (repeats every page) ─────────────────────────────────────────
-    # Column order in PDF: Sr | Emp ID | Emp Name | PF No/UAN | Days | Gross | Basic+DA | PF cols | DOJ/DOB
-    def _thead():
-        h  = '<thead><tr>'
-        h += f'<th style="{THL}width:{W_EMP_ID}px;">Employee ID</th>'
-        h += f'<th style="{THL}width:{W_NAME}px;">Employee Name</th>'
-        h += f'<th style="{THL}width:{W_PF}px;">PF No.<br><span style="font-size:11px;font-weight:400;">UAN No.</span></th>'
-        h += f'<th style="{THR}width:{W_DAYS}px;">Working<br>Days<br><span style="font-size:11px;font-weight:400;">Payment Days</span></th>'
-        h += f'<th style="{THR}width:{W_GROSS}px;">Gross<br>Salary</th>'
-        h += f'<th style="{THR}width:{W_BDA}px;">Basic<br>+ DA</th>'
-        h += f'<th style="{THR}width:{W_COMP}px;">Emp<br>PF</th>'
-        h += f'<th style="{THR}width:{W_COMP}px;">Empr<br>EPS</th>'
-        h += f'<th style="{THR}width:{W_COMP}px;">Empr<br>PF</th>'
-        h += f'<th style="{THR}width:{W_COMP}px;">Empr<br>EDLI</th>'
-        h += f'<th style="{THR}width:{W_COMP}px;">PF<br>Admin</th>'
-        h += f'<th style="{THR}width:{W_COMP}px;">Total</th>'
-        h += f'<th style="{THL}width:{W_DOJ}px;">DOJ<br><span style="font-size:11px;font-weight:400;">DOB</span></th>'
-        h += '</tr></thead>'
-        return h
-
-    # ── cell helper ────────────────────────────────────────────────────────
-    def _td(val, align="right", bg="#fff", bold=False, bt=B, bb=B):
-        fw = "font-weight:700;" if bold else ""
-        return (
-            f'<td style="border-left:{B};border-right:{B};'
-            f'border-top:{bt};border-bottom:{bb};'
-            f'{PAD}{FS}{fw}background:{bg};'
-            f'text-align:{align};vertical-align:middle;">{val}</td>'
-        )
-
-    # ── 2 rows per employee ────────────────────────────────────────────────
-    # Row 1: Employee ID | Employee Name | PF No  | Working Days | amounts... | DOJ
-    # Row 2: (blank)     | (blank)       | UAN No | Payment Days | blanks...  | DOB
-    def _emp_rows(row, row_idx, is_total=False):
-        bg   = HDR_BG if is_total else ROW_COLOURS[row_idx % 2]
-        bold = is_total
-        fw   = "font-weight:700;" if bold else ""
-
-        emp_id = row.get("employee_id",   "") or ""
-        emp_nm = row.get("employee_name", "") or ""
-        pf_no  = row.get("pf_no",   "") or ""
-        uan_no = row.get("uan_no",  "") or ""
-
-        wdays  = _fmt(row.get("working_days"))   or ""
-        pdays  = _fmt(row.get("payment_days"))   or ""
-        gross  = _fmt(row.get("gross"))          or "—"
-        bda    = _fmt(row.get("basic_da"))       or "—"
-        emp_pf = _fmt(row.get("emp_pf"))         or "—"
-        ereps  = _fmt(row.get("employer_eps"))   or "—"
-        erpf   = _fmt(row.get("employer_pf"))    or "—"
-        eredli = _fmt(row.get("employer_edli"))  or "—"
-        eradm  = _fmt(row.get("employer_admin")) or "—"
-        total  = _fmt(row.get("total_amount"))   or "—"
-        doj    = str(row.get("date_of_joining") or "")
-        dob    = str(row.get("date_of_birth")   or "")
-
-        # ── Row 1 ──────────────────────────────────────────────────────────
-        r1  = '<tr>'
-        # Employee ID (top)
-        r1 += (
-            f'<td style="border-left:{B};border-right:{B};border-top:{B};border-bottom:none;'
-            f'{PAD}{FS}{fw}background:{bg};text-align:left;vertical-align:middle;">'
-            f'<strong>{emp_id or "&nbsp;"}</strong></td>'
-        )
-        # Employee Name (top)
-        r1 += (
-            f'<td style="border-left:{B};border-right:{B};border-top:{B};border-bottom:none;'
-            f'{PAD}{FS}{fw}background:{bg};text-align:left;vertical-align:middle;'
-            f'white-space:normal;word-wrap:break-word;">'
-            f'<strong>{emp_nm or "&nbsp;"}</strong></td>'
-        )
-        # PF No (top)
-        r1 += (
-            f'<td style="border-left:{B};border-right:{B};border-top:{B};border-bottom:none;'
-            f'{PAD}{FS}{fw}background:{bg};text-align:left;vertical-align:middle;">'
-            f'{pf_no or "&nbsp;"}</td>'
-        )
-        r1 += _td(wdays,  "right", bg, bold, bt=B,    bb="none")
-        r1 += _td(gross,  "right", bg, bold, bt=B,    bb="none")
-        r1 += _td(bda,    "right", bg, bold, bt=B,    bb="none")
-        r1 += _td(emp_pf, "right", bg, bold, bt=B,    bb="none")
-        r1 += _td(ereps,  "right", bg, bold, bt=B,    bb="none")
-        r1 += _td(erpf,   "right", bg, bold, bt=B,    bb="none")
-        r1 += _td(eredli, "right", bg, bold, bt=B,    bb="none")
-        r1 += _td(eradm,  "right", bg, bold, bt=B,    bb="none")
-        r1 += _td(total,  "right", bg, bold, bt=B,    bb="none")
-        r1 += (
-            f'<td style="border-left:{B};border-right:{B};border-top:{B};border-bottom:none;'
-            f'{PAD}font-size:12px;{fw}background:{bg};text-align:left;vertical-align:middle;">'
-            f'{doj or "&nbsp;"}</td>'
-        )
-        r1 += '</tr>'
-
-        # ── Row 2 ──────────────────────────────────────────────────────────
-        r2  = '<tr>'
-        # Employee ID (bottom — blank)
-        r2 += (
-            f'<td style="border-left:{B};border-right:{B};border-top:none;border-bottom:{B};'
-            f'{PAD}{FS}{fw}background:{bg};text-align:left;vertical-align:middle;">'
-            f'&nbsp;</td>'
-        )
-        # Employee Name (bottom — blank)
-        r2 += (
-            f'<td style="border-left:{B};border-right:{B};border-top:none;border-bottom:{B};'
-            f'{PAD}{FS}{fw}background:{bg};text-align:left;vertical-align:middle;">'
-            f'&nbsp;</td>'
-        )
-        # UAN No (bottom)
-        r2 += (
-            f'<td style="border-left:{B};border-right:{B};border-top:none;border-bottom:{B};'
-            f'{PAD}font-size:12px;{fw}background:{bg};text-align:left;vertical-align:middle;">'
-            f'{uan_no or "&nbsp;"}</td>'
-        )
-        # Payment days (blank on total row)
-        pdays_disp = pdays if not is_total else "&nbsp;"
-        r2 += _td(pdays_disp, "right", bg, bold, bt="none", bb=B)
-        # Blank numeric cells on row 2
-        for _ in range(8):
-            r2 += _td("&nbsp;", "right", bg, False, bt="none", bb=B)
-        r2 += (
-            f'<td style="border-left:{B};border-right:{B};border-top:none;border-bottom:{B};'
-            f'{PAD}font-size:12px;{fw}background:{bg};text-align:left;vertical-align:middle;">'
-            f'{dob or "&nbsp;"}</td>'
-        )
-        r2 += '</tr>'
-
-        return r1 + r2
-
-    # ── Pagination ─────────────────────────────────────────────────────────
-    FIRST, OTHER = 14, 20
-    pages, idx, first = [], 0, True
-    while idx < len(detail_rows):
-        lim = FIRST if first else OTHER
-        pages.append(detail_rows[idx: idx + lim])
-        idx  += lim
-        first = False
-    if not pages:
-        pages = [[]]
-
-    total_pages = len(pages)
-    parts       = []
-
-    for pn, pr in enumerate(pages):
-        pb   = '<div style="page-break-before:always;"></div>' if pn > 0 else ""
-        last = (pn == len(pages) - 1)
-
-        page_hdr = hdr_html if pn == 0 else ""
-
-        pg_footer = (
-            f'<div style="text-align:right;font-size:12px;color:#444;'
-            f'margin-top:6px;padding-right:2px;">'
-            f'Page {pn + 1} of {total_pages}</div>'
-        )
-
-        body = '<tbody>'
-        for ri, row in enumerate(pr):
-            body += _emp_rows(row, ri)
-        if last and total_row:
-            body += _emp_rows(total_row, 0, is_total=True)
-        body += '</tbody>'
-
-        parts.append(
-            f'{pb}{page_hdr}'
-            f'<table style="width:100%;border-collapse:collapse;margin-top:8px;">'
-            f'{_thead()}{body}</table>'
-            f'{pg_footer}'
-        )
-
+    table = f"<table><thead>{thead}</thead><tbody>{tbody}</tbody></table>"
     return (
         f'<!DOCTYPE html><html><head><meta charset="UTF-8">{_CSS}</head>'
-        f'<body>{"".join(parts)}{_SIG}</body></html>'
+        f'<body>{hdr}{table}{_SIG}</body></html>'
     )
 
 

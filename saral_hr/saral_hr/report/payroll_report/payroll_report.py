@@ -22,8 +22,8 @@ REPORT_MODULE_MAP = {
     "transaction_checklist":     "saral_hr.saral_hr.report.transaction_checklist.transaction_checklist",
     "variable_pay":              "saral_hr.saral_hr.report.variable_pay_register.variable_pay_register",
     "income_tax":                "saral_hr.saral_hr.report.income_tax_report.income_tax_report",
-    "loan_register":    "saral_hr.saral_hr.report.loan_register.loan_register",     
-    "advance_register": "saral_hr.saral_hr.report.advance_register.advance_register", 
+    "loan_register":             "saral_hr.saral_hr.report.loan_register.loan_register",
+    "advance_register":          "saral_hr.saral_hr.report.advance_register.advance_register",
 }
 
 REPORT_LABELS = {
@@ -41,8 +41,8 @@ REPORT_LABELS = {
     "transaction_checklist":     "Transaction Checklist",
     "variable_pay":              "Variable Pay Register",
     "income_tax":                "Income Tax Register",
-    "loan_register":    "Loan Register",    
-    "advance_register": "Advance Register", 
+    "loan_register":             "Loan Register",
+    "advance_register":          "Advance Register",
 }
 
 REPORTS = [
@@ -60,7 +60,7 @@ REPORTS = [
     "home_bank_advice",
     "monthly_attendance",
     "income_tax",
-     "loan_register",    
+    "loan_register",
     "advance_register",
 ]
 
@@ -143,9 +143,6 @@ tr.tot td{background:#e8e8e8;font-weight:700}
 .hold{color:#c0392b;font-style:italic}
 </style>"""
 
-# FIX: use inline styles with a unique sentinel comment so _strip_sig
-# can reliably find and remove this block regardless of which report
-# generated its own _SIG variant.
 _SIG = """
 <!--SIG_START-->
 <div style="display:flex;justify-content:space-between;
@@ -167,86 +164,59 @@ _SIG = """
 <!--SIG_END-->
 """
 
-# Sentinel used by _strip_sig — works for BOTH old class-based and
-# new inline-style _SIG blocks from all sub-reports
 _SIG_MARKERS = [
-    "<!--SIG_START-->",   # new inline style (this file + updated sub-reports)
-    '<div class="sig">',  # old class-based (any sub-report not yet updated)
+    "<!--SIG_START-->",
+    '<div class="sig">',
 ]
 
 
 def _strip_sig(html):
-    """
-    Strip the signature block and everything after it from a sub-report's
-    HTML body content. Handles both old class-based and new inline-style sigs.
-    """
     import re
-
-    # Extract body content
     body_match = re.search(r'<body[^>]*>(.*)</body>', html, re.DOTALL | re.IGNORECASE)
     if body_match:
         html = body_match.group(1)
-
-    # Try each known sig marker, strip from the last occurrence
     for marker in _SIG_MARKERS:
         idx = html.rfind(marker)
         if idx != -1:
             html = html[:idx]
             break
-
     return html.strip()
 
-
-# ── Modes that use large fonts in their own _build_html ──────────────────────
-_LARGE_FONT_MODES = {"loan_register", "advance_register"}
-
-_LARGE_FONT_OVERRIDE = """
-<style>
-  .lr-wrap th, .lr-wrap td {
-    font-size: 14px !important;
-    padding: 8px 10px !important;
-  }
-  .lr-wrap .hdr .co  { font-size: 22px !important; }
-  .lr-wrap .hdr .ttl { font-size: 16px !important; }
-  .lr-wrap .hdr .per { font-size: 13px !important; }
-</style>
-"""
 
 def _render_section(mode, cols, data, co, mo, yr):
     """
     Delegate to sub-report's _build_html(), strip its signature block,
-    return clean inner HTML only. payroll_report adds its own _SIG after.
-    For loan_register and advance_register, wrap in a scoped div that
-    restores their larger font sizes (otherwise the global _CSS 10px wins).
+    return clean inner HTML only.
+
+    Signature mapping:
+      income_tax    → (cols, data, filters_dict)
+      loan_register → (cols, data, co, mo, yr)       ← no title arg
+      advance_register → (cols, data, co, mo, yr)    ← no title arg
+      all others    → (cols, data, co, mo, yr)
     """
     build_fn = _import_print_html(mode)
     if build_fn:
         try:
             if mode == "income_tax":
                 raw = build_fn(cols, data, {"company": co, "month": mo, "year": yr})
-            elif mode == "advance_register":
-                raw = build_fn(cols, data, co, "Advance Register", mo, yr)
-            elif mode == "loan_register":
-                raw = build_fn(cols, data, co, "Loan Register", mo, yr)
+            elif mode in ("loan_register", "advance_register"):
+                # These _build_html signatures are (cols, data, co, mo, yr)
+                raw = build_fn(cols, data, co, mo, yr)
             else:
                 raw = build_fn(cols, data, co, mo, yr)
 
-            inner = _strip_sig(raw)
+            return _strip_sig(raw)
 
-            # Wrap large-font reports so their styles win over global _CSS
-            if mode in _LARGE_FONT_MODES:
-                inner = f'{_LARGE_FONT_OVERRIDE}<div class="lr-wrap">{inner}</div>'
-
-            return inner
         except Exception:
             frappe.log_error(f"payroll_report._render_section: {mode}", "Payroll Report")
+
     return f'<p style="color:#888;padding:12px;">Could not render {REPORT_LABELS.get(mode, mode)}</p>'
+
 
 def _build_all_html(sections, co, mo, yr):
     parts = []
     for s in sections:
         inner = _render_section(s["mode"], s["cols"], s["data"], co, mo, yr)
-        # Each section gets exactly ONE signature block
         parts.append(f'<div class="sec">{inner}{_SIG}</div>')
     return (
         f'<!DOCTYPE html><html>'
@@ -346,7 +316,6 @@ def print_single_report(filters):
     yr = filters.get("year",  "")
 
     inner = _render_section(mode, cols, data, co, mo, yr)
-    # ONE signature block added here after the stripped content
     html = (
         f'<!DOCTYPE html><html>'
         f'<head><meta charset="UTF-8">{_CSS}</head>'

@@ -197,7 +197,6 @@
    "label": "Employee PF Account"
   },
   {
-   "description": "Get your globally recognized avatar from Gravatar.com",
    "fieldname": "employee_image",
    "fieldtype": "Attach Image",
    "label": "Employee Image",
@@ -265,7 +264,7 @@
  ],
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-04-11 12:17:48.256201",
+ "modified": "2026-04-11 12:21:37.531885",
  "modified_by": "Administrator",
  "module": "Saral Hr",
  "name": "Employee",
