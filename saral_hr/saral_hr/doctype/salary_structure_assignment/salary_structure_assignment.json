@@ -268,29 +268,33 @@
   },
   {
    "fieldname": "gross_salary",
-   "fieldtype": "Float",
+   "fieldtype": "Currency",
    "label": "Gross Salary",
+   "options": "currency",
    "precision": "2",
    "read_only": 1
   },
   {
    "fieldname": "total_deductions",
-   "fieldtype": "Float",
+   "fieldtype": "Currency",
    "label": "Total Deductions",
+   "options": "currency",
    "precision": "2",
    "read_only": 1
   },
   {
    "fieldname": "total_employer_contribution",
-   "fieldtype": "Float",
+   "fieldtype": "Currency",
    "label": "Total Employer Contribution",
+   "options": "currency",
    "precision": "2",
    "read_only": 1
   },
   {
    "fieldname": "monthly_ctc",
-   "fieldtype": "Float",
+   "fieldtype": "Currency",
    "label": "Monthly CTC",
+   "options": "currency",
    "precision": "2",
    "read_only": 1
   },
@@ -300,15 +304,17 @@
   },
   {
    "fieldname": "net_salary",
-   "fieldtype": "Float",
+   "fieldtype": "Currency",
    "label": "Net Salary",
+   "options": "currency",
    "precision": "2",
    "read_only": 1
   },
   {
    "fieldname": "annual_ctc",
-   "fieldtype": "Float",
+   "fieldtype": "Currency",
    "label": "Annual CTC",
+   "options": "currency",
    "precision": "2",
    "read_only": 1
   },
@@ -328,8 +334,9 @@
   },
   {
    "fieldname": "total_basic_da",
-   "fieldtype": "Float",
+   "fieldtype": "Currency",
    "label": "Total (Basic + DA)",
+   "options": "currency",
    "precision": "2",
    "read_only": 1
   }
