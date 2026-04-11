@@ -333,7 +333,7 @@ function init_mark_attendance($main) {
     var rowMetaMap = {};
 
     // ── Half-day panel state ──
-    var hdPanelTarget = null;   // { dateKey, dayLabel, dateLabel }
+    var hdPanelTarget = null;
     var hdPanelFirstVal = "";
     var hdPanelSecondVal = "";
 
@@ -354,7 +354,6 @@ function init_mark_attendance($main) {
     var PRESENT_TYPE = new Set(["Present", "On Tour", "Earned Comp Off"]);
     var ABSENT_TYPE = new Set(["Absent", "LWP", "Earned Leave", "Casual Leave", "Comp Off"]);
 
-    // ── half-day status → pill color class ──
     var HD_PILL_CLASS = {
         "Present": "ma-hd-pill-present",
         "On Tour": "ma-hd-pill-ontour",
@@ -365,7 +364,6 @@ function init_mark_attendance($main) {
         "Comp Off": "ma-hd-pill-coff",
         "LWP": "ma-hd-pill-lwp",
     };
-    // status → dot color
     var HD_DOT_COLOR = {
         "Present": "#28a745",
         "On Tour": "#28a745",
@@ -461,7 +459,7 @@ function init_mark_attendance($main) {
     });
 
     // ════════════════════════════════════════════════════════════════════════
-    //  SEARCH (unchanged)
+    //  SEARCH
     // ════════════════════════════════════════════════════════════════════════
     function localSearch(term) {
         if (!term) return employees;
@@ -648,9 +646,16 @@ function init_mark_attendance($main) {
         var year = parseInt(yearSel.value), month = parseInt(monthSel.value);
         var weeklyOffDays = employeeWeeklyOffMap[employee] || [];
         if (!weeklyOffDays.length) return 0;
+        var joiningDate = parseDateLocal(joiningDateMap[employee]);
+        var leftDate = parseDateLocal(leftDateMap[employee]);
         var count = 0, daysInMonth = new Date(year, month + 1, 0).getDate();
         for (var d = 1; d <= daysInMonth; d++) {
-            var dn = new Date(year, month, d).toLocaleDateString("en-US", { weekday: "long" }).toLowerCase();
+            var cd = new Date(year, month, d);
+            cd.setHours(0, 0, 0, 0);
+            // ── CHANGE: skip days before joining or after leaving ──
+            if (joiningDate && cd < joiningDate) continue;
+            if (leftDate && cd > leftDate) continue;
+            var dn = cd.toLocaleDateString("en-US", { weekday: "long" }).toLowerCase();
             if (weeklyOffDays.includes(dn)) count++;
         }
         return count;
@@ -735,9 +740,8 @@ function init_mark_attendance($main) {
     }
 
     // ════════════════════════════════════════════════════════════════════════
-    //  HALF-DAY PANEL  (replaces old dropdown)
+    //  HALF-DAY PANEL
     // ════════════════════════════════════════════════════════════════════════
-
     function buildHdOption(status, currentVal, half) {
         var dotColor = HD_DOT_COLOR[status] || "#aaa";
         var isSelected = (currentVal === status);
@@ -775,10 +779,8 @@ function init_mark_attendance($main) {
         hdPanelTarget = { dateKey: dateKey };
         hdPanelFirstVal = (rec.mode === "half") ? (rec.first_half || "") : "";
         hdPanelSecondVal = (rec.mode === "half") ? (rec.second_half || "") : "";
-
         document.getElementById("ma_hd_panel_title").textContent = dateLabel;
         document.getElementById("ma_hd_panel_date").textContent = dayLabel;
-
         renderHdPanelOptions();
         hdPanel.style.display = "flex";
     }
@@ -816,7 +818,7 @@ function init_mark_attendance($main) {
     });
 
     // ════════════════════════════════════════════════════════════════════════
-    //  HALF-DAY PILL HELPER  (replaces statusBadge)
+    //  HALF-DAY PILL HELPER
     // ════════════════════════════════════════════════════════════════════════
     function hdPillHtml(status) {
         if (!status) {
@@ -944,26 +946,38 @@ function init_mark_attendance($main) {
 
     // ════════════════════════════════════════════════════════════════════════
     //  BUILD ROW
+    //
+    //  KEY CHANGE: When isOutsideTenure (before joining / after leaving),
+    //  we NEVER auto-assign Holiday or Weekly Off.  The row is locked just
+    //  like a future row.  We also suppress the holiday/wo styling on date
+    //  and day cells so there is no visual confusion.
     // ════════════════════════════════════════════════════════════════════════
-    function buildRow(dateKey, dayName, currentDate, savedRec, isHoliday, isDefaultWeeklyOff, isFuture, rowIdx) {
+    function buildRow(dateKey, dayName, currentDate, savedRec, isHoliday, isDefaultWeeklyOff, isFuture, isOutsideTenure, rowIdx) {
         var row = document.createElement("tr");
         row.setAttribute("data-date", dateKey);
         row.setAttribute("data-rowidx", rowIdx);
 
-        var isRestDay = isHoliday || isDefaultWeeklyOff;
-        var restStatus = isHoliday ? "Holiday" : (isDefaultWeeklyOff ? "Weekly Off" : "");
-        var isRestMode = isRestDay && savedRec.mode === "full" &&
+        // ── For pre-joining days: treat as neither holiday nor weekly-off ──
+        var effectiveIsHoliday      = isHoliday      && !isOutsideTenure;
+        var effectiveIsWeeklyOff    = isDefaultWeeklyOff && !isOutsideTenure;
+
+        var isRestDay   = effectiveIsHoliday || effectiveIsWeeklyOff;
+        var restStatus  = effectiveIsHoliday ? "Holiday" : (effectiveIsWeeklyOff ? "Weekly Off" : "");
+        var isRestMode  = isRestDay && savedRec.mode === "full" &&
             (savedRec.status === "Holiday" || savedRec.status === "Weekly Off");
 
         rowMetaMap[dateKey] = {
             isRestDay: isRestDay, restStatus: restStatus,
-            isHoliday: isHoliday, isDefaultWeeklyOff: isDefaultWeeklyOff
+            isHoliday: effectiveIsHoliday, isDefaultWeeklyOff: effectiveIsWeeklyOff,
+            isOutsideTenure: isOutsideTenure
         };
 
-        var cellsLocked = isFuture || (isRestDay && isRestMode);
+        var cellsLocked = isFuture || isOutsideTenure || (isRestDay && isRestMode);
 
-        if (isFuture) {
+        if (isFuture || isOutsideTenure) {
             row.classList.add("ma-future-row");
+            // Extra class to distinguish pre-joining from future
+            if (isOutsideTenure && !isFuture) row.classList.add("ma-before-joining-row");
         } else if (savedRec.mode === "full") {
             if (savedRec.status === "Weekly Off") row.classList.add("ma-row-wo");
             if (savedRec.status === "Holiday") row.classList.add("ma-row-holiday");
@@ -978,26 +992,26 @@ function init_mark_attendance($main) {
             currentDate.toLocaleDateString("en-US", { month: "long" }) + " " +
             currentDate.getFullYear();
 
-        // Date cell
+        // Date cell — only colour for WO/Holiday if actually eligible
         var dateTd = document.createElement("td");
         dateTd.className = "ma-date-cell";
-        if (isDefaultWeeklyOff && !isHoliday) dateTd.classList.add("ma-date-wo");
-        else if (isHoliday) dateTd.classList.add("ma-date-holiday");
+        if (effectiveIsWeeklyOff && !effectiveIsHoliday) dateTd.classList.add("ma-date-wo");
+        else if (effectiveIsHoliday) dateTd.classList.add("ma-date-holiday");
         dateTd.textContent = dateLabel;
         row.appendChild(dateTd);
 
         // Day cell
         var dayTd = document.createElement("td");
         dayTd.className = "ma-day-cell";
-        if (isDefaultWeeklyOff && !isHoliday) dayTd.classList.add("ma-date-wo");
-        else if (isHoliday) dayTd.classList.add("ma-date-holiday");
+        if (effectiveIsWeeklyOff && !effectiveIsHoliday) dayTd.classList.add("ma-date-wo");
+        else if (effectiveIsHoliday) dayTd.classList.add("ma-date-holiday");
         dayTd.textContent = dayName;
         row.appendChild(dayTd);
 
-        // Override toggle
+        // Override toggle — only shown for eligible rest days
         var overrideTd = document.createElement("td");
         overrideTd.className = "ma-override-cell";
-        if (isRestDay && !isFuture) {
+        if (isRestDay && !isFuture && !isOutsideTenure) {
             var lbl = document.createElement("label");
             lbl.className = "ma-toggle" + (restStatus === "Holiday" ? " ma-toggle-holiday" : "");
             lbl.title = isRestMode ? "Click to override " + restStatus : "Click to restore " + restStatus;
@@ -1049,22 +1063,23 @@ function init_mark_attendance($main) {
             dot.className = "ma-col-dot" + (isActive ? " " + getDotClass(status) : "");
             dot.setAttribute("data-status", status);
 
+            // Only show hints if the employee is actually eligible for that day
             if (!isActive) {
-                if (status === "Weekly Off" && isDefaultWeeklyOff) dot.classList.add("ma-dot-wo-hint");
-                if (status === "Holiday" && isHoliday) dot.classList.add("ma-dot-holiday-hint");
+                if (status === "Weekly Off" && effectiveIsWeeklyOff) dot.classList.add("ma-dot-wo-hint");
+                if (status === "Holiday" && effectiveIsHoliday) dot.classList.add("ma-dot-holiday-hint");
             }
 
             td.addEventListener("click", function () {
                 var parentRow = td.closest("tr");
                 if (parentRow && parentRow.classList.contains("ma-status-cells-disabled")) return;
-                onFullDayClick(dateKey, status, isHoliday, isDefaultWeeklyOff);
+                onFullDayClick(dateKey, status, effectiveIsHoliday, effectiveIsWeeklyOff);
             });
             td.addEventListener("mousedown", function () { setFocusCell(rowIdx, colIdx); });
             td.appendChild(dot);
             row.appendChild(td);
         });
 
-        // Half Day – First Half (pill, opens panel)
+        // Half Day – First Half
         var hd1Td = document.createElement("td");
         hd1Td.className = "ma-status-cell ma-hd-cell ma-hd1-cell";
         hd1Td.setAttribute("data-colidx", FULL_DAY_STATUSES.length);
@@ -1081,7 +1096,7 @@ function init_mark_attendance($main) {
         hd1Td.addEventListener("mousedown", function () { setFocusCell(rowIdx, FULL_DAY_STATUSES.length); });
         row.appendChild(hd1Td);
 
-        // Half Day – Second Half (pill, opens panel)
+        // Half Day – Second Half
         var hd2Td = document.createElement("td");
         hd2Td.className = "ma-status-cell ma-hd-cell ma-hd2-cell";
         hd2Td.setAttribute("data-colidx", FULL_DAY_STATUSES.length + 1);
@@ -1182,9 +1197,14 @@ function init_mark_attendance($main) {
 
     // ════════════════════════════════════════════════════════════════════════
     //  GENERATE TABLE
+    //
+    //  KEY CHANGE: resolveInitialRec now never assigns Holiday/Weekly Off for
+    //  outside-tenure days.  buildRow now receives isOutsideTenure separately
+    //  so it can suppress WO/Holiday treatment cleanly.
     // ════════════════════════════════════════════════════════════════════════
     function resolveInitialRec(rawStatus, isHoliday, isDefaultWeeklyOff, isOutsideTenure) {
         if (!rawStatus) {
+            // Only auto-assign rest statuses when employee is actually employed on that day
             if (!isOutsideTenure) {
                 if (isHoliday) return { mode: "full", status: "Holiday" };
                 if (isDefaultWeeklyOff) return { mode: "full", status: "Weekly Off" };
@@ -1194,6 +1214,7 @@ function init_mark_attendance($main) {
         if (typeof rawStatus === "object" && rawStatus.mode === "half") return rawStatus;
         return { mode: "full", status: rawStatus };
     }
+
     function generateTable() {
         var employee = employeeSel.value;
         var startDate = startDateInput.value;
@@ -1248,10 +1269,12 @@ function init_mark_attendance($main) {
                             attendanceTableData[dateKey] = savedRec;
                             if (raw) originalAttendanceData[dateKey] = JSON.parse(JSON.stringify(savedRec));
 
+                            // Pass isOutsideTenure separately so buildRow can handle it properly
                             tbody.appendChild(buildRow(
                                 dateKey, dayName, cd, savedRec,
                                 isHoliday, isDefaultWeeklyOff,
-                                isFuture || isBeforeJoining || isAfterLeft,
+                                isFuture,
+                                isOutsideTenure,
                                 rowIdx++
                             ));
                             current.setDate(current.getDate() + 1);
@@ -1282,6 +1305,7 @@ function init_mark_attendance($main) {
             var cur = rec.mode === "full" ? rec.status : null;
             if (cur === "Weekly Off" || cur === "Holiday") return;
             var rowEl = document.querySelector('tr[data-date="' + dateKey + '"]');
+            // Skip future rows AND outside-tenure rows
             if (rowEl && rowEl.classList.contains("ma-future-row")) return;
 
             attendanceTableData[dateKey] = status === "Half Day"
@@ -1374,7 +1398,7 @@ function init_mark_attendance($main) {
     });
 
     // ════════════════════════════════════════════════════════════════════════
-    //  CALENDAR MODAL  (unchanged)
+    //  CALENDAR MODAL
     // ════════════════════════════════════════════════════════════════════════
     function normalizeDateKey(dateStr) {
         if (!dateStr) return null;
@@ -1434,7 +1458,10 @@ function init_mark_attendance($main) {
         delete calendarCache[employee + "|" + year];
     }
     function renderMonthsGrid() {
-        var employee = employeeSel.value, weeklyOffDays = employeeWeeklyOffMap[employee] || [];
+        var employee = employeeSel.value;
+        var weeklyOffDays = employeeWeeklyOffMap[employee] || [];
+        var joiningDate = parseDateLocal(joiningDateMap[employee]);
+        var leftDate = parseDateLocal(leftDateMap[employee]);
         var monthsGrid = document.getElementById("ma_months_grid");
         var monthNames = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
         var dayNames = ["S", "M", "T", "W", "T", "F", "S"];
@@ -1450,14 +1477,25 @@ function init_mark_attendance($main) {
             for (var i = 0; i < startDay; i++) html += '<div class="ma-mini-day empty"></div>';
             var today = new Date();
             for (var day = 1; day <= daysInMonth; day++) {
-                var date = new Date(currentCalendarYear, monthIndex, day), dateKey = normalizeDateKey(date);
+                var date = new Date(currentCalendarYear, monthIndex, day);
+                date.setHours(0, 0, 0, 0);
+                var dateKey = normalizeDateKey(date);
                 var isToday = date.toDateString() === today.toDateString();
+
+                // ── CHANGE: check tenure in calendar too ──
+                var isBeforeJoining = joiningDate ? (date < joiningDate) : false;
+                var isAfterLeft = leftDate ? (date > leftDate) : false;
+                var isOutsideTenure = isBeforeJoining || isAfterLeft;
+
                 var dn = date.toLocaleDateString("en-US", { weekday: "long" }).toLowerCase();
-                var isDefaultWeeklyOff = weeklyOffDays.includes(dn), isHoliday = yearHolidayData[dateKey] === true;
+                var effectiveIsWeeklyOff = !isOutsideTenure && weeklyOffDays.includes(dn);
+                var effectiveIsHoliday   = !isOutsideTenure && yearHolidayData[dateKey] === true;
+
                 var status = yearAttendanceData[dateKey];
                 var cls = "ma-mini-day";
                 if (isToday) cls += " today";
-                else if (isHoliday || status === "Holiday") cls += " holiday";
+                else if (isOutsideTenure) cls += " outside-tenure";
+                else if (effectiveIsHoliday || status === "Holiday") cls += " holiday";
                 else if (status === "Present" || status === "Regular") cls += " present";
                 else if (status === "On Tour") cls += " on-tour";
                 else if (status === "Earned Comp Off") cls += " eco";
@@ -1467,7 +1505,7 @@ function init_mark_attendance($main) {
                 else if (status === "Earned Leave") cls += " el";
                 else if (status === "Casual Leave") cls += " cl";
                 else if (status === "Comp Off") cls += " coff";
-                else if (status === "Weekly Off" || isDefaultWeeklyOff) cls += " weekend";
+                else if (status === "Weekly Off" || effectiveIsWeeklyOff) cls += " weekend";
                 html += '<div class="' + cls + '">' + day + '</div>';
             }
             html += '</div>';
@@ -1641,6 +1679,8 @@ function inject_ma_styles() {
         .ma-dot-holiday-hint { border-color:#e09a2a !important; background:rgba(224,154,42,0.12) !important; }
         .ma-row-halfday td { background:rgba(59,130,246,0.035) !important; }
         .ma-table tbody tr.ma-future-row td { opacity:0.4; }
+        /* ── Before-joining rows: slightly different shade to distinguish from future ── */
+        .ma-table tbody tr.ma-before-joining-row td { opacity:0.35; background:rgba(156,163,175,0.08) !important; }
         .ma-row-dirty td { background:rgba(245,158,11,0.07) !important; }
         .ma-row-dirty:nth-child(even) td { background:rgba(245,158,11,0.1) !important; }
         .ma-row-override td { background:rgba(139,92,246,0.04) !important; }
@@ -1661,7 +1701,7 @@ function inject_ma_styles() {
         .ma-day-cell  { font-size:12px; color:var(--text-muted); padding:5px 8px !important; white-space:nowrap; min-width:100px; }
 
         /* ══════════════════════════════════════════════════════
-           HALF-DAY PILL  (replaces badge+caret)
+           HALF-DAY PILL
            ══════════════════════════════════════════════════════ */
         .ma-hd-cell { width:120px; min-width:110px; cursor:pointer; padding:4px 6px !important; }
         .ma-hd-cell:hover { background:rgba(0,0,0,0.04) !important; }
@@ -1703,7 +1743,7 @@ function inject_ma_styles() {
         .ma-hd-cell:hover .ma-hd-pill { box-shadow:0 0 0 2px var(--border-color,#d1d8dd); }
 
         /* ══════════════════════════════════════════════════════
-           HALF-DAY PANEL  (full-screen overlay)
+           HALF-DAY PANEL
            ══════════════════════════════════════════════════════ */
         .ma-hd-panel {
             position: fixed;
@@ -1857,7 +1897,8 @@ function inject_ma_styles() {
         .ma-mini-cal { display:grid; grid-template-columns:repeat(7,1fr); gap:1px; }
         .ma-mini-hdr { font-size:9px; font-weight:600; color:var(--text-muted); text-align:center; padding:2px; }
         .ma-mini-day { font-size:10px; text-align:center; padding:3px 1px; color:var(--text-color); border-radius:2px; }
-        .ma-mini-day.empty   { visibility:hidden; }
+        .ma-mini-day.empty          { visibility:hidden; }
+        .ma-mini-day.outside-tenure { opacity:0.25; background:var(--control-bg) !important; color:var(--text-muted) !important; }
         .ma-mini-day.today   { background:var(--primary,#2d2d2d) !important; color:#fff !important; font-weight:700; border-radius:3px; }
         .ma-mini-day.present { background:#28a745 !important; color:#fff !important; font-weight:700; border-radius:50%; }
         .ma-mini-day.on-tour { background:#28a745 !important; color:#fff !important; font-weight:700; border-radius:50%; opacity:0.7; }

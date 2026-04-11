@@ -14,8 +14,11 @@ class Employee(Document):
         name_parts = [self.first_name, self.middle_name, self.last_name]
         self.employee = " ".join(filter(None, name_parts))
 
-        # Aadhar Number uniqueness check
+        # Aadhar Number validation (optional but must be valid if provided)
         if self.aadhar_number:
+            if not self.aadhar_number.isdigit() or len(self.aadhar_number) != 12:
+                frappe.throw("Aadhar Number must be exactly 12 digits.")
+
             duplicate = frappe.db.exists(
                 "Employee",
                 {

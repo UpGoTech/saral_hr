@@ -46,12 +46,12 @@
   "total_lwp",
   "total_on_tour",
   "days_col1_section",
-  "month_days",
-  "column_break_nhux",
   "weekly_off_day",
-  "column_break_zjlq",
-  "weekly_offs_count",
-  "column_break_hflw",
+  "column_break_mr2",
+  "total_weekly_off_days",
+  "column_break_mr3",
+  "weekly_offs_taken",
+  "column_break_mr4",
   "total_holidays",
   "earnings_and_deductions_tab",
   "earnings_and_deductions_section",
@@ -104,14 +104,6 @@
    "label": "Month Reference"
   },
   {
-   "description": "Total calendar days in this payroll month.",
-   "fieldname": "month_days",
-   "fieldtype": "Float",
-   "label": "Total Calendar Days",
-   "precision": "0",
-   "read_only": 1
-  },
-  {
    "description": "Employee's configured weekly off day.",
    "fetch_from": "employee.weekly_off",
    "fieldname": "weekly_off_day",
@@ -120,73 +112,44 @@
    "read_only": 1
   },
   {
-   "fieldname": "weekly_offs_count",
+   "fieldname": "column_break_mr2",
+   "fieldtype": "Column Break"
+  },
+  {
+   "description": "Total number of weekly off days falling in this month.",
+   "fieldname": "total_weekly_off_days",
    "fieldtype": "Float",
-   "label": "Weekly Offs Count",
+   "label": "Total Weekly Offs",
    "precision": "0",
    "read_only": 1
   },
   {
+   "fieldname": "column_break_mr3",
+   "fieldtype": "Column Break"
+  },
+  {
+   "description": "Weekly Off attendance records actually marked for this employee this month.",
+   "fieldname": "weekly_offs_taken",
+   "fieldtype": "Float",
+   "label": "Weekly Offs Taken",
+   "precision": "0",
+   "read_only": 1
+  },
+  {
+   "fieldname": "column_break_mr4",
+   "fieldtype": "Column Break"
+  },
+  {
+   "description": "Public holidays falling in this payroll month.",
    "fieldname": "total_holidays",
    "fieldtype": "Float",
    "label": "Holidays",
    "precision": "2"
   },
   {
-   "fieldname": "present_days",
-   "fieldtype": "Float",
-   "label": "Present Days",
-   "precision": "2"
-  },
-  {
-   "fieldname": "total_on_tour",
-   "fieldtype": "Float",
-   "label": "On Tour",
-   "precision": "2"
-  },
-  {
-   "fieldname": "total_half_days",
-   "fieldtype": "Float",
-   "label": "Half Days",
-   "precision": "2"
-  },
-  {
-   "fieldname": "total_earned_leaves",
-   "fieldtype": "Float",
-   "label": "Earned Leave",
-   "precision": "2"
-  },
-  {
-   "fieldname": "total_casual_leaves",
-   "fieldtype": "Float",
-   "label": "Casual Leave",
-   "precision": "2"
-  },
-  {
-   "fieldname": "total_comp_off",
-   "fieldtype": "Float",
-   "label": "Comp Off Taken",
-   "precision": "2"
-  },
-  {
-   "description": "Days where emp worked on a weekly off or holiday",
-   "fieldname": "total_earned_comp_off",
-   "fieldtype": "Float",
-   "label": "Earned Comp Off",
-   "precision": "2",
-   "read_only": 1
-  },
-  {
-   "fieldname": "absent_days",
-   "fieldtype": "Float",
-   "label": "Absent Days",
-   "precision": "2"
-  },
-  {
-   "fieldname": "total_lwp",
-   "fieldtype": "Float",
-   "label": "LWP",
-   "precision": "2"
+   "fieldname": "payment_summary_section",
+   "fieldtype": "Section Break",
+   "label": "Payment Summary"
   },
   {
    "fieldname": "total_working_days",
@@ -195,10 +158,18 @@
    "precision": "2"
   },
   {
+   "fieldname": "column_break_yach",
+   "fieldtype": "Column Break"
+  },
+  {
    "fieldname": "payment_days",
    "fieldtype": "Float",
    "label": "Payment Days",
    "precision": "2"
+  },
+  {
+   "fieldname": "column_break_yuda",
+   "fieldtype": "Column Break"
   },
   {
    "description": "Pay days - (EL/CL/Compoff)",
@@ -209,12 +180,88 @@
    "read_only": 1
   },
   {
+   "fieldname": "column_break_niqc",
+   "fieldtype": "Column Break"
+  },
+  {
    "description": "Absent + LWP (only for view)",
    "fieldname": "total_unpaid_days",
    "fieldtype": "Float",
    "label": "Total Unpaid Days",
    "precision": "2",
    "read_only": 1
+  },
+  {
+   "fieldname": "attendance_breakdown_section",
+   "fieldtype": "Section Break",
+   "label": "Attendance Breakdown"
+  },
+  {
+   "fieldname": "present_days",
+   "fieldtype": "Float",
+   "label": "Present Days",
+   "precision": "2"
+  },
+  {
+   "fieldname": "total_earned_leaves",
+   "fieldtype": "Float",
+   "label": "Earned Leave",
+   "precision": "2"
+  },
+  {
+   "fieldname": "total_earned_comp_off",
+   "fieldtype": "Float",
+   "label": "Earned Comp Off",
+   "precision": "2",
+   "read_only": 1
+  },
+  {
+   "fieldname": "column_break_clpc",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "absent_days",
+   "fieldtype": "Float",
+   "label": "Absent Days",
+   "precision": "2"
+  },
+  {
+   "fieldname": "total_casual_leaves",
+   "fieldtype": "Float",
+   "label": "Casual Leave",
+   "precision": "2"
+  },
+  {
+   "fieldname": "column_break_tjxo",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "total_half_days",
+   "fieldtype": "Float",
+   "label": "Half Days",
+   "precision": "2"
+  },
+  {
+   "fieldname": "total_comp_off",
+   "fieldtype": "Float",
+   "label": "Comp Off Taken",
+   "precision": "2"
+  },
+  {
+   "fieldname": "column_break_gqsw",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "total_lwp",
+   "fieldtype": "Float",
+   "label": "LWP",
+   "precision": "2"
+  },
+  {
+   "fieldname": "total_on_tour",
+   "fieldtype": "Float",
+   "label": "On Tour",
+   "precision": "2"
   },
   {
    "fieldname": "earnings_and_deductions_tab",
@@ -413,52 +460,6 @@
    "options": "currency",
    "precision": "2",
    "read_only": 1
-  },
-  {
-   "fieldname": "payment_summary_section",
-   "fieldtype": "Section Break",
-   "label": "Payment Summary"
-  },
-  {
-   "fieldname": "column_break_yach",
-   "fieldtype": "Column Break"
-  },
-  {
-   "fieldname": "column_break_yuda",
-   "fieldtype": "Column Break"
-  },
-  {
-   "fieldname": "column_break_niqc",
-   "fieldtype": "Column Break"
-  },
-  {
-   "fieldname": "attendance_breakdown_section",
-   "fieldtype": "Section Break",
-   "label": "Attendance Breakdown"
-  },
-  {
-   "fieldname": "column_break_clpc",
-   "fieldtype": "Column Break"
-  },
-  {
-   "fieldname": "column_break_tjxo",
-   "fieldtype": "Column Break"
-  },
-  {
-   "fieldname": "column_break_gqsw",
-   "fieldtype": "Column Break"
-  },
-  {
-   "fieldname": "column_break_nhux",
-   "fieldtype": "Column Break"
-  },
-  {
-   "fieldname": "column_break_zjlq",
-   "fieldtype": "Column Break"
-  },
-  {
-   "fieldname": "column_break_hflw",
-   "fieldtype": "Column Break"
   }
  ],
  "index_web_pages_for_search": 1,

@@ -182,8 +182,7 @@
   {
    "fieldname": "aadhar_number",
    "fieldtype": "Data",
-   "label": "Aadhar Number ",
-   "reqd": 1,
+   "label": "Aadhar Number",
    "unique": 1
   },
   {
