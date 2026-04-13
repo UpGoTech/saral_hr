@@ -39,33 +39,38 @@ COLOR = {
     "CL":  "#16a085",
     "CO":  "#7f8c8d",
     "ECO": "#a93226",
+    "PAY": "#1a6b1a",
 }
 
-# NOTE: Eff.P (present_days) REMOVED from summary columns per requirement
+# P A HD T H WO LWP Pay EL CL CO ECO
 SUMM_COLS = [
+    ("P",   "present_days"),
     ("A",   "absent_days"),
     ("HD",  "half_days"),
     ("T",   "on_tour_days"),
+    ("H",   "holiday_days"),
+    ("WO",  "weekly_off_days"),
+    ("LWP", "lwp_days"),
+    ("Pay", "payable_days"),
     ("EL",  "earned_leave_days"),
     ("CL",  "casual_leave_days"),
     ("CO",  "comp_off_days"),
     ("ECO", "earned_comp_off_days"),
-    ("WO",  "weekly_off_days"),
-    ("H",   "holiday_days"),
-    ("LWP", "lwp_days"),
 ]
 
 SUMM_COLOR = {
-    "absent_days":          COLOR["A"],
-    "half_days":            COLOR["HD"],
-    "on_tour_days":         COLOR["T"],
-    "earned_leave_days":    COLOR["EL"],
-    "casual_leave_days":    COLOR["CL"],
-    "comp_off_days":        COLOR["CO"],
+    "present_days":       COLOR["P"],
+    "absent_days":        COLOR["A"],
+    "half_days":          COLOR["HD"],
+    "on_tour_days":       COLOR["T"],
+    "holiday_days":       COLOR["H"],
+    "weekly_off_days":    COLOR["WO"],
+    "lwp_days":           COLOR["LWP"],
+    "payable_days":       COLOR["PAY"],
+    "earned_leave_days":  COLOR["EL"],
+    "casual_leave_days":  COLOR["CL"],
+    "comp_off_days":      COLOR["CO"],
     "earned_comp_off_days": COLOR["ECO"],
-    "weekly_off_days":      COLOR["WO"],
-    "holiday_days":         COLOR["H"],
-    "lwp_days":             COLOR["LWP"],
 }
 
 LEGEND_ITEMS = [
@@ -76,23 +81,16 @@ LEGEND_ITEMS = [
     ("H",   "Holiday"),
     ("WO",  "Weekly Off"),
     ("LWP", "Leave Without Pay"),
+    ("Pay", "Payable Days"),
     ("EL",  "Earned Leave"),
     ("CL",  "Casual Leave"),
     ("CO",  "Comp Off"),
     ("ECO", "Earned Comp Off"),
 ]
 
-# ── Rows per page ─────────────────────────────────────────────────────────────
-# Page 1: title (~18mm) + legend (~8mm) + table header (~6mm) leaves ~168mm
-# Page 2+: cont header (~8mm) + legend (~8mm) + table header (~6mm) leaves ~178mm
-# Each data row is ~5.5mm tall → page1≈30, others≈32
-# Conservative values so nothing overflows:
-ROWS_FIRST_PAGE = 26
-ROWS_OTHER_PAGE = 30
+ROWS_FIRST_PAGE = 19
+ROWS_OTHER_PAGE = 20
 
-# ─────────────────────────────────────────────────────────────────────────────
-# CSS
-# ─────────────────────────────────────────────────────────────────────────────
 _CSS = """<style>
 *{margin:0;padding:0;box-sizing:border-box}
 body{font-family:Arial,sans-serif;font-size:10px;color:#000;background:#fff}
@@ -150,10 +148,6 @@ table.data-tbl td{
 </style>"""
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-# Helpers
-# ─────────────────────────────────────────────────────────────────────────────
-
 def _sig_html():
     labels = ["Prepared By", "Checked By", "Authorised Signatory"]
     blocks = "".join(
@@ -209,16 +203,11 @@ def _company_label(f):
     return ", ".join(c) if c else (frappe.defaults.get_global_default("company") or "")
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-# Data
-# ─────────────────────────────────────────────────────────────────────────────
-
 def _get_data(f):
     ms = f.get("month", "")
     ys = f.get("year", "")
     mn = _month_num(ms)
 
-    # Sr No | Employee Name | Employee ID  (Eff.P removed)
     cols = [
         _col("Sr",            "sr_no",        w=40),
         _col("Employee Name", "employee_name", w=180),
@@ -237,6 +226,7 @@ def _get_data(f):
         cols.append({"label": str(d), "fieldname": "day_{0}".format(d),
                      "fieldtype": "Data", "width": 45})
 
+    # Summary cols in order: P A HD T H WO LWP Pay EL CL CO ECO
     for lbl, fn in SUMM_COLS:
         cols.append(_col(lbl, fn, "Float", 65, precision=2))
 
@@ -295,34 +285,58 @@ def _get_data(f):
             eo.append(emp)
             ed[emp] = {
                 "employee": emp, "employee_name": row.employee_name or "",
-                # present_days kept internally for Eff.P calc but NOT shown
                 "present_days": 0.0,
                 "absent_days": 0.0, "half_days": 0.0,
                 "on_tour_days": 0.0, "earned_leave_days": 0.0,
                 "casual_leave_days": 0.0, "comp_off_days": 0.0,
                 "earned_comp_off_days": 0.0, "weekly_off_days": 0.0,
                 "holiday_days": 0.0, "lwp_days": 0.0,
+                "payable_days": 0.0,
             }
 
         ed[emp]["day_{0}".format(day)] = STATUS_CODE[st]
 
-        if   st == "Present":         ed[emp]["present_days"]         += 1.0
-        elif st == "On Tour":         ed[emp]["on_tour_days"]          += 1.0; ed[emp]["present_days"] += 1.0
-        elif st == "Absent":          ed[emp]["absent_days"]           += 1.0
-        elif st == "Half Day":        ed[emp]["half_days"]             += 1.0; ed[emp]["present_days"] += 0.5; ed[emp]["absent_days"] += 0.5
-        elif st == "Holiday":         ed[emp]["holiday_days"]          += 1.0
-        elif st == "Weekly Off":      ed[emp]["weekly_off_days"]       += 1.0
-        elif st == "LWP":             ed[emp]["lwp_days"]              += 1.0; ed[emp]["absent_days"] += 1.0
-        elif st == "Earned Leave":    ed[emp]["earned_leave_days"]     += 1.0
-        elif st == "Casual Leave":    ed[emp]["casual_leave_days"]     += 1.0
-        elif st == "Comp Off":        ed[emp]["comp_off_days"]         += 1.0
-        elif st == "Earned Comp Off": ed[emp]["earned_comp_off_days"]  += 1.0
+        if   st == "Present":
+            ed[emp]["present_days"]        += 1.0
+        elif st == "On Tour":
+            ed[emp]["on_tour_days"]         += 1.0
+            ed[emp]["present_days"]         += 1.0
+        elif st == "Absent":
+            ed[emp]["absent_days"]          += 1.0
+        elif st == "Half Day":
+            ed[emp]["half_days"]            += 1.0
+            ed[emp]["present_days"]         += 0.5
+            ed[emp]["absent_days"]          += 0.5
+        elif st == "Holiday":
+            ed[emp]["holiday_days"]         += 1.0
+        elif st == "Weekly Off":
+            ed[emp]["weekly_off_days"]      += 1.0
+        elif st == "LWP":
+            ed[emp]["lwp_days"]             += 1.0
+            ed[emp]["absent_days"]          += 1.0
+        elif st == "Earned Leave":
+            ed[emp]["earned_leave_days"]    += 1.0
+        elif st == "Casual Leave":
+            ed[emp]["casual_leave_days"]    += 1.0
+        elif st == "Comp Off":
+            ed[emp]["comp_off_days"]        += 1.0
+        elif st == "Earned Comp Off":
+            ed[emp]["earned_comp_off_days"] += 1.0
 
+    # Calculate payable days:
+    # P + T + HD(0.5 each) + EL + CL + CO + ECO
     for emp in ed:
+        r = ed[emp]
+        r["payable_days"] = (
+            r["present_days"]
+            + r["earned_leave_days"]
+            + r["casual_leave_days"]
+            + r["comp_off_days"]
+            + r["earned_comp_off_days"]
+        )
         for d in range(1, last + 1):
-            ed[emp].setdefault("day_{0}".format(d), "-")
+            r.setdefault("day_{0}".format(d), "-")
 
-    # Assign serial numbers
     result = []
     for i, emp in enumerate(eo, 1):
         ed[emp]["sr_no"] = i
@@ -335,12 +349,6 @@ def execute(filters=None):
     return _get_data(filters or {})
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-# HTML builder — manual pagination (same strategy as Transaction Checklist)
-# Each page gets its own <table> with a fresh header row.
-# No reliance on <thead> CSS repeat or --header-html.
-# ─────────────────────────────────────────────────────────────────────────────
-
 def _build_html(cols, data, co, mo, yr):
     mn    = _month_num(mo)
     yi    = int(yr) if yr else 0
@@ -349,7 +357,6 @@ def _build_html(cols, data, co, mo, yr):
     nd    = len(dcols)
     ns    = len(SUMM_COLS)
 
-    # ── colgroup ───────────────────────────────────────────────────────────
     sr_pct   = 2.0
     name_pct = 11.0
     summ_pct = 2.1
@@ -362,7 +369,6 @@ def _build_html(cols, data, co, mo, yr):
     cg += "".join('<col style="width:{0}%;"/>'.format(summ_pct) for _ in SUMM_COLS)
     cg += '</colgroup>'
 
-    # ── page headers ───────────────────────────────────────────────────────
     page1_hdr = (
         '<div class="hdr">'
         '<div class="co">{co}</div>'
@@ -377,7 +383,6 @@ def _build_html(cols, data, co, mo, yr):
     )
     lgd_bar = _legend_bar_html()
 
-    # ── column header row ──────────────────────────────────────────────────
     BG1 = "background:#f0f0f0;"
     BG2 = "background:#d0d8e0;"
     TH  = ("border:{B};padding:2px 1px;font-size:8.5px;font-weight:700;"
@@ -401,7 +406,6 @@ def _build_html(cols, data, co, mo, yr):
         )
     header_tr += "</tr>"
 
-    # ── display helper ─────────────────────────────────────────────────────
     def _disp(v):
         if v is None or v == "" or v == 0 or v == 0.0:
             return ""
@@ -411,18 +415,15 @@ def _build_html(cols, data, co, mo, yr):
         except (TypeError, ValueError):
             return str(v)
 
-    # ── single employee row ────────────────────────────────────────────────
     def _emp_row(row, i):
         bg  = "#f9f9f9" if i % 2 else "#ffffff"
         SBG = "#eef2f7"
         html = "<tr>"
-        # Sr No
         html += (
             '<td style="border:{B};text-align:center;padding:2px 1px;'
             'vertical-align:middle;background:{bg};font-size:8.5px;color:#555;">'
             '{sr}</td>'.format(B=B, bg=bg, sr=row.get("sr_no", ""))
         )
-        # Name + ID stacked
         html += (
             '<td style="border:{B};padding:2px 3px;vertical-align:middle;background:{bg};">'
             '<div style="font-size:8.5px;font-weight:700;line-height:1.3;'
@@ -432,7 +433,6 @@ def _build_html(cols, data, co, mo, yr):
                            name=row.get("employee_name", ""),
                            eid=row.get("employee", ""))
         )
-        # Day cells
         for c in dcols:
             v     = row.get(c["fieldname"], "") or ""
             color = COLOR.get(v, "#000")
@@ -447,7 +447,6 @@ def _build_html(cols, data, co, mo, yr):
                 'background:{bg};vertical-align:middle;">{cell}</td>'.format(
                     B=B, bg=bg, cell=cell)
             )
-        # Summary cells
         for lbl, fn in SUMM_COLS:
             val = _disp(row.get(fn))
             vc  = SUMM_COLOR.get(fn, "#000") if val else "#bbb"
@@ -460,7 +459,6 @@ def _build_html(cols, data, co, mo, yr):
         html += "</tr>"
         return html
 
-    # ── page table builder ─────────────────────────────────────────────────
     def _page_table(rows, start_i):
         tbody = "<tbody>"
         for j, row in enumerate(rows):
@@ -470,7 +468,6 @@ def _build_html(cols, data, co, mo, yr):
             '<table class="data-tbl">{cg}<thead>{hdr}</thead>{tbody}</table>'
         ).format(cg=cg, hdr=header_tr, tbody=tbody)
 
-    # ── paginate ───────────────────────────────────────────────────────────
     if not data:
         pages = [[]]
     else:
@@ -512,10 +509,6 @@ def _build_html(cols, data, co, mo, yr):
         '<body>{body}</body></html>'
     ).format(css=_CSS, body="".join(parts))
 
-
-# ─────────────────────────────────────────────────────────────────────────────
-# PDF save
-# ─────────────────────────────────────────────────────────────────────────────
 
 def _save_pdf(html, prefix):
     pdf = get_pdf(html, options={
