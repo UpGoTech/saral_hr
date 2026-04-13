@@ -69,6 +69,71 @@ MONTH_MAP = {
     "July":7,"August":8,"September":9,"October":10,"November":11,"December":12,
 }
 
+# ---------------------------------------------------------------------------
+# Reports whose _build_html needs extra component args resolved at print time
+# These reports fetch their own component lists internally via print_report()
+# so we delegate to their print_report() → _build_html() chain differently.
+# ---------------------------------------------------------------------------
+
+# Reports that have a dedicated print_report() whitelisted fn we can reuse
+# internally by calling their _build_html with the right args.
+# Key = report mode, Value = extra kwargs builder fn(filters) -> dict
+_EXTRA_ARGS_BUILDERS = {}
+
+
+def _register_tc_extra(filters):
+    """
+    transaction_checklist._build_html needs earn_comps, emp_ded_comps, empr_comps.
+    We resolve them here using the same logic as transaction_checklist.print_report.
+    """
+    import importlib
+    mod = importlib.import_module(
+        "saral_hr.saral_hr.report.transaction_checklist.transaction_checklist"
+    )
+    p = {}
+    s, e = mod._date_range(filters)
+    if not s:
+        return {"earn_comps": [], "emp_ded_comps": [], "empr_comps": []}
+
+    p.update(start_date=s, end_date=e)
+    conds = [
+        "ss.docstatus=1",
+        "ss.start_date>=%(start_date)s",
+        "ss.end_date<=%(end_date)s",
+    ]
+    co = mod._parse_list(filters.get("company"))
+    if co:
+        p["companies"] = tuple(co)
+        conds.append("ss.company IN %(companies)s")
+
+    em_filter = mod._parse_list(filters.get("employee"))
+    if em_filter:
+        p["employees"] = tuple(em_filter)
+        conds.append("ss.employee IN %(employees)s")
+
+    cat = filters.get("category")
+    catj = ""
+    if cat:
+        p["category"] = cat
+        catj = ("INNER JOIN `tabCompany Link` cl_cat "
+                "ON cl_cat.name=ss.employee AND cl_cat.category=%(category)s")
+
+    divs = mod._parse_list(filters.get("division"))
+    if divs:
+        p["divisions"] = tuple(divs)
+        conds.append(
+            "ss.employee IN (SELECT name FROM `tabCompany Link` "
+            "WHERE division IN %(divisions)s OR department IN %(divisions)s)"
+        )
+
+    w = " AND ".join(conds)
+    earn_comps, emp_ded_comps, empr_comps = mod._get_components(w, p)
+    return {
+        "earn_comps":    earn_comps,
+        "emp_ded_comps": emp_ded_comps,
+        "empr_comps":    empr_comps,
+    }
+
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -93,17 +158,16 @@ def _load_module(mode):
         return None
     try:
         import importlib
-        mod = importlib.import_module(mod_path)
-        return mod
+        return importlib.import_module(mod_path)
     except ImportError as e:
-        frappe.log_error(f"_load_module({mode}): {e}", "Payroll Report")
+        frappe.log_error("_load_module({0}): {1}".format(mode, e), "Payroll Report")
         return None
 
 def _import_execute(mode):
     mod = _load_module(mode)
     return getattr(mod, "execute", None) if mod else None
 
-def _import_print_html(mode):
+def _import_build_html(mode):
     mod = _load_module(mode)
     return getattr(mod, "_build_html", None) if mod else None
 
@@ -172,9 +236,11 @@ _SIG_MARKERS = [
 
 def _strip_sig(html):
     import re
+    # Extract body content only
     body_match = re.search(r'<body[^>]*>(.*)</body>', html, re.DOTALL | re.IGNORECASE)
     if body_match:
         html = body_match.group(1)
+    # Strip signature block from the end
     for marker in _SIG_MARKERS:
         idx = html.rfind(marker)
         if idx != -1:
@@ -183,51 +249,111 @@ def _strip_sig(html):
     return html.strip()
 
 
-def _render_section(mode, cols, data, co, mo, yr):
+def _render_section(mode, cols, data, co, mo, yr, filters=None):
     """
-    Delegate to sub-report's _build_html(), strip its signature block,
-    return clean inner HTML only.
+    Call sub-report's _build_html() with the correct signature for each report type.
+    Falls back to a plain table render if _build_html is not available.
 
-    Signature mapping:
-      income_tax    → (cols, data, filters_dict)
-      loan_register → (cols, data, co, mo, yr)       ← no title arg
-      advance_register → (cols, data, co, mo, yr)    ← no title arg
-      all others    → (cols, data, co, mo, yr)
+    Signature map:
+      transaction_checklist  → _build_html(cols, data, co, mo, yr, earn_comps, emp_ded_comps, empr_comps)
+      income_tax             → _build_html(cols, data, filters_dict)
+      loan_register          → _build_html(cols, data, co, mo, yr)
+      advance_register       → _build_html(cols, data, co, mo, yr)
+      provident_fund         → _build_html(cols, data, co, mo, yr)
+      all others             → _build_html(cols, data, co, mo, yr)
     """
-    build_fn = _import_print_html(mode)
+    build_fn = _import_build_html(mode)
+
     if build_fn:
         try:
-            if mode == "income_tax":
+            if mode == "transaction_checklist":
+                # Resolve component lists needed for chip layout
+                extra = {}
+                if filters:
+                    try:
+                        extra = _register_tc_extra(filters)
+                    except Exception as ex:
+                        frappe.log_error(
+                            "payroll_report._register_tc_extra: {0}".format(ex),
+                            "Payroll Report"
+                        )
+                raw = build_fn(
+                    cols, data, co, mo, yr,
+                    extra.get("earn_comps"),
+                    extra.get("emp_ded_comps"),
+                    extra.get("empr_comps"),
+                )
+
+            elif mode == "income_tax":
                 raw = build_fn(cols, data, {"company": co, "month": mo, "year": yr})
-            elif mode in ("loan_register", "advance_register"):
-                # These _build_html signatures are (cols, data, co, mo, yr)
-                raw = build_fn(cols, data, co, mo, yr)
+
             else:
+                # provident_fund, esi_register, professional_tax, salary_summary,
+                # salary_summary_individual, variable_pay, educational_allowance,
+                # labour_welfare_fund, retention_deposit, home_bank_advice,
+                # other_bank_advice, monthly_attendance, loan_register,
+                # advance_register — all take (cols, data, co, mo, yr)
                 raw = build_fn(cols, data, co, mo, yr)
 
             return _strip_sig(raw)
 
-        except Exception:
-            frappe.log_error(f"payroll_report._render_section: {mode}", "Payroll Report")
+        except Exception as ex:
+            frappe.log_error(
+                "payroll_report._render_section({0}): {1}".format(mode, ex),
+                "Payroll Report"
+            )
+            # Fall through to plain table fallback below
 
-    return f'<p style="color:#888;padding:12px;">Could not render {REPORT_LABELS.get(mode, mode)}</p>'
+    # ── Plain table fallback ───────────────────────────────────────────────
+    label = REPORT_LABELS.get(mode, mode)
+    hdr = (
+        '<div class="hdr">'
+        '<div class="co">{co}</div>'
+        '<div class="ttl">{lbl}</div>'
+        '<div class="per">For the Month of {mo} {yr}</div>'
+        '</div>'
+    ).format(co=co, lbl=label, mo=mo, yr=yr)
+
+    if not cols or not data:
+        return hdr + '<p class="nd">No data for this period.</p>'
+
+    thead = "<tr>" + "".join(
+        '<th>{0}</th>'.format(c.get("label", c.get("fieldname", "")))
+        for c in cols
+    ) + "</tr>"
+
+    tbody = ""
+    for row in data:
+        is_tot = bool(row.get("bold"))
+        cls = ' class="tot"' if is_tot else ""
+        tbody += "<tr{0}>".format(cls)
+        for c in cols:
+            fn  = c.get("fieldname", "")
+            val = row.get(fn, "")
+            tbody += "<td>{0}</td>".format(val if val is not None else "")
+        tbody += "</tr>"
+
+    table = "<table><thead>{0}</thead><tbody>{1}</tbody></table>".format(thead, tbody)
+    return hdr + table
 
 
-def _build_all_html(sections, co, mo, yr):
+def _build_all_html(sections, co, mo, yr, filters=None):
     parts = []
     for s in sections:
-        inner = _render_section(s["mode"], s["cols"], s["data"], co, mo, yr)
-        parts.append(f'<div class="sec">{inner}{_SIG}</div>')
+        inner = _render_section(
+            s["mode"], s["cols"], s["data"], co, mo, yr,
+            filters=filters
+        )
+        parts.append('<div class="sec">{inner}{sig}</div>'.format(inner=inner, sig=_SIG))
     return (
-        f'<!DOCTYPE html><html>'
-        f'<head><meta charset="UTF-8">{_CSS}</head>'
-        f'<body>{"".join(parts)}</body></html>'
-    )
+        '<!DOCTYPE html><html>'
+        '<head><meta charset="UTF-8">{css}</head>'
+        '<body>{body}</body></html>'
+    ).format(css=_CSS, body="".join(parts))
 
 
 def _save_pdf(html, prefix):
-    from frappe.utils.pdf import get_pdf as _get_pdf
-    pdf = _get_pdf(html, options={
+    pdf = get_pdf(html, options={
         "page-size":     "A4",
         "orientation":   "Landscape",
         "margin-top":    "8mm",
@@ -238,14 +364,14 @@ def _save_pdf(html, prefix):
         "no-outline":    None,
     })
     ts  = frappe.utils.now_datetime().strftime("%Y%m%d_%H%M%S")
-    fn  = f"{prefix}_{ts}.pdf"
+    fn  = "{0}_{1}.pdf".format(prefix, ts)
     with open(frappe.utils.get_files_path(fn, is_private=0), "wb") as fh:
         fh.write(pdf)
     doc = frappe.get_doc({
         "doctype":    "File",
         "file_name":  fn,
         "is_private": 0,
-        "file_url":   f"/files/{fn}",
+        "file_url":   "/files/{0}".format(fn),
     })
     doc.insert(ignore_permissions=True)
     frappe.db.commit()
@@ -275,7 +401,9 @@ def get_all_reports_data(filters):
                 cols, data = fn(dict(filters, report_mode=mode))
                 return mode, {"columns": cols, "result": data}
             except Exception:
-                frappe.log_error(f"get_all_reports_data: {mode}", "Payroll Report")
+                frappe.log_error(
+                    "get_all_reports_data: {0}".format(mode), "Payroll Report"
+                )
                 return mode, {"columns": [], "result": []}
 
         with ThreadPoolExecutor(max_workers=4) as ex:
@@ -294,7 +422,9 @@ def get_all_reports_data(filters):
                 cols, data = fn(dict(filters, report_mode=mode))
                 out[mode]  = {"columns": cols, "result": data}
             except Exception:
-                frappe.log_error(f"get_all_reports_data: {mode}", "Payroll Report")
+                frappe.log_error(
+                    "get_all_reports_data: {0}".format(mode), "Payroll Report"
+                )
                 out[mode]  = {"columns": [], "result": []}
 
     return out
@@ -308,21 +438,21 @@ def print_single_report(filters):
     mode = filters.get("report_mode", "salary_summary")
     fn   = _import_execute(mode)
     if not fn:
-        frappe.throw(f"Unknown report mode: {mode}")
+        frappe.throw("Unknown report mode: {0}".format(mode))
 
     cols, data = fn(filters)
     co = _company_label(filters)
     mo = filters.get("month", "")
     yr = filters.get("year",  "")
 
-    inner = _render_section(mode, cols, data, co, mo, yr)
+    inner = _render_section(mode, cols, data, co, mo, yr, filters=filters)
     html = (
-        f'<!DOCTYPE html><html>'
-        f'<head><meta charset="UTF-8">{_CSS}</head>'
-        f'<body>{inner}{_SIG}</body></html>'
-    )
+        '<!DOCTYPE html><html>'
+        '<head><meta charset="UTF-8">{css}</head>'
+        '<body>{inner}{sig}</body></html>'
+    ).format(css=_CSS, inner=inner, sig=_SIG)
 
-    return _save_pdf(html, f"Payroll_{mode}")
+    return _save_pdf(html, "Payroll_{0}".format(mode))
 
 
 @frappe.whitelist()
@@ -348,11 +478,13 @@ def print_selected_reports(filters):
         try:
             cols, data = fn(dict(filters, report_mode=mode))
         except Exception:
-            frappe.log_error(f"print_selected_reports: {mode}", "Payroll Report")
+            frappe.log_error(
+                "print_selected_reports: {0}".format(mode), "Payroll Report"
+            )
             cols, data = [], []
         sections.append({"mode": mode, "cols": cols, "data": data})
 
-    html = _build_all_html(sections, co, mo, yr)
+    html = _build_all_html(sections, co, mo, yr, filters=filters)
     return _save_pdf(html, "Payroll_Selected_Reports")
 
 
@@ -373,9 +505,11 @@ def print_all_reports(filters):
         try:
             cols, data = fn(dict(filters, report_mode=mode))
         except Exception:
-            frappe.log_error(f"print_all_reports: {mode}", "Payroll Report")
+            frappe.log_error(
+                "print_all_reports: {0}".format(mode), "Payroll Report"
+            )
             cols, data = [], []
         sections.append({"mode": mode, "cols": cols, "data": data})
 
-    html = _build_all_html(sections, co, mo, yr)
+    html = _build_all_html(sections, co, mo, yr, filters=filters)
     return _save_pdf(html, "Payroll_All_Reports")

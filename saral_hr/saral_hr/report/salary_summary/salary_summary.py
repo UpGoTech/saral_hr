@@ -18,15 +18,15 @@ B = "1px solid #000"
 
 _CSS = """<style>
 *{margin:0;padding:0;box-sizing:border-box}
-body{font-family:Arial,sans-serif;font-size:13px;color:#000;background:#fff}
-.hdr{text-align:center;border-bottom:2px solid #000;padding:10px 4px 8px;margin-bottom:8px}
-.hdr .co{font-size:22px;font-weight:900;letter-spacing:1px;text-transform:uppercase}
-.hdr .ttl{font-size:16px;font-weight:700;margin-top:4px}
-.hdr .per{font-size:14px;margin-top:3px}
-.sig{display:flex;justify-content:space-between;margin-top:28px;padding-top:8px}
-.sig-b{text-align:center;width:180px}
-.sig-l{border-top:1px solid #000;margin-bottom:4px}
-.sig-t{font-size:12px;color:#333}
+body{font-family:Arial,sans-serif;font-size:10px;color:#000;background:#fff}
+.hdr{text-align:center;border-bottom:2px solid #000;padding:8px 4px 6px;margin-bottom:6px}
+.hdr .co{font-size:18px;font-weight:900;letter-spacing:1px;text-transform:uppercase}
+.hdr .ttl{font-size:18px;font-weight:700;margin-top:3px}
+.hdr .per{font-size:16px;margin-top:2px}
+.sig{display:flex;justify-content:space-between;margin-top:24px;padding-top:6px}
+.sig-b{text-align:center;width:160px}
+.sig-l{border-top:1px solid #000;margin-bottom:3px}
+.sig-t{font-size:10px;color:#333}
 </style>"""
 
 _SIG = '<div class="sig">' + "".join(
@@ -82,7 +82,6 @@ def _get_data(f):
         _col("Value",         "oth_amount", "Float", 120, precision=2),
     ]
 
-    # No company selected — return empty
     if not f.get("company"):
         return cols, []
 
@@ -116,14 +115,12 @@ def _get_data(f):
 
     w = " AND ".join(conds)
 
-    # ── FIX: check if any salary slips exist before doing anything else ──
     slip_count = frappe.db.sql(
         f"SELECT COUNT(*) FROM `tabSalary Slip` ss WHERE {w}", p
     )[0][0]
 
     if not slip_count:
         return cols, []
-    # ────────────────────────────────────────────────────────────────────
 
     def _comps(field, xj=""):
         return [
@@ -150,7 +147,6 @@ def _get_data(f):
             )
         }
 
-    # Exclude employer-contribution components from deductions
     dj = "INNER JOIN `tabSalary Component` sc ON sc.name=sd.salary_component AND sc.employer_contribution=0"
 
     ec = _comps("earnings")
@@ -163,7 +159,6 @@ def _get_data(f):
     ge = sum(v for _, v in er)
     gd = sum(v for _, v in dr)
 
-    # Aggregate stats
     st = (frappe.db.sql(
         f"SELECT COUNT(DISTINCT ss.employee) AS te, SUM(ss.net_salary) AS ns, "
         f"SUM(ss.total_lwp) AS tl, SUM(ss.absent_days) AS ta, "
@@ -244,12 +239,11 @@ def _build_html(cols, data, co, mo, yr):
         f'</div>'
     )
 
-    # No data — show blank report with header only
     if not data:
         return (
             f'<!DOCTYPE html><html><head><meta charset="UTF-8">{_CSS}</head>'
             f'<body>{hdr}'
-            f'<p style="text-align:center;padding:30px;color:#888;font-size:13px;">'
+            f'<p style="text-align:center;padding:30px;color:#888;font-size:10px;">'
             f'No salary slips found for this period.</p>'
             f'{_SIG}</body></html>'
         )
@@ -261,12 +255,16 @@ def _build_html(cols, data, co, mo, yr):
 
     ROW_COLOURS = ["#ffffff", "#f0f0f0"]
 
-    HD  = f"border:{B};padding:8px 10px;font-size:14px;font-weight:700;background:#e8e8e8;color:#000;text-align:center;letter-spacing:0.5px;"
-    THL = f"border:{B};padding:7px 10px;font-size:13px;font-weight:700;background:#e8e8e8;color:#000;text-align:left;"
-    THR = f"border:{B};padding:7px 10px;font-size:13px;font-weight:700;background:#e8e8e8;color:#000;text-align:right;"
-    GTL = f"border:{B};border-top:2px solid #000;padding:8px 10px;font-size:13px;font-weight:700;background:#e8e8e8;color:#000;text-align:left;"
-    GTR = f"border:{B};border-top:2px solid #000;padding:8px 10px;font-size:13px;font-weight:700;background:#e8e8e8;color:#000;text-align:right;"
-    GAP = f"width:16px;border:none;padding:0;background:transparent;"
+    # ── Shared cell styles (10px to match Variable Pay) ─────────────────
+    FS  = "font-size:10px;"
+    PAD = "padding:5px 7px;"
+
+    HD  = f"border:{B};{PAD}{FS}font-weight:700;background:#e8e8e8;color:#000;text-align:center;letter-spacing:0.5px;"
+    THL = f"border:{B};{PAD}{FS}font-weight:700;background:#f0f0f0;color:#000;text-align:left;"
+    THR = f"border:{B};{PAD}{FS}font-weight:700;background:#f0f0f0;color:#000;text-align:right;"
+    GTL = f"border:{B};border-top:2px solid #000;{PAD}{FS}font-weight:700;background:#e8e8e8;color:#000;text-align:left;"
+    GTR = f"border:{B};border-top:2px solid #000;{PAD}{FS}font-weight:700;background:#e8e8e8;color:#000;text-align:right;"
+    GAP = f"width:10px;border:none;padding:0;background:transparent;"
 
     oth_order = [
         "Total Net Salary", "Total Employees", "Total Payment Days",
@@ -292,11 +290,11 @@ def _build_html(cols, data, co, mo, yr):
 
     def _tdl(row_idx):
         bg = ROW_COLOURS[row_idx % 2]
-        return f"border:{B};padding:7px 10px;font-size:13px;color:#000;text-align:left;background:{bg};"
+        return f"border:{B};{PAD}{FS}color:#000;text-align:left;background:{bg};"
 
     def _tdr(row_idx):
         bg = ROW_COLOURS[row_idx % 2]
-        return f"border:{B};padding:7px 10px;font-size:13px;color:#000;text-align:right;background:{bg};"
+        return f"border:{B};{PAD}{FS}color:#000;text-align:right;background:{bg};"
 
     def _ec(i, row_idx):
         tdl, tdr = _tdl(row_idx), _tdr(row_idx)
@@ -306,7 +304,6 @@ def _build_html(cols, data, co, mo, yr):
                 f'<td style="{tdl}">{r.get("description") or ""}</td>'
                 f'<td style="{tdr}">{_fmt(r.get("amount")) if r.get("amount") is not None else ""}</td>'
             )
-        bg = ROW_COLOURS[row_idx % 2]
         return f'<td style="{tdl}"></td><td style="{tdr}"></td>'
 
     def _dc(i, row_idx):
@@ -341,7 +338,7 @@ def _build_html(cols, data, co, mo, yr):
     )
 
     table = (
-        f'<table style="width:100%;border-collapse:collapse;margin-top:8px;">'
+        f'<table style="width:100%;border-collapse:collapse;margin-top:6px;">'
         f'<thead><tr>'
         f'<th colspan="2" style="{HD}">EARNINGS</th>'
         f'<th style="{GAP}"></th>'

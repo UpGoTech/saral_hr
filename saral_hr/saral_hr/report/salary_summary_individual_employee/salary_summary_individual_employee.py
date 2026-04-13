@@ -15,8 +15,10 @@ MONTH_MAP = {
     "July":7,"August":8,"September":9,"October":10,"November":11,"December":12,
 }
 
-_B  = "1px solid #000"   # outer solid border
-_BD = "1px dashed #aaa"  # inner dashed separator
+ROWS_PER_PAGE = 10   # fixed: every page shows exactly 10 employees
+
+_B  = "1px solid #000"
+_BD = "1px dashed #aaa"
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -247,7 +249,7 @@ def _get_data(f):
 
     if data:
         gr = {"employee": "", "employee_name": "Grand Total",
-              "designation": "", "department": "", "_bold": 1}
+              "designation": "", "department": "", "bold": 1}
         gr.update({k: flt(v, 2) for k, v in grand.items()})
         data.append(gr)
 
@@ -259,7 +261,7 @@ def execute(filters=None):
 
 
 # ---------------------------------------------------------------------------
-# CSS  — minimal shell; ALL td/tr borders are inline (wkhtmltopdf-safe)
+# CSS  — same style as Transaction Checklist
 # ---------------------------------------------------------------------------
 
 _CSS = """<style>
@@ -276,6 +278,15 @@ body { font-family: Arial, sans-serif; font-size: 10px; color: #000; background:
 .hdr .ttl { font-size: 14px; font-weight: 700; margin-top: 3px; }
 .hdr .per { font-size: 11px; margin-top: 2px; color: #333; }
 
+.cont-hdr {
+    text-align: center;
+    font-size: 10px;
+    color: #555;
+    margin-bottom: 4px;
+    border-bottom: 1px solid #000;
+    padding-bottom: 3px;
+}
+
 table.main {
     width: 100%;
     border-collapse: separate;
@@ -284,28 +295,39 @@ table.main {
 }
 table.main th, table.main td { vertical-align: middle; padding: 3px 4px; font-size: 10px; }
 table.main th {
-    background: #e0e0e0; font-weight: 700; text-align: center;
-    white-space: normal; word-break: break-word;
+    background: #e0e0e0;
+    font-weight: 700;
+    text-align: center;
     border: 1px solid #000;
+    white-space: normal;
+    word-break: break-word;
 }
-thead { display: table-header-group; }
-th.h-sr  { text-align: center; }
+th.h-sr  { width: 24px; text-align: center; }
 th.h-emp { text-align: left; }
-th.h-det { font-weight: 400; font-size: 8.5px; color: #444; text-align: left; border-left: none; }
+th.h-det { font-weight: 400; font-size: 9px; color: #444; text-align: left; border-left: none; }
 
 .ck  { font-weight: 700; font-size: 10px; }
 .sep { font-size: 10px; margin: 0 1px; color: #555; }
 .cv  { font-size: 10px; }
 
 .ns-hl {
-    display: inline-block; background: #1a1a2e; color: #fff;
-    border-radius: 3px; padding: 1px 5px;
-    font-size: 10px; font-weight: 700; white-space: nowrap;
+    display: inline-block;
+    background: #1a1a2e;
+    color: #fff;
+    border-radius: 3px;
+    padding: 1px 4px;
+    font-size: 10px;
+    font-weight: 700;
+    white-space: normal;
+    word-break: break-all;
 }
 
 .legend {
-    margin-top: 10px; padding: 6px 10px;
-    border: 1px solid #bbb; background: #f9f9f9; font-size: 9px;
+    margin-top: 10px;
+    padding: 6px 10px;
+    border: 1px solid #bbb;
+    background: #f9f9f9;
+    font-size: 9px;
 }
 .legend-title { font-weight: 700; font-size: 9.5px; margin-bottom: 4px; }
 .legend-body  { line-height: 1.7; }
@@ -319,11 +341,11 @@ th.h-det { font-weight: 400; font-size: 8.5px; color: #444; text-align: left; bo
 
 
 # ---------------------------------------------------------------------------
-# Inline style functions  (all borders explicit — wkhtmltopdf ignores CSS classes on td)
+# Cell style builders — identical pattern to transaction checklist
+# — white-space:normal + word-break:break-all so nothing ever clips
 # ---------------------------------------------------------------------------
 
-def _s_sr(is_grand):
-    """Sr cell — rowspan 3, full outer box."""
+def _sr_style(is_grand=False):
     bg = "background:#e8e8e8;" if is_grand else "background:#fff;"
     return (
         "text-align:center; vertical-align:middle; padding:4px 3px; "
@@ -331,8 +353,7 @@ def _s_sr(is_grand):
         "border-top:{b}; border-bottom:{b}; border-left:{b}; border-right:{d};"
     ).format(bg=bg, b=_B, d=_BD)
 
-def _s_emp(is_grand):
-    """Emp cell — rowspan 3, full outer box."""
+def _emp_style(is_grand=False):
     bg = "background:#e8e8e8;" if is_grand else "background:#fff;"
     return (
         "vertical-align:top; padding:5px 6px; text-align:left; "
@@ -340,32 +361,23 @@ def _s_emp(is_grand):
         "border-top:{b}; border-bottom:{b}; border-left:none; border-right:{b};"
     ).format(bg=bg, b=_B)
 
-def _s_chip(row_num, is_last, is_grand):
-    """
-    Chip cell inline style.
-      row_num=1 : solid top,  dashed bottom
-      row_num=2 : no top,     dashed bottom
-      row_num=3 : no top,     solid bottom
-    Vertical borders: left always dashed; right dashed except last col which is solid.
-    """
-    bg = "background:#e8e8e8;" if is_grand else "background:#fff;"
-    if row_num == 1:
-        top    = "border-top:{b};".format(b=_B)
-        bottom = "border-bottom:{d};".format(d=_BD)
-    elif row_num == 2:
-        top    = "border-top:none;"
-        bottom = "border-bottom:{d};".format(d=_BD)
-    else:
-        top    = "border-top:none;"
-        bottom = "border-bottom:{b};".format(b=_B)
-
+def _chip_r1(is_last, is_grand=False):
+    bg    = "background:#e8e8e8;" if is_grand else "background:#fff;"
     right = "border-right:{b};".format(b=_B) if is_last else "border-right:{d};".format(d=_BD)
-
     return (
-        "white-space:nowrap; overflow:hidden; text-overflow:ellipsis; "
-        "padding:3px 5px; vertical-align:middle; {bg}"
-        "{top} {bottom} border-left:{d}; {right}"
-    ).format(bg=bg, top=top, bottom=bottom, d=_BD, right=right)
+        "white-space:normal; word-break:break-all; overflow:visible; "
+        "padding:3px 4px; vertical-align:middle; {bg}"
+        "border-top:{b}; border-bottom:{d}; border-left:{d}; {right}"
+    ).format(bg=bg, b=_B, d=_BD, right=right)
+
+def _chip_r2(is_last, is_grand=False):
+    bg    = "background:#e8e8e8;" if is_grand else "background:#fff;"
+    right = "border-right:{b};".format(b=_B) if is_last else "border-right:{d};".format(d=_BD)
+    return (
+        "white-space:normal; word-break:break-all; overflow:visible; "
+        "padding:3px 4px; vertical-align:middle; {bg}"
+        "border-top:none; border-bottom:{b}; border-left:{d}; {right}"
+    ).format(bg=bg, b=_B, d=_BD, right=right)
 
 
 # ---------------------------------------------------------------------------
@@ -392,11 +404,12 @@ def _build_html(cols, data, co, mo, yr,
                 abbr = label[label.rfind("(")+1:-1].strip()
             else:
                 name, abbr = label, fn
-            if fn.startswith("e_"):    earn_comps.append((name, abbr))
-            elif fn.startswith("d_"):  emp_ded_comps.append((name, abbr))
-            elif fn.startswith("r_"):  empr_comps.append((name, abbr))
+            if fn.startswith("e_"):   earn_comps.append((name, abbr))
+            elif fn.startswith("d_"): emp_ded_comps.append((name, abbr))
+            elif fn.startswith("r_"): empr_comps.append((name, abbr))
 
-    hdr_html = (
+    # ── Headers ───────────────────────────────────────────────────────────
+    first_hdr_html = (
         '<div class="hdr">'
         '<div class="co">{co}</div>'
         '<div class="ttl">Salary Summary &mdash; Individual Employee</div>'
@@ -404,20 +417,28 @@ def _build_html(cols, data, co, mo, yr,
         '</div>'.format(co=co, mo=mo, yr=yr)
     )
 
+    cont_hdr_html = (
+        '<div class="cont-hdr">'
+        '{co} &mdash; Salary Summary Individual Employee &mdash; {mo} {yr} (Contd.)'
+        '</div>'.format(co=co, mo=mo, yr=yr)
+    )
+
     if not data:
         return (
             '<!DOCTYPE html><html><head><meta charset="UTF-8">{css}</head>'
             '<body>{hdr}<p style="text-align:center;padding:20px;color:#888;">No data.</p>'
-            '</body></html>'.format(css=_CSS, hdr=hdr_html)
+            '</body></html>'.format(css=_CSS, hdr=first_hdr_html)
         )
 
-    # ── Build chip list, zigzag into 3 rows ───────────────────────────────
+    # ── Build chip list — 2 rows (same as transaction checklist) ──────────
+    # Row 1: attendance/leave chips
+    # Row 2: earnings, deductions, employer, net salary
     all_chips = [
         ("payment_days",        "PD",  False, False),
         ("present_days",        "PR",  False, False),
         ("absent_days",         "AB",  False, False),
-        ("total_earned_leaves", "EL",  False, False),
         ("total_lwp",           "LWP", False, False),
+        ("total_earned_leaves", "EL",  False, False),
         ("total_casual_leaves", "CL",  False, False),
         ("total_comp_off",      "CO",  False, False),
     ]
@@ -433,21 +454,23 @@ def _build_html(cols, data, co, mo, yr,
         all_chips.append(("employer_total", "ES", True, False))
     all_chips.append(("net_salary", "NS", True, True))
 
-    n_chip_cols = (len(all_chips) + 2) // 3
-    slots = [[None]*n_chip_cols, [None]*n_chip_cols, [None]*n_chip_cols]
-    for idx, chip in enumerate(all_chips):
-        slots[idx % 3][idx // 3] = chip
+    # Split into 2 rows by odd/even index — same as transaction checklist
+    row1_chips = [c for i, c in enumerate(all_chips) if i % 2 == 0]
+    row2_chips = [c for i, c in enumerate(all_chips) if i % 2 == 1]
+    while len(row2_chips) < len(row1_chips):
+        row2_chips.append(None)
 
-    last_ix = n_chip_cols - 1
+    n_cols  = len(row1_chips)
+    last_ix = n_cols - 1
 
     SR_PCT  = 2.0
-    EMP_PCT = 14.0
-    DET_PCT = 84.0
-    chip_w  = DET_PCT / n_chip_cols if n_chip_cols else DET_PCT
+    EMP_PCT = 16.0   # slightly wider to fit name + desig + dept
+    DET_PCT = 82.0
+    chip_w  = DET_PCT / n_cols if n_cols else DET_PCT
 
     cg  = '<col style="width:{0}%;">'.format(SR_PCT)
     cg += '<col style="width:{0}%;">'.format(EMP_PCT)
-    cg += "".join('<col style="width:{0:.3f}%;">'.format(chip_w) for _ in range(n_chip_cols))
+    cg += "".join('<col style="width:{0:.3f}%;">'.format(chip_w) for _ in range(n_cols))
 
     def _v(row, key, currency=False):
         val = row.get(key)
@@ -460,29 +483,21 @@ def _build_html(cols, data, co, mo, yr,
 
     def _chip_html(lbl, val, is_ns=False):
         if is_ns:
-            return '<span class="ns-hl">{lbl} - {val}</span>'.format(lbl=lbl, val=val)
+            return '<span class="ns-hl">{lbl} {val}</span>'.format(lbl=lbl, val=val)
         return (
             '<span class="ck">{lbl}</span>'
-            '<span class="sep"> - </span>'
+            '<span class="sep"> </span>'
             '<span class="cv">{val}</span>'.format(lbl=lbl, val=val)
         )
 
-    def _render_slot(chip, col_idx, row_num, row, is_grand):
-        style = _s_chip(row_num, col_idx == last_ix, is_grand)
+    def _render_chip(chip, row, is_row1, col_idx, is_grand=False):
+        is_last = (col_idx == last_ix)
+        style   = _chip_r1(is_last, is_grand) if is_row1 else _chip_r2(is_last, is_grand)
         if chip is None:
             return '<td style="{s}"></td>'.format(s=style)
         fk, lbl, is_cur, is_ns = chip
-        return '<td style="{s}">{html}</td>'.format(
-            s=style, html=_chip_html(lbl, _v(row, fk, is_cur), is_ns))
-
-    def _make_thead():
-        return (
-            '<thead><tr>'
-            '<th class="h-sr"  rowspan="3">Sr</th>'
-            '<th class="h-emp" rowspan="3">Employee</th>'
-            '<th class="h-det" colspan="{n}">Details</th>'
-            '</tr><tr></tr><tr></tr></thead>'.format(n=n_chip_cols)
-        )
+        val = _v(row, fk, currency=is_cur)
+        return '<td style="{s}">{html}</td>'.format(s=style, html=_chip_html(lbl, val, is_ns))
 
     def _emp_rows(row, sr, is_grand=False):
         name  = row.get("employee_name", "")
@@ -491,11 +506,9 @@ def _build_html(cols, data, co, mo, yr,
         dept  = row.get("department", "")
         sr_s  = "" if is_grand else str(sr)
 
-        # Sr cell: rowspan=3, full solid outer box + dashed right separator
-        sr_td = '<td rowspan="3" style="{s}">{v}</td>'.format(
-            s=_s_sr(is_grand), v=sr_s)
+        sr_td = '<td rowspan="2" style="{s}">{v}</td>'.format(
+            s=_sr_style(is_grand), v=sr_s)
 
-        # Employee cell: rowspan=3, name + ID (+ desig/dept) stacked via nested table
         if not is_grand and eid:
             extra = ""
             if desig:
@@ -518,19 +531,28 @@ def _build_html(cols, data, co, mo, yr,
                 '</table>'
             ).format(name=name, eid=eid, extra=extra)
         else:
-            emp_inner = '<span style="font-size:11px;line-height:1.4;">{0}</span>'.format(name)
+            emp_inner = '<span style="font-size:11px;font-weight:700;line-height:1.4;">{0}</span>'.format(name)
 
-        emp_td = '<td rowspan="3" style="{s}">{inner}</td>'.format(
-            s=_s_emp(is_grand), inner=emp_inner)
+        emp_td = '<td rowspan="2" style="{s}">{inner}</td>'.format(
+            s=_emp_style(is_grand), inner=emp_inner)
 
-        tr1 = "<tr>{sr}{emp}{chips}</tr>".format(
-            sr=sr_td, emp=emp_td,
-            chips="".join(_render_slot(c, i, 1, row, is_grand) for i, c in enumerate(slots[0])))
-        tr2 = "<tr>{chips}</tr>".format(
-            chips="".join(_render_slot(c, i, 2, row, is_grand) for i, c in enumerate(slots[1])))
-        tr3 = "<tr>{chips}</tr>".format(
-            chips="".join(_render_slot(c, i, 3, row, is_grand) for i, c in enumerate(slots[2])))
-        return tr1 + tr2 + tr3
+        chips1 = "".join(_render_chip(c, row, True,  i, is_grand) for i, c in enumerate(row1_chips))
+        chips2 = "".join(_render_chip(c, row, False, i, is_grand) for i, c in enumerate(row2_chips))
+
+        return (
+            "<tr>{sr}{emp}{chips}</tr>".format(sr=sr_td, emp=emp_td, chips=chips1)
+            + "<tr>{chips}</tr>".format(chips=chips2)
+        )
+
+    thead = (
+        '<thead>'
+        '<tr>'
+        '<th class="h-sr"  rowspan="2">Sr</th>'
+        '<th class="h-emp" rowspan="2">Employee</th>'
+        '<th class="h-det" colspan="{n}">Details</th>'
+        '</tr><tr></tr>'
+        '</thead>'.format(n=n_cols)
+    )
 
     # ── Legend ─────────────────────────────────────────────────────────────
     legend_map = [
@@ -561,16 +583,13 @@ def _build_html(cols, data, co, mo, yr,
         )
     )
 
-    # ── Pagination ──────────────────────────────────────────────────────────
-    detail_rows = [r for r in data if not r.get("_bold")]
-    grand_row   = next((r for r in data if r.get("_bold")), None)
+    # ── Pagination: fixed ROWS_PER_PAGE on every page ─────────────────────
+    detail_rows = [r for r in data if not r.get("bold")]
+    grand_row   = next((r for r in data if r.get("bold")), None)
 
-    FIRST, OTHER = 12, 16
-    pages, idx, first = [], 0, True
-    while idx < len(detail_rows):
-        lim = FIRST if first else OTHER
-        pages.append(detail_rows[idx: idx + lim])
-        idx += lim; first = False
+    pages = []
+    for i in range(0, max(len(detail_rows), 1), ROWS_PER_PAGE):
+        pages.append(detail_rows[i: i + ROWS_PER_PAGE])
     if not pages:
         pages = [[]]
 
@@ -579,32 +598,27 @@ def _build_html(cols, data, co, mo, yr,
     sr_counter  = 1
 
     for pn, pr in enumerate(pages):
-        pb      = '<div style="page-break-before:always;"></div>' if pn > 0 else ""
-        is_last = (pn == len(pages) - 1)
+        is_first = (pn == 0)
+        is_last  = (pn == len(pages) - 1)
 
-        page_hdr = hdr_html if pn == 0 else (
-            '<div style="text-align:center;font-size:10px;color:#555;'
-            'margin-bottom:4px;border-bottom:1px solid #000;padding-bottom:3px;">'
-            '{co} &mdash; Salary Summary Individual Employee &mdash; {mo} {yr} (contd.)'
-            '</div>'.format(co=co, mo=mo, yr=yr)
-        )
+        pb       = '<div style="page-break-before:always;"></div>' if not is_first else ""
+        page_hdr = first_hdr_html if is_first else cont_hdr_html
 
-        tbody = ""
+        tbody = "<tbody>"
         for row in pr:
             tbody += _emp_rows(row, sr_counter)
             sr_counter += 1
         if is_last and grand_row:
             tbody += _emp_rows(grand_row, "", is_grand=True)
+        tbody += "</tbody>"
 
         parts.append(
             '{pb}{hdr}'
-            '<table class="main"><colgroup>{cg}</colgroup>'
-            '{thead}<tbody>{tbody}</tbody></table>'
+            '<table class="main"><colgroup>{cg}</colgroup>{thead}{tbody}</table>'
             '<div class="pg-foot">Page {pn} of {tp}</div>'
             '{legend}'.format(
-                pb=pb, hdr=page_hdr, cg=cg,
-                thead=_make_thead(), tbody=tbody,
-                pn=pn+1, tp=total_pages,
+                pb=pb, hdr=page_hdr, cg=cg, thead=thead, tbody=tbody,
+                pn=pn + 1, tp=total_pages,
                 legend=legend_html if is_last else ""
             )
         )

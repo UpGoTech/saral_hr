@@ -1,6 +1,5 @@
 import frappe
 import json
-import calendar
 
 from frappe import _
 from frappe.utils import flt
@@ -23,39 +22,121 @@ PF_ADMIN_COMP = "Employer PF Admin Charges"
 
 B = "1px solid #000"
 
+# (fieldname, header-label, align, width-pct)
+_COLS = [
+    ("sr",             "Sr",           "c", 2.5),
+    ("employee_id",    "Employee ID",  "c", 6.0),
+    ("employee_name",  "Employee Name","l", 9.5),
+    ("pf_no",          "PF No.",       "c", 8.0),
+    ("uan_no",         "UAN No.",      "c", 8.0),
+    ("working_days",   "WD",           "c", 3.5),
+    ("payment_days",   "PD",           "c", 3.5),
+    ("gross",          "Gross Salary", "r", 7.0),
+    ("basic_da",       "Basic + DA",   "r", 7.0),
+    ("emp_pf",         "Emp PF",       "r", 5.5),
+    ("employer_eps",   "Empr. EPS",    "r", 5.5),
+    ("employer_pf",    "Empr. PF",     "r", 5.5),
+    ("employer_edli",  "Empr. EDLI",   "r", 5.0),
+    ("employer_admin", "PF Admin",     "r", 5.0),
+    ("total_amount",   "Total",        "r", 7.0),
+    ("date_of_joining","DOJ",          "c", 4.5),
+    ("date_of_birth",  "DOB",          "c", 4.5),
+]
+
+_SKIP_ON_TOTAL = {
+    "sr", "pf_no", "uan_no", "working_days", "payment_days",
+    "date_of_joining", "date_of_birth", "employee_id",
+}
+_NUMERIC = {
+    "gross","basic_da","emp_pf","employer_eps",
+    "employer_pf","employer_edli","employer_admin","total_amount",
+}
+
+# ---------------------------------------------------------------------------
+# Row limits per page.
+#
+# ROWS_FIRST_PAGE  : employee rows on page 1 (big 3-line header eats more
+#                    vertical space than the slim cont-hdr on later pages).
+# ROWS_OTHER_PAGE  : employee rows on pages 2+ (only the one-line cont-hdr).
+#
+# How to tune:
+#   If page 1 still overflows → lower ROWS_FIRST_PAGE by 1.
+#   If page 1 has a large gap → raise ROWS_FIRST_PAGE by 1.
+#   Same logic applies to ROWS_OTHER_PAGE for pages 2+.
+#
+# The total row is ALWAYS counted against the page limit so it never causes
+# an overflow — _paginate() reserves one slot for it on the last page.
+# ---------------------------------------------------------------------------
+ROWS_FIRST_PAGE = 17   # lowered from 19: page-1 header is taller than it looks
+ROWS_OTHER_PAGE = 23   # lowered from 25: cont-hdr + page-foot still take space
+
+# ---------------------------------------------------------------------------
+# CSS
+# ---------------------------------------------------------------------------
+
 _CSS = """<style>
 *{margin:0;padding:0;box-sizing:border-box}
-body{font-family:Arial,sans-serif;font-size:10px;color:#000;background:#fff}
-.hdr{text-align:center;border-bottom:2px solid #000;padding:8px 4px 6px;margin-bottom:6px}
-.hdr .co{font-size:18px;font-weight:900;letter-spacing:1px;text-transform:uppercase}
-.hdr .ttl{font-size:18px;font-weight:700;margin-top:3px}
-.hdr .per{font-size:16px;margin-top:2px}
-.sig{display:flex;justify-content:space-between;margin-top:24px;padding-top:6px}
-.sig-b{text-align:center;width:160px}
-.sig-l{border-top:1px solid #000;margin-bottom:3px}
-.sig-t{font-size:10px;color:#333}
-table{width:100%;border-collapse:collapse;margin-top:6px;table-layout:fixed}
-th{border:1px solid #000;padding:5px 7px;font-size:10px;font-weight:700;background:#f0f0f0;
-   color:#000;white-space:normal;word-wrap:break-word;vertical-align:middle}
-td{border:1px solid #000;padding:5px 7px;font-size:10px;vertical-align:middle;
-   color:#000;white-space:normal;word-wrap:break-word}
-tr.tot td{background:#e8e8e8;font-weight:700}
-.r{text-align:right}.l{text-align:left}
-.nd{text-align:center;padding:18px;color:#888;font-size:10px}
+body{font-family:Arial,sans-serif;font-size:8.5px;color:#000;background:#fff}
+
+.hdr{text-align:center;border-bottom:2px solid #000;padding:5px 4px 4px;margin-bottom:3px;}
+.hdr .co{font-size:17px;font-weight:900;letter-spacing:1px;text-transform:uppercase}
+.hdr .ttl{font-size:12px;font-weight:700;margin-top:2px}
+.hdr .per{font-size:10px;margin-top:1px;color:#333}
+
+.cont-hdr{
+    text-align:center;font-size:8.5px;color:#555;
+    border-bottom:1px solid #000;padding-bottom:2px;margin-bottom:3px;
+}
+
+table.data-tbl{width:100%;border-collapse:collapse;table-layout:fixed;}
+table.data-tbl th{
+    border:1px solid #000;
+    padding:2px 1px;
+    font-size:7.5px;
+    font-weight:700;
+    background:#f0f0f0;
+    white-space:normal;
+    word-wrap:break-word;
+    vertical-align:middle;
+    text-align:center;
+}
+table.data-tbl td{
+    border:1px solid #000;
+    padding:2px 1px;
+    font-size:7.5px;
+    vertical-align:middle;
+    white-space:normal;
+    word-wrap:break-word;
+    overflow:hidden;
+}
+
+.r{text-align:right}.c{text-align:center}.l{text-align:left}
+.nd{text-align:center;padding:12px;color:#888}
+
+.pg-foot{text-align:right;font-size:7.5px;color:#555;margin-top:2px}
+
+.sig{display:flex;justify-content:space-between;width:100%;margin-top:14px;}
+.sig-b{text-align:center;width:150px}
+.sig-l{border-top:1px solid #000;margin-bottom:2px}
+.sig-t{font-size:9px;color:#333}
+.sig-d{font-size:8px;color:#555;margin-top:4px}
 </style>"""
-
-_SIG = '<div class="sig">' + "".join(
-    f'<div class="sig-b"><div class="sig-l"></div><div class="sig-t">{l}</div></div>'
-    for l in ["Prepared By", "Checked By", "Authorised Signatory"]
-) + '</div>'
-
-_NUMERIC_FT    = ("Float", "Currency", "Int", "Percent")
-_SKIP_ON_TOTAL = {"pf_no", "uan_no", "working_days", "payment_days", "date_of_joining", "date_of_birth"}
 
 
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
+def _sig_html():
+    labels = ["Prepared By", "Checked By", "Authorised Signatory"]
+    blocks = "".join(
+        '<div class="sig-b"><div class="sig-l"></div>'
+        '<div class="sig-t">{l}</div>'
+        '<div class="sig-d">Date: ___________</div></div>'.format(l=l)
+        for l in labels
+    )
+    return '<div class="sig">{}</div>'.format(blocks)
+
 
 def _parse_list(v):
     if not v: return []
@@ -66,35 +147,35 @@ def _parse_list(v):
     except Exception: pass
     return [x.strip() for x in v.split(",") if x.strip()]
 
+
 def _col(label, fn, ft="Data", w=120, **kw):
     return {"label": _(label), "fieldname": fn, "fieldtype": ft, "width": w, **kw}
+
 
 def _start_date(f):
     m = MONTH_MAP.get(f.get("month", ""))
     y = f.get("year", "")
-    return f"{y}-{m:02d}-01" if m and y else None
+    return "{y}-{m:02d}-01".format(y=y, m=m) if m and y else None
+
 
 def _base_cond(f, p):
     c  = ["ss.docstatus=1"]
     sd = _start_date(f)
-    if sd:
-        p["start_date"] = sd
-        c.append("ss.start_date=%(start_date)s")
+    if sd: p["start_date"] = sd; c.append("ss.start_date=%(start_date)s")
     co = _parse_list(f.get("company"))
-    if co:
-        p["companies"] = tuple(co)
-        c.append("ss.company IN %(companies)s")
+    if co: p["companies"] = tuple(co); c.append("ss.company IN %(companies)s")
     em = _parse_list(f.get("employee"))
-    if em:
-        p["employees"] = tuple(em)
-        c.append("ss.employee IN %(employees)s")
+    if em: p["employees"] = tuple(em); c.append("ss.employee IN %(employees)s")
     return " AND ".join(c)
+
 
 def _cat_join(f, p):
     cat = f.get("category")
     if not cat: return ""
     p["category"] = cat
-    return "INNER JOIN `tabCompany Link` cl_cat ON cl_cat.name=ss.employee AND cl_cat.category=%(category)s"
+    return ("INNER JOIN `tabCompany Link` cl_cat "
+            "ON cl_cat.name=ss.employee AND cl_cat.category=%(category)s")
+
 
 def _div_cond(f, p):
     d = _parse_list(f.get("division"))
@@ -103,41 +184,52 @@ def _div_cond(f, p):
     return (" AND ss.employee IN (SELECT name FROM `tabCompany Link` "
             "WHERE division IN %(divisions)s OR department IN %(divisions)s)")
 
+
 def _company_label(f):
     c = _parse_list(f.get("company"))
     return ", ".join(c) if c else (frappe.defaults.get_global_default("company") or "")
+
 
 def _fmt(v):
     if v is None or v == "": return ""
     try:
         fv = float(v)
         if fv == 0: return ""
-        return f"{fv:,.2f}"
+        return "{0:,.2f}".format(fv)
+    except (TypeError, ValueError): return str(v)
+
+
+def _fmt_days(v):
+    if v is None or v == "": return ""
+    try:
+        fv = float(v)
+        return str(int(fv)) if fv == int(fv) else "{0:.1f}".format(fv)
     except (TypeError, ValueError): return str(v)
 
 
 # ---------------------------------------------------------------------------
-# Core data function
+# Data
 # ---------------------------------------------------------------------------
 
 def _get_data(f):
     cols = [
-        _col("Employee ID",    "employee_id",     w=180),
-        _col("Employee Name",  "employee_name",   w=200),
-        _col("PF No.",         "pf_no",           w=160),
-        _col("UAN No.",        "uan_no",          w=160),
-        _col("Working Days",   "working_days",    "Float", 100, precision=1),
-        _col("Payment Days",   "payment_days",    "Float", 100, precision=1),
-        _col("Gross Salary",   "gross",           "Float", 110, precision=2),
-        _col("Basic + DA",     "basic_da",        "Float", 110, precision=2),
-        _col("Emp PF",         "emp_pf",          "Float", 100, precision=2),
-        _col("Empr. EPS",      "employer_eps",    "Float", 100, precision=2),
-        _col("Empr. PF",       "employer_pf",     "Float", 100, precision=2),
-        _col("Empr. EDLI",     "employer_edli",   "Float", 100, precision=2),
-        _col("PF Admin",       "employer_admin",  "Float", 100, precision=2),
-        _col("Total",          "total_amount",    "Float", 100, precision=2),
-        _col("DOJ",            "date_of_joining", "Date",  100),
-        _col("DOB",            "date_of_birth",   "Date",  100),
+        _col("Sr",             "sr",             w=40),
+        _col("Employee ID",    "employee_id",    w=100),
+        _col("Employee Name",  "employee_name",  w=160),
+        _col("PF No.",         "pf_no",          w=130),
+        _col("UAN No.",        "uan_no",         w=130),
+        _col("WD",             "working_days",   "Float", 60, precision=1),
+        _col("PD",             "payment_days",   "Float", 60, precision=1),
+        _col("Gross Salary",   "gross",          "Float", 100, precision=2),
+        _col("Basic + DA",     "basic_da",       "Float", 100, precision=2),
+        _col("Emp PF",         "emp_pf",         "Float", 80,  precision=2),
+        _col("Empr. EPS",      "employer_eps",   "Float", 80,  precision=2),
+        _col("Empr. PF",       "employer_pf",    "Float", 80,  precision=2),
+        _col("Empr. EDLI",     "employer_edli",  "Float", 70,  precision=2),
+        _col("PF Admin",       "employer_admin", "Float", 70,  precision=2),
+        _col("Total",          "total_amount",   "Float", 90,  precision=2),
+        _col("DOJ",            "date_of_joining","Date",  70),
+        _col("DOB",            "date_of_birth",  "Date",  70),
     ]
 
     if not f.get("company"):
@@ -149,14 +241,12 @@ def _get_data(f):
     divc = _div_cond(f, p)
 
     slips = frappe.db.sql(
-        f"""
-        SELECT ss.name AS slip_name, ss.employee AS eid, ss.employee_name,
-               ss.total_working_days AS working_days, ss.payment_days,
-               ss.total_earnings AS gross
-        FROM `tabSalary Slip` ss {catj}
-        WHERE {cond}{divc}
-        ORDER BY ss.employee_name
-        """,
+        "SELECT ss.name AS slip_name, ss.employee AS eid, ss.employee_name,"
+        "       ss.total_working_days AS working_days, ss.payment_days,"
+        "       ss.total_earnings AS gross"
+        " FROM `tabSalary Slip` ss {catj}"
+        " WHERE {cond}{divc}"
+        " ORDER BY ss.employee_name".format(catj=catj, cond=cond, divc=divc),
         p, as_dict=1
     )
     if not slips:
@@ -165,35 +255,33 @@ def _get_data(f):
     sn   = tuple(s.slip_name for s in slips)
     eids = tuple(s.eid for s in slips)
 
-    # Basic + DA
     bda = {
         r.slip_name: flt(r.v)
         for r in frappe.db.sql(
-            """SELECT sd.parent AS slip_name, SUM(sd.amount) AS v
-               FROM `tabSalary Details` sd
-               WHERE sd.parent IN %(sn)s
-                 AND sd.parenttype='Salary Slip'
-                 AND sd.parentfield='earnings'
-                 AND (LOWER(sd.salary_component) LIKE '%%basic%%'
-                      OR LOWER(sd.salary_component) LIKE '%%dearness%%'
-                      OR LOWER(sd.salary_component) LIKE '%% da'
-                      OR sd.salary_component='DA')
-               GROUP BY sd.parent""",
+            "SELECT sd.parent AS slip_name, SUM(sd.amount) AS v"
+            " FROM `tabSalary Details` sd"
+            " WHERE sd.parent IN %(sn)s"
+            "   AND sd.parenttype='Salary Slip'"
+            "   AND sd.parentfield='earnings'"
+            "   AND (LOWER(sd.salary_component) LIKE '%%basic%%'"
+            "        OR LOWER(sd.salary_component) LIKE '%%dearness%%'"
+            "        OR LOWER(sd.salary_component) LIKE '%% da'"
+            "        OR sd.salary_component='DA')"
+            " GROUP BY sd.parent",
             {"sn": sn}, as_dict=1
         )
     }
 
-    # Employee PF (deductions)
     ep = {
         r.slip_name: flt(r.v)
         for r in frappe.db.sql(
-            """SELECT sd.parent AS slip_name, SUM(sd.amount) AS v
-               FROM `tabSalary Details` sd
-               WHERE sd.parent IN %(sn)s
-                 AND sd.parenttype='Salary Slip'
-                 AND sd.parentfield='deductions'
-                 AND sd.salary_component=%(c)s
-               GROUP BY sd.parent""",
+            "SELECT sd.parent AS slip_name, SUM(sd.amount) AS v"
+            " FROM `tabSalary Details` sd"
+            " WHERE sd.parent IN %(sn)s"
+            "   AND sd.parenttype='Salary Slip'"
+            "   AND sd.parentfield='deductions'"
+            "   AND sd.salary_component=%(c)s"
+            " GROUP BY sd.parent",
             {"sn": sn, "c": PF_EMP_COMP}, as_dict=1
         )
     }
@@ -202,13 +290,13 @@ def _get_data(f):
         return {
             r.slip_name: flt(r.v)
             for r in frappe.db.sql(
-                """SELECT sd.parent AS slip_name, SUM(sd.amount) AS v
-                   FROM `tabSalary Details` sd
-                   WHERE sd.parent IN %(sn)s
-                     AND sd.parenttype='Salary Slip'
-                     AND sd.parentfield='employer_share'
-                     AND sd.salary_component=%(c)s
-                   GROUP BY sd.parent""",
+                "SELECT sd.parent AS slip_name, SUM(sd.amount) AS v"
+                " FROM `tabSalary Details` sd"
+                " WHERE sd.parent IN %(sn)s"
+                "   AND sd.parenttype='Salary Slip'"
+                "   AND sd.parentfield='employer_share'"
+                "   AND sd.salary_component=%(c)s"
+                " GROUP BY sd.parent",
                 {"sn": sn, "c": comp}, as_dict=1
             )
         }
@@ -221,33 +309,33 @@ def _get_data(f):
     em = {
         r.name: r
         for r in frappe.db.sql(
-            """SELECT e.name, e.employee_pf_account AS pf_no,
-                      e.pf_uan_number AS uan_no, e.date_of_birth,
-                      cl.date_of_joining
-               FROM `tabEmployee` e
-               LEFT JOIN `tabCompany Link` cl ON cl.name=e.name
-               WHERE e.name IN %(ids)s""",
+            "SELECT e.name, e.employee_pf_account AS pf_no,"
+            "       e.pf_uan_number AS uan_no, e.date_of_birth,"
+            "       cl.date_of_joining"
+            " FROM `tabEmployee` e"
+            " LEFT JOIN `tabCompany Link` cl ON cl.name=e.name"
+            " WHERE e.name IN %(ids)s",
             {"ids": eids}, as_dict=1
         )
     }
 
     data = []
     tot  = {k: 0.0 for k in [
-        "gross", "basic_da", "emp_pf", "employer_eps",
-        "employer_pf", "employer_edli", "employer_admin", "total_amount"
+        "gross","basic_da","emp_pf","employer_eps",
+        "employer_pf","employer_edli","employer_admin","total_amount"
     ]}
 
-    for s in slips:
-        emp  = em.get(s.eid, frappe._dict())
-        sn_  = s.slip_name
-        g    = flt(s.gross,          2)
-        b    = flt(bda.get(sn_, 0),  2)
-        epf  = flt(ep.get(sn_,  0),  2)
-        erp  = flt(erpf.get(sn_, 0), 2)
-        ere  = flt(ereps.get(sn_, 0),2)
-        erd  = flt(eredli.get(sn_,0),2)
-        era  = flt(eradm.get(sn_,0), 2)
-        tol  = flt(epf + erp + ere + erd + era, 2)
+    for idx, s in enumerate(slips, start=1):
+        emp = em.get(s.eid, frappe._dict())
+        sn_ = s.slip_name
+        g   = flt(s.gross,            2)
+        b   = flt(bda.get(sn_,   0),  2)
+        epf = flt(ep.get(sn_,    0),  2)
+        erp = flt(erpf.get(sn_,  0),  2)
+        ere = flt(ereps.get(sn_, 0),  2)
+        erd = flt(eredli.get(sn_,0),  2)
+        era = flt(eradm.get(sn_, 0),  2)
+        tol = flt(epf + erp + ere + erd + era, 2)
 
         for k, v in [("gross",g),("basic_da",b),("emp_pf",epf),
                      ("employer_eps",ere),("employer_pf",erp),
@@ -256,6 +344,7 @@ def _get_data(f):
             tot[k] += v
 
         data.append({
+            "sr":              str(idx),
             "employee_id":     s.eid,
             "employee_name":   s.employee_name,
             "pf_no":           emp.get("pf_no")  or "",
@@ -270,12 +359,13 @@ def _get_data(f):
             "employer_edli":   erd,
             "employer_admin":  era,
             "total_amount":    tol,
-            "date_of_joining": emp.get("date_of_joining") or "",
-            "date_of_birth":   emp.get("date_of_birth")   or "",
+            "date_of_joining": str(emp.get("date_of_joining") or ""),
+            "date_of_birth":   str(emp.get("date_of_birth")   or ""),
         })
 
     if data:
         data.append({
+            "sr":              "",
             "employee_id":     "",
             "employee_name":   "Total",
             "pf_no":           "",
@@ -291,83 +381,185 @@ def _get_data(f):
     return cols, data
 
 
-# ---------------------------------------------------------------------------
-# Frappe report entry-point
-# ---------------------------------------------------------------------------
-
 def execute(filters=None):
     return _get_data(filters or {})
 
 
 # ---------------------------------------------------------------------------
-# PDF
+# HTML / PDF — manual pagination
 # ---------------------------------------------------------------------------
 
+def _colgroup():
+    total_pct = sum(c[3] for c in _COLS)
+    parts = "<colgroup>"
+    for _, _, _, pct in _COLS:
+        parts += '<col style="width:{0:.3f}%;">'.format(pct * 100.0 / total_pct)
+    parts += "</colgroup>"
+    return parts
+
+
+def _thead_html():
+    row = "<tr>"
+    for _, hdr, align, _ in _COLS:
+        row += '<th class="{a}">{h}</th>'.format(a=align, h=hdr)
+    row += "</tr>"
+    return "<thead>{}</thead>".format(row)
+
+
+def _render_row(row, is_total=False, row_idx=0):
+    bg = "#e0e0e0" if is_total else ("#f9f9f9" if row_idx % 2 else "#ffffff")
+    fw = "font-weight:700;" if is_total else ""
+    tr = "<tr>"
+    for fn, _, align, _ in _COLS:
+        val = row.get(fn, "")
+        if is_total and fn in _SKIP_ON_TOTAL:
+            tr += '<td class="{a}" style="background:{bg};"></td>'.format(a=align, bg=bg)
+        elif fn in ("working_days", "payment_days"):
+            tr += '<td class="c" style="background:{bg};{fw}">{v}</td>'.format(
+                bg=bg, fw=fw, v=_fmt_days(val))
+        elif fn in _NUMERIC:
+            tr += '<td class="r" style="background:{bg};{fw}">{v}</td>'.format(
+                bg=bg, fw=fw, v=_fmt(val))
+        else:
+            tr += '<td class="{a}" style="background:{bg};{fw}">{v}</td>'.format(
+                a=align, bg=bg, fw=fw, v=val or "")
+    tr += "</tr>"
+    return tr
+
+
+def _page_table(page_rows, start_idx):
+    cg    = _colgroup()
+    thead = _thead_html()
+    tbody = "<tbody>"
+    for j, row in enumerate(page_rows):
+        is_tot = bool(row.get("bold"))
+        tbody += _render_row(row, is_total=is_tot,
+                             row_idx=0 if is_tot else (start_idx + j))
+    tbody += "</tbody>"
+    return '<table class="data-tbl">{cg}{thead}{tbody}</table>'.format(
+        cg=cg, thead=thead, tbody=tbody)
+
+
+def _paginate(detail_rows, total_row):
+    """
+    Split detail_rows into pages, then append total_row to the last page.
+
+    We subtract 2 from each page limit as a safety buffer against
+    wkhtmltopdf's sub-pixel rounding — this eliminates the cut-off
+    last-row and ghost-row-on-next-page bugs.
+    """
+    if not detail_rows:
+        return [[total_row] if total_row else []]
+
+    # Safe limits: 2 rows below the hard max so the total row + rounding
+    # never push anything off the physical page.
+    safe_first = max(1, ROWS_FIRST_PAGE - 2)
+    safe_other = max(1, ROWS_OTHER_PAGE - 2)
+
+    pages = []
+    idx   = 0
+    first = True
+    while idx < len(detail_rows):
+        lim   = safe_first if first else safe_other
+        chunk = detail_rows[idx: idx + lim]
+        pages.append(list(chunk))
+        idx  += len(chunk)
+        first = False
+
+    # Total row always fits because we kept every page 2 rows below its limit.
+    if total_row:
+        pages[-1].append(total_row)
+
+    return pages
+
+
 def _build_html(cols, data, co, mo, yr):
-    hdr = (
-        f'<div class="hdr">'
-        f'<div class="co">{co}</div>'
-        f'<div class="ttl">Provident Fund Register</div>'
-        f'<div class="per">For the Month of {mo} {yr}</div>'
-        f'</div>'
-    )
+    page1_hdr = (
+        '<div class="hdr">'
+        '<div class="co">{co}</div>'
+        '<div class="ttl">Provident Fund Register</div>'
+        '<div class="per">For the Month of {mo} {yr}</div>'
+        '</div>'
+    ).format(co=co, mo=mo, yr=yr)
 
-    # thead
-    thead = "<tr>"
-    for c in cols:
-        is_n = c.get("fieldtype", "") in _NUMERIC_FT
-        thead += f'<th class="{"r" if is_n else "l"}">{c.get("label", "")}</th>'
-    thead += "</tr>"
+    # Continuation header — shown on every page after page 1
+    cont_hdr = (
+        '<div class="cont-hdr">'
+        '{co} &mdash; Provident Fund Register &mdash; {mo} {yr} (contd.)'
+        '</div>'
+    ).format(co=co, mo=mo, yr=yr)
 
-    # tbody
-    if not data:
-        ncols = len(cols)
-        tbody = f'<tr><td colspan="{ncols}" class="nd">No data for this period</td></tr>'
+    detail_rows = [r for r in data if not r.get("bold")]
+    total_row   = next((r for r in data if r.get("bold")), None)
+
+    if not detail_rows:
+        # No data — single page with the empty-table message
+        pages    = [[]]
+        has_data = False
     else:
-        tbody = ""
-        for row in data:
-            is_tot = bool(row.get("bold"))
-            cls    = ' class="tot"' if is_tot else ""
-            tbody += f"<tr{cls}>"
-            for c in cols:
-                fn   = c.get("fieldname", "")
-                val  = row.get(fn, "")
-                is_n = c.get("fieldtype", "") in _NUMERIC_FT
-                if is_tot and fn in _SKIP_ON_TOTAL:
-                    tbody += f'<td class="{"r" if is_n else "l"}"></td>'
-                elif is_n:
-                    tbody += f'<td class="r">{_fmt(val) if val not in ("", None) else ""}</td>'
-                else:
-                    tbody += f'<td class="l">{val or ""}</td>'
-            tbody += "</tr>"
+        has_data = True
+        pages = _paginate(detail_rows, total_row)
 
-    table = f"<table><thead>{thead}</thead><tbody>{tbody}</tbody></table>"
+    total_pages = len(pages)
+    parts       = []
+    row_counter = 0   # running count of employee rows rendered (for zebra stripe)
+
+    for pn, page_rows in enumerate(pages):
+        # Page break before every page except the first
+        pb      = '<div style="page-break-before:always;"></div>' if pn > 0 else ""
+        is_last = (pn == total_pages - 1)
+
+        # Page 1 gets the big header; all subsequent pages get the slim
+        # continuation header so readers always know which report they are on.
+        hdr_html = page1_hdr if pn == 0 else cont_hdr
+
+        if not has_data:
+            nc  = len(_COLS)
+            tbl = (
+                '<table class="data-tbl">{cg}{thead}'
+                '<tbody><tr><td colspan="{nc}" class="nd">'
+                'No data for this period</td></tr></tbody></table>'
+            ).format(cg=_colgroup(), thead=_thead_html(), nc=nc)
+        else:
+            tbl = _page_table(page_rows, row_counter)
+            # Advance the counter by the number of *employee* rows on this page
+            row_counter += sum(1 for r in page_rows if not r.get("bold"))
+
+        pg_foot = '<div class="pg-foot">Page {p} of {t}</div>'.format(
+            p=pn + 1, t=total_pages)
+
+        # Signature block only on the very last page
+        sig = _sig_html() if is_last else ""
+
+        parts.append("{pb}{hdr}{tbl}{foot}{sig}".format(
+            pb=pb, hdr=hdr_html, tbl=tbl, foot=pg_foot, sig=sig))
+
     return (
-        f'<!DOCTYPE html><html><head><meta charset="UTF-8">{_CSS}</head>'
-        f'<body>{hdr}{table}{_SIG}</body></html>'
-    )
+        '<!DOCTYPE html><html><head><meta charset="UTF-8">{css}</head>'
+        '<body>{body}</body></html>'
+    ).format(css=_CSS, body="".join(parts))
 
 
 def _save_pdf(html, prefix):
     pdf = get_pdf(html, options={
         "page-size":     "A4",
         "orientation":   "Landscape",
-        "margin-top":    "8mm",
-        "margin-right":  "8mm",
+        "margin-top":    "7mm",
+        "margin-right":  "6mm",
         "margin-bottom": "8mm",
-        "margin-left":   "8mm",
+        "margin-left":   "6mm",
         "encoding":      "UTF-8",
         "no-outline":    None,
     })
     ts  = frappe.utils.now_datetime().strftime("%Y%m%d_%H%M%S")
-    fn  = f"{prefix}_{ts}.pdf"
+    fn  = "{0}_{1}.pdf".format(prefix, ts)
     with open(frappe.utils.get_files_path(fn, is_private=0), "wb") as fh:
         fh.write(pdf)
     doc = frappe.get_doc({
         "doctype":    "File",
         "file_name":  fn,
         "is_private": 0,
-        "file_url":   f"/files/{fn}",
+        "file_url":   "/files/{0}".format(fn),
     })
     doc.insert(ignore_permissions=True)
     frappe.db.commit()
