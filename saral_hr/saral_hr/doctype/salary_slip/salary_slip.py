@@ -912,7 +912,7 @@ def get_attendance_and_days(employee, start_date, working_days_calculation_metho
         working_days = total_days
         payment_days = flt(total_days - total_unpaid, 2)
     else:
-        working_days = total_days - weekly_off_count - holiday_count_in_range
+        working_days = total_days - weekly_off_count
         working_days = max(working_days, 0)
         payment_days = flt(working_days - total_unpaid, 2)
 
