@@ -12,8 +12,8 @@ MONTH_MAP = {
 
 B = "1px solid #000"
 
-ROWS_FIRST_PAGE = 28
-ROWS_OTHER_PAGE = 32
+ROWS_FIRST_PAGE = 24
+ROWS_OTHER_PAGE = 28
 
 _CSS = """<style>
 *{margin:0;padding:0;box-sizing:border-box}

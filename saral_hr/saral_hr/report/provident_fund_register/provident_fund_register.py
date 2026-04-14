@@ -22,76 +22,72 @@ PF_ADMIN_COMP = "Employer PF Admin Charges"
 
 B = "1px solid #000"
 
-# (fieldname, header-label, align, width-pct)
+# ---------------------------------------------------------------------------
+# Option A column layout
+# (fieldname, header, align, width-pct)
+#
+# Columns: Sr | Employee (ID+Name+DOJ+DOB sub-lines) | PF No. | UAN No. |
+#           WD/PD | Gross | Basic+DA | Emp PF |
+#           [GROUP: Employer Contribution → EPS | Empr PF | EDLI | Admin] |
+#           Total
+#
+# 11 logical columns → fits A4 landscape comfortably at 8.5 px font
+# ---------------------------------------------------------------------------
+
 _COLS = [
-    ("sr",             "Sr",           "c", 2.5),
-    ("employee_id",    "Employee ID",  "c", 6.0),
-    ("employee_name",  "Employee Name","l", 9.5),
-    ("pf_no",          "PF No.",       "c", 8.0),
-    ("uan_no",         "UAN No.",      "c", 8.0),
-    ("working_days",   "WD",           "c", 3.5),
-    ("payment_days",   "PD",           "c", 3.5),
-    ("gross",          "Gross Salary", "r", 7.0),
-    ("basic_da",       "Basic + DA",   "r", 7.0),
-    ("emp_pf",         "Emp PF",       "r", 5.5),
-    ("employer_eps",   "Empr. EPS",    "r", 5.5),
-    ("employer_pf",    "Empr. PF",     "r", 5.5),
-    ("employer_edli",  "Empr. EDLI",   "r", 5.0),
-    ("employer_admin", "PF Admin",     "r", 5.0),
-    ("total_amount",   "Total",        "r", 7.0),
-    ("date_of_joining","DOJ",          "c", 4.5),
-    ("date_of_birth",  "DOB",          "c", 4.5),
+    ("sr",            "Sr",          "c",  3.0),
+    ("employee",      "Employee",    "l", 14.0),   # merged: name + ID sub-line + DOJ/DOB
+    ("pf_no",         "PF No.",      "c",  9.0),
+    ("uan_no",        "UAN No.",     "c",  9.5),
+    ("wd_pd",         "WD / PD",     "c",  5.5),   # merged working/payment days
+    ("gross",         "Gross Salary","r",  8.5),
+    ("basic_da",      "Basic + DA",  "r",  8.5),
+    ("emp_pf",        "Emp PF",      "r",  7.0),
+    # ── Employer Contribution group (4 sub-columns) ──
+    ("employer_eps",  "EPS",         "r",  6.5),
+    ("employer_pf",   "Empr PF",     "r",  6.5),
+    ("employer_edli", "EDLI",        "r",  5.5),
+    ("employer_admin","PF Admin",    "r",  5.5),
+    # ────────────────────────────────────────────────
+    ("total_amount",  "Total",       "r",  8.0),
 ]
 
+# Columns that belong to the "Employer Contribution" group header
+_EMPR_GROUP = {"employer_eps", "employer_pf", "employer_edli", "employer_admin"}
+
 _SKIP_ON_TOTAL = {
-    "sr", "pf_no", "uan_no", "working_days", "payment_days",
-    "date_of_joining", "date_of_birth", "employee_id",
+    "sr", "employee", "pf_no", "uan_no", "wd_pd",
 }
 _NUMERIC = {
     "gross","basic_da","emp_pf","employer_eps",
     "employer_pf","employer_edli","employer_admin","total_amount",
 }
 
-# ---------------------------------------------------------------------------
-# Row limits per page.
-#
-# ROWS_FIRST_PAGE  : employee rows on page 1 (big 3-line header eats more
-#                    vertical space than the slim cont-hdr on later pages).
-# ROWS_OTHER_PAGE  : employee rows on pages 2+ (only the one-line cont-hdr).
-#
-# How to tune:
-#   If page 1 still overflows → lower ROWS_FIRST_PAGE by 1.
-#   If page 1 has a large gap → raise ROWS_FIRST_PAGE by 1.
-#   Same logic applies to ROWS_OTHER_PAGE for pages 2+.
-#
-# The total row is ALWAYS counted against the page limit so it never causes
-# an overflow — _paginate() reserves one slot for it on the last page.
-# ---------------------------------------------------------------------------
-ROWS_FIRST_PAGE = 17   # lowered from 19: page-1 header is taller than it looks
-ROWS_OTHER_PAGE = 23   # lowered from 25: cont-hdr + page-foot still take space
+ROWS_FIRST_PAGE = 14
+ROWS_OTHER_PAGE = 15
 
 # ---------------------------------------------------------------------------
 # CSS
 # ---------------------------------------------------------------------------
 
 _CSS = """<style>
-*{margin:0;padding:0;box-sizing:border-box}
-body{font-family:Arial,sans-serif;font-size:8.5px;color:#000;background:#fff}
+*{{margin:0;padding:0;box-sizing:border-box}}
+body{{font-family:Arial,sans-serif;font-size:8.5px;color:#000;background:#fff}}
 
-.hdr{text-align:center;border-bottom:2px solid #000;padding:5px 4px 4px;margin-bottom:3px;}
-.hdr .co{font-size:17px;font-weight:900;letter-spacing:1px;text-transform:uppercase}
-.hdr .ttl{font-size:12px;font-weight:700;margin-top:2px}
-.hdr .per{font-size:10px;margin-top:1px;color:#333}
+.hdr{{text-align:center;border-bottom:2px solid #000;padding:5px 4px 4px;margin-bottom:3px;}}
+.hdr .co{{font-size:17px;font-weight:900;letter-spacing:1px;text-transform:uppercase}}
+.hdr .ttl{{font-size:12px;font-weight:700;margin-top:2px}}
+.hdr .per{{font-size:10px;margin-top:1px;color:#333}}
 
-.cont-hdr{
+.cont-hdr{{
     text-align:center;font-size:8.5px;color:#555;
     border-bottom:1px solid #000;padding-bottom:2px;margin-bottom:3px;
-}
+}}
 
-table.data-tbl{width:100%;border-collapse:collapse;table-layout:fixed;}
-table.data-tbl th{
+table.data-tbl{{width:100%;border-collapse:collapse;table-layout:fixed;}}
+table.data-tbl th{{
     border:1px solid #000;
-    padding:2px 1px;
+    padding:3px 2px;
     font-size:7.5px;
     font-weight:700;
     background:#f0f0f0;
@@ -99,27 +95,46 @@ table.data-tbl th{
     word-wrap:break-word;
     vertical-align:middle;
     text-align:center;
-}
-table.data-tbl td{
+    line-height:1.25;
+}}
+/* Group header row */
+table.data-tbl th.grp-hdr{{
+    background:#dce6f1;
+    font-size:7.5px;
+    border-bottom:1px solid #999;
+}}
+/* Spacer th in group header row — no visible top/bottom border */
+table.data-tbl th.grp-spacer{{
+    background:#fff;
+    border-top:1px solid #fff;
+    border-bottom:1px solid #fff;
+    border-left:1px solid #000;
+    border-right:1px solid #000;
+}}
+table.data-tbl td{{
     border:1px solid #000;
-    padding:2px 1px;
+    padding:2px 2px;
     font-size:7.5px;
     vertical-align:middle;
     white-space:normal;
     word-wrap:break-word;
     overflow:hidden;
-}
+    line-height:1.3;
+}}
 
-.r{text-align:right}.c{text-align:center}.l{text-align:left}
-.nd{text-align:center;padding:12px;color:#888}
+.emp-name{{font-weight:600;font-size:7.5px;}}
+.emp-sub{{font-size:6.5px;color:#555;margin-top:1px;}}
 
-.pg-foot{text-align:right;font-size:7.5px;color:#555;margin-top:2px}
+.r{{text-align:right}}.c{{text-align:center}}.l{{text-align:left}}
+.nd{{text-align:center;padding:12px;color:#888}}
 
-.sig{display:flex;justify-content:space-between;width:100%;margin-top:14px;}
-.sig-b{text-align:center;width:150px}
-.sig-l{border-top:1px solid #000;margin-bottom:2px}
-.sig-t{font-size:9px;color:#333}
-.sig-d{font-size:8px;color:#555;margin-top:4px}
+.pg-foot{{text-align:right;font-size:7.5px;color:#555;margin-top:2px}}
+
+.sig{{display:flex;justify-content:space-between;width:100%;margin-top:14px;}}
+.sig-b{{text-align:center;width:150px}}
+.sig-l{{border-top:1px solid #000;margin-bottom:2px}}
+.sig-t{{font-size:9px;color:#333}}
+.sig-d{{font-size:8px;color:#555;margin-top:4px}}
 </style>"""
 
 
@@ -207,29 +222,34 @@ def _fmt_days(v):
     except (TypeError, ValueError): return str(v)
 
 
+def _fmt_date(v):
+    """Convert 'YYYY-MM-DD' → 'DD-MM-YYYY' for compact display."""
+    if not v: return ""
+    s = str(v).strip()
+    if len(s) == 10 and s[4] == "-":
+        return "{2}-{1}-{0}".format(*s.split("-"))
+    return s
+
+
 # ---------------------------------------------------------------------------
 # Data
 # ---------------------------------------------------------------------------
 
 def _get_data(f):
     cols = [
-        _col("Sr",             "sr",             w=40),
-        _col("Employee ID",    "employee_id",    w=100),
-        _col("Employee Name",  "employee_name",  w=160),
-        _col("PF No.",         "pf_no",          w=130),
-        _col("UAN No.",        "uan_no",         w=130),
-        _col("WD",             "working_days",   "Float", 60, precision=1),
-        _col("PD",             "payment_days",   "Float", 60, precision=1),
-        _col("Gross Salary",   "gross",          "Float", 100, precision=2),
-        _col("Basic + DA",     "basic_da",       "Float", 100, precision=2),
-        _col("Emp PF",         "emp_pf",         "Float", 80,  precision=2),
-        _col("Empr. EPS",      "employer_eps",   "Float", 80,  precision=2),
-        _col("Empr. PF",       "employer_pf",    "Float", 80,  precision=2),
-        _col("Empr. EDLI",     "employer_edli",  "Float", 70,  precision=2),
-        _col("PF Admin",       "employer_admin", "Float", 70,  precision=2),
-        _col("Total",          "total_amount",   "Float", 90,  precision=2),
-        _col("DOJ",            "date_of_joining","Date",  70),
-        _col("DOB",            "date_of_birth",  "Date",  70),
+        _col("Sr",            "sr",             w=40),
+        _col("Employee",      "employee",       w=160),
+        _col("PF No.",        "pf_no",          w=130),
+        _col("UAN No.",       "uan_no",         w=130),
+        _col("WD / PD",       "wd_pd",          w=60),
+        _col("Gross Salary",  "gross",          "Float", 100, precision=2),
+        _col("Basic + DA",    "basic_da",       "Float", 100, precision=2),
+        _col("Emp PF",        "emp_pf",         "Float", 80,  precision=2),
+        _col("EPS",           "employer_eps",   "Float", 80,  precision=2),
+        _col("Empr. PF",      "employer_pf",    "Float", 80,  precision=2),
+        _col("EDLI",          "employer_edli",  "Float", 70,  precision=2),
+        _col("PF Admin",      "employer_admin", "Float", 70,  precision=2),
+        _col("Total",         "total_amount",   "Float", 90,  precision=2),
     ]
 
     if not f.get("company"):
@@ -343,14 +363,25 @@ def _get_data(f):
                      ("total_amount",tol)]:
             tot[k] += v
 
+        doj = _fmt_date(emp.get("date_of_joining") or "")
+        dob = _fmt_date(emp.get("date_of_birth")   or "")
+
         data.append({
             "sr":              str(idx),
             "employee_id":     s.eid,
             "employee_name":   s.employee_name,
+            "employee_doj":    doj,
+            "employee_dob":    dob,
+            # merged display field used in HTML
+            "employee":        s.employee_name,
             "pf_no":           emp.get("pf_no")  or "",
             "uan_no":          emp.get("uan_no") or "",
+            # store raw for display in wd_pd cell
             "working_days":    flt(s.working_days, 1),
             "payment_days":    flt(s.payment_days, 1),
+            "wd_pd":           "{} / {}".format(
+                                   _fmt_days(flt(s.working_days, 1)),
+                                   _fmt_days(flt(s.payment_days, 1))),
             "gross":           g,
             "basic_da":        b,
             "emp_pf":          epf,
@@ -359,22 +390,22 @@ def _get_data(f):
             "employer_edli":   erd,
             "employer_admin":  era,
             "total_amount":    tol,
-            "date_of_joining": str(emp.get("date_of_joining") or ""),
-            "date_of_birth":   str(emp.get("date_of_birth")   or ""),
         })
 
     if data:
         data.append({
             "sr":              "",
+            "employee":        "Total",
             "employee_id":     "",
             "employee_name":   "Total",
+            "employee_doj":    "",
+            "employee_dob":    "",
             "pf_no":           "",
             "uan_no":          "",
             "working_days":    None,
             "payment_days":    None,
+            "wd_pd":           "",
             **{k: flt(v, 2) for k, v in tot.items()},
-            "date_of_joining": "",
-            "date_of_birth":   "",
             "bold":            1,
         })
 
@@ -386,7 +417,7 @@ def execute(filters=None):
 
 
 # ---------------------------------------------------------------------------
-# HTML / PDF — manual pagination
+# HTML builder — Option A layout
 # ---------------------------------------------------------------------------
 
 def _colgroup():
@@ -399,30 +430,101 @@ def _colgroup():
 
 
 def _thead_html():
-    row = "<tr>"
-    for _, hdr, align, _ in _COLS:
-        row += '<th class="{a}">{h}</th>'.format(a=align, h=hdr)
-    row += "</tr>"
-    return "<thead>{}</thead>".format(row)
+    """
+    Two header rows:
+      Row 1: Sr | Employee | PF No. | UAN No. | WD/PD | Gross | Basic+DA |
+             Emp PF | [Employer Contribution — colspan 4] | Total
+      Row 2: (empty spacers for non-group cols) | EPS | Empr PF | EDLI | PF Admin
+    """
+    # How many columns are in the employer group
+    empr_span = sum(1 for fn, _, _, _ in _COLS if fn in _EMPR_GROUP)
+    # Indices of group columns
+    empr_fns  = [fn for fn, _, _, _ in _COLS if fn in _EMPR_GROUP]
+
+    # ── Row 1 ──────────────────────────────────────────────────────────────
+    row1 = "<tr>"
+    for fn, hdr, align, _ in _COLS:
+        if fn == empr_fns[0]:
+            # First employer col: open the group header spanning all 4
+            row1 += (
+                '<th class="grp-hdr" colspan="{span}" '
+                'style="text-align:center;border-bottom:1px solid #999;">'
+                'Employer Contribution</th>'
+            ).format(span=empr_span)
+        elif fn in _EMPR_GROUP:
+            continue   # already covered by the colspan above
+        else:
+            # Non-group column: rowspan=2 so it occupies both header rows
+            row1 += '<th rowspan="2" class="{a}">{h}</th>'.format(a=align, h=hdr)
+    row1 += "</tr>"
+
+    # ── Row 2 — sub-headers for the employer group only ───────────────────
+    row2 = "<tr>"
+    for fn, hdr, _, _ in _COLS:
+        if fn in _EMPR_GROUP:
+            row2 += '<th class="c">{h}</th>'.format(h=hdr)
+    row2 += "</tr>"
+
+    return "<thead>{r1}{r2}</thead>".format(r1=row1, r2=row2)
 
 
 def _render_row(row, is_total=False, row_idx=0):
-    bg = "#e0e0e0" if is_total else ("#f9f9f9" if row_idx % 2 else "#ffffff")
+    bg = "#e0e0e0" if is_total else ("#f5f7fa" if row_idx % 2 else "#ffffff")
     fw = "font-weight:700;" if is_total else ""
+
     tr = "<tr>"
     for fn, _, align, _ in _COLS:
         val = row.get(fn, "")
+
+        # ── Skip suppressed total columns ──────────────────────────────
         if is_total and fn in _SKIP_ON_TOTAL:
-            tr += '<td class="{a}" style="background:{bg};"></td>'.format(a=align, bg=bg)
-        elif fn in ("working_days", "payment_days"):
+            if fn == "employee":
+                # Still show "Total" label, bold
+                tr += (
+                    '<td class="l" style="background:{bg};font-weight:700;">'
+                    'Total</td>'
+                ).format(bg=bg)
+            else:
+                tr += '<td style="background:{bg};"></td>'.format(bg=bg)
+            continue
+
+        # ── Employee cell — name + ID + DOJ/DOB sub-lines ──────────────
+        if fn == "employee":
+            name  = row.get("employee_name", "") or ""
+            eid   = row.get("employee_id",   "") or ""
+            doj   = row.get("employee_doj",  "") or ""
+            dob   = row.get("employee_dob",  "") or ""
+            sub_parts = []
+            if eid:  sub_parts.append(eid)
+            if doj:  sub_parts.append("DOJ: " + doj)
+            if dob:  sub_parts.append("DOB: " + dob)
+            sub_html = ""
+            if sub_parts:
+                sub_html = '<div class="emp-sub">{}</div>'.format(
+                    "&nbsp;&nbsp;|&nbsp;&nbsp;".join(sub_parts))
+            tr += (
+                '<td class="l" style="background:{bg};{fw}">'
+                '<div class="emp-name">{name}</div>{sub}'
+                '</td>'
+            ).format(bg=bg, fw=fw, name=name or "", sub=sub_html)
+            continue
+
+        # ── WD/PD combined ─────────────────────────────────────────────
+        if fn == "wd_pd":
             tr += '<td class="c" style="background:{bg};{fw}">{v}</td>'.format(
-                bg=bg, fw=fw, v=_fmt_days(val))
-        elif fn in _NUMERIC:
+                bg=bg, fw=fw, v=val or "")
+            continue
+
+        # ── Numeric columns ─────────────────────────────────────────────
+        if fn in _NUMERIC:
             tr += '<td class="r" style="background:{bg};{fw}">{v}</td>'.format(
                 bg=bg, fw=fw, v=_fmt(val))
-        else:
-            tr += '<td class="{a}" style="background:{bg};{fw}">{v}</td>'.format(
-                a=align, bg=bg, fw=fw, v=val or "")
+            continue
+
+        # ── Default ─────────────────────────────────────────────────────
+        tr += '<td class="{a}" style="background:{bg};{fw}">{v}</td>'.format(
+            a=align, bg=bg, fw=fw, v=val or "")
+
     tr += "</tr>"
     return tr
 
@@ -441,21 +543,10 @@ def _page_table(page_rows, start_idx):
 
 
 def _paginate(detail_rows, total_row):
-    """
-    Split detail_rows into pages, then append total_row to the last page.
-
-    We subtract 2 from each page limit as a safety buffer against
-    wkhtmltopdf's sub-pixel rounding — this eliminates the cut-off
-    last-row and ghost-row-on-next-page bugs.
-    """
     if not detail_rows:
         return [[total_row] if total_row else []]
-
-    # Safe limits: 2 rows below the hard max so the total row + rounding
-    # never push anything off the physical page.
     safe_first = max(1, ROWS_FIRST_PAGE - 2)
     safe_other = max(1, ROWS_OTHER_PAGE - 2)
-
     pages = []
     idx   = 0
     first = True
@@ -465,11 +556,8 @@ def _paginate(detail_rows, total_row):
         pages.append(list(chunk))
         idx  += len(chunk)
         first = False
-
-    # Total row always fits because we kept every page 2 rows below its limit.
     if total_row:
         pages[-1].append(total_row)
-
     return pages
 
 
@@ -482,7 +570,6 @@ def _build_html(cols, data, co, mo, yr):
         '</div>'
     ).format(co=co, mo=mo, yr=yr)
 
-    # Continuation header — shown on every page after page 1
     cont_hdr = (
         '<div class="cont-hdr">'
         '{co} &mdash; Provident Fund Register &mdash; {mo} {yr} (contd.)'
@@ -493,7 +580,6 @@ def _build_html(cols, data, co, mo, yr):
     total_row   = next((r for r in data if r.get("bold")), None)
 
     if not detail_rows:
-        # No data — single page with the empty-table message
         pages    = [[]]
         has_data = False
     else:
@@ -502,15 +588,11 @@ def _build_html(cols, data, co, mo, yr):
 
     total_pages = len(pages)
     parts       = []
-    row_counter = 0   # running count of employee rows rendered (for zebra stripe)
+    row_counter = 0
 
     for pn, page_rows in enumerate(pages):
-        # Page break before every page except the first
         pb      = '<div style="page-break-before:always;"></div>' if pn > 0 else ""
         is_last = (pn == total_pages - 1)
-
-        # Page 1 gets the big header; all subsequent pages get the slim
-        # continuation header so readers always know which report they are on.
         hdr_html = page1_hdr if pn == 0 else cont_hdr
 
         if not has_data:
@@ -522,13 +604,10 @@ def _build_html(cols, data, co, mo, yr):
             ).format(cg=_colgroup(), thead=_thead_html(), nc=nc)
         else:
             tbl = _page_table(page_rows, row_counter)
-            # Advance the counter by the number of *employee* rows on this page
             row_counter += sum(1 for r in page_rows if not r.get("bold"))
 
         pg_foot = '<div class="pg-foot">Page {p} of {t}</div>'.format(
             p=pn + 1, t=total_pages)
-
-        # Signature block only on the very last page
         sig = _sig_html() if is_last else ""
 
         parts.append("{pb}{hdr}{tbl}{foot}{sig}".format(

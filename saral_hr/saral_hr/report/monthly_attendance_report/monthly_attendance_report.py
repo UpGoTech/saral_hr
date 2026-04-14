@@ -59,17 +59,17 @@ SUMM_COLS = [
 ]
 
 SUMM_COLOR = {
-    "present_days":       COLOR["P"],
-    "absent_days":        COLOR["A"],
-    "half_days":          COLOR["HD"],
-    "on_tour_days":       COLOR["T"],
-    "holiday_days":       COLOR["H"],
-    "weekly_off_days":    COLOR["WO"],
-    "lwp_days":           COLOR["LWP"],
-    "payable_days":       COLOR["PAY"],
-    "earned_leave_days":  COLOR["EL"],
-    "casual_leave_days":  COLOR["CL"],
-    "comp_off_days":      COLOR["CO"],
+    "present_days":         COLOR["P"],
+    "absent_days":          COLOR["A"],
+    "half_days":            COLOR["HD"],
+    "on_tour_days":         COLOR["T"],
+    "holiday_days":         COLOR["H"],
+    "weekly_off_days":      COLOR["WO"],
+    "lwp_days":             COLOR["LWP"],
+    "payable_days":         COLOR["PAY"],
+    "earned_leave_days":    COLOR["EL"],
+    "casual_leave_days":    COLOR["CL"],
+    "comp_off_days":        COLOR["CO"],
     "earned_comp_off_days": COLOR["ECO"],
 }
 
@@ -211,7 +211,7 @@ def _get_data(f):
     cols = [
         _col("Sr",            "sr_no",        w=40),
         _col("Employee Name", "employee_name", w=180),
-        _col("Employee ID",   "employee",      w=100),
+        _col("Employee ID",   "employee",      w=160),
     ]
 
     if not mn or not ys:
@@ -226,9 +226,9 @@ def _get_data(f):
         cols.append({"label": str(d), "fieldname": "day_{0}".format(d),
                      "fieldtype": "Data", "width": 45})
 
-    # Summary cols in order: P A HD T H WO LWP Pay EL CL CO ECO
+    # ── Summary columns — precision:1 so Frappe grid shows 1 decimal ──
     for lbl, fn in SUMM_COLS:
-        cols.append(_col(lbl, fn, "Float", 65, precision=2))
+        cols.append(_col(lbl, fn, "Float", 65, precision=1))
 
     cos = _parse_list(f.get("company"))
     if not cos:
@@ -297,34 +297,32 @@ def _get_data(f):
         ed[emp]["day_{0}".format(day)] = STATUS_CODE[st]
 
         if   st == "Present":
-            ed[emp]["present_days"]        += 1.0
+            ed[emp]["present_days"]          += 1.0
         elif st == "On Tour":
-            ed[emp]["on_tour_days"]         += 1.0
-            ed[emp]["present_days"]         += 1.0
+            ed[emp]["on_tour_days"]           += 1.0
+            ed[emp]["present_days"]           += 1.0
         elif st == "Absent":
-            ed[emp]["absent_days"]          += 1.0
+            ed[emp]["absent_days"]            += 1.0
         elif st == "Half Day":
-            ed[emp]["half_days"]            += 1.0
-            ed[emp]["present_days"]         += 0.5
-            ed[emp]["absent_days"]          += 0.5
+            ed[emp]["half_days"]              += 1.0
+            ed[emp]["present_days"]           += 0.5
+            ed[emp]["absent_days"]            += 0.5
         elif st == "Holiday":
-            ed[emp]["holiday_days"]         += 1.0
+            ed[emp]["holiday_days"]           += 1.0
         elif st == "Weekly Off":
-            ed[emp]["weekly_off_days"]      += 1.0
+            ed[emp]["weekly_off_days"]        += 1.0
         elif st == "LWP":
-            ed[emp]["lwp_days"]             += 1.0
-            ed[emp]["absent_days"]          += 1.0
+            ed[emp]["lwp_days"]               += 1.0
+            ed[emp]["absent_days"]            += 1.0
         elif st == "Earned Leave":
-            ed[emp]["earned_leave_days"]    += 1.0
+            ed[emp]["earned_leave_days"]      += 1.0
         elif st == "Casual Leave":
-            ed[emp]["casual_leave_days"]    += 1.0
+            ed[emp]["casual_leave_days"]      += 1.0
         elif st == "Comp Off":
-            ed[emp]["comp_off_days"]        += 1.0
+            ed[emp]["comp_off_days"]          += 1.0
         elif st == "Earned Comp Off":
-            ed[emp]["earned_comp_off_days"] += 1.0
+            ed[emp]["earned_comp_off_days"]   += 1.0
 
-    # Calculate payable days:
-    # P + T + HD(0.5 each) + EL + CL + CO + ECO
     for emp in ed:
         r = ed[emp]
         r["payable_days"] = (
@@ -407,10 +405,13 @@ def _build_html(cols, data, co, mo, yr):
     header_tr += "</tr>"
 
     def _disp(v):
+        """Format as integer if whole, else 1 decimal place."""
         if v is None or v == "" or v == 0 or v == 0.0:
             return ""
         try:
             fv = float(v)
+            if fv == 0:
+                return ""
             return str(int(fv)) if fv == int(fv) else "{:.1f}".format(fv)
         except (TypeError, ValueError):
             return str(v)
@@ -483,8 +484,8 @@ def _build_html(cols, data, co, mo, yr):
     row_counter = 0
 
     for pn, page_rows in enumerate(pages):
-        pb      = '<div style="page-break-before:always;"></div>' if pn > 0 else ""
-        is_last = (pn == total_pages - 1)
+        pb_style = "" if pn == total_pages - 1 else "page-break-after:always;"
+        is_last  = (pn == total_pages - 1)
         page_hdr = (page1_hdr if pn == 0 else cont_hdr) + lgd_bar
 
         if not data:
@@ -501,8 +502,12 @@ def _build_html(cols, data, co, mo, yr):
             p=pn + 1, t=total_pages)
         sig = _sig_html() if is_last else ""
 
-        parts.append("{pb}{hdr}{tbl}{foot}{sig}".format(
-            pb=pb, hdr=page_hdr, tbl=tbl, foot=pg_foot, sig=sig))
+        parts.append(
+            '<div style="display:block;overflow:hidden;{pb}">'
+            '{hdr}{tbl}{foot}{sig}'
+            '</div>'.format(
+                pb=pb_style, hdr=page_hdr, tbl=tbl, foot=pg_foot, sig=sig)
+        )
 
     return (
         '<!DOCTYPE html><html><head><meta charset="UTF-8">{css}</head>'

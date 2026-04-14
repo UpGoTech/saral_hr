@@ -15,8 +15,8 @@ B = "1px solid #000"
 # ── Rows per page (same conservative strategy as Monthly Attendance Report) ──
 # Page 1 : title (~18mm) + table header (~6mm) → ~176mm usable → ~28 rows @5.5mm
 # Page 2+: cont-hdr (~8mm) + table header (~6mm) → ~186mm usable → ~32 rows
-ROWS_FIRST_PAGE = 28
-ROWS_OTHER_PAGE = 32
+ROWS_FIRST_PAGE = 21
+ROWS_OTHER_PAGE = 23
 
 _CSS = """<style>
 *{margin:0;padding:0;box-sizing:border-box}

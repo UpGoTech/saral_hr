@@ -15,7 +15,7 @@ MONTH_MAP = {
     "July":7,"August":8,"September":9,"October":10,"November":11,"December":12,
 }
 
-ROWS_PER_PAGE = 10   # fixed: every page shows exactly 10 employees
+ROWS_PER_PAGE = 7   # fixed: every page shows exactly 7 employees
 
 _B  = "1px solid #000"
 _BD = "1px dashed #aaa"

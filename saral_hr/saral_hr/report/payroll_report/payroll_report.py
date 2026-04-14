@@ -1,7 +1,11 @@
-import frappe, json, calendar
+import frappe, json, calendar, io
 from frappe import _
 from frappe.utils import flt
 from frappe.utils.pdf import get_pdf
+
+from openpyxl import Workbook
+from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+from openpyxl.utils import get_column_letter
 
 # ---------------------------------------------------------------------------
 # Report registry
@@ -70,22 +74,119 @@ MONTH_MAP = {
 }
 
 # ---------------------------------------------------------------------------
-# Reports whose _build_html needs extra component args resolved at print time
-# These reports fetch their own component lists internally via print_report()
-# so we delegate to their print_report() → _build_html() chain differently.
+# Excel styling constants  (reference-sheet inspired)
 # ---------------------------------------------------------------------------
 
-# Reports that have a dedicated print_report() whitelisted fn we can reuse
-# internally by calling their _build_html with the right args.
-# Key = report mode, Value = extra kwargs builder fn(filters) -> dict
-_EXTRA_ARGS_BUILDERS = {}
+# Title row  — bold red text, white background (matches the "WORKING – DAYS" style)
+_XL_TITLE_FG  = "CC0000"   # bold red
+_XL_TITLE_BG  = "FFFFFF"
 
+# Sub-title / period row — dark grey text, white background
+_XL_SUB_FG    = "333333"
+_XL_SUB_BG    = "FFFFFF"
+
+# Column-header row — black text on bright yellow (matches reference screenshot)
+_XL_HDR_FG    = "000000"
+_XL_HDR_BG    = "FFFF00"
+
+# Data rows
+_XL_ROW_BG    = "FFFFFF"   # normal row
+_XL_ALT_BG    = "F2F2F2"   # alternating stripe (very light grey — clean, readable)
+
+# Total / bold rows — light blue tint, dark text, bold
+_XL_TOT_BG    = "D9E1F2"
+_XL_TOT_FG    = "1F3864"
+
+# Border colour
+_XL_BDR       = "BFBFBF"
+
+# Monthly-attendance cell colours (matching JS formatter exactly)
+_MAR_COLORS = {
+    "P":   "C6EFCE",   # green tint
+    "A":   "FFC7CE",   # red tint
+    "HD":  "FFEB9C",   # amber
+    "T":   "D9D9D9",   # grey
+    "H":   "C6EFCE",   # green (holiday)
+    "WO":  "BDD7EE",   # blue tint
+    "LWP": "E2CCFF",   # purple tint
+    "EL":  "FCE4D6",   # orange tint
+    "CL":  "CCFFEE",   # teal tint
+    "CO":  "EDEDED",   # neutral grey
+    "ECO": "F4CCCC",   # muted red
+}
+_MAR_FG = {
+    "P":   "1A6B1A",
+    "A":   "C0392B",
+    "HD":  "7B4800",
+    "T":   "2C3E50",
+    "H":   "1A6B1A",
+    "WO":  "1A4F7A",
+    "LWP": "5B2D8E",
+    "EL":  "7D3400",
+    "CL":  "0E6655",
+    "CO":  "555555",
+    "ECO": "7B1818",
+}
+
+
+def _border(color=_XL_BDR, style="thin"):
+    s = Side(style=style, color=color)
+    return Border(left=s, right=s, top=s, bottom=s)
+
+
+def _xl_cell(ws, row, col, value,
+             bold=False, fg="000000", bg=None,
+             align="left", num_fmt=None, wrap=False, italic=False):
+    cell = ws.cell(row=row, column=col, value=value)
+    cell.font      = Font(name="Arial", size=9, bold=bold, color=fg, italic=italic)
+    cell.alignment = Alignment(horizontal=align, vertical="center", wrap_text=wrap)
+    cell.border    = _border()
+    if bg:
+        cell.fill = PatternFill("solid", start_color=bg, fgColor=bg)
+    if num_fmt:
+        cell.number_format = num_fmt
+    return cell
+
+
+def _is_numeric(col_def):
+    ft = (col_def.get("fieldtype") or "").lower()
+    fn = (col_def.get("fieldname") or "").lower()
+    return ft in ("float", "currency", "int") or fn in (
+        "net_salary", "income_tax", "amount", "ded_amount", "oth_amount",
+        "gross_salary", "basic", "hra", "pf_amount", "esi_amount",
+        "pt_amount", "lwf_amount", "variable_pay",
+    )
+
+
+def _to_num(v):
+    if v is None or v == "": return None
+    if isinstance(v, (int, float)): return float(v)
+    try:
+        return float(str(v).replace(",", ""))
+    except (ValueError, TypeError):
+        return v
+
+
+def _col_width(col_def):
+    lbl = col_def.get("label", "")
+    ft  = (col_def.get("fieldtype") or "").lower()
+    fn  = (col_def.get("fieldname") or "").lower()
+    w   = max(len(lbl) + 3, 10)
+    if ft in ("float", "currency", "int"):
+        w = max(w, 14)
+    if ft == "data" and col_def.get("width", 0) > 200:
+        w = max(w, 26)
+    # day_ columns in monthly attendance — keep narrow
+    if fn.startswith("day_"):
+        w = 4
+    return min(w, 50)
+
+
+# ---------------------------------------------------------------------------
+# Transaction checklist extra-args helper
+# ---------------------------------------------------------------------------
 
 def _register_tc_extra(filters):
-    """
-    transaction_checklist._build_html needs earn_comps, emp_ded_comps, empr_comps.
-    We resolve them here using the same logic as transaction_checklist.print_report.
-    """
     import importlib
     mod = importlib.import_module(
         "saral_hr.saral_hr.report.transaction_checklist.transaction_checklist"
@@ -148,9 +249,11 @@ def _parse_list(v):
     except Exception: pass
     return [x.strip() for x in v.split(",") if x.strip()]
 
+
 def _company_label(f):
     c = _parse_list(f.get("company"))
     return ", ".join(c) if c else (frappe.defaults.get_global_default("company") or "")
+
 
 def _load_module(mode):
     mod_path = REPORT_MODULE_MAP.get(mode)
@@ -163,9 +266,11 @@ def _load_module(mode):
         frappe.log_error("_load_module({0}): {1}".format(mode, e), "Payroll Report")
         return None
 
+
 def _import_execute(mode):
     mod = _load_module(mode)
     return getattr(mod, "execute", None) if mod else None
+
 
 def _import_build_html(mode):
     mod = _load_module(mode)
@@ -186,7 +291,7 @@ def execute(filters=None):
 
 
 # ---------------------------------------------------------------------------
-# PDF helpers
+# PDF helpers  (unchanged)
 # ---------------------------------------------------------------------------
 
 _CSS = """<style>
@@ -228,19 +333,14 @@ _SIG = """
 <!--SIG_END-->
 """
 
-_SIG_MARKERS = [
-    "<!--SIG_START-->",
-    '<div class="sig">',
-]
+_SIG_MARKERS = ["<!--SIG_START-->", '<div class="sig">']
 
 
 def _strip_sig(html):
     import re
-    # Extract body content only
     body_match = re.search(r'<body[^>]*>(.*)</body>', html, re.DOTALL | re.IGNORECASE)
     if body_match:
         html = body_match.group(1)
-    # Strip signature block from the end
     for marker in _SIG_MARKERS:
         idx = html.rfind(marker)
         if idx != -1:
@@ -250,24 +350,11 @@ def _strip_sig(html):
 
 
 def _render_section(mode, cols, data, co, mo, yr, filters=None):
-    """
-    Call sub-report's _build_html() with the correct signature for each report type.
-    Falls back to a plain table render if _build_html is not available.
-
-    Signature map:
-      transaction_checklist  → _build_html(cols, data, co, mo, yr, earn_comps, emp_ded_comps, empr_comps)
-      income_tax             → _build_html(cols, data, filters_dict)
-      loan_register          → _build_html(cols, data, co, mo, yr)
-      advance_register       → _build_html(cols, data, co, mo, yr)
-      provident_fund         → _build_html(cols, data, co, mo, yr)
-      all others             → _build_html(cols, data, co, mo, yr)
-    """
     build_fn = _import_build_html(mode)
 
     if build_fn:
         try:
             if mode == "transaction_checklist":
-                # Resolve component lists needed for chip layout
                 extra = {}
                 if filters:
                     try:
@@ -283,16 +370,7 @@ def _render_section(mode, cols, data, co, mo, yr, filters=None):
                     extra.get("emp_ded_comps"),
                     extra.get("empr_comps"),
                 )
-
-            elif mode == "income_tax":
-                raw = build_fn(cols, data, {"company": co, "month": mo, "year": yr})
-
             else:
-                # provident_fund, esi_register, professional_tax, salary_summary,
-                # salary_summary_individual, variable_pay, educational_allowance,
-                # labour_welfare_fund, retention_deposit, home_bank_advice,
-                # other_bank_advice, monthly_attendance, loan_register,
-                # advance_register — all take (cols, data, co, mo, yr)
                 raw = build_fn(cols, data, co, mo, yr)
 
             return _strip_sig(raw)
@@ -302,9 +380,7 @@ def _render_section(mode, cols, data, co, mo, yr, filters=None):
                 "payroll_report._render_section({0}): {1}".format(mode, ex),
                 "Payroll Report"
             )
-            # Fall through to plain table fallback below
 
-    # ── Plain table fallback ───────────────────────────────────────────────
     label = REPORT_LABELS.get(mode, mode)
     hdr = (
         '<div class="hdr">'
@@ -333,18 +409,24 @@ def _render_section(mode, cols, data, co, mo, yr, filters=None):
             tbody += "<td>{0}</td>".format(val if val is not None else "")
         tbody += "</tr>"
 
-    table = "<table><thead>{0}</thead><tbody>{1}</tbody></table>".format(thead, tbody)
-    return hdr + table
+    return hdr + "<table><thead>{0}</thead><tbody>{1}</tbody></table>".format(thead, tbody)
 
 
 def _build_all_html(sections, co, mo, yr, filters=None):
     parts = []
-    for s in sections:
+    for i, s in enumerate(sections):
         inner = _render_section(
-            s["mode"], s["cols"], s["data"], co, mo, yr,
-            filters=filters
+            s["mode"], s["cols"], s["data"], co, mo, yr, filters=filters
         )
-        parts.append('<div class="sec">{inner}{sig}</div>'.format(inner=inner, sig=_SIG))
+        pb = (
+            '<div style="page-break-before:always;font-size:0;line-height:0;height:0;">'
+            '</div>'
+            if i > 0 else ""
+        )
+        parts.append(
+            '{pb}<div style="page-break-inside:avoid-if-possible;">'
+            '{inner}{sig}</div>'.format(pb=pb, inner=inner, sig=_SIG)
+        )
     return (
         '<!DOCTYPE html><html>'
         '<head><meta charset="UTF-8">{css}</head>'
@@ -379,7 +461,7 @@ def _save_pdf(html, prefix):
 
 
 # ---------------------------------------------------------------------------
-# Whitelisted API methods
+# Whitelisted API methods — PDF
 # ---------------------------------------------------------------------------
 
 @frappe.whitelist()
@@ -388,7 +470,6 @@ def get_all_reports_data(filters):
         filters = json.loads(filters)
 
     out = {}
-
     try:
         from concurrent.futures import ThreadPoolExecutor, as_completed
 
@@ -401,9 +482,7 @@ def get_all_reports_data(filters):
                 cols, data = fn(dict(filters, report_mode=mode))
                 return mode, {"columns": cols, "result": data}
             except Exception:
-                frappe.log_error(
-                    "get_all_reports_data: {0}".format(mode), "Payroll Report"
-                )
+                frappe.log_error("get_all_reports_data: {0}".format(mode), "Payroll Report")
                 return mode, {"columns": [], "result": []}
 
         with ThreadPoolExecutor(max_workers=4) as ex:
@@ -422,9 +501,7 @@ def get_all_reports_data(filters):
                 cols, data = fn(dict(filters, report_mode=mode))
                 out[mode]  = {"columns": cols, "result": data}
             except Exception:
-                frappe.log_error(
-                    "get_all_reports_data: {0}".format(mode), "Payroll Report"
-                )
+                frappe.log_error("get_all_reports_data: {0}".format(mode), "Payroll Report")
                 out[mode]  = {"columns": [], "result": []}
 
     return out
@@ -478,9 +555,7 @@ def print_selected_reports(filters):
         try:
             cols, data = fn(dict(filters, report_mode=mode))
         except Exception:
-            frappe.log_error(
-                "print_selected_reports: {0}".format(mode), "Payroll Report"
-            )
+            frappe.log_error("print_selected_reports: {0}".format(mode), "Payroll Report")
             cols, data = [], []
         sections.append({"mode": mode, "cols": cols, "data": data})
 
@@ -505,11 +580,259 @@ def print_all_reports(filters):
         try:
             cols, data = fn(dict(filters, report_mode=mode))
         except Exception:
-            frappe.log_error(
-                "print_all_reports: {0}".format(mode), "Payroll Report"
-            )
+            frappe.log_error("print_all_reports: {0}".format(mode), "Payroll Report")
             cols, data = [], []
         sections.append({"mode": mode, "cols": cols, "data": data})
 
     html = _build_all_html(sections, co, mo, yr, filters=filters)
     return _save_pdf(html, "Payroll_All_Reports")
+
+
+# ---------------------------------------------------------------------------
+# Whitelisted API methods — Excel
+# ---------------------------------------------------------------------------
+
+@frappe.whitelist()
+def excel_single_report(filters):
+    if isinstance(filters, str):
+        filters = json.loads(filters)
+
+    mode = filters.get("report_mode", "salary_summary")
+    fn   = _import_execute(mode)
+    if not fn:
+        frappe.throw("Unknown report mode: {0}".format(mode))
+
+    cols, data = fn(filters)
+    co    = _company_label(filters)
+    mo    = filters.get("month", "")
+    yr    = filters.get("year",  "")
+    label = REPORT_LABELS.get(mode, mode)
+
+    wb = Workbook()
+    ws = wb.active
+    ws.title = label[:31]
+    _write_xl_sheet(ws, cols, data, co, mo, yr, label, mode)
+
+    return _save_excel(wb, "Payroll_{0}".format(mode))
+
+
+@frappe.whitelist()
+def excel_selected_reports(filters):
+    if isinstance(filters, str):
+        filters = json.loads(filters)
+
+    selected = filters.pop("selected_reports", None)
+    if selected and isinstance(selected, str):
+        selected = json.loads(selected)
+    if not selected:
+        frappe.throw("No reports selected")
+
+    co = _company_label(filters)
+    mo = filters.get("month", "")
+    yr = filters.get("year",  "")
+
+    wb          = Workbook()
+    first_sheet = True
+
+    for mode in selected:
+        fn = _import_execute(mode)
+        if not fn:
+            continue
+        try:
+            cols, data = fn(dict(filters, report_mode=mode))
+        except Exception:
+            frappe.log_error("excel_selected_reports: {0}".format(mode), "Payroll Report")
+            cols, data = [], []
+
+        label = REPORT_LABELS.get(mode, mode)
+        if first_sheet:
+            ws = wb.active
+            ws.title = label[:31]
+            first_sheet = False
+        else:
+            ws = wb.create_sheet(title=label[:31])
+
+        _write_xl_sheet(ws, cols, data, co, mo, yr, label, mode)
+
+    return _save_excel(wb, "Payroll_Excel_Reports")
+
+
+# ---------------------------------------------------------------------------
+# Excel sheet writer  — improved formatting
+# ---------------------------------------------------------------------------
+
+def _write_xl_sheet(ws, cols, data, co, mo, yr, label, mode=""):
+    """
+    Layout (rows):
+      1  — Company name  : bold red, large, white bg, merged, centred
+      2  — Report title  : bold dark, medium, white bg, merged, centred
+      3  — Period        : normal, white bg, merged, centred
+      4  — (spacer, no border)
+      5  — Column headers: bold black on yellow, centred, wrapped, thick bottom border
+      6+ — Data rows     : alternating white / light-grey; total rows blue-tint + bold
+    """
+    nc = max(len(cols), 1)
+
+    # ── Row 1: Company ──────────────────────────────────────────────────────
+    ws.merge_cells(start_row=1, start_column=1, end_row=1, end_column=nc)
+    c1 = ws.cell(row=1, column=1, value=(co.upper() if co else ""))
+    c1.font      = Font(name="Arial", size=14, bold=True, color=_XL_TITLE_FG)
+    c1.fill      = PatternFill("solid", start_color=_XL_TITLE_BG, fgColor=_XL_TITLE_BG)
+    c1.alignment = Alignment(horizontal="center", vertical="center")
+    c1.border    = Border(
+        bottom=Side(style="medium", color="CC0000"),
+    )
+    ws.row_dimensions[1].height = 22
+
+    # ── Row 2: Report title ─────────────────────────────────────────────────
+    ws.merge_cells(start_row=2, start_column=1, end_row=2, end_column=nc)
+    c2 = ws.cell(row=2, column=1, value=label)
+    c2.font      = Font(name="Arial", size=11, bold=True, color=_XL_SUB_FG)
+    c2.fill      = PatternFill("solid", start_color=_XL_SUB_BG, fgColor=_XL_SUB_BG)
+    c2.alignment = Alignment(horizontal="center", vertical="center")
+    ws.row_dimensions[2].height = 18
+
+    # ── Row 3: Period ───────────────────────────────────────────────────────
+    ws.merge_cells(start_row=3, start_column=1, end_row=3, end_column=nc)
+    c3 = ws.cell(row=3, column=1,
+                 value="For the Month of {mo} {yr}".format(mo=mo, yr=yr))
+    c3.font      = Font(name="Arial", size=9, color="555555")
+    c3.fill      = PatternFill("solid", start_color=_XL_SUB_BG, fgColor=_XL_SUB_BG)
+    c3.alignment = Alignment(horizontal="center", vertical="center")
+    ws.row_dimensions[3].height = 14
+
+    # ── Row 4: spacer ───────────────────────────────────────────────────────
+    ws.row_dimensions[4].height = 4
+
+    # ── Row 5: Column headers ───────────────────────────────────────────────
+    HDR_ROW = 5
+    thick_bottom = Border(
+        left=Side(style="thin",   color=_XL_BDR),
+        right=Side(style="thin",  color=_XL_BDR),
+        top=Side(style="thin",    color=_XL_BDR),
+        bottom=Side(style="medium", color="000000"),
+    )
+    for ci, col in enumerate(cols, 1):
+        lbl  = col.get("label", col.get("fieldname", ""))
+        fn   = col.get("fieldname", "")
+        # day_ columns in attendance: use the day number as a short header
+        if fn.startswith("day_"):
+            lbl = fn.replace("day_", "")
+        cell = ws.cell(row=HDR_ROW, column=ci, value=lbl)
+        cell.font      = Font(name="Arial", size=9, bold=True, color=_XL_HDR_FG)
+        cell.fill      = PatternFill("solid", start_color=_XL_HDR_BG, fgColor=_XL_HDR_BG)
+        cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
+        cell.border    = thick_bottom
+    ws.row_dimensions[HDR_ROW].height = 28
+
+    # ── Rows 6+: Data ───────────────────────────────────────────────────────
+    is_attendance = (mode == "monthly_attendance")
+
+    if not data:
+        ws.merge_cells(start_row=6, start_column=1, end_row=6, end_column=nc)
+        c = ws.cell(row=6, column=1, value="No data for this period.")
+        c.font      = Font(name="Arial", size=9, italic=True, color="888888")
+        c.alignment = Alignment(horizontal="center", vertical="center")
+        c.fill      = PatternFill("solid", start_color="FAFAFA", fgColor="FAFAFA")
+        ws.row_dimensions[6].height = 20
+    else:
+        for ri, row in enumerate(data, 6):
+            is_tot  = bool(row.get("bold"))
+            row_bg  = _XL_TOT_BG if is_tot else (_XL_ALT_BG if ri % 2 == 0 else _XL_ROW_BG)
+            row_fg  = _XL_TOT_FG if is_tot else "000000"
+
+            for ci, col in enumerate(cols, 1):
+                fn  = col.get("fieldname", "")
+                val = row.get(fn, "")
+
+                # ── Attendance day cells ─────────────────────────────────
+                if is_attendance and fn.startswith("day_"):
+                    sval   = str(val).strip() if val else ""
+                    cell_bg = _MAR_COLORS.get(sval, row_bg)
+                    cell_fg = _MAR_FG.get(sval, row_fg)
+                    c = ws.cell(row=ri, column=ci, value=sval if sval else "")
+                    c.font      = Font(name="Arial", size=8, bold=bool(sval), color=cell_fg)
+                    c.fill      = PatternFill("solid", start_color=cell_bg, fgColor=cell_bg)
+                    c.alignment = Alignment(horizontal="center", vertical="center")
+                    c.border    = _border()
+                    continue
+
+                # ── Serial number ────────────────────────────────────────
+                if fn == "sr_no":
+                    _xl_cell(ws, ri, ci,
+                             "" if (is_tot or not val) else val,
+                             bold=is_tot, fg=row_fg, bg=row_bg, align="center")
+
+                # ── Numeric columns ──────────────────────────────────────
+                elif _is_numeric(col):
+                    nv = _to_num(val)
+                    if val == "On Hold":
+                        _xl_cell(ws, ri, ci, "On Hold",
+                                 bold=False, fg="C0392B", bg=row_bg,
+                                 align="center", italic=True)
+                    elif isinstance(nv, float):
+                        _xl_cell(ws, ri, ci, nv,
+                                 bold=is_tot, fg=row_fg, bg=row_bg,
+                                 align="right", num_fmt="#,##0.00")
+                    else:
+                        _xl_cell(ws, ri, ci,
+                                 nv if nv is not None else "",
+                                 bold=is_tot, fg=row_fg, bg=row_bg, align="right")
+
+                # ── Text columns ─────────────────────────────────────────
+                else:
+                    _xl_cell(ws, ri, ci,
+                             val if val is not None else "",
+                             bold=is_tot, fg=row_fg, bg=row_bg, align="left")
+
+            ws.row_dimensions[ri].height = 13 if is_attendance else 15
+
+    # ── Column widths ────────────────────────────────────────────────────────
+    for ci, col in enumerate(cols, 1):
+        ws.column_dimensions[get_column_letter(ci)].width = _col_width(col)
+
+    # ── Freeze panes below header ────────────────────────────────────────────
+    ws.freeze_panes = "A6"
+
+    # ── Sheet tab colour — subtle per-report tint ────────────────────────────
+    TAB_COLORS = {
+        "salary_summary":            "2563EB",
+        "provident_fund":            "16A34A",
+        "esi_register":              "DC2626",
+        "professional_tax":          "7C3AED",
+        "monthly_attendance":        "D97706",
+        "home_bank_advice":          "0891B2",
+        "other_bank_advice":         "0891B2",
+        "income_tax":                "BE123C",
+    }
+    tc = TAB_COLORS.get(mode)
+    if tc:
+        ws.sheet_properties.tabColor = tc
+
+    # ── Auto-filter on header row ────────────────────────────────────────────
+    if cols:
+        ws.auto_filter.ref = "{a}5:{b}5".format(
+            a=get_column_letter(1),
+            b=get_column_letter(nc),
+        )
+
+
+def _save_excel(wb, prefix):
+    buf = io.BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+
+    ts  = frappe.utils.now_datetime().strftime("%Y%m%d_%H%M%S")
+    fn  = "{prefix}_{ts}.xlsx".format(prefix=prefix, ts=ts)
+    with open(frappe.utils.get_files_path(fn, is_private=0), "wb") as fh:
+        fh.write(buf.read())
+
+    doc = frappe.get_doc({
+        "doctype":    "File",
+        "file_name":  fn,
+        "is_private": 0,
+        "file_url":   "/files/{fn}".format(fn=fn),
+    })
+    doc.insert(ignore_permissions=True)
+    frappe.db.commit()
+    return doc.file_url

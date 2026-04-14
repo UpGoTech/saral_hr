@@ -71,18 +71,16 @@ frappe.query_reports["Payroll Report"] = {
             }, 0);
         };
 
-        // MutationObserver: hide serial number on ANY bold/total row
         const observer = new MutationObserver(() => _hide_total_serials());
         observer.observe(document.body, { childList: true, subtree: true, characterData: true });
 
         frappe.after_ajax(() => {
             _inject_nav(report);
             if (!report.page.wrapper.find(".pr-select-print-btn").length) {
-                _set_print_buttons(report);
+                _set_action_buttons(report);
             }
         });
 
-        // ── Legend injection ──────────────────────────────────────────
         const _patchLegend = () => {
             const qr = frappe.query_report;
             if (!qr || qr.__pr_legend_patched) return;
@@ -96,7 +94,6 @@ frappe.query_reports["Payroll Report"] = {
                     return result;
                 };
             }
-
             $(qr).on("after_refresh.pr_legend", () => {
                 setTimeout(() => _maybe_inject_legend(report), 300);
             });
@@ -157,20 +154,20 @@ frappe.query_reports["Payroll Report"] = {
     }
 };
 
-// ── Legend data & inject function ─────────────────────────────────────────────
+// ── Legend ────────────────────────────────────────────────────────────────────
 
 const _MAR_LEGEND = [
-    { code:"P",   label:"Present",          color:"#1a6b1a" },
-    { code:"A",   label:"Absent",           color:"#c0392b" },
-    { code:"HD",  label:"Half Day",         color:"#e67e22" },
-    { code:"T",   label:"On Tour",          color:"#2c3e50" },
-    { code:"H",   label:"Holiday",          color:"#27ae60" },
-    { code:"WO",  label:"Weekly Off",       color:"#2980b9" },
-    { code:"LWP", label:"Leave Without Pay",color:"#8e44ad" },
-    { code:"EL",  label:"Earned Leave",     color:"#d35400" },
-    { code:"CL",  label:"Casual Leave",     color:"#16a085" },
-    { code:"CO",  label:"Comp Off",         color:"#7f8c8d" },
-    { code:"ECO", label:"Earned Comp Off",  color:"#a93226" },
+    { code:"P",   label:"Present",           color:"#1a6b1a" },
+    { code:"A",   label:"Absent",            color:"#c0392b" },
+    { code:"HD",  label:"Half Day",          color:"#e67e22" },
+    { code:"T",   label:"On Tour",           color:"#2c3e50" },
+    { code:"H",   label:"Holiday",           color:"#27ae60" },
+    { code:"WO",  label:"Weekly Off",        color:"#2980b9" },
+    { code:"LWP", label:"Leave Without Pay", color:"#8e44ad" },
+    { code:"EL",  label:"Earned Leave",      color:"#d35400" },
+    { code:"CL",  label:"Casual Leave",      color:"#16a085" },
+    { code:"CO",  label:"Comp Off",          color:"#7f8c8d" },
+    { code:"ECO", label:"Earned Comp Off",   color:"#a93226" },
 ];
 
 function _build_legend_bar() {
@@ -197,35 +194,25 @@ function _maybe_inject_legend(report) {
     const mode = frappe.query_report.get_filter_value
         ? frappe.query_report.get_filter_value("report_mode")
         : "";
-
     const $w = report.page.wrapper;
     $w.find("#mar-legend-bar").remove();
-
     if (mode !== "monthly_attendance") return;
-
-    const bar  = _build_legend_bar();
-    const $dt  = $w.find(".dt-wrapper, .frappe-datatable").first();
-    if ($dt.length) {
-        $dt.before(bar);
-    } else {
-        $w.find(".report-wrapper").prepend(bar);
-    }
+    const bar = _build_legend_bar();
+    const $dt = $w.find(".dt-wrapper, .frappe-datatable").first();
+    $dt.length ? $dt.before(bar) : $w.find(".report-wrapper").prepend(bar);
 }
 
-// ─── Hide serial numbers on bold/total rows ────────────────────────────────
+// ── Hide serial on bold/total rows ────────────────────────────────────────────
 
 function _hide_total_serials() {
     document.querySelectorAll(".dt-row").forEach(row => {
-        const hasStrong = row.querySelector("strong");
-        if (!hasStrong) return;
+        if (!row.querySelector("strong")) return;
         const srCell = row.querySelector('[data-col-index="0"] .dt-cell__content');
-        if (srCell && srCell.textContent.trim() !== "") {
-            srCell.textContent = "";
-        }
+        if (srCell && srCell.textContent.trim() !== "") srCell.textContent = "";
     });
 }
 
-// ─── Report list ──────────────────────────────────────────────────────────────
+// ── Report list ───────────────────────────────────────────────────────────────
 
 const REPORTS = [
     { key:"salary_summary",            label:"Salary Summary"            },
@@ -242,8 +229,8 @@ const REPORTS = [
     { key:"home_bank_advice",          label:"Home Bank Advice"          },
     { key:"monthly_attendance",        label:"Monthly Attendance"        },
     { key:"income_tax",                label:"Income Tax"                },
-    { key:"loan_register",             label:"Loan Register"             },  
-    { key:"advance_register",          label:"Advance Register"          },  
+    { key:"loan_register",             label:"Loan Register"             },
+    { key:"advance_register",          label:"Advance Register"          },
 ];
 
 let _idx = 0, _cache = {}, _debounce_timer = null, _prefetch_xhr = null, _loading_key = null;
@@ -270,7 +257,7 @@ function _validate(report) {
     return true;
 }
 
-// ─── UPDATED: Button tab styles (replaces dropdown styles) ────────────────────
+// ── Styles ────────────────────────────────────────────────────────────────────
 
 function _ensure_styles() {
     if (document.getElementById("pr-style")) return;
@@ -323,11 +310,34 @@ function _ensure_styles() {
             border-bottom: 1px solid #fecaca;
             display: none;
         }
+        /* Excel button — green tint */
+        .pr-excel-btn {
+            height: 30px;
+            padding: 0 12px;
+            font-size: 12px;
+            font-weight: 500;
+            color: #166534;
+            background: #f0fdf4;
+            border: 1.5px solid #86efac;
+            border-radius: 6px;
+            cursor: pointer;
+            white-space: nowrap;
+            transition: all .15s ease;
+            font-family: inherit;
+            display: inline-flex;
+            align-items: center;
+            gap: 5px;
+        }
+        .pr-excel-btn:hover {
+            background: #dcfce7;
+            border-color: #4ade80;
+        }
+        .pr-excel-btn svg { flex-shrink:0; }
     `;
     document.head.appendChild(s);
 }
 
-// ─── UPDATED: _inject_nav — renders button tabs ───────────────────────────────
+// ── Nav bar ───────────────────────────────────────────────────────────────────
 
 function _inject_nav(report) {
     if (report.page.wrapper.find(".pr-nav-bar").length) return;
@@ -338,9 +348,7 @@ function _inject_nav(report) {
     ).join("");
 
     const nav = $(`
-        <div class="pr-nav-bar">
-            ${buttons}
-        </div>
+        <div class="pr-nav-bar">${buttons}</div>
         <div class="pr-on-hold-note" id="pr-on-hold-note"></div>
     `);
 
@@ -352,12 +360,10 @@ function _inject_nav(report) {
     }
     if (!inserted) report.page.wrapper.find(".report-wrapper").prepend(nav);
 
-    // Click handler for each tab button
     nav.find(".pr-tab-btn").on("click", function () {
         _go(report, +$(this).data("idx"));
     });
 
-    // Invalidate cache when filters change
     report.page.wrapper.on("change.pr", ".frappe-control input, .frappe-control select", function () {
         _cache       = {};
         _loading_key = null;
@@ -376,10 +382,9 @@ function _inject_nav(report) {
     });
 }
 
-// ─── UPDATED: _sync — highlights the active button ───────────────────────────
+// ── Tab sync ──────────────────────────────────────────────────────────────────
 
 function _sync(report) {
-    // Update active state on tab buttons
     report.page.wrapper.find(".pr-tab-btn").each(function () {
         $(this).toggleClass("active", +$(this).data("idx") === _idx);
     });
@@ -390,11 +395,7 @@ function _sync(report) {
 
 function _go(report, idx) {
     if (!report._filters_filled || !report._filters_filled()) {
-        frappe.msgprint({
-            title:     __("Missing Filters"),
-            message:   __("Please select Company, Year and Month first."),
-            indicator: "orange",
-        });
+        frappe.msgprint({ title:__("Missing Filters"), message:__("Please select Company, Year and Month first."), indicator:"orange" });
         return;
     }
 
@@ -402,8 +403,6 @@ function _go(report, idx) {
     const modeKey = REPORTS[idx].key;
     _sync(report);
     frappe.query_report.set_filter_value("report_mode", modeKey);
-
-    // Always remove stale legend immediately when switching tabs
     report.page.wrapper.find("#mar-legend-bar").remove();
 
     const fk     = _filter_key(report);
@@ -411,17 +410,13 @@ function _go(report, idx) {
     if (cached) {
         _render_cached(cached);
         _update_on_hold_note(cached.result);
-        if (modeKey === "monthly_attendance") {
-            setTimeout(() => _maybe_inject_legend(report), 350);
-        }
+        if (modeKey === "monthly_attendance") setTimeout(() => _maybe_inject_legend(report), 350);
         return;
     }
 
     _loading_key = `${fk}::${modeKey}`;
     frappe.query_report.refresh();
-    if (modeKey === "monthly_attendance") {
-        setTimeout(() => _maybe_inject_legend(report), 1200);
-    }
+    if (modeKey === "monthly_attendance") setTimeout(() => _maybe_inject_legend(report), 1200);
 }
 
 function _render_cached(cached) {
@@ -505,18 +500,48 @@ function _server_filters(report) {
     };
 }
 
-function _set_print_buttons(report) {
-    report.page.wrapper.find(".pr-select-print-btn").remove();
+// ── Action buttons (Print + Excel) ────────────────────────────────────────────
+
+function _set_action_buttons(report) {
+    report.page.wrapper.find(".pr-select-print-btn, .pr-select-excel-btn").remove();
+
+    // ── "Select & Excel" button ──
+    const excelIcon = `<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24"
+         fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+         <rect x="2" y="3" width="20" height="18" rx="2"/><line x1="8" y1="3" x2="8" y2="21"/>
+         <line x1="2" y1="9" x2="22" y2="9"/><line x1="2" y1="15" x2="22" y2="15"/>
+    </svg>`;
+
+    const btnExcelSel = $(`<button class="btn btn-default btn-sm pr-select-excel-btn"
+        style="margin-left:6px;color:#166534;border-color:#86efac;background:#f0fdf4;">
+        ${excelIcon} ${__("Select & Excel")}</button>`);
+
+    // ── "Excel" (current tab) button ──
+    const btnExcelCur = $(`<button class="btn btn-default btn-sm pr-excel-cur-btn"
+        style="margin-left:6px;color:#166534;border-color:#86efac;background:#f0fdf4;">
+        ${excelIcon} ${__("Excel")}</button>`);
+
+    // ── "Select & Print" button (existing) ──
     const btnSel = $(`<button class="btn btn-default btn-sm pr-select-print-btn" style="margin-left:8px;">
         <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24"
              fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"
              stroke-linejoin="round" style="margin-right:4px;vertical-align:-1px;">
           <polyline points="9 11 12 14 22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/>
         </svg>${__("Select & Print")}</button>`);
-    report.page.wrapper.find(".page-actions").prepend(btnSel);
-    btnSel.on("click", () => _show_select_print_dialog(report, btnSel));
+
+    const actions = report.page.wrapper.find(".page-actions");
+    actions.prepend(btnExcelSel);
+    actions.prepend(btnExcelCur);
+    actions.prepend(btnSel);
+
+    btnSel.on("click",      () => _show_select_dialog(report, btnSel,      "pdf"));
+    btnExcelSel.on("click", () => _show_select_dialog(report, btnExcelSel, "excel"));
+    btnExcelCur.on("click", () => _excel_current(report));
+
     report.page.set_primary_action(__("Print"), () => _print_current(report), "printer");
 }
+
+// ── Print / Excel current tab ─────────────────────────────────────────────────
 
 function _print_current(report) {
     if (!_validate(report)) return;
@@ -528,12 +553,27 @@ function _print_current(report) {
     );
 }
 
-function _show_select_print_dialog(report, triggerBtn) {
+function _excel_current(report) {
+    if (!_validate(report)) return;
+    const label = REPORTS[_idx]?.label || "Report";
+    _run_with_progress(
+        "saral_hr.saral_hr.report.payroll_report.payroll_report.excel_single_report",
+        { filters: JSON.stringify(_server_filters(report)) },
+        `Exporting Excel: ${label}`
+    );
+}
+
+// ── Select dialog (shared by PDF and Excel) ───────────────────────────────────
+
+function _show_select_dialog(report, triggerBtn, mode) {
     if (!_validate(report)) return;
 
     const half  = Math.ceil(REPORTS.length / 2);
     const left  = REPORTS.slice(0, half);
     const right = REPORTS.slice(half);
+
+    const title = mode === "excel" ? __("Select Reports to Export (Excel)") : __("Select Reports to Print");
+    const actionLabel = mode === "excel" ? __("Export Excel") : __("Generate PDF");
 
     function _chkRow(r, i) {
         return `
@@ -552,9 +592,6 @@ function _show_select_print_dialog(report, triggerBtn) {
         </div>`;
     }
 
-    const leftHtml  = left.map((r, i) => _chkRow(r, i)).join("");
-    const rightHtml = right.map((r, i) => _chkRow(r, i + half)).join("");
-
     const body = `
         <div style="padding:4px 0 8px;">
           <div style="display:flex;gap:8px;padding:0 8px 10px;border-bottom:1px solid #e2e8f0;margin-bottom:8px;">
@@ -566,16 +603,16 @@ function _show_select_print_dialog(report, triggerBtn) {
             ">${__("Unselect All")}</button>
           </div>
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:0 12px;padding:0 4px;">
-            <div>${leftHtml}</div>
-            <div>${rightHtml}</div>
+            <div>${left.map((r, i) => _chkRow(r, i)).join("")}</div>
+            <div>${right.map((r, i) => _chkRow(r, i + half)).join("")}</div>
           </div>
         </div>
     `;
 
     const d = new frappe.ui.Dialog({
-        title: __("Select Reports to Print"),
+        title,
         fields: [{ fieldtype: "HTML", fieldname: "report_list", options: body }],
-        primary_action_label: __("Generate PDF"),
+        primary_action_label: actionLabel,
         primary_action() {
             const selected = [];
             document.querySelectorAll(".pr-chk-row input[type=checkbox]").forEach(chk => {
@@ -586,18 +623,44 @@ function _show_select_print_dialog(report, triggerBtn) {
                 return;
             }
             d.hide();
-            _print_selected(report, selected, triggerBtn);
+            if (mode === "excel") {
+                _export_selected_excel(report, selected, triggerBtn);
+            } else {
+                _print_selected(report, selected, triggerBtn);
+            }
         },
     });
     d.show();
 }
 
-function _print_selected(report, selectedKeys, btn) {
-    const orig = btn.html();
+// ── Export selected as Excel ──────────────────────────────────────────────────
+
+function _export_selected_excel(report, selectedKeys, btn) {
+    const orig  = btn.html();
     btn.prop("disabled", true);
     const count = selectedKeys.length;
-    const f = _server_filters(report); delete f.report_mode;
+    const f     = _server_filters(report);
+    delete f.report_mode;
     f.selected_reports = JSON.stringify(selectedKeys);
+
+    _run_with_progress(
+        "saral_hr.saral_hr.report.payroll_report.payroll_report.excel_selected_reports",
+        { filters: JSON.stringify(f) },
+        `Exporting ${count} ${count === 1 ? "report" : "reports"} to Excel`,
+        () => { btn.prop("disabled", false).html(orig); }
+    );
+}
+
+// ── Print selected as PDF ─────────────────────────────────────────────────────
+
+function _print_selected(report, selectedKeys, btn) {
+    const orig  = btn.html();
+    btn.prop("disabled", true);
+    const count = selectedKeys.length;
+    const f     = _server_filters(report);
+    delete f.report_mode;
+    f.selected_reports = JSON.stringify(selectedKeys);
+
     _run_with_progress(
         "saral_hr.saral_hr.report.payroll_report.payroll_report.print_selected_reports",
         { filters: JSON.stringify(f) },
@@ -605,6 +668,8 @@ function _print_selected(report, selectedKeys, btn) {
         () => { btn.prop("disabled", false).html(orig); }
     );
 }
+
+// ── Progress runner ───────────────────────────────────────────────────────────
 
 function _run_with_progress(method, args, label, onDone) {
     let pct = 0, done = false, phaseIdx = 0, phaseStart = Date.now(), rafId = null;
@@ -617,7 +682,7 @@ function _run_with_progress(method, args, label, onDone) {
         { target: 88, duration: 6000 },
     ];
 
-    frappe.show_progress(__("Generating PDF"), 0, 100, `${__(label)}…`);
+    frappe.show_progress(__("Processing"), 0, 100, `${__(label)}…`);
 
     function _tick() {
         if (done) return;
@@ -628,7 +693,7 @@ function _run_with_progress(method, args, label, onDone) {
         const eased    = 1 - Math.pow(1 - progress, 2);
         const prevTarget = phaseIdx === 0 ? 0 : PHASES[phaseIdx - 1].target;
         pct = prevTarget + eased * (phase.target - prevTarget);
-        frappe.show_progress(__("Generating PDF"), Math.round(pct), 100, `${__(label)}…`);
+        frappe.show_progress(__("Processing"), Math.round(pct), 100, `${__(label)}…`);
         if (progress >= 1) { phaseIdx++; phaseStart = Date.now(); }
         rafId = requestAnimationFrame(_tick);
     }
@@ -639,12 +704,12 @@ function _run_with_progress(method, args, label, onDone) {
         callback(r) {
             done = true;
             if (rafId) cancelAnimationFrame(rafId);
-            frappe.show_progress(__("Generating PDF"), 100, 100, __("Done!"));
+            frappe.show_progress(__("Processing"), 100, 100, __("Done!"));
             setTimeout(() => {
                 frappe.hide_progress();
                 if (onDone) onDone();
-                if (r.message) _open_pdf(r.message);
-                else frappe.msgprint({ title:__("Error"), message:__("Failed to generate PDF."), indicator:"red" });
+                if (r.message) _open_file(r.message);
+                else frappe.msgprint({ title:__("Error"), message:__("Failed to generate file."), indicator:"red" });
             }, 600);
         },
         error() {
@@ -652,12 +717,12 @@ function _run_with_progress(method, args, label, onDone) {
             if (rafId) cancelAnimationFrame(rafId);
             frappe.hide_progress();
             if (onDone) onDone();
-            frappe.msgprint({ title:__("Error"), message:__("Failed to generate PDF."), indicator:"red" });
+            frappe.msgprint({ title:__("Error"), message:__("Failed to generate file."), indicator:"red" });
         }
     });
 }
 
-function _open_pdf(url) {
+function _open_file(url) {
     const a = Object.assign(document.createElement("a"), {
         href: frappe.urllib.get_full_url(url), target: "_blank", rel: "noopener noreferrer"
     });
