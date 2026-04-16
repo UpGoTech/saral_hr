@@ -314,26 +314,31 @@ tr.tot td{background:#e8e8e8;font-weight:700}
 
 _SIG = """
 <!--SIG_START-->
-<div style="display:flex;justify-content:space-between;
-            width:100%;margin-top:24px;padding-top:8px;
-            box-sizing:border-box;">
-    <div style="text-align:center;width:180px;">
-        <div style="border-top:1px solid #000;margin-bottom:4px;"></div>
-        <div style="font-size:13px;color:#333;">Prepared By</div>
-    </div>
-    <div style="text-align:center;width:180px;">
-        <div style="border-top:1px solid #000;margin-bottom:4px;"></div>
-        <div style="font-size:13px;color:#333;">Checked By</div>
-    </div>
-    <div style="text-align:center;width:180px;">
-        <div style="border-top:1px solid #000;margin-bottom:4px;"></div>
-        <div style="font-size:13px;color:#333;">Authorised Signatory</div>
-    </div>
-</div>
+<table style="width:100%;border-collapse:collapse;margin-top:32px;">
+  <tr>
+    <td style="width:33.33%;text-align:center;padding:0 20px;border:none;">
+      <div style="width:160px;margin:0 auto;border-top:1px solid #000;padding-top:5px;
+                  font-size:10px;color:#333;">Prepared By</div>
+    </td>
+    <td style="width:33.33%;text-align:center;padding:0 20px;border:none;">
+      <div style="width:160px;margin:0 auto;border-top:1px solid #000;padding-top:5px;
+                  font-size:10px;color:#333;">Checked By</div>
+    </td>
+    <td style="width:33.33%;text-align:center;padding:0 20px;border:none;">
+      <div style="width:160px;margin:0 auto;border-top:1px solid #000;padding-top:5px;
+                  font-size:10px;color:#333;">Authorised Signatory</div>
+    </td>
+  </tr>
+</table>
 <!--SIG_END-->
 """
 
-_SIG_MARKERS = ["<!--SIG_START-->", '<div class="sig">']
+# _SIG_MARKERS = ["<!--SIG_START-->", '<div class="sig">']
+_SIG_MARKERS = [
+    "<!--SIG_START-->",
+    '<div class="sig">',
+    '<div style="width:100%;margin-top:30px;display:table;">',  # new sig pattern
+]
 
 
 def _strip_sig(html):

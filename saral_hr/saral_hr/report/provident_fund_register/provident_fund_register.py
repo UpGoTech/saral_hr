@@ -63,8 +63,8 @@ _NUMERIC = {
     "employer_pf","employer_edli","employer_admin","total_amount",
 }
 
-ROWS_FIRST_PAGE = 14
-ROWS_OTHER_PAGE = 15
+ROWS_FIRST_PAGE = 7
+ROWS_OTHER_PAGE = 8
 
 # ---------------------------------------------------------------------------
 # CSS

@@ -76,7 +76,7 @@ frappe.query_reports["Payroll Report"] = {
 
         frappe.after_ajax(() => {
             _inject_nav(report);
-            if (!report.page.wrapper.find(".pr-select-print-btn").length) {
+            if (!report.page.wrapper.find(".pr-split-pdf").length) {
                 _set_action_buttons(report);
             }
         });
@@ -310,29 +310,114 @@ function _ensure_styles() {
             border-bottom: 1px solid #fecaca;
             display: none;
         }
-        /* Excel button — green tint */
-        .pr-excel-btn {
+
+        /* ── Split button wrapper ── */
+        .pr-split-wrap {
+            display: inline-flex;
+            align-items: stretch;
+            border-radius: 6px;
+            overflow: visible;
+            margin-left: 6px;
+            position: relative;
+        }
+
+        /* ── Main action part ── */
+        .pr-split-main {
             height: 30px;
             padding: 0 12px;
             font-size: 12px;
-            font-weight: 500;
-            color: #166534;
-            background: #f0fdf4;
-            border: 1.5px solid #86efac;
-            border-radius: 6px;
+            font-weight: 600;
+            border: none;
+            border-radius: 6px 0 0 6px;
             cursor: pointer;
             white-space: nowrap;
-            transition: all .15s ease;
             font-family: inherit;
             display: inline-flex;
             align-items: center;
             gap: 5px;
+            transition: filter .15s ease;
+            outline: none;
         }
-        .pr-excel-btn:hover {
-            background: #dcfce7;
-            border-color: #4ade80;
+        .pr-split-main:hover { filter: brightness(0.93); }
+
+        /* ── Chevron toggle part ── */
+        .pr-split-arrow {
+            height: 30px;
+            width: 26px;
+            border: none;
+            border-left: 1px solid rgba(255,255,255,0.35);
+            border-radius: 0 6px 6px 0;
+            cursor: pointer;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            font-family: inherit;
+            transition: filter .15s ease;
+            outline: none;
+            flex-shrink: 0;
         }
-        .pr-excel-btn svg { flex-shrink:0; }
+        .pr-split-arrow:hover { filter: brightness(0.88); }
+
+        /* PDF button — red */
+        .pr-split-pdf .pr-split-main,
+        .pr-split-pdf .pr-split-arrow {
+            background: #000000;
+            color: #fff;
+        }
+
+        /* Excel button — green */
+        .pr-split-excel .pr-split-main,
+        .pr-split-excel .pr-split-arrow {
+            background: #26a354;
+            color: #fff;
+        }
+
+        /* ── Dropdown menu ── */
+        .pr-split-menu {
+            display: none;
+            position: absolute;
+            top: calc(100% + 4px);
+            right: 0;
+            min-width: 180px;
+            background: #fff;
+            border: 1px solid #e2e8f0;
+            border-radius: 8px;
+            box-shadow: 0 8px 24px rgba(0,0,0,.12);
+            z-index: 9999;
+            overflow: hidden;
+            padding: 4px 0;
+        }
+        .pr-split-menu.open { display: block; }
+
+        .pr-split-menu-item {
+            display: flex;
+            align-items: center;
+            gap: 9px;
+            padding: 9px 14px;
+            font-size: 12.5px;
+            font-weight: 500;
+            color: #1e293b;
+            cursor: pointer;
+            transition: background .1s ease;
+            white-space: nowrap;
+            font-family: inherit;
+            border: none;
+            background: none;
+            width: 100%;
+            text-align: left;
+        }
+        .pr-split-menu-item:hover { background: #f1f5f9; }
+        .pr-split-menu-item .pr-menu-icon {
+            width: 16px;
+            height: 16px;
+            flex-shrink: 0;
+            opacity: 0.75;
+        }
+        .pr-split-menu-divider {
+            height: 1px;
+            background: #e2e8f0;
+            margin: 3px 0;
+        }
     `;
     document.head.appendChild(s);
 }
@@ -500,45 +585,163 @@ function _server_filters(report) {
     };
 }
 
-// ── Action buttons (Print + Excel) ────────────────────────────────────────────
+// ── SVG icons ─────────────────────────────────────────────────────────────────
+
+const _ICON_PDF = `<svg class="pr-menu-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"
+    fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+    <polyline points="14 2 14 8 20 8"/>
+    <line x1="16" y1="13" x2="8" y2="13"/>
+    <line x1="16" y1="17" x2="8" y2="17"/>
+    <polyline points="10 9 9 9 8 9"/>
+</svg>`;
+
+const _ICON_EXCEL = `<svg class="pr-menu-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"
+    fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+    <rect x="2" y="3" width="20" height="18" rx="2"/>
+    <line x1="8" y1="3" x2="8" y2="21"/>
+    <line x1="2" y1="9" x2="22" y2="9"/>
+    <line x1="2" y1="15" x2="22" y2="15"/>
+</svg>`;
+
+const _ICON_MULTI = `<svg class="pr-menu-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"
+    fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+    <rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/>
+    <rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/>
+</svg>`;
+
+const _ICON_CHEVRON = `<svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24"
+    fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
+    <polyline points="6 9 12 15 18 9"/>
+</svg>`;
+
+const _ICON_PDF_BTN = `<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24"
+    fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+    <polyline points="14 2 14 8 20 8"/>
+</svg>`;
+
+const _ICON_XL_BTN = `<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24"
+    fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+    <rect x="2" y="3" width="20" height="18" rx="2"/>
+    <line x1="8" y1="3" x2="8" y2="21"/>
+    <line x1="2" y1="9" x2="22" y2="9"/>
+    <line x1="2" y1="15" x2="22" y2="15"/>
+</svg>`;
+
+// ── Build a split-button ──────────────────────────────────────────────────────
+// mainLabel  — text shown on the main button
+// mainAction — fn called when main button is clicked
+// menuItems  — array of { icon, label, action }
+// colorClass — "pr-split-pdf" | "pr-split-excel"
+
+function _make_split_btn(mainLabel, mainIcon, mainAction, menuItems, colorClass) {
+    const $wrap = $(`
+        <div class="pr-split-wrap ${colorClass}">
+            <button class="pr-split-main">${mainIcon} ${mainLabel}</button>
+            <button class="pr-split-arrow" title="More options">${_ICON_CHEVRON}</button>
+            <div class="pr-split-menu">
+                ${menuItems.map((item, i) => `
+                    ${i > 0 && item.divider ? '<div class="pr-split-menu-divider"></div>' : ''}
+                    <button class="pr-split-menu-item" data-item-idx="${i}">
+                        ${item.icon}
+                        <span>${item.label}</span>
+                    </button>
+                `).join("")}
+            </div>
+        </div>
+    `);
+
+    // Main button click → main action
+    $wrap.find(".pr-split-main").on("click", function(e) {
+        e.stopPropagation();
+        $wrap.find(".pr-split-menu").removeClass("open");
+        mainAction();
+    });
+
+    // Arrow click → toggle dropdown
+    $wrap.find(".pr-split-arrow").on("click", function(e) {
+        e.stopPropagation();
+        const $menu = $wrap.find(".pr-split-menu");
+        const wasOpen = $menu.hasClass("open");
+        // close all other open menus first
+        $(".pr-split-menu.open").removeClass("open");
+        if (!wasOpen) $menu.addClass("open");
+    });
+
+    // Menu item clicks
+    $wrap.find(".pr-split-menu-item").on("click", function(e) {
+        e.stopPropagation();
+        $wrap.find(".pr-split-menu").removeClass("open");
+        const idx = +$(this).data("item-idx");
+        menuItems[idx].action();
+    });
+
+    return $wrap;
+}
+
+// ── Close dropdowns when clicking outside ─────────────────────────────────────
+
+$(document).on("click.pr-split", function() {
+    $(".pr-split-menu.open").removeClass("open");
+});
+
+// ── Action buttons (two split-buttons) ───────────────────────────────────────
 
 function _set_action_buttons(report) {
-    report.page.wrapper.find(".pr-select-print-btn, .pr-select-excel-btn").remove();
-
-    // ── "Select & Excel" button ──
-    const excelIcon = `<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24"
-         fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-         <rect x="2" y="3" width="20" height="18" rx="2"/><line x1="8" y1="3" x2="8" y2="21"/>
-         <line x1="2" y1="9" x2="22" y2="9"/><line x1="2" y1="15" x2="22" y2="15"/>
-    </svg>`;
-
-    const btnExcelSel = $(`<button class="btn btn-default btn-sm pr-select-excel-btn"
-        style="margin-left:6px;color:#166534;border-color:#86efac;background:#f0fdf4;">
-        ${excelIcon} ${__("Select & Excel")}</button>`);
-
-    // ── "Excel" (current tab) button ──
-    const btnExcelCur = $(`<button class="btn btn-default btn-sm pr-excel-cur-btn"
-        style="margin-left:6px;color:#166534;border-color:#86efac;background:#f0fdf4;">
-        ${excelIcon} ${__("Excel")}</button>`);
-
-    // ── "Select & Print" button (existing) ──
-    const btnSel = $(`<button class="btn btn-default btn-sm pr-select-print-btn" style="margin-left:8px;">
-        <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24"
-             fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"
-             stroke-linejoin="round" style="margin-right:4px;vertical-align:-1px;">
-          <polyline points="9 11 12 14 22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/>
-        </svg>${__("Select & Print")}</button>`);
+    // Remove any previously injected buttons to avoid duplicates
+    report.page.wrapper.find(
+        ".pr-split-wrap, .pr-select-print-btn, .pr-select-excel-btn, .pr-excel-cur-btn, .pr-excel-btn"
+    ).remove();
 
     const actions = report.page.wrapper.find(".page-actions");
-    actions.prepend(btnExcelSel);
-    actions.prepend(btnExcelCur);
-    actions.prepend(btnSel);
 
-    btnSel.on("click",      () => _show_select_dialog(report, btnSel,      "pdf"));
-    btnExcelSel.on("click", () => _show_select_dialog(report, btnExcelSel, "excel"));
-    btnExcelCur.on("click", () => _excel_current(report));
+    // ── PDF split-button ─────────────────────────────────────────────────────
+    const $pdfBtn = _make_split_btn(
+        __("Print PDF"),
+        _ICON_PDF_BTN,
+        // Main action → current report PDF
+        () => _print_current(report),
+        [
+            {
+                icon:   _ICON_PDF,
+                label:  __("Current Report"),
+                action: () => _print_current(report),
+            },
+            {
+                icon:   _ICON_MULTI,
+                label:  __("Select Reports…"),
+                action: () => _show_select_dialog(report, $pdfBtn, "pdf"),
+                divider: true,
+            },
+        ],
+        "pr-split-pdf"
+    );
 
-    report.page.set_primary_action(__("Print"), () => _print_current(report), "printer");
+    // ── Excel split-button ───────────────────────────────────────────────────
+    const $xlBtn = _make_split_btn(
+        __("Export Excel"),
+        _ICON_XL_BTN,
+        // Main action → current report Excel
+        () => _excel_current(report),
+        [
+            {
+                icon:   _ICON_EXCEL,
+                label:  __("Current Report"),
+                action: () => _excel_current(report),
+            },
+            {
+                icon:   _ICON_MULTI,
+                label:  __("Select Reports…"),
+                action: () => _show_select_dialog(report, $xlBtn, "excel"),
+                divider: true,
+            },
+        ],
+        "pr-split-excel"
+    );
+
+    actions.prepend($xlBtn);
+    actions.prepend($pdfBtn);
 }
 
 // ── Print / Excel current tab ─────────────────────────────────────────────────
@@ -572,7 +775,7 @@ function _show_select_dialog(report, triggerBtn, mode) {
     const left  = REPORTS.slice(0, half);
     const right = REPORTS.slice(half);
 
-    const title = mode === "excel" ? __("Select Reports to Export (Excel)") : __("Select Reports to Print");
+    const title       = mode === "excel" ? __("Select Reports to Export (Excel)") : __("Select Reports to Print");
     const actionLabel = mode === "excel" ? __("Export Excel") : __("Generate PDF");
 
     function _chkRow(r, i) {
@@ -624,9 +827,9 @@ function _show_select_dialog(report, triggerBtn, mode) {
             }
             d.hide();
             if (mode === "excel") {
-                _export_selected_excel(report, selected, triggerBtn);
+                _export_selected_excel(report, selected);
             } else {
-                _print_selected(report, selected, triggerBtn);
+                _print_selected(report, selected);
             }
         },
     });
@@ -635,9 +838,7 @@ function _show_select_dialog(report, triggerBtn, mode) {
 
 // ── Export selected as Excel ──────────────────────────────────────────────────
 
-function _export_selected_excel(report, selectedKeys, btn) {
-    const orig  = btn.html();
-    btn.prop("disabled", true);
+function _export_selected_excel(report, selectedKeys) {
     const count = selectedKeys.length;
     const f     = _server_filters(report);
     delete f.report_mode;
@@ -646,16 +847,13 @@ function _export_selected_excel(report, selectedKeys, btn) {
     _run_with_progress(
         "saral_hr.saral_hr.report.payroll_report.payroll_report.excel_selected_reports",
         { filters: JSON.stringify(f) },
-        `Exporting ${count} ${count === 1 ? "report" : "reports"} to Excel`,
-        () => { btn.prop("disabled", false).html(orig); }
+        `Exporting ${count} ${count === 1 ? "report" : "reports"} to Excel`
     );
 }
 
 // ── Print selected as PDF ─────────────────────────────────────────────────────
 
-function _print_selected(report, selectedKeys, btn) {
-    const orig  = btn.html();
-    btn.prop("disabled", true);
+function _print_selected(report, selectedKeys) {
     const count = selectedKeys.length;
     const f     = _server_filters(report);
     delete f.report_mode;
@@ -664,8 +862,7 @@ function _print_selected(report, selectedKeys, btn) {
     _run_with_progress(
         "saral_hr.saral_hr.report.payroll_report.payroll_report.print_selected_reports",
         { filters: JSON.stringify(f) },
-        `Compiling ${count} ${count === 1 ? "report" : "reports"}`,
-        () => { btn.prop("disabled", false).html(orig); }
+        `Compiling ${count} ${count === 1 ? "report" : "reports"}`
     );
 }
 
