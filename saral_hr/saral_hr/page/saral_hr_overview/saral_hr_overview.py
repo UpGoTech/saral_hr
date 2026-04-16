@@ -31,12 +31,6 @@ def _active_in_month(company, month_start, month_end):
 
 
 def _get_employee_names(employee_ids):
-	"""
-	Returns a dict { company_link_name: display_name } by joining Employee.
-	Company Link name = employee ID (e.g. HR-EMP-00068).
-	Employee.employee = same ID.
-	Actual name = first_name + middle_name + last_name on Employee doctype.
-	"""
 	if not employee_ids:
 		return {}
 	emp_docs = frappe.db.get_all(
@@ -117,6 +111,7 @@ def get_kpi_data(company, from_date, to_date):
 	)
 	esic_filled = pf_filled = 0
 	gender_counts = {}
+	gender_missing = 0
 	if emp_names:
 		esic_filled = frappe.db.count("Employee", filters={
 			"name": ["in", emp_names], "esic_number": ["!=", ""]
@@ -132,8 +127,9 @@ def get_kpi_data(company, from_date, to_date):
 		for g in genders:
 			key = g.gender or "Not specified"
 			gender_counts[key] = gender_counts.get(key, 0) + 1
+		gender_missing = gender_counts.get("Not specified", 0)
 
-	# YTD salary cost — sum of net_salary from submitted salary slips in period
+	# YTD salary cost
 	ytd_result = frappe.db.sql("""
 		SELECT COALESCE(SUM(net_salary), 0) as total
 		FROM `tabSalary Slip`
@@ -156,6 +152,7 @@ def get_kpi_data(company, from_date, to_date):
 		"esic_filled":        esic_filled,
 		"pf_filled":          pf_filled,
 		"gender_counts":      gender_counts,
+		"gender_missing":     gender_missing,
 		"ytd_salary_cost":    ytd_salary_cost,
 		"dept_count":         frappe.db.count("Department"),
 		"designation_count":  frappe.db.count("Designation"),
@@ -211,6 +208,7 @@ def get_monthly_data(company, from_date, to_date):
 
 		att_total   = len(att_records)
 		emp_att_map = {}
+		half_day_total = 0
 		for r in att_records:
 			emp = r["employee"]
 			if emp not in emp_att_map:
@@ -219,6 +217,7 @@ def get_monthly_data(company, from_date, to_date):
 				emp_att_map[emp] += 1
 			elif r["status"] == "Half Day":
 				emp_att_map[emp] += 0.5
+				half_day_total += 1
 
 		min_att = min(emp_att_map.values()) if emp_att_map else 0
 		max_att = max(emp_att_map.values()) if emp_att_map else 0
@@ -252,11 +251,51 @@ def get_monthly_data(company, from_date, to_date):
 			pluck="employee"
 		))
 
-		# Expected slips = active - on hold
+		# FIX: For ready_att, exclude employees who joined in last 3 days of month
+		last3_start = month_end - relativedelta(days=2)
+		late_joiners = {
+			r.name for r in active_recs
+			if r.date_of_joining and getdate(r.date_of_joining) >= last3_start
+		}
+		adjusted_active_names = active_names - late_joiners
+		adjusted_active_count = len(adjusted_active_names)
+		adjusted_emps_with_att = len(
+			set(r["employee"] for r in att_records) & adjusted_active_names
+		)
+
+		# FIX: For ready_ssa, exclude employees on hold
+		on_hold_emps = set(frappe.db.get_all(
+			"Employee Salary Hold",
+			filters={
+				"company":   company,
+				"month":     month_start.strftime("%B"),
+				"year":      str(month_start.year),
+				"status":    "On Hold",
+				"docstatus": 1
+			},
+			pluck="employee"
+		))
+		active_names_excl_hold = active_names - on_hold_emps
+		ready_ssa = active_names_excl_hold.issubset(ssa_this_month)
+
+		# FIX: ready_slips guard for slip_count >= expected (not >)
 		expected_slips = max(0, active_count - hold_count)
+		ready_slips = (slip_count >= expected_slips) and (expected_slips > 0)
+
+		# Slips pending derived
+		slips_pending = max(0, active_count - hold_count - slip_count)
 
 		# Attrition rate
 		attrition_pct = round((left / opening * 100), 1) if opening > 0 else 0
+
+		# Readiness score
+		checks = [
+			adjusted_active_count == 0 or adjusted_emps_with_att >= adjusted_active_count,
+			ready_ssa,
+			hold_count == 0,
+			ready_slips
+		]
+		readiness_score = sum(1 for c in checks if c)
 
 		rows.append({
 			"month":            month_start.strftime("%b %Y"),
@@ -272,16 +311,19 @@ def get_monthly_data(company, from_date, to_date):
 			"att_total":        att_total,
 			"att_coverage_pct": att_coverage_pct,
 			"emps_with_att":    emps_with_att,
+			"half_day_total":   half_day_total,
 			"absent_total":     absent_total,
 			"lwp_total":        lwp_total,
 			"min_att":          min_att,
 			"max_att":          max_att,
 			"slip_count":       slip_count,
 			"hold_count":       hold_count,
-			"ready_att":        emps_with_att >= active_count and active_count > 0,
-			"ready_ssa":        active_names.issubset(ssa_this_month),
+			"slips_pending":    slips_pending,
+			"readiness_score":  readiness_score,
+			"ready_att":        adjusted_active_count == 0 or adjusted_emps_with_att >= adjusted_active_count,
+			"ready_ssa":        ready_ssa,
 			"ready_no_holds":   hold_count == 0,
-			"ready_slips":      slip_count >= expected_slips and expected_slips > 0,
+			"ready_slips":      ready_slips,
 		})
 
 	return rows
@@ -296,7 +338,7 @@ def get_expiring_assignments(company, from_date, to_date):
 	today_date = getdate(today())
 	window_end = add_days(today_date, 30)
 
-	return frappe.db.get_all(
+	rows = frappe.db.get_all(
 		"Salary Structure Assignment",
 		filters={
 			"company":   company,
@@ -306,6 +348,13 @@ def get_expiring_assignments(company, from_date, to_date):
 		fields=["employee", "employee_name", "salary_structure", "from_date", "to_date"],
 		order_by="to_date asc"
 	)
+
+	# Add days_remaining
+	for r in rows:
+		exp = getdate(r.to_date)
+		r["days_remaining"] = (exp - today_date).days
+
+	return rows
 
 
 # ---------------------------------------------------------------------------
@@ -317,7 +366,7 @@ def get_classification_data(company):
 	emp_rows = frappe.db.get_all(
 		"Company Link",
 		filters={"company": company, "is_active": 1},
-		fields=["category", "skill_type"]
+		fields=["category", "skill_type", "department"]
 	)
 
 	cat_names = list({r.category for r in emp_rows if r.category})
@@ -335,23 +384,46 @@ def get_classification_data(company):
 		cat     = r.category or "Unassigned"
 		has_sub = has_subtype_map.get(cat, False)
 		skill   = r.skill_type if (has_sub and r.skill_type) else None
+		dept    = r.department or "Unassigned"
 
 		if cat not in breakdown:
-			breakdown[cat] = {"has_subtype": has_sub, "counts": {}, "total": 0}
+			breakdown[cat] = {
+				"has_subtype": has_sub,
+				"counts": {},
+				"total": 0,
+				"by_department": {}
+			}
 
 		breakdown[cat]["total"] += 1
 		if has_sub and skill:
 			breakdown[cat]["counts"][skill] = breakdown[cat]["counts"].get(skill, 0) + 1
 
+		# Department drilldown
+		if dept not in breakdown[cat]["by_department"]:
+			breakdown[cat]["by_department"][dept] = 0
+		breakdown[cat]["by_department"][dept] += 1
+
+	# Collect all skill types that have at least 1 employee across all categories
+	active_skill_types = set()
+	for cat, data in breakdown.items():
+		for skill, cnt in data["counts"].items():
+			if cnt > 0:
+				active_skill_types.add(skill)
+
 	result = []
 	for cat, data in sorted(breakdown.items()):
 		result.append({
-			"category":    cat,
-			"has_subtype": data["has_subtype"],
-			"counts":      data["counts"],
-			"total":       data["total"]
+			"category":      cat,
+			"has_subtype":   data["has_subtype"],
+			"counts":        data["counts"],
+			"total":         data["total"],
+			"by_department": data["by_department"],
 		})
-	return result
+
+	return {
+		"rows":              result,
+		"active_skill_types": sorted(list(active_skill_types))
+	}
 
 
 # ---------------------------------------------------------------------------
@@ -388,7 +460,6 @@ def get_on_hold_employees(company, from_date, to_date):
 	from_date = getdate(from_date)
 	to_date   = getdate(to_date)
 
-	# Build list of (month_name, year_str) tuples in the selected range
 	valid_periods = set()
 	cursor = from_date.replace(day=1)
 	while cursor <= to_date:
@@ -402,9 +473,7 @@ def get_on_hold_employees(company, from_date, to_date):
 		        "department", "designation", "branch", "month", "year"]
 	)
 
-	# Filter to only holds within the selected date range
 	rows = [r for r in rows if (r.month, r.year) in valid_periods]
-
 	emp_ids  = [r.employee for r in rows if r.employee]
 	name_map = _get_employee_names(emp_ids)
 
@@ -412,6 +481,39 @@ def get_on_hold_employees(company, from_date, to_date):
 		"employee":    r.employee,
 		"full_name":   name_map.get(r.employee, r.employee_name or r.employee),
 		"month_year":  f"{r.month} {r.year}" if r.month and r.year else "—",
+		"hold_date":   str(r.hold_date) if r.hold_date else "—",
+		"hold_reason": r.hold_reason or "—",
+		"department":  r.department or "—",
+	} for r in rows], key=lambda x: x["full_name"])
+
+
+# ---------------------------------------------------------------------------
+# POPUP: Month-specific on hold employees
+# ---------------------------------------------------------------------------
+
+@frappe.whitelist()
+def get_month_on_hold_employees(company, month_key):
+	year, month = month_key.split("-")
+	month_start = getdate(f"{year}-{month}-01")
+	month_name  = month_start.strftime("%B")
+
+	rows = frappe.db.get_all(
+		"Employee Salary Hold",
+		filters={
+			"company":   company,
+			"month":     month_name,
+			"year":      year,
+			"status":    "On Hold",
+			"docstatus": 1
+		},
+		fields=["employee", "employee_name", "hold_date", "hold_reason", "department"]
+	)
+	emp_ids  = [r.employee for r in rows if r.employee]
+	name_map = _get_employee_names(emp_ids)
+
+	return sorted([{
+		"employee":    r.employee,
+		"full_name":   name_map.get(r.employee, r.employee_name or r.employee),
 		"hold_date":   str(r.hold_date) if r.hold_date else "—",
 		"hold_reason": r.hold_reason or "—",
 		"department":  r.department or "—",
@@ -462,7 +564,6 @@ def get_employees_without_assignment(company, from_date, to_date):
 
 @frappe.whitelist()
 def get_employees_no_attendance(company, month_key):
-	"""month_key = YYYY-MM"""
 	year, month = month_key.split("-")
 	month_start = getdate(f"{year}-{month}-01")
 	month_end   = getdate(get_last_day(month_start))
@@ -502,15 +603,17 @@ def get_employees_no_attendance(company, month_key):
 # ---------------------------------------------------------------------------
 
 @frappe.whitelist()
-def get_employees_by_category_skill(company, category, skill_type=""):
+def get_employees_by_category_skill(company, category, skill_type="", department=""):
 	filters = {"company": company, "is_active": 1, "category": category}
 	if skill_type:
 		filters["skill_type"] = skill_type
+	if department:
+		filters["department"] = department
 
 	rows     = frappe.db.get_all(
 		"Company Link",
 		filters=filters,
-		fields=["name", "date_of_joining", "skill_type", "designation"]
+		fields=["name", "date_of_joining", "skill_type", "designation", "department"]
 	)
 	name_map = _get_employee_names([r.name for r in rows])
 
@@ -519,7 +622,8 @@ def get_employees_by_category_skill(company, category, skill_type=""):
 		"full_name":       name_map.get(r.name, r.name),
 		"date_of_joining": str(r.date_of_joining) if r.date_of_joining else "",
 		"skill_type":      r.skill_type or "—",
-		"designation":     r.designation or "—"
+		"designation":     r.designation or "—",
+		"department":      r.department or "—",
 	} for r in rows], key=lambda x: x["full_name"])
 
 
@@ -529,7 +633,6 @@ def get_employees_by_category_skill(company, category, skill_type=""):
 
 @frappe.whitelist()
 def get_salary_slip_status(company, month_key):
-	"""Returns two lists: generated (with net salary + link) and not generated."""
 	year, month = month_key.split("-")
 	month_start = getdate(f"{year}-{month}-01")
 	month_end   = getdate(get_last_day(month_start))
@@ -626,22 +729,28 @@ def get_headcount_employees(company, month_key, hc_type):
 
 
 # ---------------------------------------------------------------------------
-# POPUP: Full attendance summary for a month (like attendance report)
+# POPUP: Full attendance summary for a month
 # ---------------------------------------------------------------------------
 
 @frappe.whitelist()
 def get_month_attendance_summary(company, month_key):
-	"""month_key = YYYY-MM. Returns per-employee day-by-day + status counts."""
 	year, month = month_key.split("-")
 	month_start = getdate(f"{year}-{month}-01")
 	month_end   = getdate(get_last_day(month_start))
 	total_days  = calendar.monthrange(int(year), int(month))[1]
 
+	# Identify weekend days for this month
+	weekend_days = []
+	for day in range(1, total_days + 1):
+		d = getdate(f"{year}-{month}-{day:02d}")
+		if d.weekday() >= 5:  # Saturday=5, Sunday=6
+			weekend_days.append(day)
+
 	active_recs = _active_in_month(company, month_start, month_end)
 	active_map  = {r.name: r for r in active_recs}
 
 	if not active_map:
-		return {"rows": [], "total_days": total_days}
+		return {"rows": [], "total_days": total_days, "weekend_days": weekend_days}
 
 	att_records = frappe.db.get_all(
 		"Attendance",
@@ -680,7 +789,6 @@ def get_month_attendance_summary(company, month_key):
 		"Earned Comp Off": "earned_comp_off",
 	}
 
-	# Initialise emp_data with zeros
 	emp_data = {}
 	for name in active_map:
 		emp_data[name] = {k: 0 for k in STATUS_FIELDS.values()}
@@ -707,6 +815,7 @@ def get_month_attendance_summary(company, month_key):
 		result.append(row)
 
 	return {
-		"rows":       sorted(result, key=lambda x: x["full_name"]),
-		"total_days": total_days
+		"rows":         sorted(result, key=lambda x: x["full_name"]),
+		"total_days":   total_days,
+		"weekend_days": weekend_days
 	}
