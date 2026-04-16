@@ -155,7 +155,7 @@
    "fieldname": "total_working_days",
    "fieldtype": "Float",
    "label": "Working Days",
-   "precision": "2"
+   "precision": "1"
   },
   {
    "fieldname": "column_break_yach",
@@ -165,7 +165,7 @@
    "fieldname": "payment_days",
    "fieldtype": "Float",
    "label": "Payment Days",
-   "precision": "2"
+   "precision": "1"
   },
   {
    "fieldname": "column_break_yuda",
@@ -176,7 +176,7 @@
    "fieldname": "physical_working_days",
    "fieldtype": "Float",
    "label": "Physical Working Days",
-   "precision": "2",
+   "precision": "1",
    "read_only": 1
   },
   {
@@ -188,7 +188,7 @@
    "fieldname": "total_unpaid_days",
    "fieldtype": "Float",
    "label": "Total Unpaid Days",
-   "precision": "2",
+   "precision": "1",
    "read_only": 1
   },
   {
@@ -206,13 +206,13 @@
    "fieldname": "total_earned_leaves",
    "fieldtype": "Float",
    "label": "Earned Leave",
-   "precision": "2"
+   "precision": "1"
   },
   {
    "fieldname": "total_earned_comp_off",
    "fieldtype": "Float",
    "label": "Earned Comp Off",
-   "precision": "2",
+   "precision": "1",
    "read_only": 1
   },
   {
@@ -223,7 +223,7 @@
    "fieldname": "absent_days",
    "fieldtype": "Float",
    "label": "Absent Days",
-   "precision": "2"
+   "precision": "1"
   },
   {
    "fieldname": "total_casual_leaves",
@@ -239,13 +239,13 @@
    "fieldname": "total_half_days",
    "fieldtype": "Float",
    "label": "Half Days",
-   "precision": "2"
+   "precision": "1"
   },
   {
    "fieldname": "total_comp_off",
    "fieldtype": "Float",
    "label": "Comp Off Taken",
-   "precision": "2"
+   "precision": "1"
   },
   {
    "fieldname": "column_break_gqsw",
@@ -255,13 +255,13 @@
    "fieldname": "total_lwp",
    "fieldtype": "Float",
    "label": "LWP",
-   "precision": "2"
+   "precision": "1"
   },
   {
    "fieldname": "total_on_tour",
    "fieldtype": "Float",
    "label": "On Tour",
-   "precision": "2"
+   "precision": "1"
   },
   {
    "fieldname": "earnings_and_deductions_tab",
@@ -465,7 +465,7 @@
  "index_web_pages_for_search": 1,
  "is_submittable": 1,
  "links": [],
- "modified": "2026-03-20 16:09:07.156917",
+ "modified": "2026-04-16 16:03:30.050339",
  "modified_by": "Administrator",
  "module": "Saral Hr",
  "name": "Salary Slip",

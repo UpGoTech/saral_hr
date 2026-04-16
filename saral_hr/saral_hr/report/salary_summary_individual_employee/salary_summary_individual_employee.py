@@ -15,7 +15,7 @@ MONTH_MAP = {
     "July":7,"August":8,"September":9,"October":10,"November":11,"December":12,
 }
 
-ROWS_PER_PAGE = 7   # fixed: every page shows exactly 7 employees
+ROWS_PER_PAGE = 10   # fixed: every page shows exactly 7 employees
 
 _B  = "1px solid #000"
 _BD = "1px dashed #aaa"
@@ -61,7 +61,7 @@ def _fn(prefix, abbr):
 
 
 # ---------------------------------------------------------------------------
-# Fetch dynamic components
+# Fetch dynamic components — employer contribution excluded
 # ---------------------------------------------------------------------------
 
 def _get_components(w, p):
@@ -78,7 +78,7 @@ def _get_components(w, p):
         """.format(w=w),
         p, as_dict=1
     )
-    earn_comps, emp_ded_comps, empr_comps = [], [], []
+    earn_comps, emp_ded_comps = [], []
     seen = set()
     for r in rows:
         key = r["salary_component"]
@@ -87,11 +87,10 @@ def _get_components(w, p):
         entry = (r["salary_component"], r["abbr"])
         if r["type"] == "Earning":
             earn_comps.append(entry)
-        elif r["employer_contribution"]:
-            empr_comps.append(entry)
-        else:
+        elif not r["employer_contribution"]:
+            # Only employee deductions — employer contributions excluded
             emp_ded_comps.append(entry)
-    return earn_comps, emp_ded_comps, empr_comps
+    return earn_comps, emp_ded_comps
 
 
 def _fetch_slip_comps(sn):
@@ -151,7 +150,7 @@ def _get_data(f):
         )
 
     w = " AND ".join(conds)
-    earn_comps, emp_ded_comps, empr_comps = _get_components(w, p)
+    earn_comps, emp_ded_comps = _get_components(w, p)  # no empr_comps
 
     cols = [
         _col("Employee",        "employee",              w=150),
@@ -172,9 +171,7 @@ def _get_data(f):
     for name, abbr in emp_ded_comps:
         cols.append(_col("{0} ({1})".format(name, abbr), _fn("d", abbr), "Float", 190, precision=2))
     cols.append(_col("Total Deductions", "total_deductions", "Float", 190, precision=2))
-    for name, abbr in empr_comps:
-        cols.append(_col("{0} ({1})".format(name, abbr), _fn("r", abbr), "Float", 190, precision=2))
-    cols.append(_col("Employer Total",   "employer_total",   "Float", 190, precision=2))
+    # Employer contribution columns removed
     cols.append(_col("Net Salary",       "net_salary",       "Float", 190, precision=2))
 
     slips = frappe.db.sql(
@@ -200,11 +197,10 @@ def _get_data(f):
         "present_days": 0.0, "total_earned_leaves": 0.0,
         "total_casual_leaves": 0.0, "total_comp_off": 0.0,
         "gross_earnings": 0.0, "total_deductions": 0.0,
-        "employer_total": 0.0, "net_salary": 0.0,
+        "net_salary": 0.0,
     }
     for name, abbr in earn_comps:    grand[_fn("e", abbr)] = 0.0
     for name, abbr in emp_ded_comps: grand[_fn("d", abbr)] = 0.0
-    for name, abbr in empr_comps:    grand[_fn("r", abbr)] = 0.0
 
     for sl in slips:
         sc  = comp_map.get(sl["slip"], {})
@@ -235,11 +231,7 @@ def _get_data(f):
             row[_fn("d", abbr)] = amt; td2 += amt; grand[_fn("d", abbr)] += amt
         row["total_deductions"] = flt(td2, 2); grand["total_deductions"] += td2
 
-        et = 0.0
-        for name, abbr in empr_comps:
-            amt = flt(sc.get(name), 2)
-            row[_fn("r", abbr)] = amt; et += amt; grand[_fn("r", abbr)] += amt
-        row["employer_total"] = flt(et, 2); grand["employer_total"] += et
+        # Employer contribution calculation removed
 
         for k in ["net_salary","payment_days","absent_days","total_lwp",
                   "present_days","total_earned_leaves","total_casual_leaves","total_comp_off"]:
@@ -341,8 +333,7 @@ th.h-det { font-weight: 400; font-size: 9px; color: #444; text-align: left; bord
 
 
 # ---------------------------------------------------------------------------
-# Cell style builders — identical pattern to transaction checklist
-# — white-space:normal + word-break:break-all so nothing ever clips
+# Cell style builders
 # ---------------------------------------------------------------------------
 
 def _sr_style(is_grand=False):
@@ -381,19 +372,19 @@ def _chip_r2(is_last, is_grand=False):
 
 
 # ---------------------------------------------------------------------------
-# HTML builder
+# HTML builder — employer contribution removed
 # ---------------------------------------------------------------------------
 
 def _build_html(cols, data, co, mo, yr,
-                earn_comps=None, emp_ded_comps=None, empr_comps=None):
+                earn_comps=None, emp_ded_comps=None):
 
-    if earn_comps is None or emp_ded_comps is None or empr_comps is None:
-        earn_comps, emp_ded_comps, empr_comps = [], [], []
+    if earn_comps is None or emp_ded_comps is None:
+        earn_comps, emp_ded_comps = [], []
         SKIP = {
             "employee","employee_name","designation","department",
             "payment_days","absent_days","total_lwp","present_days",
             "total_earned_leaves","total_casual_leaves","total_comp_off",
-            "gross_earnings","total_deductions","employer_total","net_salary",
+            "gross_earnings","total_deductions","net_salary",
         }
         for c in cols:
             fn = c["fieldname"]
@@ -406,7 +397,7 @@ def _build_html(cols, data, co, mo, yr,
                 name, abbr = label, fn
             if fn.startswith("e_"):   earn_comps.append((name, abbr))
             elif fn.startswith("d_"): emp_ded_comps.append((name, abbr))
-            elif fn.startswith("r_"): empr_comps.append((name, abbr))
+            # r_ (employer) entries are ignored
 
     # ── Headers ───────────────────────────────────────────────────────────
     first_hdr_html = (
@@ -430,9 +421,7 @@ def _build_html(cols, data, co, mo, yr,
             '</body></html>'.format(css=_CSS, hdr=first_hdr_html)
         )
 
-    # ── Build chip list — 2 rows (same as transaction checklist) ──────────
-    # Row 1: attendance/leave chips
-    # Row 2: earnings, deductions, employer, net salary
+    # ── Build chip list — employer contribution chips removed ─────────────
     all_chips = [
         ("payment_days",        "PD",  False, False),
         ("present_days",        "PR",  False, False),
@@ -448,13 +437,9 @@ def _build_html(cols, data, co, mo, yr,
     for name, abbr in emp_ded_comps:
         all_chips.append((_fn("d", abbr), abbr, True, False))
     all_chips.append(("total_deductions", "TD",  True, False))
-    for name, abbr in empr_comps:
-        all_chips.append((_fn("r", abbr), abbr, True, False))
-    if empr_comps:
-        all_chips.append(("employer_total", "ES", True, False))
+    # Employer contribution chips (empr_comps + employer_total) removed
     all_chips.append(("net_salary", "NS", True, True))
 
-    # Split into 2 rows by odd/even index — same as transaction checklist
     row1_chips = [c for i, c in enumerate(all_chips) if i % 2 == 0]
     row2_chips = [c for i, c in enumerate(all_chips) if i % 2 == 1]
     while len(row2_chips) < len(row1_chips):
@@ -464,7 +449,7 @@ def _build_html(cols, data, co, mo, yr,
     last_ix = n_cols - 1
 
     SR_PCT  = 2.0
-    EMP_PCT = 16.0   # slightly wider to fit name + desig + dept
+    EMP_PCT = 16.0
     DET_PCT = 82.0
     chip_w  = DET_PCT / n_cols if n_cols else DET_PCT
 
@@ -554,18 +539,17 @@ def _build_html(cols, data, co, mo, yr,
         '</thead>'.format(n=n_cols)
     )
 
-    # ── Legend ─────────────────────────────────────────────────────────────
+    # ── Legend — employer contribution entries removed ─────────────────────
     legend_map = [
         ("PD",  "Payment Days"),    ("PR",  "Present Days"),
         ("AB",  "Absent Days"),     ("EL",  "Earned Leaves"),
         ("CL",  "Casual Leaves"),   ("LWP", "Leave Without Pay"),
         ("CO",  "Comp Off"),        ("GE",  "Gross Earnings"),
-        ("TD",  "Total Deductions"),("ES",  "Employer Share"),
+        ("TD",  "Total Deductions"),
         ("NS",  "Net Salary"),
     ]
     for nm, ab in earn_comps:    legend_map.append((ab, nm))
     for nm, ab in emp_ded_comps: legend_map.append((ab, nm))
-    for nm, ab in empr_comps:    legend_map.append((ab, nm))
     seen_lgd = set(); legend_items = []
     for ab, nm in legend_map:
         if ab not in seen_lgd:
@@ -583,7 +567,7 @@ def _build_html(cols, data, co, mo, yr,
         )
     )
 
-    # ── Pagination: fixed ROWS_PER_PAGE on every page ─────────────────────
+    # ── Pagination ────────────────────────────────────────────────────────
     detail_rows = [r for r in data if not r.get("bold")]
     grand_row   = next((r for r in data if r.get("bold")), None)
 
@@ -709,12 +693,12 @@ def print_report(filters):
         )
 
     w = " AND ".join(conds)
-    earn_comps, emp_ded_comps, empr_comps = _get_components(w, p)
+    earn_comps, emp_ded_comps = _get_components(w, p)  # no empr_comps
     cols, data = _get_data(filters)
 
     co_label = _company_label(filters)
     mo = filters.get("month", "")
     yr = filters.get("year",  "")
     html = _build_html(cols, data, co_label, mo, yr,
-                       earn_comps, emp_ded_comps, empr_comps)
+                       earn_comps, emp_ded_comps)  # no empr_comps
     return _save_pdf(html, "Salary_Summary_Individual")
