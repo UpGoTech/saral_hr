@@ -1,4 +1,4 @@
-import frappe, json, calendar, io
+import frappe, json, calendar, io, copy
 from frappe import _
 from frappe.utils import flt
 from frappe.utils.pdf import get_pdf
@@ -74,45 +74,33 @@ MONTH_MAP = {
 }
 
 # ---------------------------------------------------------------------------
-# Excel styling constants  (reference-sheet inspired)
+# Excel styling constants
 # ---------------------------------------------------------------------------
 
-# Title row  — bold red text, white background (matches the "WORKING – DAYS" style)
-_XL_TITLE_FG  = "CC0000"   # bold red
+_XL_TITLE_FG  = "CC0000"
 _XL_TITLE_BG  = "FFFFFF"
-
-# Sub-title / period row — dark grey text, white background
 _XL_SUB_FG    = "333333"
 _XL_SUB_BG    = "FFFFFF"
-
-# Column-header row — black text on bright yellow (matches reference screenshot)
 _XL_HDR_FG    = "000000"
 _XL_HDR_BG    = "FFFF00"
-
-# Data rows
-_XL_ROW_BG    = "FFFFFF"   # normal row
-_XL_ALT_BG    = "F2F2F2"   # alternating stripe (very light grey — clean, readable)
-
-# Total / bold rows — light blue tint, dark text, bold
+_XL_ROW_BG    = "FFFFFF"
+_XL_ALT_BG    = "F2F2F2"
 _XL_TOT_BG    = "D9E1F2"
 _XL_TOT_FG    = "1F3864"
-
-# Border colour
 _XL_BDR       = "BFBFBF"
 
-# Monthly-attendance cell colours (matching JS formatter exactly)
 _MAR_COLORS = {
-    "P":   "C6EFCE",   # green tint
-    "A":   "FFC7CE",   # red tint
-    "HD":  "FFEB9C",   # amber
-    "T":   "D9D9D9",   # grey
-    "H":   "C6EFCE",   # green (holiday)
-    "WO":  "BDD7EE",   # blue tint
-    "LWP": "E2CCFF",   # purple tint
-    "EL":  "FCE4D6",   # orange tint
-    "CL":  "CCFFEE",   # teal tint
-    "CO":  "EDEDED",   # neutral grey
-    "ECO": "F4CCCC",   # muted red
+    "P":   "C6EFCE",
+    "A":   "FFC7CE",
+    "HD":  "FFEB9C",
+    "T":   "D9D9D9",
+    "H":   "C6EFCE",
+    "WO":  "BDD7EE",
+    "LWP": "E2CCFF",
+    "EL":  "FCE4D6",
+    "CL":  "CCFFEE",
+    "CO":  "EDEDED",
+    "ECO": "F4CCCC",
 }
 _MAR_FG = {
     "P":   "1A6B1A",
@@ -176,7 +164,6 @@ def _col_width(col_def):
         w = max(w, 14)
     if ft == "data" and col_def.get("width", 0) > 200:
         w = max(w, 26)
-    # day_ columns in monthly attendance — keep narrow
     if fn.startswith("day_"):
         w = 4
     return min(w, 50)
@@ -278,6 +265,29 @@ def _import_build_html(mode):
 
 
 # ---------------------------------------------------------------------------
+# FIX: safe single-report runner that deep-copies results to prevent any
+# module-level mutable state from leaking between consecutive calls.
+# ---------------------------------------------------------------------------
+
+def _run_report_safe(mode, filters):
+    """
+    Execute a sub-report and return (columns, data) with deep-copied results.
+
+    Deep-copying is the key fix: if any sub-report module accumulates rows in
+    a list defined at module scope (a common pattern in older Frappe reports),
+    copy.deepcopy() ensures our caller gets a completely independent snapshot.
+    Subsequent calls therefore start clean and never see stale/doubled rows.
+    """
+    fn = _import_execute(mode)
+    if not fn:
+        return [], []
+    # Always pass a fresh dict so the callee cannot mutate our filters object
+    f = dict(filters, report_mode=mode)
+    cols, data = fn(f)
+    return copy.deepcopy(cols), copy.deepcopy(data)
+
+
+# ---------------------------------------------------------------------------
 # Frappe report entry-point
 # ---------------------------------------------------------------------------
 
@@ -291,7 +301,7 @@ def execute(filters=None):
 
 
 # ---------------------------------------------------------------------------
-# PDF helpers  (unchanged)
+# PDF helpers
 # ---------------------------------------------------------------------------
 
 _CSS = """<style>
@@ -333,11 +343,10 @@ _SIG = """
 <!--SIG_END-->
 """
 
-# _SIG_MARKERS = ["<!--SIG_START-->", '<div class="sig">']
 _SIG_MARKERS = [
     "<!--SIG_START-->",
     '<div class="sig">',
-    '<div style="width:100%;margin-top:30px;display:table;">',  # new sig pattern
+    '<div style="width:100%;margin-top:30px;display:table;">',
 ]
 
 
@@ -471,43 +480,33 @@ def _save_pdf(html, prefix):
 
 @frappe.whitelist()
 def get_all_reports_data(filters):
+    """
+    FIX: Removed ThreadPoolExecutor entirely.
+
+    Threading was the root cause of the row-doubling bug:
+      - Frappe's DB layer (frappe.db) is not thread-safe without explicit
+        connection-per-thread management.
+      - Sub-reports that accumulate rows into a module-level list shared
+        their state across threads, causing N workers × 1 report = N copies
+        of rows appearing in the result.
+
+    Sequential execution is safe, predictable, and fast enough for ~16
+    reports run once on filter change (prefetch). Each call to
+    _run_report_safe() deep-copies its result to fully isolate state.
+    """
     if isinstance(filters, str):
         filters = json.loads(filters)
 
     out = {}
-    try:
-        from concurrent.futures import ThreadPoolExecutor, as_completed
-
-        def _run(mode):
-            fn = _import_execute(mode)
-            if not fn:
-                return mode, {"columns": [], "result": []}
-            try:
-                frappe.db.connect()
-                cols, data = fn(dict(filters, report_mode=mode))
-                return mode, {"columns": cols, "result": data}
-            except Exception:
-                frappe.log_error("get_all_reports_data: {0}".format(mode), "Payroll Report")
-                return mode, {"columns": [], "result": []}
-
-        with ThreadPoolExecutor(max_workers=4) as ex:
-            futures = {ex.submit(_run, m): m for m in REPORTS}
-            for fut in as_completed(futures):
-                mode, res = fut.result()
-                out[mode]  = res
-
-    except Exception:
-        for mode in REPORTS:
-            fn = _import_execute(mode)
-            if not fn:
-                out[mode] = {"columns": [], "result": []}
-                continue
-            try:
-                cols, data = fn(dict(filters, report_mode=mode))
-                out[mode]  = {"columns": cols, "result": data}
-            except Exception:
-                frappe.log_error("get_all_reports_data: {0}".format(mode), "Payroll Report")
-                out[mode]  = {"columns": [], "result": []}
+    for mode in REPORTS:
+        try:
+            cols, data = _run_report_safe(mode, filters)
+            out[mode]  = {"columns": cols, "result": data}
+        except Exception:
+            frappe.log_error(
+                "get_all_reports_data: {0}".format(mode), "Payroll Report"
+            )
+            out[mode] = {"columns": [], "result": []}
 
     return out
 
@@ -518,11 +517,11 @@ def print_single_report(filters):
         filters = json.loads(filters)
 
     mode = filters.get("report_mode", "salary_summary")
-    fn   = _import_execute(mode)
-    if not fn:
-        frappe.throw("Unknown report mode: {0}".format(mode))
+    cols, data = _run_report_safe(mode, filters)
 
-    cols, data = fn(filters)
+    if not cols and not data:
+        frappe.throw("Unknown report mode or no data: {0}".format(mode))
+
     co = _company_label(filters)
     mo = filters.get("month", "")
     yr = filters.get("year",  "")
@@ -554,13 +553,12 @@ def print_selected_reports(filters):
 
     sections = []
     for mode in selected:
-        fn = _import_execute(mode)
-        if not fn:
-            continue
         try:
-            cols, data = fn(dict(filters, report_mode=mode))
+            cols, data = _run_report_safe(mode, filters)
         except Exception:
-            frappe.log_error("print_selected_reports: {0}".format(mode), "Payroll Report")
+            frappe.log_error(
+                "print_selected_reports: {0}".format(mode), "Payroll Report"
+            )
             cols, data = [], []
         sections.append({"mode": mode, "cols": cols, "data": data})
 
@@ -579,13 +577,12 @@ def print_all_reports(filters):
 
     sections = []
     for mode in REPORTS:
-        fn = _import_execute(mode)
-        if not fn:
-            continue
         try:
-            cols, data = fn(dict(filters, report_mode=mode))
+            cols, data = _run_report_safe(mode, filters)
         except Exception:
-            frappe.log_error("print_all_reports: {0}".format(mode), "Payroll Report")
+            frappe.log_error(
+                "print_all_reports: {0}".format(mode), "Payroll Report"
+            )
             cols, data = [], []
         sections.append({"mode": mode, "cols": cols, "data": data})
 
@@ -602,12 +599,9 @@ def excel_single_report(filters):
     if isinstance(filters, str):
         filters = json.loads(filters)
 
-    mode = filters.get("report_mode", "salary_summary")
-    fn   = _import_execute(mode)
-    if not fn:
-        frappe.throw("Unknown report mode: {0}".format(mode))
+    mode  = filters.get("report_mode", "salary_summary")
+    cols, data = _run_report_safe(mode, filters)
 
-    cols, data = fn(filters)
     co    = _company_label(filters)
     mo    = filters.get("month", "")
     yr    = filters.get("year",  "")
@@ -640,13 +634,12 @@ def excel_selected_reports(filters):
     first_sheet = True
 
     for mode in selected:
-        fn = _import_execute(mode)
-        if not fn:
-            continue
         try:
-            cols, data = fn(dict(filters, report_mode=mode))
+            cols, data = _run_report_safe(mode, filters)
         except Exception:
-            frappe.log_error("excel_selected_reports: {0}".format(mode), "Payroll Report")
+            frappe.log_error(
+                "excel_selected_reports: {0}".format(mode), "Payroll Report"
+            )
             cols, data = [], []
 
         label = REPORT_LABELS.get(mode, mode)
@@ -663,19 +656,10 @@ def excel_selected_reports(filters):
 
 
 # ---------------------------------------------------------------------------
-# Excel sheet writer  — improved formatting
+# Excel sheet writer
 # ---------------------------------------------------------------------------
 
 def _write_xl_sheet(ws, cols, data, co, mo, yr, label, mode=""):
-    """
-    Layout (rows):
-      1  — Company name  : bold red, large, white bg, merged, centred
-      2  — Report title  : bold dark, medium, white bg, merged, centred
-      3  — Period        : normal, white bg, merged, centred
-      4  — (spacer, no border)
-      5  — Column headers: bold black on yellow, centred, wrapped, thick bottom border
-      6+ — Data rows     : alternating white / light-grey; total rows blue-tint + bold
-    """
     nc = max(len(cols), 1)
 
     # ── Row 1: Company ──────────────────────────────────────────────────────
@@ -684,9 +668,7 @@ def _write_xl_sheet(ws, cols, data, co, mo, yr, label, mode=""):
     c1.font      = Font(name="Arial", size=14, bold=True, color=_XL_TITLE_FG)
     c1.fill      = PatternFill("solid", start_color=_XL_TITLE_BG, fgColor=_XL_TITLE_BG)
     c1.alignment = Alignment(horizontal="center", vertical="center")
-    c1.border    = Border(
-        bottom=Side(style="medium", color="CC0000"),
-    )
+    c1.border    = Border(bottom=Side(style="medium", color="CC0000"))
     ws.row_dimensions[1].height = 22
 
     # ── Row 2: Report title ─────────────────────────────────────────────────
@@ -712,15 +694,14 @@ def _write_xl_sheet(ws, cols, data, co, mo, yr, label, mode=""):
     # ── Row 5: Column headers ───────────────────────────────────────────────
     HDR_ROW = 5
     thick_bottom = Border(
-        left=Side(style="thin",   color=_XL_BDR),
-        right=Side(style="thin",  color=_XL_BDR),
-        top=Side(style="thin",    color=_XL_BDR),
+        left=Side(style="thin",     color=_XL_BDR),
+        right=Side(style="thin",    color=_XL_BDR),
+        top=Side(style="thin",      color=_XL_BDR),
         bottom=Side(style="medium", color="000000"),
     )
     for ci, col in enumerate(cols, 1):
         lbl  = col.get("label", col.get("fieldname", ""))
         fn   = col.get("fieldname", "")
-        # day_ columns in attendance: use the day number as a short header
         if fn.startswith("day_"):
             lbl = fn.replace("day_", "")
         cell = ws.cell(row=HDR_ROW, column=ci, value=lbl)
@@ -750,9 +731,8 @@ def _write_xl_sheet(ws, cols, data, co, mo, yr, label, mode=""):
                 fn  = col.get("fieldname", "")
                 val = row.get(fn, "")
 
-                # ── Attendance day cells ─────────────────────────────────
                 if is_attendance and fn.startswith("day_"):
-                    sval   = str(val).strip() if val else ""
+                    sval    = str(val).strip() if val else ""
                     cell_bg = _MAR_COLORS.get(sval, row_bg)
                     cell_fg = _MAR_FG.get(sval, row_fg)
                     c = ws.cell(row=ri, column=ci, value=sval if sval else "")
@@ -762,13 +742,11 @@ def _write_xl_sheet(ws, cols, data, co, mo, yr, label, mode=""):
                     c.border    = _border()
                     continue
 
-                # ── Serial number ────────────────────────────────────────
                 if fn == "sr_no":
                     _xl_cell(ws, ri, ci,
                              "" if (is_tot or not val) else val,
                              bold=is_tot, fg=row_fg, bg=row_bg, align="center")
 
-                # ── Numeric columns ──────────────────────────────────────
                 elif _is_numeric(col):
                     nv = _to_num(val)
                     if val == "On Hold":
@@ -784,7 +762,6 @@ def _write_xl_sheet(ws, cols, data, co, mo, yr, label, mode=""):
                                  nv if nv is not None else "",
                                  bold=is_tot, fg=row_fg, bg=row_bg, align="right")
 
-                # ── Text columns ─────────────────────────────────────────
                 else:
                     _xl_cell(ws, ri, ci,
                              val if val is not None else "",
@@ -799,16 +776,16 @@ def _write_xl_sheet(ws, cols, data, co, mo, yr, label, mode=""):
     # ── Freeze panes below header ────────────────────────────────────────────
     ws.freeze_panes = "A6"
 
-    # ── Sheet tab colour — subtle per-report tint ────────────────────────────
+    # ── Sheet tab colour ─────────────────────────────────────────────────────
     TAB_COLORS = {
-        "salary_summary":            "2563EB",
-        "provident_fund":            "16A34A",
-        "esi_register":              "DC2626",
-        "professional_tax":          "7C3AED",
-        "monthly_attendance":        "D97706",
-        "home_bank_advice":          "0891B2",
-        "other_bank_advice":         "0891B2",
-        "income_tax":                "BE123C",
+        "salary_summary":   "2563EB",
+        "provident_fund":   "16A34A",
+        "esi_register":     "DC2626",
+        "professional_tax": "7C3AED",
+        "monthly_attendance": "D97706",
+        "home_bank_advice": "0891B2",
+        "other_bank_advice":"0891B2",
+        "income_tax":       "BE123C",
     }
     tc = TAB_COLORS.get(mode)
     if tc:

@@ -15,7 +15,7 @@ MONTH_MAP = {
     "July":7,"August":8,"September":9,"October":10,"November":11,"December":12,
 }
 
-ROWS_PER_PAGE = 8   # fixed: every page shows exactly 11 employees
+ROWS_PER_PAGE = 8
 
 _B  = "1px solid #000"
 _BD = "1px dashed #aaa"
@@ -282,18 +282,43 @@ th.h-sr  { width: 24px; text-align: center; }
 th.h-emp { text-align: left; }
 th.h-det { font-weight: 400; font-size: 9px; color: #444; text-align: left; border-left: none; }
 
-.ck  { font-weight: 700; font-size: 10px; }
-.sep { font-size: 10px; margin: 0 1px; color: #555; }
-.cv  { font-size: 10px; }
+/* ── Vertical chip layout ── */
+.ck {
+    display: block;
+    font-weight: 700;
+    font-size: 9px;
+    color: #222;
+    line-height: 1.3;
+}
+.cv {
+    display: block;
+    font-size: 10px;
+    color: #444;
+    line-height: 1.3;
+}
 
-.ns-hl {
-    display: inline-block;
+/* Net-salary vertical chip */
+.ns-hl-lbl {
+    display: block;
+    background: #1a1a2e;
+    color: #aaa;
+    border-radius: 3px 3px 0 0;
+    padding: 1px 4px 0;
+    font-size: 9px;
+    font-weight: 700;
+    text-align: center;
+    white-space: normal;
+    word-break: break-all;
+}
+.ns-hl-val {
+    display: block;
     background: #1a1a2e;
     color: #fff;
-    border-radius: 3px;
-    padding: 1px 4px;
+    border-radius: 0 0 3px 3px;
+    padding: 0 4px 1px;
     font-size: 10px;
     font-weight: 700;
+    text-align: center;
     white-space: normal;
     word-break: break-all;
 }
@@ -317,7 +342,7 @@ th.h-det { font-weight: 400; font-size: 9px; color: #444; text-align: left; bord
 
 
 # ---------------------------------------------------------------------------
-# Cell style builders — white-space:normal so text NEVER gets clipped
+# Cell style builders
 # ---------------------------------------------------------------------------
 
 def _sr_style(is_grand=False):
@@ -447,14 +472,22 @@ def _build_html(cols, data, co, mo, yr,
         except (TypeError, ValueError):
             return "0"
 
+    # ── CHANGED: vertical stacking of label above value ──────────────────
     def _chip_html(lbl, val, is_ns=False):
         if is_ns:
-            return '<span class="ns-hl">{lbl} {val}</span>'.format(lbl=lbl, val=val)
+            return (
+                '<span style="display:inline-flex;flex-direction:column;align-items:center;">'
+                '<span class="ns-hl-lbl">{lbl}</span>'
+                '<span class="ns-hl-val">{val}</span>'
+                '</span>'
+            ).format(lbl=lbl, val=val)
         return (
+            '<span style="display:flex;flex-direction:column;align-items:flex-start;line-height:1.3;">'
             '<span class="ck">{lbl}</span>'
-            '<span class="sep"> </span>'
-            '<span class="cv">{val}</span>'.format(lbl=lbl, val=val)
-        )
+            '<span class="cv">{val}</span>'
+            '</span>'
+        ).format(lbl=lbl, val=val)
+    # ─────────────────────────────────────────────────────────────────────
 
     def _render_chip(chip, row, is_row1, col_idx, is_grand=False):
         is_last = (col_idx == last_ix)
