@@ -103,6 +103,46 @@ def search_employees(query, company=None):
 
 
 @frappe.whitelist()
+def get_submitted_slip_months(employee):
+    """
+    Returns a dict of salary slip info keyed by month-start (YYYY-MM-DD) for
+    the given employee. Both submitted (docstatus=1) and draft (docstatus=0)
+    slips are returned so the UI can show appropriate warnings.
+
+    Return format:
+    {
+        "2026-01-01": {"name": "SS-2026-01-001", "docstatus": 1},
+        "2026-02-01": {"name": "SS-2026-02-003", "docstatus": 0},
+        ...
+    }
+    """
+    if not employee:
+        return {}
+
+    slips = frappe.db.get_all(
+        "Salary Slip",
+        filters={
+            "employee": employee,
+            "docstatus": ["in", [0, 1]],
+        },
+        fields=["name", "start_date", "docstatus"],
+    )
+
+    result = {}
+    for slip in slips:
+        if slip.start_date:
+            key = str(slip.start_date)
+            # Prefer submitted over draft if both exist for same month
+            if key not in result or result[key]["docstatus"] == 0:
+                result[key] = {
+                    "name":      slip.name,
+                    "docstatus": slip.docstatus,
+                }
+
+    return result
+
+
+@frappe.whitelist()
 def get_attendance_between_dates(employee, start_date, end_date):
     """
     Returns a dict  { "YYYY-MM-DD": <value> }  where <value> is either:
@@ -221,7 +261,27 @@ def save_attendance_batch(attendance_data):
                     errors.append(f"Not permitted for employee {employee} on {attendance_date}")
                     continue
 
-                # ── Determine DB values ────────────────────────────────
+                # ── Server-side salary slip lock check ─────────────────────
+                from frappe.utils import get_first_day
+                month_start = str(get_first_day(attendance_date))
+                submitted_slip = frappe.db.get_value(
+                    "Salary Slip",
+                    {
+                        "employee":   employee,
+                        "start_date": month_start,
+                        "docstatus":  1,
+                    },
+                    "name"
+                )
+                if submitted_slip:
+                    errors.append(
+                        f"Cannot save attendance for {employee} on {attendance_date}: "
+                        f"Salary Slip {submitted_slip} has been submitted for this month. "
+                        f"Cancel the salary slip first."
+                    )
+                    continue
+
+                # ── Determine DB values ────────────────────────────────────
                 if mode == "half":
                     first_half  = (record.get("first_half")  or "").strip()
                     second_half = (record.get("second_half") or "").strip()
@@ -249,7 +309,7 @@ def save_attendance_batch(attendance_data):
                         "custom_second_half": "",
                     }
 
-                # ── Upsert attendance record ───────────────────────────
+                # ── Upsert attendance record ───────────────────────────────
                 existing = frappe.db.get_value(
                     "Attendance",
                     {

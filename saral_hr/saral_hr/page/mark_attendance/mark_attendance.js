@@ -143,6 +143,9 @@ function get_ma_html() {
             <input type="hidden" id="ma_end_date">
         </div>
 
+        <!-- Salary slip lock/warning banner (injected dynamically) -->
+        <div id="ma_slip_banner" style="display:none;"></div>
+
         <div class="ma-table-scroll" id="ma_table_scroll">
             <table class="ma-table" id="ma_table" style="display:none;">
                 <thead>
@@ -326,8 +329,13 @@ function init_mark_attendance($main) {
     var joiningDateMap = {};
     var leftDateMap = {};
 
+    // ── Salary slip lock state ──────────────────────────────────────────────
+    var submittedSlipMonths   = {};
+    var currentMonthLockState = null;   // null | "submitted" | "draft"
+    var currentMonthSlipName  = null;
+
     // ── NEW: tracks whether current employee's category has_subtype ──
-    var employeeHasSubtypeMap = {};   // employee name → true/false
+    var employeeHasSubtypeMap = {};
     var currentEmployeeHasSubtype = false;
 
     var attendanceTableData = {};
@@ -343,7 +351,6 @@ function init_mark_attendance($main) {
 
     var focusedCell = null;
 
-    // Base lists — ECO and Comp Off may be hidden per employee
     var ALL_FULL_DAY_STATUSES = [
         "Present", "On Tour", "Earned Comp Off",
         "Absent",
@@ -355,10 +362,9 @@ function init_mark_attendance($main) {
         "Absent", "Earned Leave", "Casual Leave", "Comp Off", "LWP"
     ];
 
-    // Active lists — updated when employee changes
     var FULL_DAY_STATUSES = ALL_FULL_DAY_STATUSES.slice();
     var HALF_OPTIONS       = ALL_HALF_OPTIONS.slice();
-    var TOTAL_STATUS_COLS  = FULL_DAY_STATUSES.length + 2; // 12
+    var TOTAL_STATUS_COLS  = FULL_DAY_STATUSES.length + 2;
 
     var PRESENT_TYPE = new Set(["Present", "On Tour", "Earned Comp Off"]);
     var ABSENT_TYPE  = new Set(["Absent", "LWP", "Earned Leave", "Casual Leave", "Comp Off"]);
@@ -399,19 +405,150 @@ function init_mark_attendance($main) {
     var stickyBar     = document.getElementById("ma_sticky_bar");
     var tableScroll   = document.getElementById("ma_table_scroll");
     var hdPanel       = document.getElementById("ma_hd_panel");
+    var slipBanner    = document.getElementById("ma_slip_banner");
+    var saveBtn       = document.getElementById("ma_save_attendance");
 
     var allEmployees = [];
 
     // ════════════════════════════════════════════════════════════════════════
-    //  ECO / COFF VISIBILITY HELPERS
-    //  When currentEmployeeHasSubtype === true, hide "Earned Comp Off" and
-    //  "Comp Off" from columns, thead, leave table, and half-day panel.
+    //  SALARY SLIP LOCK HELPERS
     // ════════════════════════════════════════════════════════════════════════
 
-    /**
-     * Rebuild FULL_DAY_STATUSES and HALF_OPTIONS based on hasSubtype flag,
-     * then apply CSS to show/hide the relevant columns.
-     */
+    function loadSlipMonthsAndProceed(empName, afterLoad) {
+        submittedSlipMonths   = {};
+        currentMonthLockState = null;
+        currentMonthSlipName  = null;
+
+        frappe.call({
+            method: "saral_hr.saral_hr.page.mark_attendance.mark_attendance.get_submitted_slip_months",
+            args: { employee: empName },
+            callback: function (r) {
+                submittedSlipMonths = (r && r.message) ? r.message : {};
+                afterLoad();
+            },
+            error: function () {
+                submittedSlipMonths = {};
+                afterLoad();
+            }
+        });
+    }
+
+    function computeCurrentMonthLock() {
+        currentMonthLockState = null;
+        currentMonthSlipName  = null;
+
+        if (!yearSel.value || monthSel.value === "") return;
+
+        var year  = parseInt(yearSel.value);
+        var month = parseInt(monthSel.value) + 1;
+        var key   = year + "-" + String(month).padStart(2, "0") + "-01";
+
+        var info = submittedSlipMonths[key];
+        if (!info) return;
+
+        currentMonthSlipName  = info.name;
+        currentMonthLockState = (info.docstatus === 1) ? "submitted" : "draft";
+    }
+
+    function applyLockState() {
+        computeCurrentMonthLock();
+        renderSlipBanner();
+        applyButtonLock();
+        applyTableLockClass();
+    }
+
+    function getMonthLabel() {
+        if (!yearSel.value || monthSel.value === "") return "";
+        var year  = parseInt(yearSel.value);
+        var month = parseInt(monthSel.value);
+        var d     = new Date(year, month, 1);
+        return d.toLocaleDateString("en-US", { month: "long", year: "numeric" });
+    }
+
+    function renderSlipBanner() {
+        if (!currentMonthLockState) {
+            slipBanner.style.display = "none";
+            slipBanner.innerHTML = "";
+            return;
+        }
+
+        var slipUrl  = frappe.urllib.get_full_url("/app/salary-slip/" + currentMonthSlipName);
+        var monthLbl = getMonthLabel();
+        var html;
+
+        if (currentMonthLockState === "submitted") {
+            html = `
+                <div class="ma-slip-banner ma-slip-banner-locked">
+                    <span class="ma-slip-banner-icon">🔒</span>
+                    <div class="ma-slip-banner-text">
+                        <strong>Attendance Locked</strong> &mdash;
+                        Salary Slip
+                        <a href="${slipUrl}" target="_blank" class="ma-slip-link">${currentMonthSlipName}</a>
+                        has been <strong>submitted</strong> for ${monthLbl}.
+                        Cancel the salary slip first to modify attendance.
+                    </div>
+                </div>`;
+        } else {
+            html = `
+                <div class="ma-slip-banner ma-slip-banner-draft">
+                    <span class="ma-slip-banner-icon">⚠️</span>
+                    <div class="ma-slip-banner-text">
+                        <strong>Draft Salary Slip exists</strong> &mdash;
+                        <a href="${slipUrl}" target="_blank" class="ma-slip-link ma-slip-link-draft">${currentMonthSlipName}</a>
+                        is in <strong>Draft</strong> for ${monthLbl}.
+                        Attendance changes will not be reflected until the salary slip is regenerated.
+                    </div>
+                </div>`;
+        }
+
+        slipBanner.innerHTML = html;
+        slipBanner.style.display = "block";
+    }
+
+    function applyButtonLock() {
+        var isLocked = (currentMonthLockState === "submitted");
+
+        // Save button
+        if (isLocked) {
+            saveBtn.disabled = true;
+            saveBtn.classList.add("ma-btn-locked");
+        } else {
+            saveBtn.disabled = false;
+            saveBtn.classList.remove("ma-btn-locked");
+        }
+        saveBtn.title = isLocked ? "Attendance is locked — salary slip has been submitted." : "";
+
+        // Bulk mark buttons
+        ["ma_mark_present", "ma_mark_absent", "ma_mark_halfday", "ma_mark_lwp"].forEach(function (id) {
+            var btn = document.getElementById(id);
+            if (!btn) return;
+            btn.disabled = isLocked;
+            if (isLocked) {
+                btn.classList.add("ma-btn-locked");
+            } else {
+                btn.classList.remove("ma-btn-locked");
+            }
+        });
+    }
+
+    // ── Apply/remove lock class on the TABLE element itself (no overlay) ──
+    function applyTableLockClass() {
+        if (!tableEl) return;
+        if (currentMonthLockState === "submitted") {
+            tableEl.classList.add("ma-table-locked");
+        } else {
+            tableEl.classList.remove("ma-table-locked");
+        }
+        // Also update the scroll container cursor
+        if (tableScroll) {
+            tableScroll.classList.toggle("ma-table-scroll-locked", currentMonthLockState === "submitted");
+        }
+    }
+
+    // ════════════════════════════════════════════════════════════════════════
+    //  ECO / COFF VISIBILITY HELPERS
+    // ════════════════════════════════════════════════════════════════════════
+
     function applySubtypeVisibility(hasSubtype) {
         currentEmployeeHasSubtype = hasSubtype;
 
@@ -428,17 +565,12 @@ function init_mark_attendance($main) {
         }
         TOTAL_STATUS_COLS = FULL_DAY_STATUSES.length + 2;
 
-        // Toggle thead columns
         document.querySelectorAll(".ma-eco-th-col, .ma-coff-th-col").forEach(function (el) {
             el.style.display = hasSubtype ? "none" : "";
         });
-
-        // Toggle leave balance table Comp Off column
         document.querySelectorAll(".ma-eco-col").forEach(function (el) {
             el.style.display = hasSubtype ? "none" : "";
         });
-
-        // Toggle calendar legend items
         document.querySelectorAll(".ma-eco-legend-item, .ma-coff-legend-item").forEach(function (el) {
             el.style.display = hasSubtype ? "none" : "";
         });
@@ -447,10 +579,11 @@ function init_mark_attendance($main) {
     function updateScrollHeight() {
         if (!stickyBar || !tableScroll) return;
         var stickyH    = stickyBar.offsetHeight;
+        var bannerH    = (slipBanner && slipBanner.style.display !== "none") ? slipBanner.offsetHeight : 0;
         var pageHead   = document.querySelector(".page-head");
         var pageHeadH  = pageHead ? pageHead.offsetHeight : 60;
         var BOTTOM_PAD = 16;
-        var availableH = window.innerHeight - pageHeadH - stickyH - BOTTOM_PAD;
+        var availableH = window.innerHeight - pageHeadH - stickyH - bannerH - BOTTOM_PAD;
         tableScroll.style.height = Math.max(availableH, 200) + "px";
         document.documentElement.style.setProperty("--ma-sticky-bar-h", stickyH + "px");
     }
@@ -505,6 +638,8 @@ function init_mark_attendance($main) {
         attendanceTableData = {}; originalAttendanceData = {}; dirtyDates.clear();
         updateCounts();
         applySubtypeVisibility(false);
+        submittedSlipMonths = {}; currentMonthLockState = null; currentMonthSlipName = null;
+        renderSlipBanner(); applyButtonLock(); applyTableLockClass();
         if (!sel) { searchInput.disabled = true; employees = []; return; }
         employees = allEmployees.filter(function (e) { return e.company === sel; });
         searchInput.disabled = false;
@@ -597,14 +732,13 @@ function init_mark_attendance($main) {
         if (items[selectedIndex]) items[selectedIndex].scrollIntoView({ block: "nearest" });
     }
 
-    // ── NEW: load category has_subtype for an employee, then proceed ────────
+    // ── Load category has_subtype for an employee ────────────────────────────
     function loadEmployeeSubtypeAndProceed(empName, afterLoad) {
         if (employeeHasSubtypeMap[empName] !== undefined) {
             applySubtypeVisibility(employeeHasSubtypeMap[empName]);
             afterLoad();
             return;
         }
-        // Fetch category linked on the Company Link record
         frappe.call({
             method: "frappe.client.get_value",
             args: {
@@ -659,28 +793,36 @@ function init_mark_attendance($main) {
             (employeeWeeklyOffMap[emp.value] || [])
                 .map(function (d) { return d.charAt(0).toUpperCase() + d.slice(1); }).join(", ");
 
-        // Fetch joining/left date if needed, then load subtype, then render table
-        function proceed() {
-            loadEmployeeSubtypeAndProceed(emp.value, function () {
-                generateTable();
-                loadCompOffBalance(emp.value);
-            });
+        submittedSlipMonths = {}; currentMonthLockState = null; currentMonthSlipName = null;
+        renderSlipBanner(); applyButtonLock(); applyTableLockClass();
+
+        function proceedAfterSlipLoad() {
+            if (joiningDateMap[emp.value] !== undefined) {
+                loadEmployeeSubtypeAndProceed(emp.value, function () {
+                    generateTable();
+                    loadCompOffBalance(emp.value);
+                });
+            } else {
+                frappe.call({
+                    method: "saral_hr.saral_hr.page.mark_attendance.mark_attendance.get_employee_joining_date",
+                    args: { employee: emp.value },
+                    callback: function (r) {
+                        var data = r.message || {};
+                        joiningDateMap[emp.value] = data.joining_date || null;
+                        leftDateMap[emp.value]    = data.left_date    || null;
+                        loadEmployeeSubtypeAndProceed(emp.value, function () {
+                            generateTable();
+                            loadCompOffBalance(emp.value);
+                        });
+                    }
+                });
+            }
         }
 
-        if (joiningDateMap[emp.value] !== undefined) {
-            proceed();
-        } else {
-            frappe.call({
-                method: "saral_hr.saral_hr.page.mark_attendance.mark_attendance.get_employee_joining_date",
-                args: { employee: emp.value },
-                callback: function (r) {
-                    var data = r.message || {};
-                    joiningDateMap[emp.value] = data.joining_date || null;
-                    leftDateMap[emp.value]    = data.left_date    || null;
-                    proceed();
-                }
-            });
-        }
+        loadSlipMonthsAndProceed(emp.value, function () {
+            applyLockState();
+            proceedAfterSlipLoad();
+        });
     }
 
     function clearSearch() {
@@ -691,6 +833,8 @@ function init_mark_attendance($main) {
         attendanceTableData = {}; originalAttendanceData = {}; dirtyDates.clear();
         clearTimeout(searchDebounceTimer); updateCounts(); clearCompOffBalance();
         applySubtypeVisibility(false);
+        submittedSlipMonths = {}; currentMonthLockState = null; currentMonthSlipName = null;
+        renderSlipBanner(); applyButtonLock(); applyTableLockClass();
     }
 
     clearBtn.addEventListener("click", clearSearch);
@@ -738,6 +882,10 @@ function init_mark_attendance($main) {
         startDateInput.value = year + "-" + String(month + 1).padStart(2, "0") + "-01";
         endDateInput.value   = year + "-" + String(month + 1).padStart(2, "0") + "-" +
             String(lastDay.getDate()).padStart(2, "0");
+
+        applyLockState();
+        updateScrollHeight();
+
         generateTable();
         var emp = employeeSel.value;
         if (emp) loadCompOffBalance(emp);
@@ -878,7 +1026,6 @@ function init_mark_attendance($main) {
         if (!firstContainer || !secondContainer) return;
         firstContainer.innerHTML  = "";
         secondContainer.innerHTML = "";
-        // Use the current HALF_OPTIONS (which respects subtype visibility)
         HALF_OPTIONS.forEach(function (status) {
             firstContainer.appendChild(buildHdOption(status,  hdPanelFirstVal,  "first"));
             secondContainer.appendChild(buildHdOption(status, hdPanelSecondVal, "second"));
@@ -931,13 +1078,17 @@ function init_mark_attendance($main) {
     // ════════════════════════════════════════════════════════════════════════
     //  HALF-DAY PILL HELPER
     // ════════════════════════════════════════════════════════════════════════
-    function hdPillHtml(status) {
+    function hdPillHtml(status, isLocked) {
         if (!status) {
+            if (isLocked) {
+                return '<span class="ma-hd-pill ma-hd-pill-empty ma-hd-pill-locked">—</span>';
+            }
             return '<span class="ma-hd-pill ma-hd-pill-empty">Set half</span>';
         }
         var cls      = HD_PILL_CLASS[status] || "";
         var dotColor = HD_DOT_COLOR[status]  || "#aaa";
-        return '<span class="ma-hd-pill ' + cls + '">' +
+        var lockedCls = isLocked ? " ma-hd-pill-locked" : "";
+        return '<span class="ma-hd-pill ' + cls + lockedCls + '">' +
             '<span class="ma-hd-pill-dot" style="background:' + dotColor + '"></span>' +
             status +
             '</span>';
@@ -972,6 +1123,7 @@ function init_mark_attendance($main) {
         var row = document.querySelector('tr[data-date="' + dateKey + '"]');
         if (!row) return;
         var rec = attendanceTableData[dateKey] || {};
+        var isLocked = (currentMonthLockState === "submitted");
 
         row.classList.remove("ma-row-halfday", "ma-row-override");
 
@@ -979,8 +1131,8 @@ function init_mark_attendance($main) {
             row.classList.add("ma-row-halfday");
             var hd1Cell = row.querySelector(".ma-hd1-cell");
             var hd2Cell = row.querySelector(".ma-hd2-cell");
-            if (hd1Cell) hd1Cell.innerHTML = hdPillHtml(rec.first_half);
-            if (hd2Cell) hd2Cell.innerHTML = hdPillHtml(rec.second_half);
+            if (hd1Cell) hd1Cell.innerHTML = hdPillHtml(rec.first_half,  isLocked);
+            if (hd2Cell) hd2Cell.innerHTML = hdPillHtml(rec.second_half, isLocked);
             row.querySelectorAll(".ma-col-dot").forEach(function (dot) { dot.className = "ma-col-dot"; });
         } else {
             var s = rec.status || "";
@@ -989,8 +1141,8 @@ function init_mark_attendance($main) {
             });
             var hd1Cell = row.querySelector(".ma-hd1-cell");
             var hd2Cell = row.querySelector(".ma-hd2-cell");
-            if (hd1Cell) hd1Cell.innerHTML = hdPillHtml("");
-            if (hd2Cell) hd2Cell.innerHTML = hdPillHtml("");
+            if (hd1Cell) hd1Cell.innerHTML = hdPillHtml("", isLocked);
+            if (hd2Cell) hd2Cell.innerHTML = hdPillHtml("", isLocked);
         }
 
         var toggle = row.querySelector(".ma-override-toggle");
@@ -1032,6 +1184,7 @@ function init_mark_attendance($main) {
     }
     tbody.addEventListener("keydown", function (e) {
         if (!focusedCell) return;
+        if (currentMonthLockState === "submitted") return;
         var r = focusedCell.rowIdx, c = focusedCell.colIdx;
         var maxRow = tbody.querySelectorAll("tr[data-rowidx]").length - 1;
         var maxCol = TOTAL_STATUS_COLS - 1;
@@ -1071,13 +1224,15 @@ function init_mark_attendance($main) {
         var isRestMode = isRestDay && savedRec.mode === "full" &&
             (savedRec.status === "Holiday" || savedRec.status === "Weekly Off");
 
+        var isLocked = (currentMonthLockState === "submitted");
+
         rowMetaMap[dateKey] = {
             isRestDay: isRestDay, restStatus: restStatus,
             isHoliday: effectiveIsHoliday, isDefaultWeeklyOff: effectiveIsWeeklyOff,
             isOutsideTenure: isOutsideTenure
         };
 
-        var cellsLocked = isFuture || isOutsideTenure || (isRestDay && isRestMode);
+        var cellsLocked = isFuture || isOutsideTenure || (isRestDay && isRestMode) || isLocked;
 
         if (isFuture || isOutsideTenure) {
             row.classList.add("ma-future-row");
@@ -1118,15 +1273,22 @@ function init_mark_attendance($main) {
         if (isRestDay && !isFuture && !isOutsideTenure) {
             var lbl = document.createElement("label");
             lbl.className = "ma-toggle" + (restStatus === "Holiday" ? " ma-toggle-holiday" : "");
+            // When locked, show toggle as visually disabled
+            if (isLocked) lbl.classList.add("ma-toggle-locked");
             lbl.title = isRestMode ? "Click to override " + restStatus : "Click to restore " + restStatus;
             var chk = document.createElement("input");
             chk.type      = "checkbox";
             chk.className = "ma-override-toggle";
             chk.checked   = isRestMode;
+            chk.disabled  = isLocked;
             chk.dataset.isrestday  = "true";
             chk.dataset.reststatus = restStatus;
             chk.dataset.datekey    = dateKey;
             chk.addEventListener("change", function () {
+                if (currentMonthLockState === "submitted") {
+                    this.checked = !this.checked;
+                    return;
+                }
                 var nowChecked = this.checked;
                 if (nowChecked) {
                     if (restStatus === "Weekly Off") {
@@ -1155,7 +1317,7 @@ function init_mark_attendance($main) {
         }
         row.appendChild(overrideTd);
 
-        // ── Full-day status columns (uses current FULL_DAY_STATUSES) ────────
+        // ── Full-day status columns ─────────────────────────────────────────
         FULL_DAY_STATUSES.forEach(function (status, colIdx) {
             var td = document.createElement("td");
             td.className = "ma-status-cell ma-cell-" + status.toLowerCase().replace(/ /g, "_");
@@ -1173,45 +1335,55 @@ function init_mark_attendance($main) {
             }
 
             td.addEventListener("click", function () {
+                if (currentMonthLockState === "submitted") return;
                 var parentRow = td.closest("tr");
                 if (parentRow && parentRow.classList.contains("ma-status-cells-disabled")) return;
                 onFullDayClick(dateKey, status, effectiveIsHoliday, effectiveIsWeeklyOff);
             });
-            td.addEventListener("mousedown", function () { setFocusCell(rowIdx, colIdx); });
+            td.addEventListener("mousedown", function () {
+                if (currentMonthLockState !== "submitted") setFocusCell(rowIdx, colIdx);
+            });
             td.appendChild(dot);
             row.appendChild(td);
         });
 
         // Half Day – First Half
+        var h1Val = (savedRec.mode === "half") ? savedRec.first_half  : "";
+        var h2Val = (savedRec.mode === "half") ? savedRec.second_half : "";
+
         var hd1Td = document.createElement("td");
         hd1Td.className = "ma-status-cell ma-hd-cell ma-hd1-cell";
         hd1Td.setAttribute("data-colidx", FULL_DAY_STATUSES.length);
-        var h1Val = (savedRec.mode === "half") ? savedRec.first_half  : "";
-        var h2Val = (savedRec.mode === "half") ? savedRec.second_half : "";
-        hd1Td.innerHTML = hdPillHtml(h1Val);
+        hd1Td.innerHTML = hdPillHtml(h1Val, isLocked);
         hd1Td.addEventListener("click", function (e) {
             e.stopPropagation();
+            if (currentMonthLockState === "submitted") return;
             var parentRow = hd1Td.closest("tr");
             if (parentRow && parentRow.classList.contains("ma-status-cells-disabled")) return;
             ensureHalfDayMode(dateKey);
             openHdPanel(dateKey, dayName, dateLabel);
         });
-        hd1Td.addEventListener("mousedown", function () { setFocusCell(rowIdx, FULL_DAY_STATUSES.length); });
+        hd1Td.addEventListener("mousedown", function () {
+            if (currentMonthLockState !== "submitted") setFocusCell(rowIdx, FULL_DAY_STATUSES.length);
+        });
         row.appendChild(hd1Td);
 
         // Half Day – Second Half
         var hd2Td = document.createElement("td");
         hd2Td.className = "ma-status-cell ma-hd-cell ma-hd2-cell";
         hd2Td.setAttribute("data-colidx", FULL_DAY_STATUSES.length + 1);
-        hd2Td.innerHTML = hdPillHtml(h2Val);
+        hd2Td.innerHTML = hdPillHtml(h2Val, isLocked);
         hd2Td.addEventListener("click", function (e) {
             e.stopPropagation();
+            if (currentMonthLockState === "submitted") return;
             var parentRow = hd2Td.closest("tr");
             if (parentRow && parentRow.classList.contains("ma-status-cells-disabled")) return;
             ensureHalfDayMode(dateKey);
             openHdPanel(dateKey, dayName, dateLabel);
         });
-        hd2Td.addEventListener("mousedown", function () { setFocusCell(rowIdx, FULL_DAY_STATUSES.length + 1); });
+        hd2Td.addEventListener("mousedown", function () {
+            if (currentMonthLockState !== "submitted") setFocusCell(rowIdx, FULL_DAY_STATUSES.length + 1);
+        });
         row.appendChild(hd2Td);
 
         return row;
@@ -1375,12 +1547,12 @@ function init_mark_attendance($main) {
                             current.setDate(current.getDate() + 1);
                         }
 
-                        // ── After building rows, hide ECO/Coff td cells in body ──
                         applySubtypeColumnsToBdy();
-
                         hideTableLoading();
                         updateCounts();
                         updateScrollHeight();
+                        // Re-apply lock class after table rebuilt
+                        applyTableLockClass();
                     },
                     error: function () { hideTableLoading(); }
                 });
@@ -1389,10 +1561,6 @@ function init_mark_attendance($main) {
         });
     }
 
-    /**
-     * After the tbody is populated, hide or show the td cells that correspond
-     * to "Earned Comp Off" and "Comp Off" columns based on currentEmployeeHasSubtype.
-     */
     function applySubtypeColumnsToBdy() {
         tbody.querySelectorAll("td[data-status='Earned Comp Off'], td[data-status='Comp Off']").forEach(function (td) {
             td.style.display = currentEmployeeHasSubtype ? "none" : "";
@@ -1403,6 +1571,10 @@ function init_mark_attendance($main) {
     //  BULK MARK
     // ════════════════════════════════════════════════════════════════════════
     function bulkMark(status) {
+        if (currentMonthLockState === "submitted") {
+            frappe.show_alert({ message: "🔒 Attendance is locked — salary slip has been submitted for this month.", indicator: "red" });
+            return;
+        }
         var employee = employeeSel.value;
         if (!employee || !startDateInput.value) {
             frappe.show_alert({ message: "Please select an employee and month first", indicator: "orange" }); return;
@@ -1421,7 +1593,6 @@ function init_mark_attendance($main) {
             markDirty(dateKey);
             refreshRowVisuals(dateKey);
         });
-        // Re-hide ECO/Coff columns after bulk refresh
         applySubtypeColumnsToBdy();
         updateCounts();
     }
@@ -1446,6 +1617,16 @@ function init_mark_attendance($main) {
     }
     function doSave() {
         if (isSaving) return;
+
+        if (currentMonthLockState === "submitted") {
+            frappe.show_alert({
+                message: "🔒 Cannot save — Salary Slip <strong>" + currentMonthSlipName +
+                    "</strong> has been submitted for this month. Cancel the salary slip first.",
+                indicator: "red"
+            });
+            return;
+        }
+
         var employee = employeeSel.value;
         if (!employee) { frappe.show_alert({ message: "Please select an employee first", indicator: "orange" }); return; }
         if (!startDateInput.value || !endDateInput.value) { frappe.show_alert({ message: "Please select a year and month first", indicator: "orange" }); return; }
@@ -1498,7 +1679,6 @@ function init_mark_attendance($main) {
         });
     }
 
-    var saveBtn = document.getElementById("ma_save_attendance");
     saveBtn.addEventListener("mousedown", function (e) { e.preventDefault(); });
     saveBtn.addEventListener("click", doSave);
 
@@ -1580,12 +1760,26 @@ function init_mark_attendance($main) {
         monthNames.forEach(function (monthName, monthIndex) {
             var card = document.createElement("div");
             card.className = "ma-month-card";
+
+            var slipKey  = currentCalendarYear + "-" + String(monthIndex + 1).padStart(2, "0") + "-01";
+            var slipInfo = submittedSlipMonths[slipKey];
+            if (slipInfo && slipInfo.docstatus === 1) {
+                card.classList.add("ma-month-card-locked");
+                card.title = "🔒 Salary slip submitted for this month";
+            } else if (slipInfo && slipInfo.docstatus === 0) {
+                card.classList.add("ma-month-card-draft");
+                card.title = "⚠️ Draft salary slip exists for this month";
+            }
+
             card.onclick = function () { selectMonth(monthIndex); };
             var firstDay    = new Date(currentCalendarYear, monthIndex, 1);
             var lastDay     = new Date(currentCalendarYear, monthIndex + 1, 0);
             var startDay    = firstDay.getDay();
             var daysInMonth = lastDay.getDate();
-            var html = '<div class="ma-month-name">' + monthName + '</div><div class="ma-mini-cal">';
+            var html = '<div class="ma-month-name">' + monthName;
+            if (slipInfo && slipInfo.docstatus === 1) html += ' <span class="ma-month-lock-icon">🔒</span>';
+            else if (slipInfo && slipInfo.docstatus === 0) html += ' <span class="ma-month-lock-icon">⚠️</span>';
+            html += '</div><div class="ma-mini-cal">';
             dayNames.forEach(function (d) { html += '<div class="ma-mini-hdr">' + d + '</div>'; });
             for (var i = 0; i < startDay; i++) html += '<div class="ma-mini-day empty"></div>';
             var today = new Date();
@@ -1685,17 +1879,221 @@ function inject_ma_styles() {
             z-index: 100;
         }
 
+        /* ══════════════════════════════════════════════════════
+           SALARY SLIP BANNERS
+           — Full opacity, no fading, crisp Frappe-style
+           ══════════════════════════════════════════════════════ */
+        #ma_slip_banner {
+            margin: 0;
+            /* Ensure banner itself never inherits opacity from parent */
+            opacity: 1 !important;
+        }
+
+        .ma-slip-banner {
+            display: flex;
+            align-items: flex-start;
+            gap: 10px;
+            padding: 11px 16px;
+            font-size: 13px;
+            line-height: 1.6;
+            border-top: none;
+            border-left: none;
+            border-right: none;
+            border-bottom: 1px solid transparent;
+            /* Crisp — no opacity reduction ever */
+            opacity: 1 !important;
+        }
+        .ma-slip-banner-locked {
+            background: #fff1f2;
+            border-color: #fda4af;
+            color: #881337;
+            border-left: 4px solid #e11d48 !important;
+        }
+        .ma-slip-banner-draft {
+            background: #fffbeb;
+            border-color: #fcd34d;
+            color: #78350f;
+            border-left: 4px solid #f59e0b !important;
+        }
+        .ma-slip-banner-icon {
+            font-size: 16px;
+            flex-shrink: 0;
+            margin-top: 1px;
+            /* Icon must never fade */
+            opacity: 1 !important;
+        }
+        .ma-slip-banner-text {
+            flex: 1;
+            /* Text must never fade */
+            opacity: 1 !important;
+            color: inherit;
+        }
+
+        /* ── Banner links — ALWAYS fully visible, distinct style ── */
+        .ma-slip-link {
+            font-weight: 700;
+            text-decoration: underline;
+            text-underline-offset: 2px;
+            color: inherit !important;
+            opacity: 1 !important;
+            /* Never inherit any dimming from parents */
+            filter: none !important;
+        }
+        .ma-slip-link:hover {
+            text-decoration: none;
+            opacity: 0.8 !important;
+        }
+        .ma-slip-link-draft {
+            color: #92400e !important;
+        }
+
+        /* ══════════════════════════════════════════════════════
+           LOCKED BUTTON STATE
+           — Clear, intentional disabled look
+           ══════════════════════════════════════════════════════ */
+        .ma-btn-locked {
+            opacity: 0.38 !important;
+            cursor: not-allowed !important;
+            pointer-events: none !important;
+            transform: none !important;
+            /* Subtle strikethrough feel via border */
+            border-style: dashed !important;
+        }
+        .ma-btn-primary.ma-btn-locked {
+            background: var(--primary) !important;
+            color: #fff !important;
+        }
+
+        /* ══════════════════════════════════════════════════════
+           TABLE LOCKED STATE
+           — No overlay. Table-level class controls behaviour.
+           ══════════════════════════════════════════════════════ */
+
+        /* Scroll container shows not-allowed cursor when locked */
+        .ma-table-scroll-locked {
+            cursor: not-allowed;
+        }
+
+        /*
+         * When the TABLE has .ma-table-locked:
+         *  - Status cells: dimmed + no pointer events
+         *  - Date / Day / count cells: FULLY VISIBLE (opacity:1 !important)
+         *  - Override toggles: dimmed + no pointer events
+         *  - Half-day pills: dimmed styling (handled via ma-hd-pill-locked)
+         *  - future rows keep their own 0.4 opacity
+         */
+        .ma-table-locked tbody tr:not(.ma-future-row):not(.ma-before-joining-row) td.ma-status-cell {
+            opacity: 0.30;
+            pointer-events: none !important;
+            cursor: not-allowed;
+        }
+        .ma-table-locked tbody tr:not(.ma-future-row):not(.ma-before-joining-row) td.ma-override-cell .ma-toggle {
+            opacity: 0.30;
+            pointer-events: none !important;
+            cursor: not-allowed;
+        }
+
+        /* Date, day, override CELLS stay fully readable */
+        .ma-table-locked tbody td.ma-date-cell,
+        .ma-table-locked tbody td.ma-day-cell {
+            opacity: 1 !important;
+            color: var(--text-color) !important;
+        }
+
+        /* WO / Holiday date labels keep their colour when locked */
+        .ma-table-locked tbody td.ma-date-cell.ma-date-wo,
+        .ma-table-locked tbody td.ma-day-cell.ma-date-wo {
+            color: #b8860b !important;
+            opacity: 1 !important;
+        }
+        .ma-table-locked tbody td.ma-date-cell.ma-date-holiday,
+        .ma-table-locked tbody td.ma-day-cell.ma-date-holiday {
+            color: #c05800 !important;
+            opacity: 1 !important;
+        }
+
+        /* Active dots (selected status) keep their colour but slightly muted */
+        .ma-table-locked .ma-col-dot.active {
+            opacity: 0.55;
+        }
+
+        /* Locked half-day pill — no interactivity look */
+        .ma-hd-pill-locked {
+            cursor: default !important;
+            pointer-events: none !important;
+            filter: grayscale(0.3);
+            opacity: 0.55;
+        }
+        /* Empty locked pill — just a dash, no "Set half" affordance */
+        .ma-hd-pill-empty.ma-hd-pill-locked {
+            background: transparent !important;
+            border: none !important;
+            color: var(--text-muted) !important;
+            font-style: normal !important;
+            opacity: 0.4 !important;
+        }
+
+        /* Locked override toggle */
+        .ma-toggle-locked {
+            cursor: not-allowed !important;
+            pointer-events: none !important;
+        }
+        .ma-toggle-locked .ma-toggle-slider {
+            filter: grayscale(0.5);
+            opacity: 0.5;
+        }
+
+        /* ══════════════════════════════════════════════════════
+           SEARCH DROPDOWN — always above everything, no dim
+           ══════════════════════════════════════════════════════ */
+        .ma-search-dropdown {
+            /* Hard z-index so it never sits behind overlay/banner */
+            z-index: 9999 !important;
+            /* No opacity inheritance */
+            opacity: 1 !important;
+        }
+        .ma-result-item {
+            /* Ensure result items never inherit any dimming */
+            opacity: 1 !important;
+            color: var(--text-color) !important;
+        }
+        .ma-result-name {
+            opacity: 1 !important;
+            color: var(--text-color) !important;
+        }
+        .ma-result-id {
+            opacity: 1 !important;
+            color: var(--text-muted) !important;
+        }
+
+        /* ══════════════════════════════════════════════════════
+           CALENDAR MONTH CARD LOCK STATES
+           ══════════════════════════════════════════════════════ */
+        .ma-month-card-locked {
+            border-color: #fda4af !important;
+            background: #fff1f2 !important;
+        }
+        .ma-month-card-draft {
+            border-color: #fcd34d !important;
+            background: #fffdf0 !important;
+        }
+        .ma-month-lock-icon { font-size: 11px; margin-left: 4px; }
+
+        /* ══════════════════════════════════════════════════════
+           STANDARD COMPONENTS (unchanged from original)
+           ══════════════════════════════════════════════════════ */
         .ma-header-actions { display:flex; align-items:center; gap:10px; margin-left:20px; }
-        .ma-link { font-size:12px; color:var(--text-on-light-blue); cursor:pointer; text-decoration:underline; text-underline-offset:2px; background:none; border:none; padding:0; font-weight:500; transition:color 0.2s; white-space:nowrap; }
+        .ma-link { font-size:12px; color:var(--text-on-light-blue); cursor:pointer; text-decoration:underline; text-underline-offset:2px; background:none; border:none; padding:0; font-weight:500; transition:color 0.2s; white-space:nowrap; opacity:1 !important; }
         .ma-link:hover { color:var(--blue-600); }
         .ma-link-sep { color:var(--text-muted); font-size:12px; }
 
         .ma-btn { background:var(--control-bg,#f4f5f6); color:var(--text-color); border:1px solid var(--border-color,#d1d8dd); border-radius:5px; padding:6px 14px; font-weight:500; cursor:pointer; transition:background 0.15s; font-size:13px; white-space:nowrap; user-select:none; }
         .ma-btn-primary { background:var(--primary) !important; color:#fff !important; border-color:var(--primary) !important; }
-        .ma-btn-primary:hover { opacity:0.88; }
-        .ma-btn-primary:focus, .ma-btn-primary:active { outline:none; background:var(--primary) !important; color:#fff !important; border-color:var(--primary) !important; opacity:1; box-shadow:none; }
-        .ma-btn:hover:not(.ma-btn-primary) { background:var(--control-bg-on-gray,#eee); }
-        .ma-btn:active:not(.ma-btn-primary) { transform:scale(0.98); }
+        .ma-btn-primary:hover:not(.ma-btn-locked) { opacity:0.88; }
+        .ma-btn-primary:focus:not(.ma-btn-locked), .ma-btn-primary:active:not(.ma-btn-locked) { outline:none; background:var(--primary) !important; color:#fff !important; border-color:var(--primary) !important; opacity:1; box-shadow:none; }
+        .ma-btn:hover:not(.ma-btn-primary):not(.ma-btn-locked) { background:var(--control-bg-on-gray,#eee); }
+        .ma-btn:active:not(.ma-btn-primary):not(.ma-btn-locked) { transform:scale(0.98); }
+        .ma-btn:disabled:not(.ma-btn-locked) { opacity:0.45 !important; cursor:not-allowed !important; transform:none !important; }
 
         .ma-top-wrap { display:flex; gap:14px; align-items:stretch; }
         .ma-left-block { flex:1; min-width:0; display:flex; flex-direction:column; gap:10px; }
@@ -1719,13 +2117,13 @@ function inject_ma_styles() {
         .ma-clear-btn::before { content:'\\2715'; }
         .ma-clear-btn.show { display:flex !important; }
         .ma-clear-btn:hover { background:var(--text-color); }
-        .ma-search-dropdown { display:none; position:absolute; top:100%; left:0; right:0; background:var(--card-bg,#fff); border:1px solid var(--border-color,#d1d8dd); border-top:none; border-radius:0 0 4px 4px; max-height:280px; overflow-y:auto; z-index:1000; box-shadow:0 4px 12px rgba(0,0,0,0.08); }
+        .ma-search-dropdown { display:none; position:absolute; top:100%; left:0; right:0; background:var(--card-bg,#fff); border:1px solid var(--border-color,#d1d8dd); border-top:none; border-radius:0 0 4px 4px; max-height:280px; overflow-y:auto; box-shadow:0 4px 12px rgba(0,0,0,0.08); }
         .ma-search-dropdown.show { display:block; }
         .ma-result-item { padding:8px 14px; cursor:pointer; border-bottom:1px solid var(--border-color,#f0f0f0); transition:background 0.1s; }
         .ma-result-item:last-child { border-bottom:none; }
         .ma-result-item:hover, .ma-result-item.selected { background:var(--control-bg,#f4f5f6); }
-        .ma-result-name { font-size:13px; font-weight:500; color:var(--text-color); }
-        .ma-result-id { font-size:11px; color:var(--text-muted); margin-top:1px; }
+        .ma-result-name { font-size:13px; font-weight:500; }
+        .ma-result-id { font-size:11px; margin-top:1px; }
         .ma-highlight { font-weight:700; color:var(--text-color); }
         .ma-no-results { padding:12px 14px; font-size:13px; color:var(--text-muted); text-align:center; }
         .ma-bulk-btns { display:flex; align-items:center; gap:6px; flex-wrap:wrap; }
@@ -1803,7 +2201,7 @@ function inject_ma_styles() {
         .ma-col-dot.wo-dot        { background:#b8860b; border-color:#b8860b; }
         .ma-col-dot.holiday-dot   { background:#e09a2a; border-color:#e09a2a; }
         .ma-col-dot.ma-dot-dirty.active { box-shadow:0 0 0 2px var(--card-bg,#fff), 0 0 0 4px #f59e0b; }
-        .ma-cell-focused { outline:2px solid var(--primary,#2d6adf) !important; outline-offset:-2px; background:rgba(45,106,223,0.06) !important; }
+        .ma-cell-focused { outline:2px solid var(--primary,#2d2d2d) !important; outline-offset:-2px; background:rgba(45,106,223,0.06) !important; }
 
         .ma-date-cell { font-size:12px; font-weight:500; padding:5px 10px !important; white-space:nowrap; min-width:140px; color:var(--text-color); }
         .ma-day-cell  { font-size:12px; color:var(--text-muted); padding:5px 8px !important; white-space:nowrap; min-width:100px; }
@@ -1848,7 +2246,7 @@ function inject_ma_styles() {
         .ma-hd-pill-cl        { background:#edf4fb; color:#1960a8; border-color:#9fc5e8; }
         .ma-hd-pill-coff      { background:#f3f4f6; color:#4b5563; border-color:#d1d5db; }
         .ma-hd-pill-lwp       { background:#fffbeb; color:#92660a; border-color:#fcd34d; }
-        .ma-hd-cell:hover .ma-hd-pill { box-shadow:0 0 0 2px var(--border-color,#d1d8dd); }
+        .ma-hd-cell:hover .ma-hd-pill:not(.ma-hd-pill-locked) { box-shadow:0 0 0 2px var(--border-color,#d1d8dd); }
 
         /* ══════════════════════════════════════════════════════
            HALF-DAY PANEL
