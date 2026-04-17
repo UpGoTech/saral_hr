@@ -139,4 +139,4 @@ frappe.query_reports["Loan Register"] = {
 
         return value;
     },
-};
+};  

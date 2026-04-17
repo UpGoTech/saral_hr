@@ -661,7 +661,7 @@ def get_loan_advance_deductions(employee, start_date):
         if doc.type == "Loan":
             for row in doc.schedule:
                 if row.month == slip_month_label and not row.is_deducted:
-                    loan_suffix = "-".join(doc.name.split("-")[-2:])
+                    loan_suffix = f"{doc.type}-" + "-".join(doc.name.split("-")[-2:])
                     deductions.append({
                         "salary_component": loan_suffix,
                         "abbr":             loan_suffix,
@@ -674,7 +674,7 @@ def get_loan_advance_deductions(employee, start_date):
 
         elif doc.type == "Advance":
             if not doc.is_deducted:
-                adv_suffix = "-".join(doc.name.split("-")[-2:])
+                adv_suffix = f"{doc.type}-" + "-".join(doc.name.split("-")[-2:])
                 deductions.append({
                     "salary_component": adv_suffix,
                     "abbr":             adv_suffix,
