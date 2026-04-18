@@ -1,7 +1,7 @@
 {
  "charts": [],
- "content": "[{\"id\":\"quLY2RmqsK\",\"type\":\"header\",\"data\":{\"text\":\"<span class=\\\"h4\\\">Saral HR</span>\",\"col\":12}},{\"id\":\"vX7k3MjFpF\",\"type\":\"card\",\"data\":{\"card_name\":\"Companies Master Data\",\"col\":4}},{\"id\":\"UXBG6dAVhA\",\"type\":\"card\",\"data\":{\"card_name\":\"Employees Master Data\",\"col\":4}},{\"id\":\"tcNJEXnjQA\",\"type\":\"card\",\"data\":{\"card_name\":\"Salaries Master Data\",\"col\":4}},{\"id\":\"s7XR35vZsk\",\"type\":\"card\",\"data\":{\"card_name\":\"Monthly Transactions\",\"col\":4}},{\"id\":\"cLCTEGWswg\",\"type\":\"card\",\"data\":{\"card_name\":\"Leaves Process\",\"col\":4}},{\"id\":\"2AtGjch4al\",\"type\":\"card\",\"data\":{\"card_name\":\"Report\",\"col\":4}},{\"id\":\"ad8Ylo2JQq\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"View Salary Insight\",\"col\":3}},{\"id\":\"0meWuWmuDh\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Bulk Mark Attendance\",\"col\":3}},{\"id\":\"5CJdLnloTi\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"View Payroll Report\",\"col\":3}},{\"id\":\"DzpOy7QolO\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"View Salary Statistics\",\"col\":3}},{\"id\":\"I8XwI9v3a9\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"View Attendance Dashboard\",\"col\":3}},{\"id\":\"h0lo5909XG\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"HR Workforce & Payroll Overview\",\"col\":3}},{\"id\":\"6WnE6MK-2W\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Salary Calculator\",\"col\":3}}]",
- "creation": "2026-04-15 11:39:47.105243",
+ "content": "[{\"id\":\"quLY2RmqsK\",\"type\":\"header\",\"data\":{\"text\":\"<span class=\\\"h4\\\">Saral HR</span>\",\"col\":12}},{\"id\":\"vX7k3MjFpF\",\"type\":\"card\",\"data\":{\"card_name\":\"Companies Master Data\",\"col\":4}},{\"id\":\"UXBG6dAVhA\",\"type\":\"card\",\"data\":{\"card_name\":\"Employees Master Data\",\"col\":4}},{\"id\":\"tcNJEXnjQA\",\"type\":\"card\",\"data\":{\"card_name\":\"Salaries Master Data\",\"col\":4}},{\"id\":\"s7XR35vZsk\",\"type\":\"card\",\"data\":{\"card_name\":\"Monthly Transactions\",\"col\":4}},{\"id\":\"cLCTEGWswg\",\"type\":\"card\",\"data\":{\"card_name\":\"Leaves Process\",\"col\":4}},{\"id\":\"2AtGjch4al\",\"type\":\"card\",\"data\":{\"card_name\":\"Report\",\"col\":4}},{\"id\":\"ad8Ylo2JQq\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"View Salary Insight\",\"col\":3}},{\"id\":\"0meWuWmuDh\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Bulk Mark Attendance\",\"col\":3}},{\"id\":\"5CJdLnloTi\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"View Payroll Report\",\"col\":3}},{\"id\":\"DzpOy7QolO\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"View Salary Statistics\",\"col\":3}},{\"id\":\"I8XwI9v3a9\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"View Attendance Dashboard\",\"col\":3}},{\"id\":\"h0lo5909XG\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"HR Workforce & Payroll Overview\",\"col\":3}},{\"id\":\"0nabSA8nAP\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Daily Wage Attendance\",\"col\":3}}]",
+ "creation": "2026-04-18 13:09:06.622695",
  "custom_blocks": [],
  "docstatus": 0,
  "doctype": "Workspace",
@@ -192,8 +192,59 @@
   {
    "hidden": 0,
    "is_query_report": 0,
+   "label": "Report",
+   "link_count": 4,
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Card Break"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Salary Slip",
+   "link_count": 0,
+   "link_to": "Salary Slip",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Employee Timeline Report",
+   "link_count": 0,
+   "link_to": "Employee Timeline Report",
+   "link_type": "Report",
+   "onboard": 0,
+   "report_ref_doctype": "Company Link",
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Employee Salary Hold",
+   "link_count": 0,
+   "link_to": "Employee Salary Hold",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Employee Loan Advance Ledger",
+   "link_count": 0,
+   "link_to": "Employee Loan Advance Ledger",
+   "link_type": "Report",
+   "onboard": 0,
+   "report_ref_doctype": "Employee Loan Advance",
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
    "label": "Employees Master Data",
-   "link_count": 6,
+   "link_count": 7,
    "link_type": "DocType",
    "onboard": 0,
    "type": "Card Break"
@@ -261,56 +312,15 @@
   {
    "hidden": 0,
    "is_query_report": 0,
-   "label": "Report",
-   "link_count": 4,
+   "label": "Daily Rates Worker",
+   "link_count": 0,
+   "link_to": "Daily Rates Worker",
    "link_type": "DocType",
    "onboard": 0,
-   "type": "Card Break"
-  },
-  {
-   "hidden": 0,
-   "is_query_report": 0,
-   "label": "Salary Slip",
-   "link_count": 0,
-   "link_to": "Salary Slip",
-   "link_type": "DocType",
-   "onboard": 0,
-   "type": "Link"
-  },
-  {
-   "hidden": 0,
-   "is_query_report": 0,
-   "label": "Employee Timeline Report",
-   "link_count": 0,
-   "link_to": "Employee Timeline Report",
-   "link_type": "Report",
-   "onboard": 0,
-   "report_ref_doctype": "Company Link",
-   "type": "Link"
-  },
-  {
-   "hidden": 0,
-   "is_query_report": 0,
-   "label": "Employee Salary Hold",
-   "link_count": 0,
-   "link_to": "Employee Salary Hold",
-   "link_type": "DocType",
-   "onboard": 0,
-   "type": "Link"
-  },
-  {
-   "hidden": 0,
-   "is_query_report": 0,
-   "label": "Employee Loan Advance Ledger",
-   "link_count": 0,
-   "link_to": "Employee Loan Advance Ledger",
-   "link_type": "Report",
-   "onboard": 0,
-   "report_ref_doctype": "Employee Loan Advance",
    "type": "Link"
   }
  ],
- "modified": "2026-04-15 14:24:39.819987",
+ "modified": "2026-04-18 14:19:53.489794",
  "modified_by": "Administrator",
  "module": "Saral Hr",
  "name": "Saral HR",
@@ -332,9 +342,9 @@
   {
    "color": "Grey",
    "doc_view": "List",
-   "label": "Salary Calculator",
+   "label": "Daily Wage Attendance",
    "type": "URL",
-   "url": "/app/salary-calc"
+   "url": "/app/daily-wage-attendance"
   },
   {
    "color": "Grey",
