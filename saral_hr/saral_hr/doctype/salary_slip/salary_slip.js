@@ -327,6 +327,7 @@ function apply_attendance(frm, d, variable_pay_pct) {
         total_weekly_off_days:   d.total_weekly_off_days || 0,
         weekly_offs_taken:       d.weekly_offs_taken || 0,
         total_holidays:          d.total_holidays || 0,
+        holidays_taken:          d.holidays_taken || 0,   // ← ADD THIS
         weekly_offs_count:       d.weekly_offs || 0,
         present_days:            d.present_days || 0,
         total_on_tour:           d.total_on_tour || 0,
@@ -346,7 +347,6 @@ function apply_attendance(frm, d, variable_pay_pct) {
     if (variable_pay_pct !== undefined) frm.variable_pay_percentage = variable_pay_pct;
     recalculate_salary(frm, d.working_days, d.payment_days, d.physical_working_days);
 }
-
 // ─── Salary Calculation ───────────────────────────────────────────────────────
 // payment_days is sourced from the server (sandwich-rule applied).
 // The recalculate function uses it directly for proration — it does not

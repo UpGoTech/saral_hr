@@ -17,13 +17,9 @@
   "status",
   "column_break_2",
   "daily_rate",
-  "section_break_half",
-  "first_half",
-  "column_break_3",
-  "second_half",
   "section_break_ot",
   "ot_hours",
-  "ot_minutes"
+  "remarks"
  ],
  "fields": [
   {
@@ -100,51 +96,29 @@
    "label": "Daily Rate"
   },
   {
-   "depends_on": "eval:doc.status == 'Half Day'",
-   "fieldname": "section_break_half",
-   "fieldtype": "Section Break",
-   "label": "Half Day Details"
-  },
-  {
-   "depends_on": "eval:doc.status == 'Half Day'",
-   "fieldname": "first_half",
-   "fieldtype": "Select",
-   "label": "First Half",
-   "options": "\nPresent\nOn Tour\nAbsent"
-  },
-  {
-   "fieldname": "column_break_3",
-   "fieldtype": "Column Break"
-  },
-  {
-   "depends_on": "eval:doc.status == 'Half Day'",
-   "fieldname": "second_half",
-   "fieldtype": "Select",
-   "label": "Second Half",
-   "options": "\nPresent\nOn Tour\nAbsent"
-  },
-  {
    "fieldname": "section_break_ot",
    "fieldtype": "Section Break",
    "label": "Overtime"
   },
   {
    "fieldname": "ot_hours",
-   "fieldtype": "Data",
-   "label": "OT Hours (HH:MM)",
-   "description": "Overtime in HH:MM format, e.g. 02:30"
+   "fieldtype": "Float",
+   "label": "OT Hours",
+   "in_list_view": 1,
+   "description": "Overtime in decimal hours. 4 = 4 hrs, 4.5 = 4 hrs 30 min, 7.5 = 7 hrs 30 min.",
+   "precision": "2"
   },
   {
-   "fieldname": "ot_minutes",
-   "fieldtype": "Int",
-   "label": "OT Minutes (Total)",
-   "read_only": 1,
-   "description": "Auto-computed total minutes from OT Hours"
+   "fieldname": "remarks",
+   "fieldtype": "Small Text",
+   "label": "Remarks",
+   "in_list_view": 1,
+   "description": "Optional note for this attendance record."
   }
  ],
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-04-18 13:00:00.000000",
+ "modified": "2026-04-20 00:00:00.000000",
  "modified_by": "Administrator",
  "module": "Saral Hr",
  "name": "Attendance Daily Rate",

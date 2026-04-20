@@ -54,6 +54,7 @@
   "weekly_offs_taken",
   "column_break_mr4",
   "total_holidays",
+  "holidays_taken",
   "earnings_and_deductions_tab",
   "earnings_and_deductions_section",
   "earnings",
@@ -146,6 +147,14 @@
    "fieldtype": "Float",
    "label": "Holidays",
    "precision": "2"
+  },
+  {
+   "description": "Number of days where attendance status is explicitly marked as Holiday.",
+   "fieldname": "holidays_taken",
+   "fieldtype": "Float",
+   "label": "Holidays Taken",
+   "precision": "2",
+   "read_only": 1
   },
   {
    "fieldname": "payment_summary_section",
@@ -466,7 +475,7 @@
  "index_web_pages_for_search": 1,
  "is_submittable": 1,
  "links": [],
- "modified": "2026-04-17 00:00:00.000000",
+ "modified": "2026-04-20 00:00:00.000000",
  "modified_by": "Administrator",
  "module": "Saral Hr",
  "name": "Salary Slip",
