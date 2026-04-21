@@ -101,9 +101,10 @@ frappe.query_reports["ESI Register"] = {
         const fn   = column.fieldname;
         const def  = v => default_formatter(v, row, column, data);
         const bold = v => `<strong>${def(v)}</strong>`;
-        // On total row suppress date/identity columns, bold numeric ones
+
         if (data.bold) {
-            const skip = ["esic_number", "days_paid", "date_of_joining", "date_of_birth"];
+            // Suppress identity/days cols on total row; show all numeric totals including total_esi
+            const skip = ["esic_number", "days_paid"];
             if (skip.includes(fn)) return "";
             return bold(value);
         }

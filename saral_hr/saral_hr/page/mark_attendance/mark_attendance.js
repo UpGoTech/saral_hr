@@ -106,7 +106,7 @@ function get_ma_html() {
                             <th class="ma-leave-th ma-leave-type-hdr">Leave Type</th>
                             <th class="ma-leave-th">Earned</th>
                             <th class="ma-leave-th">Casual</th>
-                            <th class="ma-leave-th ma-leave-eco-hdr">Comp Off</th>
+                            <th class="ma-leave-th ma-leave-eco-hdr ma-eco-col">Comp Off</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -114,25 +114,25 @@ function get_ma_html() {
                             <td class="ma-leave-row-label">Available</td>
                             <td class="ma-leave-val ma-leave-bal">—</td>
                             <td class="ma-leave-val ma-leave-bal">—</td>
-                            <td class="ma-leave-val ma-leave-eco-val" id="ma_eco_available">0</td>
+                            <td class="ma-leave-val ma-leave-eco-val ma-eco-col" id="ma_eco_available">0</td>
                         </tr>
                         <tr>
                             <td class="ma-leave-row-label">Earned</td>
                             <td class="ma-leave-val ma-leave-bal">—</td>
                             <td class="ma-leave-val ma-leave-bal">—</td>
-                            <td class="ma-leave-val ma-leave-eco-val" id="ma_eco_earned">0</td>
+                            <td class="ma-leave-val ma-leave-eco-val ma-eco-col" id="ma_eco_earned">0</td>
                         </tr>
                         <tr>
                             <td class="ma-leave-row-label">Taken</td>
                             <td class="ma-leave-val" id="ma_el_taken">0</td>
                             <td class="ma-leave-val" id="ma_cl_taken">0</td>
-                            <td class="ma-leave-val ma-leave-eco-val" id="ma_eco_used">0</td>
+                            <td class="ma-leave-val ma-leave-eco-val ma-eco-col" id="ma_eco_used">0</td>
                         </tr>
                         <tr>
                             <td class="ma-leave-row-label">Balance</td>
                             <td class="ma-leave-val ma-leave-bal">0</td>
                             <td class="ma-leave-val ma-leave-bal">0</td>
-                            <td class="ma-leave-val ma-leave-eco-val" id="ma_eco_balance">0</td>
+                            <td class="ma-leave-val ma-leave-eco-val ma-eco-col" id="ma_eco_balance">0</td>
                         </tr>
                     </tbody>
                 </table>
@@ -142,6 +142,9 @@ function get_ma_html() {
             <input type="hidden" id="ma_start_date">
             <input type="hidden" id="ma_end_date">
         </div>
+
+        <!-- Salary slip lock/warning banner (injected dynamically) -->
+        <div id="ma_slip_banner" style="display:none;"></div>
 
         <div class="ma-table-scroll" id="ma_table_scroll">
             <table class="ma-table" id="ma_table" style="display:none;">
@@ -168,7 +171,7 @@ function get_ma_html() {
                                 <span class="ma-col-count" id="ma_cnt_ontour">0</span>
                             </div>
                         </th>
-                        <th rowspan="2" class="ma-th-status">
+                        <th rowspan="2" class="ma-th-status ma-eco-th-col">
                             <div class="ma-th-inner">
                                 <span class="ma-th-label">Earned<br>Comp Off</span>
                                 <span class="ma-col-count" id="ma_cnt_eco">0</span>
@@ -198,7 +201,7 @@ function get_ma_html() {
                                 <span class="ma-col-count" id="ma_cnt_cl">0</span>
                             </div>
                         </th>
-                        <th rowspan="2" class="ma-th-status">
+                        <th rowspan="2" class="ma-th-status ma-coff-th-col">
                             <div class="ma-th-inner">
                                 <span class="ma-th-label">Comp Off</span>
                                 <span class="ma-col-count" id="ma_cnt_coff">0</span>
@@ -290,13 +293,13 @@ function get_ma_html() {
                 <div class="ma-cal-legend">
                     <div class="ma-legend-item"><span class="ma-legend-dot present"></span>Present</div>
                     <div class="ma-legend-item"><span class="ma-legend-dot on-tour"></span>On Tour</div>
-                    <div class="ma-legend-item"><span class="ma-legend-dot eco"></span>Earned Comp Off</div>
+                    <div class="ma-legend-item ma-eco-legend-item"><span class="ma-legend-dot eco"></span>Earned Comp Off</div>
                     <div class="ma-legend-item"><span class="ma-legend-dot absent"></span>Absent</div>
                     <div class="ma-legend-item"><span class="ma-legend-dot halfday"></span>Half Day</div>
                     <div class="ma-legend-item"><span class="ma-legend-dot lwp"></span>LWP</div>
                     <div class="ma-legend-item"><span class="ma-legend-dot el"></span>Earned Leave</div>
                     <div class="ma-legend-item"><span class="ma-legend-dot cl"></span>Casual Leave</div>
-                    <div class="ma-legend-item"><span class="ma-legend-dot coff"></span>Comp Off</div>
+                    <div class="ma-legend-item ma-coff-legend-item"><span class="ma-legend-dot coff"></span>Comp Off</div>
                     <div class="ma-legend-item"><span class="ma-legend-dot holiday"></span>Holiday</div>
                     <div class="ma-legend-item"><span class="ma-legend-dot weekend"></span>Weekly Off</div>
                 </div>
@@ -326,6 +329,15 @@ function init_mark_attendance($main) {
     var joiningDateMap = {};
     var leftDateMap = {};
 
+    // ── Salary slip lock state ──────────────────────────────────────────────
+    var submittedSlipMonths   = {};
+    var currentMonthLockState = null;   // null | "submitted" | "draft"
+    var currentMonthSlipName  = null;
+
+    // ── NEW: tracks whether current employee's category has_subtype ──
+    var employeeHasSubtypeMap = {};
+    var currentEmployeeHasSubtype = false;
+
     var attendanceTableData = {};
     var originalAttendanceData = {};
     var dirtyDates = new Set();
@@ -339,67 +351,239 @@ function init_mark_attendance($main) {
 
     var focusedCell = null;
 
-    var FULL_DAY_STATUSES = [
+    var ALL_FULL_DAY_STATUSES = [
         "Present", "On Tour", "Earned Comp Off",
         "Absent",
         "LWP", "Earned Leave", "Casual Leave", "Comp Off",
         "Weekly Off", "Holiday"
     ];
-    var HALF_OPTIONS = [
+    var ALL_HALF_OPTIONS = [
         "Present", "On Tour", "Earned Comp Off",
         "Absent", "Earned Leave", "Casual Leave", "Comp Off", "LWP"
     ];
-    var TOTAL_STATUS_COLS = FULL_DAY_STATUSES.length + 2; // 12
+
+    var FULL_DAY_STATUSES = ALL_FULL_DAY_STATUSES.slice();
+    var HALF_OPTIONS       = ALL_HALF_OPTIONS.slice();
+    var TOTAL_STATUS_COLS  = FULL_DAY_STATUSES.length + 2;
 
     var PRESENT_TYPE = new Set(["Present", "On Tour", "Earned Comp Off"]);
-    var ABSENT_TYPE = new Set(["Absent", "LWP", "Earned Leave", "Casual Leave", "Comp Off"]);
+    var ABSENT_TYPE  = new Set(["Absent", "LWP", "Earned Leave", "Casual Leave", "Comp Off"]);
 
     var HD_PILL_CLASS = {
-        "Present": "ma-hd-pill-present",
-        "On Tour": "ma-hd-pill-ontour",
-        "Earned Comp Off": "ma-hd-pill-eco",
-        "Absent": "ma-hd-pill-absent",
-        "Earned Leave": "ma-hd-pill-el",
-        "Casual Leave": "ma-hd-pill-cl",
-        "Comp Off": "ma-hd-pill-coff",
-        "LWP": "ma-hd-pill-lwp",
+        "Present":          "ma-hd-pill-present",
+        "On Tour":          "ma-hd-pill-ontour",
+        "Earned Comp Off":  "ma-hd-pill-eco",
+        "Absent":           "ma-hd-pill-absent",
+        "Earned Leave":     "ma-hd-pill-el",
+        "Casual Leave":     "ma-hd-pill-cl",
+        "Comp Off":         "ma-hd-pill-coff",
+        "LWP":              "ma-hd-pill-lwp",
     };
     var HD_DOT_COLOR = {
-        "Present": "#28a745",
-        "On Tour": "#28a745",
-        "Earned Comp Off": "#20c997",
-        "Absent": "#e74c3c",
-        "Earned Leave": "#378add",
-        "Casual Leave": "#378add",
-        "Comp Off": "#868e96",
-        "LWP": "#f0ad4e",
+        "Present":          "#28a745",
+        "On Tour":          "#28a745",
+        "Earned Comp Off":  "#20c997",
+        "Absent":           "#e74c3c",
+        "Earned Leave":     "#378add",
+        "Casual Leave":     "#378add",
+        "Comp Off":         "#868e96",
+        "LWP":              "#f0ad4e",
     };
 
-    var searchInput = document.getElementById("ma_employee_search");
+    var searchInput   = document.getElementById("ma_employee_search");
     var searchResults = document.getElementById("ma_search_results");
-    var employeeSel = document.getElementById("ma_employee");
-    var clearBtn = document.getElementById("ma_clear_search");
-    var companySel = document.getElementById("ma_company");
-    var yearSel = document.getElementById("ma_year");
-    var monthSel = document.getElementById("ma_month");
+    var employeeSel   = document.getElementById("ma_employee");
+    var clearBtn      = document.getElementById("ma_clear_search");
+    var companySel    = document.getElementById("ma_company");
+    var yearSel       = document.getElementById("ma_year");
+    var monthSel      = document.getElementById("ma_month");
     var startDateInput = document.getElementById("ma_start_date");
-    var endDateInput = document.getElementById("ma_end_date");
-    var tableLoading = document.getElementById("ma_table_loading");
-    var tableEl = document.getElementById("ma_table");
-    var tbody = document.getElementById("ma_table_body");
-    var stickyBar = document.getElementById("ma_sticky_bar");
-    var tableScroll = document.getElementById("ma_table_scroll");
-    var hdPanel = document.getElementById("ma_hd_panel");
+    var endDateInput   = document.getElementById("ma_end_date");
+    var tableLoading  = document.getElementById("ma_table_loading");
+    var tableEl       = document.getElementById("ma_table");
+    var tbody         = document.getElementById("ma_table_body");
+    var stickyBar     = document.getElementById("ma_sticky_bar");
+    var tableScroll   = document.getElementById("ma_table_scroll");
+    var hdPanel       = document.getElementById("ma_hd_panel");
+    var slipBanner    = document.getElementById("ma_slip_banner");
+    var saveBtn       = document.getElementById("ma_save_attendance");
 
     var allEmployees = [];
 
+    // ════════════════════════════════════════════════════════════════════════
+    //  SALARY SLIP LOCK HELPERS
+    // ════════════════════════════════════════════════════════════════════════
+
+    function loadSlipMonthsAndProceed(empName, afterLoad) {
+        submittedSlipMonths   = {};
+        currentMonthLockState = null;
+        currentMonthSlipName  = null;
+
+        frappe.call({
+            method: "saral_hr.saral_hr.page.mark_attendance.mark_attendance.get_submitted_slip_months",
+            args: { employee: empName },
+            callback: function (r) {
+                submittedSlipMonths = (r && r.message) ? r.message : {};
+                afterLoad();
+            },
+            error: function () {
+                submittedSlipMonths = {};
+                afterLoad();
+            }
+        });
+    }
+
+    function computeCurrentMonthLock() {
+        currentMonthLockState = null;
+        currentMonthSlipName  = null;
+
+        if (!yearSel.value || monthSel.value === "") return;
+
+        var year  = parseInt(yearSel.value);
+        var month = parseInt(monthSel.value) + 1;
+        var key   = year + "-" + String(month).padStart(2, "0") + "-01";
+
+        var info = submittedSlipMonths[key];
+        if (!info) return;
+
+        currentMonthSlipName  = info.name;
+        currentMonthLockState = (info.docstatus === 1) ? "submitted" : "draft";
+    }
+
+    function applyLockState() {
+        computeCurrentMonthLock();
+        renderSlipBanner();
+        applyButtonLock();
+        applyTableLockClass();
+    }
+
+    function getMonthLabel() {
+        if (!yearSel.value || monthSel.value === "") return "";
+        var year  = parseInt(yearSel.value);
+        var month = parseInt(monthSel.value);
+        var d     = new Date(year, month, 1);
+        return d.toLocaleDateString("en-US", { month: "long", year: "numeric" });
+    }
+
+    function renderSlipBanner() {
+        if (!currentMonthLockState) {
+            slipBanner.style.display = "none";
+            slipBanner.innerHTML = "";
+            return;
+        }
+
+        var slipUrl  = frappe.urllib.get_full_url("/app/salary-slip/" + currentMonthSlipName);
+        var monthLbl = getMonthLabel();
+        var html;
+
+        if (currentMonthLockState === "submitted") {
+            html = `
+                <div class="ma-slip-banner ma-slip-banner-locked">
+                    <span class="ma-slip-banner-icon">🔒</span>
+                    <div class="ma-slip-banner-text">
+                        <strong>Attendance Locked</strong> &mdash;
+                        Salary Slip
+                        <a href="${slipUrl}" target="_blank" class="ma-slip-link">${currentMonthSlipName}</a>
+                        has been <strong>submitted</strong> for ${monthLbl}.
+                        Cancel the salary slip first to modify attendance.
+                    </div>
+                </div>`;
+        } else {
+            html = `
+                <div class="ma-slip-banner ma-slip-banner-draft">
+                    <span class="ma-slip-banner-icon">⚠️</span>
+                    <div class="ma-slip-banner-text">
+                        <strong>Draft Salary Slip exists</strong> &mdash;
+                        <a href="${slipUrl}" target="_blank" class="ma-slip-link ma-slip-link-draft">${currentMonthSlipName}</a>
+                        is in <strong>Draft</strong> for ${monthLbl}.
+                        Attendance changes will not be reflected until the salary slip is regenerated.
+                    </div>
+                </div>`;
+        }
+
+        slipBanner.innerHTML = html;
+        slipBanner.style.display = "block";
+    }
+
+    function applyButtonLock() {
+        var isLocked = (currentMonthLockState === "submitted");
+
+        // Save button
+        if (isLocked) {
+            saveBtn.disabled = true;
+            saveBtn.classList.add("ma-btn-locked");
+        } else {
+            saveBtn.disabled = false;
+            saveBtn.classList.remove("ma-btn-locked");
+        }
+        saveBtn.title = isLocked ? "Attendance is locked — salary slip has been submitted." : "";
+
+        // Bulk mark buttons
+        ["ma_mark_present", "ma_mark_absent", "ma_mark_halfday", "ma_mark_lwp"].forEach(function (id) {
+            var btn = document.getElementById(id);
+            if (!btn) return;
+            btn.disabled = isLocked;
+            if (isLocked) {
+                btn.classList.add("ma-btn-locked");
+            } else {
+                btn.classList.remove("ma-btn-locked");
+            }
+        });
+    }
+
+    // ── Apply/remove lock class on the TABLE element itself (no overlay) ──
+    function applyTableLockClass() {
+        if (!tableEl) return;
+        if (currentMonthLockState === "submitted") {
+            tableEl.classList.add("ma-table-locked");
+        } else {
+            tableEl.classList.remove("ma-table-locked");
+        }
+        // Also update the scroll container cursor
+        if (tableScroll) {
+            tableScroll.classList.toggle("ma-table-scroll-locked", currentMonthLockState === "submitted");
+        }
+    }
+
+    // ════════════════════════════════════════════════════════════════════════
+    //  ECO / COFF VISIBILITY HELPERS
+    // ════════════════════════════════════════════════════════════════════════
+
+    function applySubtypeVisibility(hasSubtype) {
+        currentEmployeeHasSubtype = hasSubtype;
+
+        if (hasSubtype) {
+            FULL_DAY_STATUSES = ALL_FULL_DAY_STATUSES.filter(function (s) {
+                return s !== "Earned Comp Off" && s !== "Comp Off";
+            });
+            HALF_OPTIONS = ALL_HALF_OPTIONS.filter(function (s) {
+                return s !== "Earned Comp Off" && s !== "Comp Off";
+            });
+        } else {
+            FULL_DAY_STATUSES = ALL_FULL_DAY_STATUSES.slice();
+            HALF_OPTIONS       = ALL_HALF_OPTIONS.slice();
+        }
+        TOTAL_STATUS_COLS = FULL_DAY_STATUSES.length + 2;
+
+        document.querySelectorAll(".ma-eco-th-col, .ma-coff-th-col").forEach(function (el) {
+            el.style.display = hasSubtype ? "none" : "";
+        });
+        document.querySelectorAll(".ma-eco-col").forEach(function (el) {
+            el.style.display = hasSubtype ? "none" : "";
+        });
+        document.querySelectorAll(".ma-eco-legend-item, .ma-coff-legend-item").forEach(function (el) {
+            el.style.display = hasSubtype ? "none" : "";
+        });
+    }
+
     function updateScrollHeight() {
         if (!stickyBar || !tableScroll) return;
-        var stickyH = stickyBar.offsetHeight;
-        var pageHead = document.querySelector(".page-head");
-        var pageHeadH = pageHead ? pageHead.offsetHeight : 60;
+        var stickyH    = stickyBar.offsetHeight;
+        var bannerH    = (slipBanner && slipBanner.style.display !== "none") ? slipBanner.offsetHeight : 0;
+        var pageHead   = document.querySelector(".page-head");
+        var pageHeadH  = pageHead ? pageHead.offsetHeight : 60;
         var BOTTOM_PAD = 16;
-        var availableH = window.innerHeight - pageHeadH - stickyH - BOTTOM_PAD;
+        var availableH = window.innerHeight - pageHeadH - stickyH - bannerH - BOTTOM_PAD;
         tableScroll.style.height = Math.max(availableH, 200) + "px";
         document.documentElement.style.setProperty("--ma-sticky-bar-h", stickyH + "px");
     }
@@ -416,10 +600,10 @@ function init_mark_attendance($main) {
             r.message.forEach(function (row) {
                 var opt = document.createElement("option");
                 opt.value = row.name;
-                opt.text = row.full_name + (row.aadhaar_number ? " (" + row.aadhaar_number + ")" : "");
+                opt.text  = row.full_name + (row.aadhaar_number ? " (" + row.aadhaar_number + ")" : "");
                 employeeSel.appendChild(opt);
-                employeeCompanyMap[row.name] = row.company;
-                employeeWeeklyOffMap[row.name] = row.weekly_off
+                employeeCompanyMap[row.name]    = row.company;
+                employeeWeeklyOffMap[row.name]  = row.weekly_off
                     ? [row.weekly_off.trim().toLowerCase()] : [];
             });
             allEmployees = Array.from(employeeSel.options)
@@ -453,6 +637,9 @@ function init_mark_attendance($main) {
         tableEl.style.display = "none";
         attendanceTableData = {}; originalAttendanceData = {}; dirtyDates.clear();
         updateCounts();
+        applySubtypeVisibility(false);
+        submittedSlipMonths = {}; currentMonthLockState = null; currentMonthSlipName = null;
+        renderSlipBanner(); applyButtonLock(); applyTableLockClass();
         if (!sel) { searchInput.disabled = true; employees = []; return; }
         employees = allEmployees.filter(function (e) { return e.company === sel; });
         searchInput.disabled = false;
@@ -487,7 +674,7 @@ function init_mark_attendance($main) {
     }
     function mergeResults(local, api) {
         var seen = new Set(), merged = [];
-        api.forEach(function (e) { if (!seen.has(e.value)) { seen.add(e.value); merged.push(e); } });
+        api.forEach(function (e)   { if (!seen.has(e.value)) { seen.add(e.value); merged.push(e); } });
         local.forEach(function (e) { if (!seen.has(e.value)) { seen.add(e.value); merged.push(e); } });
         return merged;
     }
@@ -544,31 +731,100 @@ function init_mark_attendance($main) {
         items.forEach(function (item, i) { item.classList.toggle("selected", i === selectedIndex); });
         if (items[selectedIndex]) items[selectedIndex].scrollIntoView({ block: "nearest" });
     }
+
+    // ── Load category has_subtype for an employee ────────────────────────────
+    function loadEmployeeSubtypeAndProceed(empName, afterLoad) {
+        if (employeeHasSubtypeMap[empName] !== undefined) {
+            applySubtypeVisibility(employeeHasSubtypeMap[empName]);
+            afterLoad();
+            return;
+        }
+        frappe.call({
+            method: "frappe.client.get_value",
+            args: {
+                doctype: "Company Link",
+                filters: { name: empName },
+                fieldname: "category"
+            },
+            callback: function (r) {
+                var category = r.message && r.message.category;
+                if (!category) {
+                    employeeHasSubtypeMap[empName] = false;
+                    applySubtypeVisibility(false);
+                    afterLoad();
+                    return;
+                }
+                frappe.call({
+                    method: "frappe.client.get_value",
+                    args: {
+                        doctype: "Category",
+                        filters: { name: category },
+                        fieldname: "has_subtype"
+                    },
+                    callback: function (r2) {
+                        var hasSubtype = !!(r2.message && r2.message.has_subtype);
+                        employeeHasSubtypeMap[empName] = hasSubtype;
+                        applySubtypeVisibility(hasSubtype);
+                        afterLoad();
+                    },
+                    error: function () {
+                        employeeHasSubtypeMap[empName] = false;
+                        applySubtypeVisibility(false);
+                        afterLoad();
+                    }
+                });
+            },
+            error: function () {
+                employeeHasSubtypeMap[empName] = false;
+                applySubtypeVisibility(false);
+                afterLoad();
+            }
+        });
+    }
+
     function selectEmployee(emp) {
         searchInput.value = emp.name; employeeSel.value = emp.value;
         searchResults.classList.remove("show"); selectedIndex = -1;
         clearBtn.classList.add("show"); clearTimeout(searchDebounceTimer);
-        if (emp.company !== undefined) employeeCompanyMap[emp.value] = emp.company;
+        if (emp.company    !== undefined) employeeCompanyMap[emp.value]   = emp.company;
         if (emp.weekly_off !== undefined) employeeWeeklyOffMap[emp.value] =
             emp.weekly_off ? [emp.weekly_off.trim().toLowerCase()] : [];
         document.getElementById("ma_weekly_off").value =
             (employeeWeeklyOffMap[emp.value] || [])
                 .map(function (d) { return d.charAt(0).toUpperCase() + d.slice(1); }).join(", ");
-        if (joiningDateMap[emp.value] !== undefined) {
-            generateTable(); loadCompOffBalance(emp.value);
-        } else {
-            frappe.call({
-                method: "saral_hr.saral_hr.page.mark_attendance.mark_attendance.get_employee_joining_date",
-                args: { employee: emp.value },
-                callback: function (r) {
-                    var data = r.message || {};
-                    joiningDateMap[emp.value] = data.joining_date || null;
-                    leftDateMap[emp.value] = data.left_date || null;
-                    generateTable(); loadCompOffBalance(emp.value);
-                }
-            });
+
+        submittedSlipMonths = {}; currentMonthLockState = null; currentMonthSlipName = null;
+        renderSlipBanner(); applyButtonLock(); applyTableLockClass();
+
+        function proceedAfterSlipLoad() {
+            if (joiningDateMap[emp.value] !== undefined) {
+                loadEmployeeSubtypeAndProceed(emp.value, function () {
+                    generateTable();
+                    loadCompOffBalance(emp.value);
+                });
+            } else {
+                frappe.call({
+                    method: "saral_hr.saral_hr.page.mark_attendance.mark_attendance.get_employee_joining_date",
+                    args: { employee: emp.value },
+                    callback: function (r) {
+                        var data = r.message || {};
+                        joiningDateMap[emp.value] = data.joining_date || null;
+                        leftDateMap[emp.value]    = data.left_date    || null;
+                        loadEmployeeSubtypeAndProceed(emp.value, function () {
+                            generateTable();
+                            loadCompOffBalance(emp.value);
+                        });
+                    }
+                });
+            }
         }
+
+        loadSlipMonthsAndProceed(emp.value, function () {
+            applyLockState();
+            proceedAfterSlipLoad();
+        });
     }
+
     function clearSearch() {
         searchInput.value = ""; employeeSel.value = "";
         document.getElementById("ma_weekly_off").value = "";
@@ -576,6 +832,9 @@ function init_mark_attendance($main) {
         tableEl.style.display = "none";
         attendanceTableData = {}; originalAttendanceData = {}; dirtyDates.clear();
         clearTimeout(searchDebounceTimer); updateCounts(); clearCompOffBalance();
+        applySubtypeVisibility(false);
+        submittedSlipMonths = {}; currentMonthLockState = null; currentMonthSlipName = null;
+        renderSlipBanner(); applyButtonLock(); applyTableLockClass();
     }
 
     clearBtn.addEventListener("click", clearSearch);
@@ -621,13 +880,17 @@ function init_mark_attendance($main) {
         var year = yearSel.value, month = Number(monthSel.value);
         var lastDay = new Date(year, month + 1, 0);
         startDateInput.value = year + "-" + String(month + 1).padStart(2, "0") + "-01";
-        endDateInput.value = year + "-" + String(month + 1).padStart(2, "0") + "-" +
+        endDateInput.value   = year + "-" + String(month + 1).padStart(2, "0") + "-" +
             String(lastDay.getDate()).padStart(2, "0");
+
+        applyLockState();
+        updateScrollHeight();
+
         generateTable();
         var emp = employeeSel.value;
         if (emp) loadCompOffBalance(emp);
     }
-    yearSel.addEventListener("change", updateDatesFromMonthYear);
+    yearSel.addEventListener("change",  updateDatesFromMonthYear);
     monthSel.addEventListener("change", updateDatesFromMonthYear);
 
     function parseDateLocal(str) {
@@ -646,15 +909,13 @@ function init_mark_attendance($main) {
         var year = parseInt(yearSel.value), month = parseInt(monthSel.value);
         var weeklyOffDays = employeeWeeklyOffMap[employee] || [];
         if (!weeklyOffDays.length) return 0;
-        var joiningDate = parseDateLocal(joiningDateMap[employee]);
-        var leftDate = parseDateLocal(leftDateMap[employee]);
+        var joiningDate  = parseDateLocal(joiningDateMap[employee]);
+        var leftDate     = parseDateLocal(leftDateMap[employee]);
         var count = 0, daysInMonth = new Date(year, month + 1, 0).getDate();
         for (var d = 1; d <= daysInMonth; d++) {
-            var cd = new Date(year, month, d);
-            cd.setHours(0, 0, 0, 0);
-            // ── CHANGE: skip days before joining or after leaving ──
+            var cd = new Date(year, month, d); cd.setHours(0, 0, 0, 0);
             if (joiningDate && cd < joiningDate) continue;
-            if (leftDate && cd > leftDate) continue;
+            if (leftDate    && cd > leftDate)    continue;
             var dn = cd.toLocaleDateString("en-US", { weekday: "long" }).toLowerCase();
             if (weeklyOffDays.includes(dn)) count++;
         }
@@ -679,41 +940,41 @@ function init_mark_attendance($main) {
                 cnt.hd_total++;
                 [rec.first_half, rec.second_half].forEach(function (h) {
                     if (!h) return;
-                    if (h === "Present") { cnt.present += 0.5; cnt.regular += 0.5; }
-                    else if (h === "On Tour") { cnt.present += 0.5; cnt.ontour += 0.5; }
-                    else if (h === "Earned Comp Off") { cnt.present += 0.5; cnt.eco += 0.5; }
-                    else if (h === "Absent") cnt.absent += 0.5;
-                    else if (h === "Earned Leave") cnt.el += 0.5;
-                    else if (h === "Casual Leave") cnt.cl += 0.5;
-                    else if (h === "Comp Off") cnt.coff += 0.5;
-                    else if (h === "LWP") cnt.lwp += 0.5;
+                    if (h === "Present")          { cnt.present += 0.5; cnt.regular += 0.5; }
+                    else if (h === "On Tour")     { cnt.present += 0.5; cnt.ontour  += 0.5; }
+                    else if (h === "Earned Comp Off") { cnt.present += 0.5; cnt.eco  += 0.5; }
+                    else if (h === "Absent")      cnt.absent += 0.5;
+                    else if (h === "Earned Leave") cnt.el    += 0.5;
+                    else if (h === "Casual Leave") cnt.cl    += 0.5;
+                    else if (h === "Comp Off")    cnt.coff   += 0.5;
+                    else if (h === "LWP")         cnt.lwp    += 0.5;
                 });
             } else {
                 var s = rec.status || "";
-                if (s === "Present") { cnt.present++; cnt.regular++; }
-                else if (s === "On Tour") { cnt.present++; cnt.ontour++; }
+                if (s === "Present")          { cnt.present++; cnt.regular++; }
+                else if (s === "On Tour")     { cnt.present++; cnt.ontour++;  }
                 else if (s === "Earned Comp Off") { cnt.present++; cnt.eco++; }
-                else if (s === "Absent") cnt.absent++;
+                else if (s === "Absent")      cnt.absent++;
                 else if (s === "Earned Leave") cnt.el++;
                 else if (s === "Casual Leave") cnt.cl++;
-                else if (s === "Comp Off") cnt.coff++;
-                else if (s === "LWP") cnt.lwp++;
-                else if (s === "Holiday") cnt.holiday++;
-                else if (s === "Weekly Off") cnt.wo++;
+                else if (s === "Comp Off")    cnt.coff++;
+                else if (s === "LWP")         cnt.lwp++;
+                else if (s === "Holiday")     cnt.holiday++;
+                else if (s === "Weekly Off")  cnt.wo++;
             }
         });
         function fmt(n) { return (n % 1 === 0) ? String(n) : n.toFixed(1); }
-        document.getElementById("ma_cnt_regular").textContent = fmt(cnt.regular);
-        document.getElementById("ma_cnt_ontour").textContent = fmt(cnt.ontour);
-        document.getElementById("ma_cnt_eco").textContent = fmt(cnt.eco);
-        document.getElementById("ma_cnt_absent").textContent = fmt(cnt.absent);
-        document.getElementById("ma_cnt_el").textContent = fmt(cnt.el);
-        document.getElementById("ma_cnt_cl").textContent = fmt(cnt.cl);
-        document.getElementById("ma_cnt_coff").textContent = fmt(cnt.coff);
-        document.getElementById("ma_cnt_lwp").textContent = fmt(cnt.lwp);
-        document.getElementById("ma_cnt_holiday").textContent = fmt(cnt.holiday);
-        document.getElementById("ma_cnt_wo").textContent = fmt(cnt.wo);
-        document.getElementById("ma_cnt_hd_total").textContent = fmt(cnt.hd_total);
+        document.getElementById("ma_cnt_regular").textContent   = fmt(cnt.regular);
+        document.getElementById("ma_cnt_ontour").textContent    = fmt(cnt.ontour);
+        document.getElementById("ma_cnt_eco").textContent       = fmt(cnt.eco);
+        document.getElementById("ma_cnt_absent").textContent    = fmt(cnt.absent);
+        document.getElementById("ma_cnt_el").textContent        = fmt(cnt.el);
+        document.getElementById("ma_cnt_cl").textContent        = fmt(cnt.cl);
+        document.getElementById("ma_cnt_coff").textContent      = fmt(cnt.coff);
+        document.getElementById("ma_cnt_lwp").textContent       = fmt(cnt.lwp);
+        document.getElementById("ma_cnt_holiday").textContent   = fmt(cnt.holiday);
+        document.getElementById("ma_cnt_wo").textContent        = fmt(cnt.wo);
+        document.getElementById("ma_cnt_hd_total").textContent  = fmt(cnt.hd_total);
     }
 
     // ════════════════════════════════════════════════════════════════════════
@@ -743,7 +1004,7 @@ function init_mark_attendance($main) {
     //  HALF-DAY PANEL
     // ════════════════════════════════════════════════════════════════════════
     function buildHdOption(status, currentVal, half) {
-        var dotColor = HD_DOT_COLOR[status] || "#aaa";
+        var dotColor  = HD_DOT_COLOR[status] || "#aaa";
         var isSelected = (currentVal === status);
         var div = document.createElement("div");
         div.className = "ma-hd-opt" + (isSelected ? " ma-hd-opt-selected" : "");
@@ -752,35 +1013,32 @@ function init_mark_attendance($main) {
             '<span class="ma-hd-opt-label">' + status + '</span>' +
             '<span class="ma-hd-opt-radio' + (isSelected ? " ma-hd-opt-radio-on" : "") + '"></span>';
         div.addEventListener("click", function () {
-            if (half === "first") {
-                hdPanelFirstVal = isSelected ? "" : status;
-            } else {
-                hdPanelSecondVal = isSelected ? "" : status;
-            }
+            if (half === "first")  { hdPanelFirstVal  = isSelected ? "" : status; }
+            else                   { hdPanelSecondVal = isSelected ? "" : status; }
             renderHdPanelOptions();
         });
         return div;
     }
 
     function renderHdPanelOptions() {
-        var firstContainer = document.getElementById("ma_hd_opts_first");
+        var firstContainer  = document.getElementById("ma_hd_opts_first");
         var secondContainer = document.getElementById("ma_hd_opts_second");
         if (!firstContainer || !secondContainer) return;
-        firstContainer.innerHTML = "";
+        firstContainer.innerHTML  = "";
         secondContainer.innerHTML = "";
         HALF_OPTIONS.forEach(function (status) {
-            firstContainer.appendChild(buildHdOption(status, hdPanelFirstVal, "first"));
+            firstContainer.appendChild(buildHdOption(status,  hdPanelFirstVal,  "first"));
             secondContainer.appendChild(buildHdOption(status, hdPanelSecondVal, "second"));
         });
     }
 
     function openHdPanel(dateKey, dayLabel, dateLabel) {
         var rec = attendanceTableData[dateKey] || {};
-        hdPanelTarget = { dateKey: dateKey };
-        hdPanelFirstVal = (rec.mode === "half") ? (rec.first_half || "") : "";
+        hdPanelTarget  = { dateKey: dateKey };
+        hdPanelFirstVal  = (rec.mode === "half") ? (rec.first_half  || "") : "";
         hdPanelSecondVal = (rec.mode === "half") ? (rec.second_half || "") : "";
         document.getElementById("ma_hd_panel_title").textContent = dateLabel;
-        document.getElementById("ma_hd_panel_date").textContent = dayLabel;
+        document.getElementById("ma_hd_panel_date").textContent  = dayLabel;
         renderHdPanelOptions();
         hdPanel.style.display = "flex";
     }
@@ -794,8 +1052,8 @@ function init_mark_attendance($main) {
         if (!hdPanelTarget) return;
         var dateKey = hdPanelTarget.dateKey;
         attendanceTableData[dateKey] = {
-            mode: "half",
-            first_half: hdPanelFirstVal,
+            mode:        "half",
+            first_half:  hdPanelFirstVal,
             second_half: hdPanelSecondVal,
         };
         markDirty(dateKey);
@@ -805,14 +1063,14 @@ function init_mark_attendance($main) {
     }
 
     function clearHdPanel() {
-        hdPanelFirstVal = "";
+        hdPanelFirstVal  = "";
         hdPanelSecondVal = "";
         renderHdPanelOptions();
     }
 
     document.getElementById("ma_hd_panel_close").addEventListener("click", closeHdPanel);
-    document.getElementById("ma_hd_apply_btn").addEventListener("click", applyHdPanel);
-    document.getElementById("ma_hd_clear_btn").addEventListener("click", clearHdPanel);
+    document.getElementById("ma_hd_apply_btn").addEventListener("click",   applyHdPanel);
+    document.getElementById("ma_hd_clear_btn").addEventListener("click",   clearHdPanel);
     hdPanel.addEventListener("click", function (e) {
         if (e.target === hdPanel) closeHdPanel();
     });
@@ -820,13 +1078,17 @@ function init_mark_attendance($main) {
     // ════════════════════════════════════════════════════════════════════════
     //  HALF-DAY PILL HELPER
     // ════════════════════════════════════════════════════════════════════════
-    function hdPillHtml(status) {
+    function hdPillHtml(status, isLocked) {
         if (!status) {
+            if (isLocked) {
+                return '<span class="ma-hd-pill ma-hd-pill-empty ma-hd-pill-locked">—</span>';
+            }
             return '<span class="ma-hd-pill ma-hd-pill-empty">Set half</span>';
         }
-        var cls = HD_PILL_CLASS[status] || "";
-        var dotColor = HD_DOT_COLOR[status] || "#aaa";
-        return '<span class="ma-hd-pill ' + cls + '">' +
+        var cls      = HD_PILL_CLASS[status] || "";
+        var dotColor = HD_DOT_COLOR[status]  || "#aaa";
+        var lockedCls = isLocked ? " ma-hd-pill-locked" : "";
+        return '<span class="ma-hd-pill ' + cls + lockedCls + '">' +
             '<span class="ma-hd-pill-dot" style="background:' + dotColor + '"></span>' +
             status +
             '</span>';
@@ -837,9 +1099,9 @@ function init_mark_attendance($main) {
     // ════════════════════════════════════════════════════════════════════════
     function getDotClass(status) {
         if (PRESENT_TYPE.has(status)) return "active present-dot";
-        if (ABSENT_TYPE.has(status)) return "active absent-dot";
-        if (status === "Weekly Off") return "active wo-dot";
-        if (status === "Holiday") return "active holiday-dot";
+        if (ABSENT_TYPE.has(status))  return "active absent-dot";
+        if (status === "Weekly Off")  return "active wo-dot";
+        if (status === "Holiday")     return "active holiday-dot";
         return "active";
     }
 
@@ -861,6 +1123,7 @@ function init_mark_attendance($main) {
         var row = document.querySelector('tr[data-date="' + dateKey + '"]');
         if (!row) return;
         var rec = attendanceTableData[dateKey] || {};
+        var isLocked = (currentMonthLockState === "submitted");
 
         row.classList.remove("ma-row-halfday", "ma-row-override");
 
@@ -868,8 +1131,8 @@ function init_mark_attendance($main) {
             row.classList.add("ma-row-halfday");
             var hd1Cell = row.querySelector(".ma-hd1-cell");
             var hd2Cell = row.querySelector(".ma-hd2-cell");
-            if (hd1Cell) hd1Cell.innerHTML = hdPillHtml(rec.first_half);
-            if (hd2Cell) hd2Cell.innerHTML = hdPillHtml(rec.second_half);
+            if (hd1Cell) hd1Cell.innerHTML = hdPillHtml(rec.first_half,  isLocked);
+            if (hd2Cell) hd2Cell.innerHTML = hdPillHtml(rec.second_half, isLocked);
             row.querySelectorAll(".ma-col-dot").forEach(function (dot) { dot.className = "ma-col-dot"; });
         } else {
             var s = rec.status || "";
@@ -878,21 +1141,21 @@ function init_mark_attendance($main) {
             });
             var hd1Cell = row.querySelector(".ma-hd1-cell");
             var hd2Cell = row.querySelector(".ma-hd2-cell");
-            if (hd1Cell) hd1Cell.innerHTML = hdPillHtml("");
-            if (hd2Cell) hd2Cell.innerHTML = hdPillHtml("");
+            if (hd1Cell) hd1Cell.innerHTML = hdPillHtml("", isLocked);
+            if (hd2Cell) hd2Cell.innerHTML = hdPillHtml("", isLocked);
         }
 
         var toggle = row.querySelector(".ma-override-toggle");
         if (toggle) {
-            var restStatus = toggle.dataset.reststatus;
-            var currentIsRest = (rec.mode === "full") && (rec.status === restStatus);
+            var restStatus     = toggle.dataset.reststatus;
+            var currentIsRest  = (rec.mode === "full") && (rec.status === restStatus);
             toggle.checked = currentIsRest;
             toggle.closest("label").title = currentIsRest
                 ? "Click to override " + restStatus
-                : "Click to restore " + restStatus;
+                : "Click to restore "  + restStatus;
             row.classList.remove("ma-row-wo", "ma-row-holiday");
             if (currentIsRest) {
-                if (restStatus === "Holiday") row.classList.add("ma-row-holiday");
+                if (restStatus === "Holiday")    row.classList.add("ma-row-holiday");
                 if (restStatus === "Weekly Off") row.classList.add("ma-row-wo");
             } else {
                 if (rec.mode === "full" && !rec.status) row.classList.add("ma-row-override");
@@ -921,6 +1184,7 @@ function init_mark_attendance($main) {
     }
     tbody.addEventListener("keydown", function (e) {
         if (!focusedCell) return;
+        if (currentMonthLockState === "submitted") return;
         var r = focusedCell.rowIdx, c = focusedCell.colIdx;
         var maxRow = tbody.querySelectorAll("tr[data-rowidx]").length - 1;
         var maxCol = TOTAL_STATUS_COLS - 1;
@@ -937,7 +1201,7 @@ function init_mark_attendance($main) {
         } else if (e.key === "Tab") {
             e.preventDefault();
             if (!e.shiftKey) { if (c < maxCol) setFocusCell(r, c + 1); else if (r < maxRow) setFocusCell(r + 1, 0); }
-            else { if (c > 0) setFocusCell(r, c - 1); else if (r > 0) setFocusCell(r - 1, maxCol); }
+            else             { if (c > 0) setFocusCell(r, c - 1);       else if (r > 0)      setFocusCell(r - 1, maxCol); }
         } else if (e.key === "Enter" || e.key === " ") {
             e.preventDefault();
             var td = getCellAt(r, c); if (td) td.click();
@@ -946,25 +1210,21 @@ function init_mark_attendance($main) {
 
     // ════════════════════════════════════════════════════════════════════════
     //  BUILD ROW
-    //
-    //  KEY CHANGE: When isOutsideTenure (before joining / after leaving),
-    //  we NEVER auto-assign Holiday or Weekly Off.  The row is locked just
-    //  like a future row.  We also suppress the holiday/wo styling on date
-    //  and day cells so there is no visual confusion.
     // ════════════════════════════════════════════════════════════════════════
     function buildRow(dateKey, dayName, currentDate, savedRec, isHoliday, isDefaultWeeklyOff, isFuture, isOutsideTenure, rowIdx) {
         var row = document.createElement("tr");
-        row.setAttribute("data-date", dateKey);
+        row.setAttribute("data-date",   dateKey);
         row.setAttribute("data-rowidx", rowIdx);
 
-        // ── For pre-joining days: treat as neither holiday nor weekly-off ──
-        var effectiveIsHoliday      = isHoliday      && !isOutsideTenure;
-        var effectiveIsWeeklyOff    = isDefaultWeeklyOff && !isOutsideTenure;
+        var effectiveIsHoliday   = isHoliday           && !isOutsideTenure;
+        var effectiveIsWeeklyOff = isDefaultWeeklyOff  && !isOutsideTenure;
 
-        var isRestDay   = effectiveIsHoliday || effectiveIsWeeklyOff;
-        var restStatus  = effectiveIsHoliday ? "Holiday" : (effectiveIsWeeklyOff ? "Weekly Off" : "");
-        var isRestMode  = isRestDay && savedRec.mode === "full" &&
+        var isRestDay  = effectiveIsHoliday || effectiveIsWeeklyOff;
+        var restStatus = effectiveIsHoliday ? "Holiday" : (effectiveIsWeeklyOff ? "Weekly Off" : "");
+        var isRestMode = isRestDay && savedRec.mode === "full" &&
             (savedRec.status === "Holiday" || savedRec.status === "Weekly Off");
+
+        var isLocked = (currentMonthLockState === "submitted");
 
         rowMetaMap[dateKey] = {
             isRestDay: isRestDay, restStatus: restStatus,
@@ -972,27 +1232,26 @@ function init_mark_attendance($main) {
             isOutsideTenure: isOutsideTenure
         };
 
-        var cellsLocked = isFuture || isOutsideTenure || (isRestDay && isRestMode);
+        var cellsLocked = isFuture || isOutsideTenure || (isRestDay && isRestMode) || isLocked;
 
         if (isFuture || isOutsideTenure) {
             row.classList.add("ma-future-row");
-            // Extra class to distinguish pre-joining from future
             if (isOutsideTenure && !isFuture) row.classList.add("ma-before-joining-row");
         } else if (savedRec.mode === "full") {
             if (savedRec.status === "Weekly Off") row.classList.add("ma-row-wo");
-            if (savedRec.status === "Holiday") row.classList.add("ma-row-holiday");
-            if (isRestDay && !isRestMode) row.classList.add("ma-row-override");
+            if (savedRec.status === "Holiday")    row.classList.add("ma-row-holiday");
+            if (isRestDay && !isRestMode)         row.classList.add("ma-row-override");
         } else if (savedRec.mode === "half") {
             row.classList.add("ma-row-halfday");
         }
         if (cellsLocked) row.classList.add("ma-status-cells-disabled");
 
-        var day = currentDate.getDate();
+        var day       = currentDate.getDate();
         var dateLabel = String(day).padStart(2, "0") + " " +
             currentDate.toLocaleDateString("en-US", { month: "long" }) + " " +
             currentDate.getFullYear();
 
-        // Date cell — only colour for WO/Holiday if actually eligible
+        // Date cell
         var dateTd = document.createElement("td");
         dateTd.className = "ma-date-cell";
         if (effectiveIsWeeklyOff && !effectiveIsHoliday) dateTd.classList.add("ma-date-wo");
@@ -1008,25 +1267,32 @@ function init_mark_attendance($main) {
         dayTd.textContent = dayName;
         row.appendChild(dayTd);
 
-        // Override toggle — only shown for eligible rest days
+        // Override toggle
         var overrideTd = document.createElement("td");
         overrideTd.className = "ma-override-cell";
         if (isRestDay && !isFuture && !isOutsideTenure) {
             var lbl = document.createElement("label");
             lbl.className = "ma-toggle" + (restStatus === "Holiday" ? " ma-toggle-holiday" : "");
+            // When locked, show toggle as visually disabled
+            if (isLocked) lbl.classList.add("ma-toggle-locked");
             lbl.title = isRestMode ? "Click to override " + restStatus : "Click to restore " + restStatus;
             var chk = document.createElement("input");
-            chk.type = "checkbox";
+            chk.type      = "checkbox";
             chk.className = "ma-override-toggle";
-            chk.checked = isRestMode;
-            chk.dataset.isrestday = "true";
+            chk.checked   = isRestMode;
+            chk.disabled  = isLocked;
+            chk.dataset.isrestday  = "true";
             chk.dataset.reststatus = restStatus;
-            chk.dataset.datekey = dateKey;
+            chk.dataset.datekey    = dateKey;
             chk.addEventListener("change", function () {
+                if (currentMonthLockState === "submitted") {
+                    this.checked = !this.checked;
+                    return;
+                }
                 var nowChecked = this.checked;
                 if (nowChecked) {
                     if (restStatus === "Weekly Off") {
-                        var limit = calcMaxWeeklyOffInMonth();
+                        var limit   = calcMaxWeeklyOffInMonth();
                         var current = countCurrentWeeklyOff();
                         if (limit > 0 && current + 1 > limit) {
                             this.checked = false;
@@ -1051,7 +1317,7 @@ function init_mark_attendance($main) {
         }
         row.appendChild(overrideTd);
 
-        // Full-day status columns
+        // ── Full-day status columns ─────────────────────────────────────────
         FULL_DAY_STATUSES.forEach(function (status, colIdx) {
             var td = document.createElement("td");
             td.className = "ma-status-cell ma-cell-" + status.toLowerCase().replace(/ /g, "_");
@@ -1063,52 +1329,61 @@ function init_mark_attendance($main) {
             dot.className = "ma-col-dot" + (isActive ? " " + getDotClass(status) : "");
             dot.setAttribute("data-status", status);
 
-            // Only show hints if the employee is actually eligible for that day
             if (!isActive) {
                 if (status === "Weekly Off" && effectiveIsWeeklyOff) dot.classList.add("ma-dot-wo-hint");
-                if (status === "Holiday" && effectiveIsHoliday) dot.classList.add("ma-dot-holiday-hint");
+                if (status === "Holiday"    && effectiveIsHoliday)   dot.classList.add("ma-dot-holiday-hint");
             }
 
             td.addEventListener("click", function () {
+                if (currentMonthLockState === "submitted") return;
                 var parentRow = td.closest("tr");
                 if (parentRow && parentRow.classList.contains("ma-status-cells-disabled")) return;
                 onFullDayClick(dateKey, status, effectiveIsHoliday, effectiveIsWeeklyOff);
             });
-            td.addEventListener("mousedown", function () { setFocusCell(rowIdx, colIdx); });
+            td.addEventListener("mousedown", function () {
+                if (currentMonthLockState !== "submitted") setFocusCell(rowIdx, colIdx);
+            });
             td.appendChild(dot);
             row.appendChild(td);
         });
 
         // Half Day – First Half
+        var h1Val = (savedRec.mode === "half") ? savedRec.first_half  : "";
+        var h2Val = (savedRec.mode === "half") ? savedRec.second_half : "";
+
         var hd1Td = document.createElement("td");
         hd1Td.className = "ma-status-cell ma-hd-cell ma-hd1-cell";
         hd1Td.setAttribute("data-colidx", FULL_DAY_STATUSES.length);
-        var h1Val = (savedRec.mode === "half") ? savedRec.first_half : "";
-        var h2Val = (savedRec.mode === "half") ? savedRec.second_half : "";
-        hd1Td.innerHTML = hdPillHtml(h1Val);
+        hd1Td.innerHTML = hdPillHtml(h1Val, isLocked);
         hd1Td.addEventListener("click", function (e) {
             e.stopPropagation();
+            if (currentMonthLockState === "submitted") return;
             var parentRow = hd1Td.closest("tr");
             if (parentRow && parentRow.classList.contains("ma-status-cells-disabled")) return;
             ensureHalfDayMode(dateKey);
             openHdPanel(dateKey, dayName, dateLabel);
         });
-        hd1Td.addEventListener("mousedown", function () { setFocusCell(rowIdx, FULL_DAY_STATUSES.length); });
+        hd1Td.addEventListener("mousedown", function () {
+            if (currentMonthLockState !== "submitted") setFocusCell(rowIdx, FULL_DAY_STATUSES.length);
+        });
         row.appendChild(hd1Td);
 
         // Half Day – Second Half
         var hd2Td = document.createElement("td");
         hd2Td.className = "ma-status-cell ma-hd-cell ma-hd2-cell";
         hd2Td.setAttribute("data-colidx", FULL_DAY_STATUSES.length + 1);
-        hd2Td.innerHTML = hdPillHtml(h2Val);
+        hd2Td.innerHTML = hdPillHtml(h2Val, isLocked);
         hd2Td.addEventListener("click", function (e) {
             e.stopPropagation();
+            if (currentMonthLockState === "submitted") return;
             var parentRow = hd2Td.closest("tr");
             if (parentRow && parentRow.classList.contains("ma-status-cells-disabled")) return;
             ensureHalfDayMode(dateKey);
             openHdPanel(dateKey, dayName, dateLabel);
         });
-        hd2Td.addEventListener("mousedown", function () { setFocusCell(rowIdx, FULL_DAY_STATUSES.length + 1); });
+        hd2Td.addEventListener("mousedown", function () {
+            if (currentMonthLockState !== "submitted") setFocusCell(rowIdx, FULL_DAY_STATUSES.length + 1);
+        });
         row.appendChild(hd2Td);
 
         return row;
@@ -1121,8 +1396,8 @@ function init_mark_attendance($main) {
         var rec = attendanceTableData[dateKey] || {};
 
         if (status === "Weekly Off") {
-            var limit = calcMaxWeeklyOffInMonth();
-            var cur = countCurrentWeeklyOff();
+            var limit   = calcMaxWeeklyOffInMonth();
+            var cur     = countCurrentWeeklyOff();
             var alreadyWo = (rec.mode === "full" && rec.status === "Weekly Off");
             if (limit > 0 && !alreadyWo && cur + 1 > limit) {
                 frappe.show_alert({ message: "Weekly Off cannot exceed <b>" + limit + " days</b> in this month.", indicator: "red" });
@@ -1156,11 +1431,11 @@ function init_mark_attendance($main) {
     // ════════════════════════════════════════════════════════════════════════
     function loadCompOffBalance(employee) {
         var ecoAvailable = document.getElementById("ma_eco_available");
-        var ecoEarned = document.getElementById("ma_eco_earned");
-        var ecoUsed = document.getElementById("ma_eco_used");
-        var ecoBalance = document.getElementById("ma_eco_balance");
-        var elTaken = document.getElementById("ma_el_taken");
-        var clTaken = document.getElementById("ma_cl_taken");
+        var ecoEarned    = document.getElementById("ma_eco_earned");
+        var ecoUsed      = document.getElementById("ma_eco_used");
+        var ecoBalance   = document.getElementById("ma_eco_balance");
+        var elTaken      = document.getElementById("ma_el_taken");
+        var clTaken      = document.getElementById("ma_cl_taken");
         if (!ecoEarned) return;
         [ecoAvailable, ecoEarned, ecoUsed, ecoBalance, elTaken, clTaken].forEach(function (el) { if (el) el.textContent = "…"; });
         frappe.call({
@@ -1169,9 +1444,9 @@ function init_mark_attendance($main) {
             callback: function (r) {
                 var data = (r && r.message) ? r.message : { available: 0, earned: 0, used: 0, balance: 0, el_taken: 0, cl_taken: 0 };
                 if (ecoAvailable) ecoAvailable.textContent = data.available || 0;
-                ecoEarned.textContent = data.earned || 0;
-                ecoUsed.textContent = data.used || 0;
-                ecoBalance.textContent = data.balance || 0;
+                ecoEarned.textContent  = data.earned  || 0;
+                ecoUsed.textContent    = data.used     || 0;
+                ecoBalance.textContent = data.balance  || 0;
                 if (elTaken) elTaken.textContent = data.el_taken || 0;
                 if (clTaken) clTaken.textContent = data.cl_taken || 0;
             },
@@ -1197,16 +1472,11 @@ function init_mark_attendance($main) {
 
     // ════════════════════════════════════════════════════════════════════════
     //  GENERATE TABLE
-    //
-    //  KEY CHANGE: resolveInitialRec now never assigns Holiday/Weekly Off for
-    //  outside-tenure days.  buildRow now receives isOutsideTenure separately
-    //  so it can suppress WO/Holiday treatment cleanly.
     // ════════════════════════════════════════════════════════════════════════
     function resolveInitialRec(rawStatus, isHoliday, isDefaultWeeklyOff, isOutsideTenure) {
         if (!rawStatus) {
-            // Only auto-assign rest statuses when employee is actually employed on that day
             if (!isOutsideTenure) {
-                if (isHoliday) return { mode: "full", status: "Holiday" };
+                if (isHoliday)          return { mode: "full", status: "Holiday"    };
                 if (isDefaultWeeklyOff) return { mode: "full", status: "Weekly Off" };
             }
             return { mode: "full", status: "" };
@@ -1216,15 +1486,15 @@ function init_mark_attendance($main) {
     }
 
     function generateTable() {
-        var employee = employeeSel.value;
+        var employee  = employeeSel.value;
         var startDate = startDateInput.value;
-        var endDate = endDateInput.value;
+        var endDate   = endDateInput.value;
         if (!employee || !startDate || !endDate) { tableLoading.style.display = "none"; return; }
 
         var weeklyOffDays = employeeWeeklyOffMap[employee] || [];
-        var company = employeeCompanyMap[employee];
-        var joiningDate = parseDateLocal(joiningDateMap[employee]);
-        var leftDate = parseDateLocal(leftDateMap[employee]);
+        var company       = employeeCompanyMap[employee];
+        var joiningDate   = parseDateLocal(joiningDateMap[employee]);
+        var leftDate      = parseDateLocal(leftDateMap[employee]);
 
         focusedCell = null; rowMetaMap = {};
         showTableLoading();
@@ -1245,9 +1515,9 @@ function init_mark_attendance($main) {
                         dirtyDates.clear(); tbody.innerHTML = "";
 
                         var current = new Date(startDate);
-                        var end = new Date(endDate);
-                        var today = new Date(); today.setHours(0, 0, 0, 0);
-                        var rowIdx = 0;
+                        var end     = new Date(endDate);
+                        var today   = new Date(); today.setHours(0, 0, 0, 0);
+                        var rowIdx  = 0;
 
                         while (current <= end) {
                             var cd = new Date(current); cd.setHours(0, 0, 0, 0);
@@ -1257,32 +1527,32 @@ function init_mark_attendance($main) {
                                 String(cd.getDate()).padStart(2, "0");
 
                             var isDefaultWeeklyOff = weeklyOffDays.includes(dayName.toLowerCase());
-                            var isHoliday = holidayDates[dateKey] === true;
-                            var isFuture = cd > today;
-                            var isBeforeJoining = joiningDate ? (cd < joiningDate) : false;
-                            var isAfterLeft = leftDate ? (cd > leftDate) : false;
-                            var isOutsideTenure = isBeforeJoining || isAfterLeft;
+                            var isHoliday          = holidayDates[dateKey] === true;
+                            var isFuture           = cd > today;
+                            var isBeforeJoining    = joiningDate ? (cd < joiningDate) : false;
+                            var isAfterLeft        = leftDate    ? (cd > leftDate)    : false;
+                            var isOutsideTenure    = isBeforeJoining || isAfterLeft;
 
-                            var raw = attendanceMap[dateKey];
+                            var raw      = attendanceMap[dateKey];
                             var savedRec = resolveInitialRec(raw, isHoliday, isDefaultWeeklyOff, isOutsideTenure);
 
                             attendanceTableData[dateKey] = savedRec;
                             if (raw) originalAttendanceData[dateKey] = JSON.parse(JSON.stringify(savedRec));
 
-                            // Pass isOutsideTenure separately so buildRow can handle it properly
                             tbody.appendChild(buildRow(
                                 dateKey, dayName, cd, savedRec,
                                 isHoliday, isDefaultWeeklyOff,
-                                isFuture,
-                                isOutsideTenure,
-                                rowIdx++
+                                isFuture, isOutsideTenure, rowIdx++
                             ));
                             current.setDate(current.getDate() + 1);
                         }
 
+                        applySubtypeColumnsToBdy();
                         hideTableLoading();
                         updateCounts();
                         updateScrollHeight();
+                        // Re-apply lock class after table rebuilt
+                        applyTableLockClass();
                     },
                     error: function () { hideTableLoading(); }
                 });
@@ -1291,10 +1561,20 @@ function init_mark_attendance($main) {
         });
     }
 
+    function applySubtypeColumnsToBdy() {
+        tbody.querySelectorAll("td[data-status='Earned Comp Off'], td[data-status='Comp Off']").forEach(function (td) {
+            td.style.display = currentEmployeeHasSubtype ? "none" : "";
+        });
+    }
+
     // ════════════════════════════════════════════════════════════════════════
     //  BULK MARK
     // ════════════════════════════════════════════════════════════════════════
     function bulkMark(status) {
+        if (currentMonthLockState === "submitted") {
+            frappe.show_alert({ message: "🔒 Attendance is locked — salary slip has been submitted for this month.", indicator: "red" });
+            return;
+        }
         var employee = employeeSel.value;
         if (!employee || !startDateInput.value) {
             frappe.show_alert({ message: "Please select an employee and month first", indicator: "orange" }); return;
@@ -1305,7 +1585,6 @@ function init_mark_attendance($main) {
             var cur = rec.mode === "full" ? rec.status : null;
             if (cur === "Weekly Off" || cur === "Holiday") return;
             var rowEl = document.querySelector('tr[data-date="' + dateKey + '"]');
-            // Skip future rows AND outside-tenure rows
             if (rowEl && rowEl.classList.contains("ma-future-row")) return;
 
             attendanceTableData[dateKey] = status === "Half Day"
@@ -1314,13 +1593,14 @@ function init_mark_attendance($main) {
             markDirty(dateKey);
             refreshRowVisuals(dateKey);
         });
+        applySubtypeColumnsToBdy();
         updateCounts();
     }
 
-    document.getElementById("ma_mark_present").onclick = function () { bulkMark("Present"); };
-    document.getElementById("ma_mark_absent").onclick = function () { bulkMark("Absent"); };
-    document.getElementById("ma_mark_halfday").onclick = function () { bulkMark("Half Day"); };
-    document.getElementById("ma_mark_lwp").onclick = function () { bulkMark("LWP"); };
+    document.getElementById("ma_mark_present").onclick  = function () { bulkMark("Present"); };
+    document.getElementById("ma_mark_absent").onclick   = function () { bulkMark("Absent");  };
+    document.getElementById("ma_mark_halfday").onclick  = function () { bulkMark("Half Day"); };
+    document.getElementById("ma_mark_lwp").onclick      = function () { bulkMark("LWP");     };
 
     // ════════════════════════════════════════════════════════════════════════
     //  SAVE
@@ -1337,6 +1617,16 @@ function init_mark_attendance($main) {
     }
     function doSave() {
         if (isSaving) return;
+
+        if (currentMonthLockState === "submitted") {
+            frappe.show_alert({
+                message: "🔒 Cannot save — Salary Slip <strong>" + currentMonthSlipName +
+                    "</strong> has been submitted for this month. Cancel the salary slip first.",
+                indicator: "red"
+            });
+            return;
+        }
+
         var employee = employeeSel.value;
         if (!employee) { frappe.show_alert({ message: "Please select an employee first", indicator: "orange" }); return; }
         if (!startDateInput.value || !endDateInput.value) { frappe.show_alert({ message: "Please select a year and month first", indicator: "orange" }); return; }
@@ -1369,7 +1659,8 @@ function init_mark_attendance($main) {
             callback: function (r) {
                 isSaving = false;
                 if (r.message && r.message.success) {
-                    var saved = r.message.saved_count || changedData.length, errors = r.message.errors;
+                    var saved  = r.message.saved_count || changedData.length;
+                    var errors = r.message.errors;
                     frappe.show_alert({
                         message: errors && errors.length
                             ? saved + " record(s) saved. " + errors.length + " failed."
@@ -1388,7 +1679,6 @@ function init_mark_attendance($main) {
         });
     }
 
-    var saveBtn = document.getElementById("ma_save_attendance");
     saveBtn.addEventListener("mousedown", function (e) { e.preventDefault(); });
     saveBtn.addEventListener("click", doSave);
 
@@ -1424,7 +1714,7 @@ function init_mark_attendance($main) {
         if (!employee) return;
         var cacheKey = employee + "|" + currentCalendarYear;
         if (calendarCache[cacheKey]) {
-            yearHolidayData = calendarCache[cacheKey].holidays;
+            yearHolidayData    = calendarCache[cacheKey].holidays;
             yearAttendanceData = calendarCache[cacheKey].attendance;
             renderMonthsGrid(); return;
         }
@@ -1445,7 +1735,8 @@ function init_mark_attendance($main) {
                             if (n) { var val = entry[1]; attendance[n] = (typeof val === "object" && val.mode === "half") ? "Half Day" : val; }
                         });
                         calendarCache[cacheKey] = { holidays: holidays, attendance: attendance };
-                        yearHolidayData = holidays; yearAttendanceData = attendance;
+                        yearHolidayData    = holidays;
+                        yearAttendanceData = attendance;
                         renderMonthsGrid();
                     }
                 });
@@ -1454,57 +1745,68 @@ function init_mark_attendance($main) {
     }
     function invalidateCalendarCache() {
         var employee = employeeSel.value;
-        var year = parseInt(yearSel.value) || new Date().getFullYear();
+        var year     = parseInt(yearSel.value) || new Date().getFullYear();
         delete calendarCache[employee + "|" + year];
     }
     function renderMonthsGrid() {
-        var employee = employeeSel.value;
+        var employee     = employeeSel.value;
         var weeklyOffDays = employeeWeeklyOffMap[employee] || [];
-        var joiningDate = parseDateLocal(joiningDateMap[employee]);
-        var leftDate = parseDateLocal(leftDateMap[employee]);
-        var monthsGrid = document.getElementById("ma_months_grid");
-        var monthNames = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
-        var dayNames = ["S", "M", "T", "W", "T", "F", "S"];
+        var joiningDate  = parseDateLocal(joiningDateMap[employee]);
+        var leftDate     = parseDateLocal(leftDateMap[employee]);
+        var monthsGrid   = document.getElementById("ma_months_grid");
+        var monthNames   = ["January","February","March","April","May","June","July","August","September","October","November","December"];
+        var dayNames     = ["S","M","T","W","T","F","S"];
         monthsGrid.innerHTML = "";
         monthNames.forEach(function (monthName, monthIndex) {
             var card = document.createElement("div");
             card.className = "ma-month-card";
+
+            var slipKey  = currentCalendarYear + "-" + String(monthIndex + 1).padStart(2, "0") + "-01";
+            var slipInfo = submittedSlipMonths[slipKey];
+            if (slipInfo && slipInfo.docstatus === 1) {
+                card.classList.add("ma-month-card-locked");
+                card.title = "🔒 Salary slip submitted for this month";
+            } else if (slipInfo && slipInfo.docstatus === 0) {
+                card.classList.add("ma-month-card-draft");
+                card.title = "⚠️ Draft salary slip exists for this month";
+            }
+
             card.onclick = function () { selectMonth(monthIndex); };
-            var firstDay = new Date(currentCalendarYear, monthIndex, 1), lastDay = new Date(currentCalendarYear, monthIndex + 1, 0);
-            var startDay = firstDay.getDay(), daysInMonth = lastDay.getDate();
-            var html = '<div class="ma-month-name">' + monthName + '</div><div class="ma-mini-cal">';
+            var firstDay    = new Date(currentCalendarYear, monthIndex, 1);
+            var lastDay     = new Date(currentCalendarYear, monthIndex + 1, 0);
+            var startDay    = firstDay.getDay();
+            var daysInMonth = lastDay.getDate();
+            var html = '<div class="ma-month-name">' + monthName;
+            if (slipInfo && slipInfo.docstatus === 1) html += ' <span class="ma-month-lock-icon">🔒</span>';
+            else if (slipInfo && slipInfo.docstatus === 0) html += ' <span class="ma-month-lock-icon">⚠️</span>';
+            html += '</div><div class="ma-mini-cal">';
             dayNames.forEach(function (d) { html += '<div class="ma-mini-hdr">' + d + '</div>'; });
             for (var i = 0; i < startDay; i++) html += '<div class="ma-mini-day empty"></div>';
             var today = new Date();
             for (var day = 1; day <= daysInMonth; day++) {
-                var date = new Date(currentCalendarYear, monthIndex, day);
-                date.setHours(0, 0, 0, 0);
-                var dateKey = normalizeDateKey(date);
-                var isToday = date.toDateString() === today.toDateString();
-
-                // ── CHANGE: check tenure in calendar too ──
+                var date = new Date(currentCalendarYear, monthIndex, day); date.setHours(0, 0, 0, 0);
+                var dateKey        = normalizeDateKey(date);
+                var isToday        = date.toDateString() === today.toDateString();
                 var isBeforeJoining = joiningDate ? (date < joiningDate) : false;
-                var isAfterLeft = leftDate ? (date > leftDate) : false;
+                var isAfterLeft     = leftDate    ? (date > leftDate)    : false;
                 var isOutsideTenure = isBeforeJoining || isAfterLeft;
-
-                var dn = date.toLocaleDateString("en-US", { weekday: "long" }).toLowerCase();
+                var dn              = date.toLocaleDateString("en-US", { weekday: "long" }).toLowerCase();
                 var effectiveIsWeeklyOff = !isOutsideTenure && weeklyOffDays.includes(dn);
                 var effectiveIsHoliday   = !isOutsideTenure && yearHolidayData[dateKey] === true;
-
                 var status = yearAttendanceData[dateKey];
-                var cls = "ma-mini-day";
-                if (isToday) cls += " today";
+                var cls    = "ma-mini-day";
+                if (isToday)              cls += " today";
                 else if (isOutsideTenure) cls += " outside-tenure";
-                else if (effectiveIsHoliday || status === "Holiday") cls += " holiday";
+                else if (effectiveIsHoliday  || status === "Holiday")  cls += " holiday";
                 else if (status === "Present" || status === "Regular") cls += " present";
-                else if (status === "On Tour") cls += " on-tour";
+                else if (status === "On Tour")         cls += " on-tour";
                 else if (status === "Earned Comp Off") cls += " eco";
-                else if (status === "Absent") cls += " absent";
-                else if (status === "Half Day") cls += " halfday";
-                else if (status === "LWP") cls += " lwp";
-                else if (status === "Earned Leave") cls += " el";
-                else if (status === "Casual Leave") cls += " cl";
-                else if (status === "Comp Off") cls += " coff";
+                else if (status === "Absent")          cls += " absent";
+                else if (status === "Half Day")        cls += " halfday";
+                else if (status === "LWP")             cls += " lwp";
+                else if (status === "Earned Leave")    cls += " el";
+                else if (status === "Casual Leave")    cls += " cl";
+                else if (status === "Comp Off")        cls += " coff";
                 else if (status === "Weekly Off" || effectiveIsWeeklyOff) cls += " weekend";
                 html += '<div class="' + cls + '">' + day + '</div>';
             }
@@ -1517,11 +1819,11 @@ function init_mark_attendance($main) {
         monthSel.dispatchEvent(new Event("change")); closeCalendarModal();
     }
 
-    document.getElementById("ma_get_info").addEventListener("click", openCalendarModal);
-    document.getElementById("ma_cal_close").addEventListener("click", closeCalendarModal);
-    document.getElementById("ma_year_prev").addEventListener("click", function () { changeYear(-1); });
-    document.getElementById("ma_year_next").addEventListener("click", function () { changeYear(1); });
-    document.getElementById("ma_cal_modal").addEventListener("click", function (e) { if (e.target === this) closeCalendarModal(); });
+    document.getElementById("ma_get_info").addEventListener("click",    openCalendarModal);
+    document.getElementById("ma_cal_close").addEventListener("click",   closeCalendarModal);
+    document.getElementById("ma_year_prev").addEventListener("click",   function () { changeYear(-1); });
+    document.getElementById("ma_year_next").addEventListener("click",   function () { changeYear(+1); });
+    document.getElementById("ma_cal_modal").addEventListener("click",   function (e) { if (e.target === this) closeCalendarModal(); });
 
     document.addEventListener("keydown", function (e) {
         if (e.key === "Escape") { closeCalendarModal(); closeHdPanel(); }
@@ -1539,7 +1841,8 @@ function inject_ma_audio() {
     if (document.getElementById("ma-sound-click")) return;
     ["click", "submit", "cancel"].forEach(function (name) {
         var audio = document.createElement("audio");
-        audio.id = "ma-sound-" + name; audio.src = "/assets/frappe/sounds/" + name + ".mp3";
+        audio.id  = "ma-sound-" + name;
+        audio.src = "/assets/frappe/sounds/" + name + ".mp3";
         audio.preload = "auto"; audio.style.display = "none"; document.body.appendChild(audio);
     });
 }
@@ -1576,17 +1879,221 @@ function inject_ma_styles() {
             z-index: 100;
         }
 
+        /* ══════════════════════════════════════════════════════
+           SALARY SLIP BANNERS
+           — Full opacity, no fading, crisp Frappe-style
+           ══════════════════════════════════════════════════════ */
+        #ma_slip_banner {
+            margin: 0;
+            /* Ensure banner itself never inherits opacity from parent */
+            opacity: 1 !important;
+        }
+
+        .ma-slip-banner {
+            display: flex;
+            align-items: flex-start;
+            gap: 10px;
+            padding: 11px 16px;
+            font-size: 13px;
+            line-height: 1.6;
+            border-top: none;
+            border-left: none;
+            border-right: none;
+            border-bottom: 1px solid transparent;
+            /* Crisp — no opacity reduction ever */
+            opacity: 1 !important;
+        }
+        .ma-slip-banner-locked {
+            background: #fff1f2;
+            border-color: #fda4af;
+            color: #881337;
+            border-left: 4px solid #e11d48 !important;
+        }
+        .ma-slip-banner-draft {
+            background: #fffbeb;
+            border-color: #fcd34d;
+            color: #78350f;
+            border-left: 4px solid #f59e0b !important;
+        }
+        .ma-slip-banner-icon {
+            font-size: 16px;
+            flex-shrink: 0;
+            margin-top: 1px;
+            /* Icon must never fade */
+            opacity: 1 !important;
+        }
+        .ma-slip-banner-text {
+            flex: 1;
+            /* Text must never fade */
+            opacity: 1 !important;
+            color: inherit;
+        }
+
+        /* ── Banner links — ALWAYS fully visible, distinct style ── */
+        .ma-slip-link {
+            font-weight: 700;
+            text-decoration: underline;
+            text-underline-offset: 2px;
+            color: inherit !important;
+            opacity: 1 !important;
+            /* Never inherit any dimming from parents */
+            filter: none !important;
+        }
+        .ma-slip-link:hover {
+            text-decoration: none;
+            opacity: 0.8 !important;
+        }
+        .ma-slip-link-draft {
+            color: #92400e !important;
+        }
+
+        /* ══════════════════════════════════════════════════════
+           LOCKED BUTTON STATE
+           — Clear, intentional disabled look
+           ══════════════════════════════════════════════════════ */
+        .ma-btn-locked {
+            opacity: 0.38 !important;
+            cursor: not-allowed !important;
+            pointer-events: none !important;
+            transform: none !important;
+            /* Subtle strikethrough feel via border */
+            border-style: dashed !important;
+        }
+        .ma-btn-primary.ma-btn-locked {
+            background: var(--primary) !important;
+            color: #fff !important;
+        }
+
+        /* ══════════════════════════════════════════════════════
+           TABLE LOCKED STATE
+           — No overlay. Table-level class controls behaviour.
+           ══════════════════════════════════════════════════════ */
+
+        /* Scroll container shows not-allowed cursor when locked */
+        .ma-table-scroll-locked {
+            cursor: not-allowed;
+        }
+
+        /*
+         * When the TABLE has .ma-table-locked:
+         *  - Status cells: dimmed + no pointer events
+         *  - Date / Day / count cells: FULLY VISIBLE (opacity:1 !important)
+         *  - Override toggles: dimmed + no pointer events
+         *  - Half-day pills: dimmed styling (handled via ma-hd-pill-locked)
+         *  - future rows keep their own 0.4 opacity
+         */
+        .ma-table-locked tbody tr:not(.ma-future-row):not(.ma-before-joining-row) td.ma-status-cell {
+            opacity: 0.30;
+            pointer-events: none !important;
+            cursor: not-allowed;
+        }
+        .ma-table-locked tbody tr:not(.ma-future-row):not(.ma-before-joining-row) td.ma-override-cell .ma-toggle {
+            opacity: 0.30;
+            pointer-events: none !important;
+            cursor: not-allowed;
+        }
+
+        /* Date, day, override CELLS stay fully readable */
+        .ma-table-locked tbody td.ma-date-cell,
+        .ma-table-locked tbody td.ma-day-cell {
+            opacity: 1 !important;
+            color: var(--text-color) !important;
+        }
+
+        /* WO / Holiday date labels keep their colour when locked */
+        .ma-table-locked tbody td.ma-date-cell.ma-date-wo,
+        .ma-table-locked tbody td.ma-day-cell.ma-date-wo {
+            color: #b8860b !important;
+            opacity: 1 !important;
+        }
+        .ma-table-locked tbody td.ma-date-cell.ma-date-holiday,
+        .ma-table-locked tbody td.ma-day-cell.ma-date-holiday {
+            color: #c05800 !important;
+            opacity: 1 !important;
+        }
+
+        /* Active dots (selected status) keep their colour but slightly muted */
+        .ma-table-locked .ma-col-dot.active {
+            opacity: 0.55;
+        }
+
+        /* Locked half-day pill — no interactivity look */
+        .ma-hd-pill-locked {
+            cursor: default !important;
+            pointer-events: none !important;
+            filter: grayscale(0.3);
+            opacity: 0.55;
+        }
+        /* Empty locked pill — just a dash, no "Set half" affordance */
+        .ma-hd-pill-empty.ma-hd-pill-locked {
+            background: transparent !important;
+            border: none !important;
+            color: var(--text-muted) !important;
+            font-style: normal !important;
+            opacity: 0.4 !important;
+        }
+
+        /* Locked override toggle */
+        .ma-toggle-locked {
+            cursor: not-allowed !important;
+            pointer-events: none !important;
+        }
+        .ma-toggle-locked .ma-toggle-slider {
+            filter: grayscale(0.5);
+            opacity: 0.5;
+        }
+
+        /* ══════════════════════════════════════════════════════
+           SEARCH DROPDOWN — always above everything, no dim
+           ══════════════════════════════════════════════════════ */
+        .ma-search-dropdown {
+            /* Hard z-index so it never sits behind overlay/banner */
+            z-index: 9999 !important;
+            /* No opacity inheritance */
+            opacity: 1 !important;
+        }
+        .ma-result-item {
+            /* Ensure result items never inherit any dimming */
+            opacity: 1 !important;
+            color: var(--text-color) !important;
+        }
+        .ma-result-name {
+            opacity: 1 !important;
+            color: var(--text-color) !important;
+        }
+        .ma-result-id {
+            opacity: 1 !important;
+            color: var(--text-muted) !important;
+        }
+
+        /* ══════════════════════════════════════════════════════
+           CALENDAR MONTH CARD LOCK STATES
+           ══════════════════════════════════════════════════════ */
+        .ma-month-card-locked {
+            border-color: #fda4af !important;
+            background: #fff1f2 !important;
+        }
+        .ma-month-card-draft {
+            border-color: #fcd34d !important;
+            background: #fffdf0 !important;
+        }
+        .ma-month-lock-icon { font-size: 11px; margin-left: 4px; }
+
+        /* ══════════════════════════════════════════════════════
+           STANDARD COMPONENTS (unchanged from original)
+           ══════════════════════════════════════════════════════ */
         .ma-header-actions { display:flex; align-items:center; gap:10px; margin-left:20px; }
-        .ma-link { font-size:12px; color:var(--text-on-light-blue); cursor:pointer; text-decoration:underline; text-underline-offset:2px; background:none; border:none; padding:0; font-weight:500; transition:color 0.2s; white-space:nowrap; }
+        .ma-link { font-size:12px; color:var(--text-on-light-blue); cursor:pointer; text-decoration:underline; text-underline-offset:2px; background:none; border:none; padding:0; font-weight:500; transition:color 0.2s; white-space:nowrap; opacity:1 !important; }
         .ma-link:hover { color:var(--blue-600); }
         .ma-link-sep { color:var(--text-muted); font-size:12px; }
 
         .ma-btn { background:var(--control-bg,#f4f5f6); color:var(--text-color); border:1px solid var(--border-color,#d1d8dd); border-radius:5px; padding:6px 14px; font-weight:500; cursor:pointer; transition:background 0.15s; font-size:13px; white-space:nowrap; user-select:none; }
         .ma-btn-primary { background:var(--primary) !important; color:#fff !important; border-color:var(--primary) !important; }
-        .ma-btn-primary:hover { opacity:0.88; }
-        .ma-btn-primary:focus, .ma-btn-primary:active { outline:none; background:var(--primary) !important; color:#fff !important; border-color:var(--primary) !important; opacity:1; box-shadow:none; }
-        .ma-btn:hover:not(.ma-btn-primary) { background:var(--control-bg-on-gray,#eee); }
-        .ma-btn:active:not(.ma-btn-primary) { transform:scale(0.98); }
+        .ma-btn-primary:hover:not(.ma-btn-locked) { opacity:0.88; }
+        .ma-btn-primary:focus:not(.ma-btn-locked), .ma-btn-primary:active:not(.ma-btn-locked) { outline:none; background:var(--primary) !important; color:#fff !important; border-color:var(--primary) !important; opacity:1; box-shadow:none; }
+        .ma-btn:hover:not(.ma-btn-primary):not(.ma-btn-locked) { background:var(--control-bg-on-gray,#eee); }
+        .ma-btn:active:not(.ma-btn-primary):not(.ma-btn-locked) { transform:scale(0.98); }
+        .ma-btn:disabled:not(.ma-btn-locked) { opacity:0.45 !important; cursor:not-allowed !important; transform:none !important; }
 
         .ma-top-wrap { display:flex; gap:14px; align-items:stretch; }
         .ma-left-block { flex:1; min-width:0; display:flex; flex-direction:column; gap:10px; }
@@ -1610,13 +2117,13 @@ function inject_ma_styles() {
         .ma-clear-btn::before { content:'\\2715'; }
         .ma-clear-btn.show { display:flex !important; }
         .ma-clear-btn:hover { background:var(--text-color); }
-        .ma-search-dropdown { display:none; position:absolute; top:100%; left:0; right:0; background:var(--card-bg,#fff); border:1px solid var(--border-color,#d1d8dd); border-top:none; border-radius:0 0 4px 4px; max-height:280px; overflow-y:auto; z-index:1000; box-shadow:0 4px 12px rgba(0,0,0,0.08); }
+        .ma-search-dropdown { display:none; position:absolute; top:100%; left:0; right:0; background:var(--card-bg,#fff); border:1px solid var(--border-color,#d1d8dd); border-top:none; border-radius:0 0 4px 4px; max-height:280px; overflow-y:auto; box-shadow:0 4px 12px rgba(0,0,0,0.08); }
         .ma-search-dropdown.show { display:block; }
         .ma-result-item { padding:8px 14px; cursor:pointer; border-bottom:1px solid var(--border-color,#f0f0f0); transition:background 0.1s; }
         .ma-result-item:last-child { border-bottom:none; }
         .ma-result-item:hover, .ma-result-item.selected { background:var(--control-bg,#f4f5f6); }
-        .ma-result-name { font-size:13px; font-weight:500; color:var(--text-color); }
-        .ma-result-id { font-size:11px; color:var(--text-muted); margin-top:1px; }
+        .ma-result-name { font-size:13px; font-weight:500; }
+        .ma-result-id { font-size:11px; margin-top:1px; }
         .ma-highlight { font-weight:700; color:var(--text-color); }
         .ma-no-results { padding:12px 14px; font-size:13px; color:var(--text-muted); text-align:center; }
         .ma-bulk-btns { display:flex; align-items:center; gap:6px; flex-wrap:wrap; }
@@ -1679,7 +2186,6 @@ function inject_ma_styles() {
         .ma-dot-holiday-hint { border-color:#e09a2a !important; background:rgba(224,154,42,0.12) !important; }
         .ma-row-halfday td { background:rgba(59,130,246,0.035) !important; }
         .ma-table tbody tr.ma-future-row td { opacity:0.4; }
-        /* ── Before-joining rows: slightly different shade to distinguish from future ── */
         .ma-table tbody tr.ma-before-joining-row td { opacity:0.35; background:rgba(156,163,175,0.08) !important; }
         .ma-row-dirty td { background:rgba(245,158,11,0.07) !important; }
         .ma-row-dirty:nth-child(even) td { background:rgba(245,158,11,0.1) !important; }
@@ -1695,7 +2201,7 @@ function inject_ma_styles() {
         .ma-col-dot.wo-dot        { background:#b8860b; border-color:#b8860b; }
         .ma-col-dot.holiday-dot   { background:#e09a2a; border-color:#e09a2a; }
         .ma-col-dot.ma-dot-dirty.active { box-shadow:0 0 0 2px var(--card-bg,#fff), 0 0 0 4px #f59e0b; }
-        .ma-cell-focused { outline:2px solid var(--primary,#2d6adf) !important; outline-offset:-2px; background:rgba(45,106,223,0.06) !important; }
+        .ma-cell-focused { outline:2px solid var(--primary,#2d2d2d) !important; outline-offset:-2px; background:rgba(45,106,223,0.06) !important; }
 
         .ma-date-cell { font-size:12px; font-weight:500; padding:5px 10px !important; white-space:nowrap; min-width:140px; color:var(--text-color); }
         .ma-day-cell  { font-size:12px; color:var(--text-muted); padding:5px 8px !important; white-space:nowrap; min-width:100px; }
@@ -1740,7 +2246,7 @@ function inject_ma_styles() {
         .ma-hd-pill-cl        { background:#edf4fb; color:#1960a8; border-color:#9fc5e8; }
         .ma-hd-pill-coff      { background:#f3f4f6; color:#4b5563; border-color:#d1d5db; }
         .ma-hd-pill-lwp       { background:#fffbeb; color:#92660a; border-color:#fcd34d; }
-        .ma-hd-cell:hover .ma-hd-pill { box-shadow:0 0 0 2px var(--border-color,#d1d8dd); }
+        .ma-hd-cell:hover .ma-hd-pill:not(.ma-hd-pill-locked) { box-shadow:0 0 0 2px var(--border-color,#d1d8dd); }
 
         /* ══════════════════════════════════════════════════════
            HALF-DAY PANEL

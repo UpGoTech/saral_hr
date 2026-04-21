@@ -71,18 +71,16 @@ frappe.query_reports["Payroll Report"] = {
             }, 0);
         };
 
-        // MutationObserver: hide serial number on ANY bold/total row
         const observer = new MutationObserver(() => _hide_total_serials());
         observer.observe(document.body, { childList: true, subtree: true, characterData: true });
 
         frappe.after_ajax(() => {
             _inject_nav(report);
-            if (!report.page.wrapper.find(".pr-select-print-btn").length) {
-                _set_print_buttons(report);
+            if (!report.page.wrapper.find(".pr-split-pdf").length) {
+                _set_action_buttons(report);
             }
         });
 
-        // ── Legend injection ──────────────────────────────────────────
         const _patchLegend = () => {
             const qr = frappe.query_report;
             if (!qr || qr.__pr_legend_patched) return;
@@ -96,7 +94,6 @@ frappe.query_reports["Payroll Report"] = {
                     return result;
                 };
             }
-
             $(qr).on("after_refresh.pr_legend", () => {
                 setTimeout(() => _maybe_inject_legend(report), 300);
             });
@@ -157,20 +154,20 @@ frappe.query_reports["Payroll Report"] = {
     }
 };
 
-// ── Legend data & inject function ─────────────────────────────────────────────
+// ── Legend ────────────────────────────────────────────────────────────────────
 
 const _MAR_LEGEND = [
-    { code:"P",   label:"Present",          color:"#1a6b1a" },
-    { code:"A",   label:"Absent",           color:"#c0392b" },
-    { code:"HD",  label:"Half Day",         color:"#e67e22" },
-    { code:"T",   label:"On Tour",          color:"#2c3e50" },
-    { code:"H",   label:"Holiday",          color:"#27ae60" },
-    { code:"WO",  label:"Weekly Off",       color:"#2980b9" },
-    { code:"LWP", label:"Leave Without Pay",color:"#8e44ad" },
-    { code:"EL",  label:"Earned Leave",     color:"#d35400" },
-    { code:"CL",  label:"Casual Leave",     color:"#16a085" },
-    { code:"CO",  label:"Comp Off",         color:"#7f8c8d" },
-    { code:"ECO", label:"Earned Comp Off",  color:"#a93226" },
+    { code:"P",   label:"Present",           color:"#1a6b1a" },
+    { code:"A",   label:"Absent",            color:"#c0392b" },
+    { code:"HD",  label:"Half Day",          color:"#e67e22" },
+    { code:"T",   label:"On Tour",           color:"#2c3e50" },
+    { code:"H",   label:"Holiday",           color:"#27ae60" },
+    { code:"WO",  label:"Weekly Off",        color:"#2980b9" },
+    { code:"LWP", label:"Leave Without Pay", color:"#8e44ad" },
+    { code:"EL",  label:"Earned Leave",      color:"#d35400" },
+    { code:"CL",  label:"Casual Leave",      color:"#16a085" },
+    { code:"CO",  label:"Comp Off",          color:"#7f8c8d" },
+    { code:"ECO", label:"Earned Comp Off",   color:"#a93226" },
 ];
 
 function _build_legend_bar() {
@@ -197,35 +194,25 @@ function _maybe_inject_legend(report) {
     const mode = frappe.query_report.get_filter_value
         ? frappe.query_report.get_filter_value("report_mode")
         : "";
-
     const $w = report.page.wrapper;
     $w.find("#mar-legend-bar").remove();
-
     if (mode !== "monthly_attendance") return;
-
-    const bar  = _build_legend_bar();
-    const $dt  = $w.find(".dt-wrapper, .frappe-datatable").first();
-    if ($dt.length) {
-        $dt.before(bar);
-    } else {
-        $w.find(".report-wrapper").prepend(bar);
-    }
+    const bar = _build_legend_bar();
+    const $dt = $w.find(".dt-wrapper, .frappe-datatable").first();
+    $dt.length ? $dt.before(bar) : $w.find(".report-wrapper").prepend(bar);
 }
 
-// ─── Hide serial numbers on bold/total rows ────────────────────────────────
+// ── Hide serial on bold/total rows ────────────────────────────────────────────
 
 function _hide_total_serials() {
     document.querySelectorAll(".dt-row").forEach(row => {
-        const hasStrong = row.querySelector("strong");
-        if (!hasStrong) return;
+        if (!row.querySelector("strong")) return;
         const srCell = row.querySelector('[data-col-index="0"] .dt-cell__content');
-        if (srCell && srCell.textContent.trim() !== "") {
-            srCell.textContent = "";
-        }
+        if (srCell && srCell.textContent.trim() !== "") srCell.textContent = "";
     });
 }
 
-// ─── Report list ──────────────────────────────────────────────────────────────
+// ── Report list ───────────────────────────────────────────────────────────────
 
 const REPORTS = [
     { key:"salary_summary",            label:"Salary Summary"            },
@@ -242,8 +229,8 @@ const REPORTS = [
     { key:"home_bank_advice",          label:"Home Bank Advice"          },
     { key:"monthly_attendance",        label:"Monthly Attendance"        },
     { key:"income_tax",                label:"Income Tax"                },
-    { key:"loan_register",             label:"Loan Register"             },  
-    { key:"advance_register",          label:"Advance Register"          },  
+    { key:"loan_register",             label:"Loan Register"             },
+    { key:"advance_register",          label:"Advance Register"          },
 ];
 
 let _idx = 0, _cache = {}, _debounce_timer = null, _prefetch_xhr = null, _loading_key = null;
@@ -270,7 +257,7 @@ function _validate(report) {
     return true;
 }
 
-// ─── UPDATED: Button tab styles (replaces dropdown styles) ────────────────────
+// ── Styles ────────────────────────────────────────────────────────────────────
 
 function _ensure_styles() {
     if (document.getElementById("pr-style")) return;
@@ -323,11 +310,119 @@ function _ensure_styles() {
             border-bottom: 1px solid #fecaca;
             display: none;
         }
+
+        /* ── Split button wrapper ── */
+        .pr-split-wrap {
+            display: inline-flex;
+            align-items: stretch;
+            border-radius: 6px;
+            overflow: visible;
+            margin-left: 6px;
+            position: relative;
+        }
+
+        /* ── Main action part ── */
+        .pr-split-main {
+            height: 30px;
+            padding: 0 12px;
+            font-size: 12px;
+            font-weight: 600;
+            border: none;
+            border-radius: 6px 0 0 6px;
+            cursor: pointer;
+            white-space: nowrap;
+            font-family: inherit;
+            display: inline-flex;
+            align-items: center;
+            gap: 5px;
+            transition: filter .15s ease;
+            outline: none;
+        }
+        .pr-split-main:hover { filter: brightness(0.93); }
+
+        /* ── Chevron toggle part ── */
+        .pr-split-arrow {
+            height: 30px;
+            width: 26px;
+            border: none;
+            border-left: 1px solid rgba(255,255,255,0.35);
+            border-radius: 0 6px 6px 0;
+            cursor: pointer;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            font-family: inherit;
+            transition: filter .15s ease;
+            outline: none;
+            flex-shrink: 0;
+        }
+        .pr-split-arrow:hover { filter: brightness(0.88); }
+
+        /* PDF button — red */
+        .pr-split-pdf .pr-split-main,
+        .pr-split-pdf .pr-split-arrow {
+            background: #000000;
+            color: #fff;
+        }
+
+        /* Excel button — green */
+        .pr-split-excel .pr-split-main,
+        .pr-split-excel .pr-split-arrow {
+            background: #26a354;
+            color: #fff;
+        }
+
+        /* ── Dropdown menu ── */
+        .pr-split-menu {
+            display: none;
+            position: absolute;
+            top: calc(100% + 4px);
+            right: 0;
+            min-width: 180px;
+            background: #fff;
+            border: 1px solid #e2e8f0;
+            border-radius: 8px;
+            box-shadow: 0 8px 24px rgba(0,0,0,.12);
+            z-index: 9999;
+            overflow: hidden;
+            padding: 4px 0;
+        }
+        .pr-split-menu.open { display: block; }
+
+        .pr-split-menu-item {
+            display: flex;
+            align-items: center;
+            gap: 9px;
+            padding: 9px 14px;
+            font-size: 12.5px;
+            font-weight: 500;
+            color: #1e293b;
+            cursor: pointer;
+            transition: background .1s ease;
+            white-space: nowrap;
+            font-family: inherit;
+            border: none;
+            background: none;
+            width: 100%;
+            text-align: left;
+        }
+        .pr-split-menu-item:hover { background: #f1f5f9; }
+        .pr-split-menu-item .pr-menu-icon {
+            width: 16px;
+            height: 16px;
+            flex-shrink: 0;
+            opacity: 0.75;
+        }
+        .pr-split-menu-divider {
+            height: 1px;
+            background: #e2e8f0;
+            margin: 3px 0;
+        }
     `;
     document.head.appendChild(s);
 }
 
-// ─── UPDATED: _inject_nav — renders button tabs ───────────────────────────────
+// ── Nav bar ───────────────────────────────────────────────────────────────────
 
 function _inject_nav(report) {
     if (report.page.wrapper.find(".pr-nav-bar").length) return;
@@ -338,9 +433,7 @@ function _inject_nav(report) {
     ).join("");
 
     const nav = $(`
-        <div class="pr-nav-bar">
-            ${buttons}
-        </div>
+        <div class="pr-nav-bar">${buttons}</div>
         <div class="pr-on-hold-note" id="pr-on-hold-note"></div>
     `);
 
@@ -352,12 +445,10 @@ function _inject_nav(report) {
     }
     if (!inserted) report.page.wrapper.find(".report-wrapper").prepend(nav);
 
-    // Click handler for each tab button
     nav.find(".pr-tab-btn").on("click", function () {
         _go(report, +$(this).data("idx"));
     });
 
-    // Invalidate cache when filters change
     report.page.wrapper.on("change.pr", ".frappe-control input, .frappe-control select", function () {
         _cache       = {};
         _loading_key = null;
@@ -376,10 +467,9 @@ function _inject_nav(report) {
     });
 }
 
-// ─── UPDATED: _sync — highlights the active button ───────────────────────────
+// ── Tab sync ──────────────────────────────────────────────────────────────────
 
 function _sync(report) {
-    // Update active state on tab buttons
     report.page.wrapper.find(".pr-tab-btn").each(function () {
         $(this).toggleClass("active", +$(this).data("idx") === _idx);
     });
@@ -390,11 +480,7 @@ function _sync(report) {
 
 function _go(report, idx) {
     if (!report._filters_filled || !report._filters_filled()) {
-        frappe.msgprint({
-            title:     __("Missing Filters"),
-            message:   __("Please select Company, Year and Month first."),
-            indicator: "orange",
-        });
+        frappe.msgprint({ title:__("Missing Filters"), message:__("Please select Company, Year and Month first."), indicator:"orange" });
         return;
     }
 
@@ -402,8 +488,6 @@ function _go(report, idx) {
     const modeKey = REPORTS[idx].key;
     _sync(report);
     frappe.query_report.set_filter_value("report_mode", modeKey);
-
-    // Always remove stale legend immediately when switching tabs
     report.page.wrapper.find("#mar-legend-bar").remove();
 
     const fk     = _filter_key(report);
@@ -411,17 +495,13 @@ function _go(report, idx) {
     if (cached) {
         _render_cached(cached);
         _update_on_hold_note(cached.result);
-        if (modeKey === "monthly_attendance") {
-            setTimeout(() => _maybe_inject_legend(report), 350);
-        }
+        if (modeKey === "monthly_attendance") setTimeout(() => _maybe_inject_legend(report), 350);
         return;
     }
 
     _loading_key = `${fk}::${modeKey}`;
     frappe.query_report.refresh();
-    if (modeKey === "monthly_attendance") {
-        setTimeout(() => _maybe_inject_legend(report), 1200);
-    }
+    if (modeKey === "monthly_attendance") setTimeout(() => _maybe_inject_legend(report), 1200);
 }
 
 function _render_cached(cached) {
@@ -505,18 +585,166 @@ function _server_filters(report) {
     };
 }
 
-function _set_print_buttons(report) {
-    report.page.wrapper.find(".pr-select-print-btn").remove();
-    const btnSel = $(`<button class="btn btn-default btn-sm pr-select-print-btn" style="margin-left:8px;">
-        <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24"
-             fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"
-             stroke-linejoin="round" style="margin-right:4px;vertical-align:-1px;">
-          <polyline points="9 11 12 14 22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/>
-        </svg>${__("Select & Print")}</button>`);
-    report.page.wrapper.find(".page-actions").prepend(btnSel);
-    btnSel.on("click", () => _show_select_print_dialog(report, btnSel));
-    report.page.set_primary_action(__("Print"), () => _print_current(report), "printer");
+// ── SVG icons ─────────────────────────────────────────────────────────────────
+
+const _ICON_PDF = `<svg class="pr-menu-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"
+    fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+    <polyline points="14 2 14 8 20 8"/>
+    <line x1="16" y1="13" x2="8" y2="13"/>
+    <line x1="16" y1="17" x2="8" y2="17"/>
+    <polyline points="10 9 9 9 8 9"/>
+</svg>`;
+
+const _ICON_EXCEL = `<svg class="pr-menu-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"
+    fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+    <rect x="2" y="3" width="20" height="18" rx="2"/>
+    <line x1="8" y1="3" x2="8" y2="21"/>
+    <line x1="2" y1="9" x2="22" y2="9"/>
+    <line x1="2" y1="15" x2="22" y2="15"/>
+</svg>`;
+
+const _ICON_MULTI = `<svg class="pr-menu-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"
+    fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+    <rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/>
+    <rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/>
+</svg>`;
+
+const _ICON_CHEVRON = `<svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24"
+    fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
+    <polyline points="6 9 12 15 18 9"/>
+</svg>`;
+
+const _ICON_PDF_BTN = `<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24"
+    fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+    <polyline points="14 2 14 8 20 8"/>
+</svg>`;
+
+const _ICON_XL_BTN = `<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24"
+    fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+    <rect x="2" y="3" width="20" height="18" rx="2"/>
+    <line x1="8" y1="3" x2="8" y2="21"/>
+    <line x1="2" y1="9" x2="22" y2="9"/>
+    <line x1="2" y1="15" x2="22" y2="15"/>
+</svg>`;
+
+// ── Build a split-button ──────────────────────────────────────────────────────
+// mainLabel  — text shown on the main button
+// mainAction — fn called when main button is clicked
+// menuItems  — array of { icon, label, action }
+// colorClass — "pr-split-pdf" | "pr-split-excel"
+
+function _make_split_btn(mainLabel, mainIcon, mainAction, menuItems, colorClass) {
+    const $wrap = $(`
+        <div class="pr-split-wrap ${colorClass}">
+            <button class="pr-split-main">${mainIcon} ${mainLabel}</button>
+            <button class="pr-split-arrow" title="More options">${_ICON_CHEVRON}</button>
+            <div class="pr-split-menu">
+                ${menuItems.map((item, i) => `
+                    ${i > 0 && item.divider ? '<div class="pr-split-menu-divider"></div>' : ''}
+                    <button class="pr-split-menu-item" data-item-idx="${i}">
+                        ${item.icon}
+                        <span>${item.label}</span>
+                    </button>
+                `).join("")}
+            </div>
+        </div>
+    `);
+
+    // Main button click → main action
+    $wrap.find(".pr-split-main").on("click", function(e) {
+        e.stopPropagation();
+        $wrap.find(".pr-split-menu").removeClass("open");
+        mainAction();
+    });
+
+    // Arrow click → toggle dropdown
+    $wrap.find(".pr-split-arrow").on("click", function(e) {
+        e.stopPropagation();
+        const $menu = $wrap.find(".pr-split-menu");
+        const wasOpen = $menu.hasClass("open");
+        // close all other open menus first
+        $(".pr-split-menu.open").removeClass("open");
+        if (!wasOpen) $menu.addClass("open");
+    });
+
+    // Menu item clicks
+    $wrap.find(".pr-split-menu-item").on("click", function(e) {
+        e.stopPropagation();
+        $wrap.find(".pr-split-menu").removeClass("open");
+        const idx = +$(this).data("item-idx");
+        menuItems[idx].action();
+    });
+
+    return $wrap;
 }
+
+// ── Close dropdowns when clicking outside ─────────────────────────────────────
+
+$(document).on("click.pr-split", function() {
+    $(".pr-split-menu.open").removeClass("open");
+});
+
+// ── Action buttons (two split-buttons) ───────────────────────────────────────
+
+function _set_action_buttons(report) {
+    // Remove any previously injected buttons to avoid duplicates
+    report.page.wrapper.find(
+        ".pr-split-wrap, .pr-select-print-btn, .pr-select-excel-btn, .pr-excel-cur-btn, .pr-excel-btn"
+    ).remove();
+
+    const actions = report.page.wrapper.find(".page-actions");
+
+    // ── PDF split-button ─────────────────────────────────────────────────────
+    const $pdfBtn = _make_split_btn(
+        __("Print PDF"),
+        _ICON_PDF_BTN,
+        // Main action → current report PDF
+        () => _print_current(report),
+        [
+            {
+                icon:   _ICON_PDF,
+                label:  __("Current Report"),
+                action: () => _print_current(report),
+            },
+            {
+                icon:   _ICON_MULTI,
+                label:  __("Select Reports…"),
+                action: () => _show_select_dialog(report, $pdfBtn, "pdf"),
+                divider: true,
+            },
+        ],
+        "pr-split-pdf"
+    );
+
+    // ── Excel split-button ───────────────────────────────────────────────────
+    const $xlBtn = _make_split_btn(
+        __("Export Excel"),
+        _ICON_XL_BTN,
+        // Main action → current report Excel
+        () => _excel_current(report),
+        [
+            {
+                icon:   _ICON_EXCEL,
+                label:  __("Current Report"),
+                action: () => _excel_current(report),
+            },
+            {
+                icon:   _ICON_MULTI,
+                label:  __("Select Reports…"),
+                action: () => _show_select_dialog(report, $xlBtn, "excel"),
+                divider: true,
+            },
+        ],
+        "pr-split-excel"
+    );
+
+    actions.prepend($xlBtn);
+    actions.prepend($pdfBtn);
+}
+
+// ── Print / Excel current tab ─────────────────────────────────────────────────
 
 function _print_current(report) {
     if (!_validate(report)) return;
@@ -528,12 +756,27 @@ function _print_current(report) {
     );
 }
 
-function _show_select_print_dialog(report, triggerBtn) {
+function _excel_current(report) {
+    if (!_validate(report)) return;
+    const label = REPORTS[_idx]?.label || "Report";
+    _run_with_progress(
+        "saral_hr.saral_hr.report.payroll_report.payroll_report.excel_single_report",
+        { filters: JSON.stringify(_server_filters(report)) },
+        `Exporting Excel: ${label}`
+    );
+}
+
+// ── Select dialog (shared by PDF and Excel) ───────────────────────────────────
+
+function _show_select_dialog(report, triggerBtn, mode) {
     if (!_validate(report)) return;
 
     const half  = Math.ceil(REPORTS.length / 2);
     const left  = REPORTS.slice(0, half);
     const right = REPORTS.slice(half);
+
+    const title       = mode === "excel" ? __("Select Reports to Export (Excel)") : __("Select Reports to Print");
+    const actionLabel = mode === "excel" ? __("Export Excel") : __("Generate PDF");
 
     function _chkRow(r, i) {
         return `
@@ -552,9 +795,6 @@ function _show_select_print_dialog(report, triggerBtn) {
         </div>`;
     }
 
-    const leftHtml  = left.map((r, i) => _chkRow(r, i)).join("");
-    const rightHtml = right.map((r, i) => _chkRow(r, i + half)).join("");
-
     const body = `
         <div style="padding:4px 0 8px;">
           <div style="display:flex;gap:8px;padding:0 8px 10px;border-bottom:1px solid #e2e8f0;margin-bottom:8px;">
@@ -566,16 +806,16 @@ function _show_select_print_dialog(report, triggerBtn) {
             ">${__("Unselect All")}</button>
           </div>
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:0 12px;padding:0 4px;">
-            <div>${leftHtml}</div>
-            <div>${rightHtml}</div>
+            <div>${left.map((r, i) => _chkRow(r, i)).join("")}</div>
+            <div>${right.map((r, i) => _chkRow(r, i + half)).join("")}</div>
           </div>
         </div>
     `;
 
     const d = new frappe.ui.Dialog({
-        title: __("Select Reports to Print"),
+        title,
         fields: [{ fieldtype: "HTML", fieldname: "report_list", options: body }],
-        primary_action_label: __("Generate PDF"),
+        primary_action_label: actionLabel,
         primary_action() {
             const selected = [];
             document.querySelectorAll(".pr-chk-row input[type=checkbox]").forEach(chk => {
@@ -586,25 +826,47 @@ function _show_select_print_dialog(report, triggerBtn) {
                 return;
             }
             d.hide();
-            _print_selected(report, selected, triggerBtn);
+            if (mode === "excel") {
+                _export_selected_excel(report, selected);
+            } else {
+                _print_selected(report, selected);
+            }
         },
     });
     d.show();
 }
 
-function _print_selected(report, selectedKeys, btn) {
-    const orig = btn.html();
-    btn.prop("disabled", true);
+// ── Export selected as Excel ──────────────────────────────────────────────────
+
+function _export_selected_excel(report, selectedKeys) {
     const count = selectedKeys.length;
-    const f = _server_filters(report); delete f.report_mode;
+    const f     = _server_filters(report);
+    delete f.report_mode;
     f.selected_reports = JSON.stringify(selectedKeys);
+
+    _run_with_progress(
+        "saral_hr.saral_hr.report.payroll_report.payroll_report.excel_selected_reports",
+        { filters: JSON.stringify(f) },
+        `Exporting ${count} ${count === 1 ? "report" : "reports"} to Excel`
+    );
+}
+
+// ── Print selected as PDF ─────────────────────────────────────────────────────
+
+function _print_selected(report, selectedKeys) {
+    const count = selectedKeys.length;
+    const f     = _server_filters(report);
+    delete f.report_mode;
+    f.selected_reports = JSON.stringify(selectedKeys);
+
     _run_with_progress(
         "saral_hr.saral_hr.report.payroll_report.payroll_report.print_selected_reports",
         { filters: JSON.stringify(f) },
-        `Compiling ${count} ${count === 1 ? "report" : "reports"}`,
-        () => { btn.prop("disabled", false).html(orig); }
+        `Compiling ${count} ${count === 1 ? "report" : "reports"}`
     );
 }
+
+// ── Progress runner ───────────────────────────────────────────────────────────
 
 function _run_with_progress(method, args, label, onDone) {
     let pct = 0, done = false, phaseIdx = 0, phaseStart = Date.now(), rafId = null;
@@ -617,7 +879,7 @@ function _run_with_progress(method, args, label, onDone) {
         { target: 88, duration: 6000 },
     ];
 
-    frappe.show_progress(__("Generating PDF"), 0, 100, `${__(label)}…`);
+    frappe.show_progress(__("Processing"), 0, 100, `${__(label)}…`);
 
     function _tick() {
         if (done) return;
@@ -628,7 +890,7 @@ function _run_with_progress(method, args, label, onDone) {
         const eased    = 1 - Math.pow(1 - progress, 2);
         const prevTarget = phaseIdx === 0 ? 0 : PHASES[phaseIdx - 1].target;
         pct = prevTarget + eased * (phase.target - prevTarget);
-        frappe.show_progress(__("Generating PDF"), Math.round(pct), 100, `${__(label)}…`);
+        frappe.show_progress(__("Processing"), Math.round(pct), 100, `${__(label)}…`);
         if (progress >= 1) { phaseIdx++; phaseStart = Date.now(); }
         rafId = requestAnimationFrame(_tick);
     }
@@ -639,12 +901,12 @@ function _run_with_progress(method, args, label, onDone) {
         callback(r) {
             done = true;
             if (rafId) cancelAnimationFrame(rafId);
-            frappe.show_progress(__("Generating PDF"), 100, 100, __("Done!"));
+            frappe.show_progress(__("Processing"), 100, 100, __("Done!"));
             setTimeout(() => {
                 frappe.hide_progress();
                 if (onDone) onDone();
-                if (r.message) _open_pdf(r.message);
-                else frappe.msgprint({ title:__("Error"), message:__("Failed to generate PDF."), indicator:"red" });
+                if (r.message) _open_file(r.message);
+                else frappe.msgprint({ title:__("Error"), message:__("Failed to generate file."), indicator:"red" });
             }, 600);
         },
         error() {
@@ -652,12 +914,12 @@ function _run_with_progress(method, args, label, onDone) {
             if (rafId) cancelAnimationFrame(rafId);
             frappe.hide_progress();
             if (onDone) onDone();
-            frappe.msgprint({ title:__("Error"), message:__("Failed to generate PDF."), indicator:"red" });
+            frappe.msgprint({ title:__("Error"), message:__("Failed to generate file."), indicator:"red" });
         }
     });
 }
 
-function _open_pdf(url) {
+function _open_file(url) {
     const a = Object.assign(document.createElement("a"), {
         href: frappe.urllib.get_full_url(url), target: "_blank", rel: "noopener noreferrer"
     });

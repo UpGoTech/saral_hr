@@ -96,6 +96,12 @@ function is_pt(comp_name) {
     return (comp_name || "").trim() === "Professional Tax";
 }
 
+// ─── Net salary rounding (>=0.5 → ceil, <0.5 → floor) ───────────────────────
+
+function round_net_salary(value) {
+    return Math.floor(value + 0.5);
+}
+
 // ─── Duplicate check + full fetch ─────────────────────────────────────────────
 
 function check_duplicate_and_fetch(frm) {
@@ -457,10 +463,14 @@ function recalculate_salary(frm, wd_override, pd_override, phd_override) {
         total_employer_contribution += row.amount;
     });
 
+    // ── Net salary: round half-up to nearest whole number ────────────────────
+    const raw_net = total_earnings - total_deductions;
+    const net = round_net_salary(raw_net);
+
     frm.set_value({
         total_earnings: flt(total_earnings, 2),
         total_deductions: flt(total_deductions, 2),
-        net_salary: flt(total_earnings - total_deductions, 2),
+        net_salary: net,
         total_basic_da: flt(basic_amount + da_amount, 2),
         total_employer_contribution: flt(total_employer_contribution, 2),
         retention: flt(retention, 2)

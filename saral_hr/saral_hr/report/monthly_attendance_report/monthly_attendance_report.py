@@ -5,64 +5,179 @@ import calendar
 from frappe import _
 from frappe.utils.pdf import get_pdf
 
-MONTH_MAP = {
-    "January":1,"February":2,"March":3,"April":4,"May":5,"June":6,
-    "July":7,"August":8,"September":9,"October":10,"November":11,"December":12,
-}
+def _month_num(name):
+    for i, m in enumerate(calendar.month_name):
+        if m == name:
+            return i
+    return 0
 
 B = "1px solid #000"
 
 STATUS_CODE = {
-    "Present":      "P",
-    "On Tour":      "T",
-    "Absent":       "A",
-    "Half Day":     "HD",
-    "Holiday":      "H",
-    "Weekly Off":   "WO",
-    "LWP":          "LWP",
-    "Earned Leave": "EL",
-    "Casual Leave": "CL",
-    "Comp Off":     "CO",
+    "Present":         "P",
+    "On Tour":         "T",
+    "Absent":          "A",
+    "Half Day":        "HD",
+    "Holiday":         "H",
+    "Weekly Off":      "WO",
+    "LWP":             "LWP",
+    "Earned Leave":    "EL",
+    "Casual Leave":    "CL",
+    "Comp Off":        "CO",
     "Earned Comp Off": "ECO",
 }
 
-# FIX 3: body width:100% so flex sig container spans full page width
+COLOR = {
+    "P":   "#1a6b1a",
+    "A":   "#c0392b",
+    "HD":  "#e67e22",
+    "T":   "#2c3e50",
+    "H":   "#27ae60",
+    "WO":  "#2980b9",
+    "LWP": "#8e44ad",
+    "EL":  "#d35400",
+    "CL":  "#16a085",
+    "CO":  "#7f8c8d",
+    "ECO": "#a93226",
+    "PAY": "#1a6b1a",
+}
+
+# P A HD T H WO LWP Pay EL CL CO ECO
+SUMM_COLS = [
+    ("P",   "present_days"),
+    ("A",   "absent_days"),
+    ("HD",  "half_days"),
+    ("T",   "on_tour_days"),
+    ("H",   "holiday_days"),
+    ("WO",  "weekly_off_days"),
+    ("LWP", "lwp_days"),
+    ("Pay", "payable_days"),
+    ("EL",  "earned_leave_days"),
+    ("CL",  "casual_leave_days"),
+    ("CO",  "comp_off_days"),
+    ("ECO", "earned_comp_off_days"),
+]
+
+SUMM_COLOR = {
+    "present_days":         COLOR["P"],
+    "absent_days":          COLOR["A"],
+    "half_days":            COLOR["HD"],
+    "on_tour_days":         COLOR["T"],
+    "holiday_days":         COLOR["H"],
+    "weekly_off_days":      COLOR["WO"],
+    "lwp_days":             COLOR["LWP"],
+    "payable_days":         COLOR["PAY"],
+    "earned_leave_days":    COLOR["EL"],
+    "casual_leave_days":    COLOR["CL"],
+    "comp_off_days":        COLOR["CO"],
+    "earned_comp_off_days": COLOR["ECO"],
+}
+
+LEGEND_ITEMS = [
+    ("P",   "Present"),
+    ("A",   "Absent"),
+    ("HD",  "Half Day"),
+    ("T",   "On Tour"),
+    ("H",   "Holiday"),
+    ("WO",  "Weekly Off"),
+    ("LWP", "Leave Without Pay"),
+    ("Pay", "Payable Days"),
+    ("EL",  "Earned Leave"),
+    ("CL",  "Casual Leave"),
+    ("CO",  "Comp Off"),
+    ("ECO", "Earned Comp Off"),
+]
+
+ROWS_FIRST_PAGE = 19
+ROWS_OTHER_PAGE = 20
+
 _CSS = """<style>
 *{margin:0;padding:0;box-sizing:border-box}
-body{font-family:Arial,sans-serif;font-size:11px;color:#000;background:#fff;width:100%;}
-.hdr{text-align:center;border-bottom:2px solid #000;padding:10px 6px 6px;margin-bottom:4px}
-.hdr .co{font-size:22px;font-weight:900;letter-spacing:1px;text-transform:uppercase}
-.hdr .ttl{font-size:16px;font-weight:700;margin-top:2px}
-.hdr .per{font-size:13px;margin-top:2px}
-.lgd{padding:5px 4px;border-bottom:1px solid #000;margin-bottom:4px}
+body{font-family:Arial,sans-serif;font-size:10px;color:#000;background:#fff}
+
+.hdr{text-align:center;border-bottom:2px solid #000;padding:6px 6px 5px;margin-bottom:3px;}
+.hdr .co{font-size:18px;font-weight:900;letter-spacing:1px;text-transform:uppercase}
+.hdr .ttl{font-size:13px;font-weight:700;margin-top:2px}
+.hdr .per{font-size:11px;margin-top:2px}
+
+.cont-hdr{
+    text-align:center;font-size:9px;color:#555;
+    margin-bottom:3px;border-bottom:1px solid #000;padding-bottom:2px;
+}
+
+table.data-tbl{
+    width:100%;
+    border-collapse:collapse;
+    table-layout:fixed;
+}
+table.data-tbl th{
+    border:1px solid #000;
+    padding:2px 1px;
+    font-size:8.5px;
+    font-weight:700;
+    background:#f0f0f0;
+    text-align:center;
+    word-break:break-word;
+    vertical-align:middle;
+}
+table.data-tbl td{
+    border:1px solid #000;
+    padding:1px;
+    font-size:8.5px;
+    vertical-align:middle;
+}
 .nd{text-align:center;padding:10px;color:#888}
-table{width:100%;border-collapse:collapse;table-layout:fixed}
-th{border:1px solid #000;padding:3px 2px;font-size:10px;font-weight:700;background:#f0f0f0;text-align:center}
-td{border:1px solid #000;padding:2px;font-size:11px;vertical-align:top}
+
+.lgd-bar{
+    display:flex;flex-wrap:wrap;align-items:center;
+    padding:3px 5px;margin:0 0 3px 0;
+    background:#f4f5f6;border:1px solid #d1d8dd;border-radius:3px;
+    font-size:8px;font-family:Arial,sans-serif;line-height:1.6;
+}
+
+.pg-foot{text-align:right;font-size:8.5px;color:#555;margin-top:2px;}
+
+.sig{
+    display:flex;justify-content:space-between;
+    width:100%;margin-top:14px;padding-top:6px;
+}
+.sig-b{text-align:center;width:170px}
+.sig-l{border-top:1px solid #000;margin-bottom:3px}
+.sig-t{font-size:10px;color:#333}
+.sig-d{font-size:9px;color:#555;margin-top:5px}
 </style>"""
 
-# FIX 3: inline width:100% on sig container — prevents wkhtmltopdf
-# collapsing the flex div to content width, which shifts sigs left
-_SIG = """
-<!--SIG_START-->
-<div style="display:flex;justify-content:space-between;
-            width:100%;margin-top:16px;padding-top:8px;
-            box-sizing:border-box;">
-    <div style="text-align:center;width:180px;">
-        <div style="border-top:1px solid #000;margin-bottom:4px;"></div>
-        <div style="font-size:13px;color:#333;">Prepared By</div>
-    </div>
-    <div style="text-align:center;width:180px;">
-        <div style="border-top:1px solid #000;margin-bottom:4px;"></div>
-        <div style="font-size:13px;color:#333;">Checked By</div>
-    </div>
-    <div style="text-align:center;width:180px;">
-        <div style="border-top:1px solid #000;margin-bottom:4px;"></div>
-        <div style="font-size:13px;color:#333;">Authorised Signatory</div>
-    </div>
-</div>
-<!--SIG_END-->
-"""
+
+def _sig_html():
+    labels = ["Prepared By", "Checked By", "Authorised Signatory"]
+    blocks = "".join(
+        '<div class="sig-b">'
+        '<div class="sig-l"></div>'
+        '<div class="sig-t">{l}</div>'
+        '<div class="sig-d">Date: ___________</div>'
+        '</div>'.format(l=l)
+        for l in labels
+    )
+    return '<div class="sig">{}</div>'.format(blocks)
+
+
+def _legend_bar_html():
+    parts = []
+    for k, v in LEGEND_ITEMS:
+        parts.append(
+            '<span style="display:inline-flex;align-items:center;gap:2px;'
+            'margin-right:8px;white-space:nowrap;">'
+            '<b style="color:{c};font-size:8px;">{k}</b>'
+            '<span style="font-size:8px;color:#444;">&#8211;{v}</span>'
+            '</span>'.format(c=COLOR.get(k, "#000"), k=k, v=v)
+        )
+    return (
+        '<div class="lgd-bar">'
+        '<span style="font-weight:700;font-size:8px;color:#6c7680;'
+        'margin-right:6px;white-space:nowrap;">Legend:</span>'
+        '{items}'
+        '</div>'.format(items="".join(parts))
+    )
 
 
 def _parse_list(v):
@@ -91,11 +206,12 @@ def _company_label(f):
 def _get_data(f):
     ms = f.get("month", "")
     ys = f.get("year", "")
-    mn = MONTH_MAP.get(ms)
+    mn = _month_num(ms)
 
     cols = [
-        _col("Employee ID",   "employee",      w=150),
-        _col("Employee Name", "employee_name", w=250),
+        _col("Sr",            "sr_no",        w=40),
+        _col("Employee Name", "employee_name", w=180),
+        _col("Employee ID",   "employee",      w=160),
     ]
 
     if not mn or not ys:
@@ -103,28 +219,16 @@ def _get_data(f):
 
     yi   = int(ys)
     last = calendar.monthrange(yi, mn)[1]
-    fd   = f"{yi}-{mn:02d}-01"
-    td   = f"{yi}-{mn:02d}-{last:02d}"
+    fd   = "{0}-{1:02d}-01".format(yi, mn)
+    td   = "{0}-{1:02d}-{2:02d}".format(yi, mn, last)
 
     for d in range(1, last + 1):
-        cols.append({"label": str(d), "fieldname": f"day_{d}",
-                     "fieldtype": "Data", "width": 50})
+        cols.append({"label": str(d), "fieldname": "day_{0}".format(d),
+                     "fieldtype": "Data", "width": 45})
 
-    SUMM_COLS = [
-        ("P",   "present_days"),
-        ("A",   "absent_days"),
-        ("HD",  "half_days"),
-        ("T",   "on_tour_days"),
-        ("EL",  "earned_leave_days"),
-        ("CL",  "casual_leave_days"),
-        ("CO",  "comp_off_days"),
-        ("ECO", "earned_comp_off_days"),
-        ("WO",  "weekly_off_days"),
-        ("H",   "holiday_days"),
-        ("LWP", "lwp_days"),
-    ]
+    # ── Summary columns — precision:1 so Frappe grid shows 1 decimal ──
     for lbl, fn in SUMM_COLS:
-        cols.append(_col(lbl, fn, "Float", 70, precision=2))
+        cols.append(_col(lbl, fn, "Float", 65, precision=1))
 
     cos = _parse_list(f.get("company"))
     if not cos:
@@ -133,8 +237,8 @@ def _get_data(f):
     co_tuple = tuple(cos) if len(cos) > 1 else (cos[0], cos[0])
     p = {"fd": fd, "td": td, "co": co_tuple}
 
-    cat  = f.get("category")
     catj = ""
+    cat  = f.get("category")
     if cat:
         p["category"] = cat
         catj = "INNER JOIN `tabCompany Link` cl ON cl.name=a.employee AND cl.category=%(category)s"
@@ -154,12 +258,12 @@ def _get_data(f):
               " WHERE division IN %(divisions)s OR department IN %(divisions)s)")
 
     recs = frappe.db.sql(
-        f"""SELECT a.employee, a.employee_name, a.attendance_date, a.status
-            FROM `tabAttendance` a {catj}
-            WHERE a.company IN %(co)s
-              AND a.attendance_date BETWEEN %(fd)s AND %(td)s
-              {ec} {dc}
-            ORDER BY a.employee_name, a.attendance_date""",
+        "SELECT a.employee, a.employee_name, a.attendance_date, a.status"
+        " FROM `tabAttendance` a {catj}"
+        " WHERE a.company IN %(co)s"
+        "   AND a.attendance_date BETWEEN %(fd)s AND %(td)s"
+        "   {ec} {dc}"
+        " ORDER BY a.employee_name, a.attendance_date".format(catj=catj, ec=ec, dc=dc),
         p, as_dict=1,
     )
 
@@ -173,64 +277,70 @@ def _get_data(f):
         day = (row.attendance_date.day
                if hasattr(row.attendance_date, "day")
                else int(str(row.attendance_date)[8:10]))
-        st  = row.status
-
+        st = row.status
         if st not in STATUS_CODE:
             continue
 
         if emp not in ed:
             eo.append(emp)
             ed[emp] = {
-                "employee":             emp,
-                "employee_name":        row.employee_name or "",
-                "present_days":         0.0,
-                "absent_days":          0.0,
-                "half_days":            0.0,
-                "on_tour_days":         0.0,
-                "earned_leave_days":    0.0,
-                "casual_leave_days":    0.0,
-                "comp_off_days":        0.0,
-                "earned_comp_off_days": 0.0,
-                "weekly_off_days":      0.0,
-                "holiday_days":         0.0,
-                "lwp_days":             0.0,
+                "employee": emp, "employee_name": row.employee_name or "",
+                "present_days": 0.0,
+                "absent_days": 0.0, "half_days": 0.0,
+                "on_tour_days": 0.0, "earned_leave_days": 0.0,
+                "casual_leave_days": 0.0, "comp_off_days": 0.0,
+                "earned_comp_off_days": 0.0, "weekly_off_days": 0.0,
+                "holiday_days": 0.0, "lwp_days": 0.0,
+                "payable_days": 0.0,
             }
 
-        code = STATUS_CODE[st]
-        ed[emp][f"day_{day}"] = code
+        ed[emp]["day_{0}".format(day)] = STATUS_CODE[st]
 
-        if st == "Present":
-            ed[emp]["present_days"]      += 1.0
+        if   st == "Present":
+            ed[emp]["present_days"]          += 1.0
         elif st == "On Tour":
-            ed[emp]["on_tour_days"]      += 1.0
-            ed[emp]["present_days"]      += 1.0
+            ed[emp]["on_tour_days"]           += 1.0
+            ed[emp]["present_days"]           += 1.0
         elif st == "Absent":
-            ed[emp]["absent_days"]       += 1.0
+            ed[emp]["absent_days"]            += 1.0
         elif st == "Half Day":
-            ed[emp]["half_days"]         += 1.0
-            ed[emp]["present_days"]      += 0.5
-            ed[emp]["absent_days"]       += 0.5
+            ed[emp]["half_days"]              += 1.0
+            ed[emp]["present_days"]           += 0.5
+            ed[emp]["absent_days"]            += 0.5
         elif st == "Holiday":
-            ed[emp]["holiday_days"]      += 1.0
+            ed[emp]["holiday_days"]           += 1.0
         elif st == "Weekly Off":
-            ed[emp]["weekly_off_days"]   += 1.0
+            ed[emp]["weekly_off_days"]        += 1.0
         elif st == "LWP":
-            ed[emp]["lwp_days"]          += 1.0
-            ed[emp]["absent_days"]       += 1.0
+            ed[emp]["lwp_days"]               += 1.0
+            ed[emp]["absent_days"]            += 1.0
         elif st == "Earned Leave":
-            ed[emp]["earned_leave_days"] += 1.0
+            ed[emp]["earned_leave_days"]      += 1.0
         elif st == "Casual Leave":
-            ed[emp]["casual_leave_days"] += 1.0
+            ed[emp]["casual_leave_days"]      += 1.0
         elif st == "Comp Off":
-            ed[emp]["comp_off_days"]     += 1.0
+            ed[emp]["comp_off_days"]          += 1.0
         elif st == "Earned Comp Off":
-            ed[emp]["earned_comp_off_days"] += 1.0
+            ed[emp]["earned_comp_off_days"]   += 1.0
 
     for emp in ed:
+        r = ed[emp]
+        r["payable_days"] = (
+            r["present_days"]
+            + r["earned_leave_days"]
+            + r["casual_leave_days"]
+            + r["comp_off_days"]
+            + r["earned_comp_off_days"]
+        )
         for d in range(1, last + 1):
-            ed[emp].setdefault(f"day_{d}", "-")
+            r.setdefault("day_{0}".format(d), "-")
 
-    return cols, [ed[e] for e in eo]
+    result = []
+    for i, emp in enumerate(eo, 1):
+        ed[emp]["sr_no"] = i
+        result.append(ed[emp])
+
+    return cols, result
 
 
 def execute(filters=None):
@@ -238,197 +348,194 @@ def execute(filters=None):
 
 
 def _build_html(cols, data, co, mo, yr):
-    mn   = MONTH_MAP.get(mo, 0)
-    yi   = int(yr) if yr else 0
-    last = calendar.monthrange(yi, mn)[1] if mn and yi else 31
+    mn    = _month_num(mo)
+    yi    = int(yr) if yr else 0
+    last  = calendar.monthrange(yi, mn)[1] if mn and yi else 31
     dcols = [c for c in cols if c["fieldname"].startswith("day_")]
+    nd    = len(dcols)
+    ns    = len(SUMM_COLS)
 
-    SUMM_PAIRS = [
-        ("P",   "present_days",         "A",   "absent_days"),
-        ("HD",  "half_days",            "T",   "on_tour_days"),
-        ("EL",  "earned_leave_days",    "CL",  "casual_leave_days"),
-        ("CO",  "comp_off_days",        "ECO", "earned_comp_off_days"),
-        ("WO",  "weekly_off_days",      "H",   "holiday_days"),
-        ("LWP", "lwp_days",             "",    ""),
-    ]
+    sr_pct   = 2.0
+    name_pct = 11.0
+    summ_pct = 2.1
+    day_pct  = (100.0 - sr_pct - name_pct - ns * summ_pct) / nd if nd else 0
 
-    lgd = "".join(
-        f'<span style="margin-right:12px;font-size:11px;"><b>{k}</b> – {v}</span>'
-        for k, v in [
-            ("P","Present"),("A","Absent"),("HD","Half Day"),("T","On Tour"),
-            ("EL","Earned Leave"),("CL","Casual Leave"),
-            ("CO","Comp Off"),("ECO","Earned Comp Off"),
-            ("WO","Weekly Off"),("H","Holiday"),("LWP","Leave Without Pay"),
-        ]
+    cg  = '<colgroup>'
+    cg += '<col style="width:{0}%;"/>'.format(sr_pct)
+    cg += '<col style="width:{0}%;"/>'.format(name_pct)
+    cg += "".join('<col style="width:{0:.3f}%;"/>'.format(day_pct) for _ in dcols)
+    cg += "".join('<col style="width:{0}%;"/>'.format(summ_pct) for _ in SUMM_COLS)
+    cg += '</colgroup>'
+
+    page1_hdr = (
+        '<div class="hdr">'
+        '<div class="co">{co}</div>'
+        '<div class="ttl">Monthly Attendance Report</div>'
+        '<div class="per">For the Month of {mo} {yr}</div>'
+        '</div>'.format(co=co, mo=mo, yr=yr)
     )
-
-    hdr = (
-        f'<div class="hdr"><div class="co">{co}</div>'
-        f'<div class="ttl">Monthly Attendance Report</div>'
-        f'<div class="per">For the Month of {mo} {yr}</div></div>'
-        f'<div class="lgd">{lgd}</div>'
+    cont_hdr = (
+        '<div class="cont-hdr">'
+        '{co} &mdash; Monthly Attendance Report &mdash; {mo} {yr} (contd.)'
+        '</div>'.format(co=co, mo=mo, yr=yr)
     )
+    lgd_bar = _legend_bar_html()
 
-    # FIX 3: tighter column widths so WO/LWP summary cols don't clip
-    nd         = len(dcols)
-    name_pct   = 12                    # was 14
-    summ_total = 18                    # was 21
-    n_summ     = len(SUMM_PAIRS)
-    day_pct    = f"{(100 - name_pct - summ_total) / nd:.3f}%" if nd else "0%"
-    sc_pct     = f"{summ_total / n_summ:.3f}%"
-    cg  = f'<colgroup><col style="width:{name_pct}%;"/>'
-    cg += "".join(f'<col style="width:{day_pct};"/>' for _ in dcols)
-    cg += "".join(f'<col style="width:{sc_pct};"/>' for _ in SUMM_PAIRS)
-    cg += "</colgroup>"
+    BG1 = "background:#f0f0f0;"
+    BG2 = "background:#d0d8e0;"
+    TH  = ("border:{B};padding:2px 1px;font-size:8.5px;font-weight:700;"
+           "text-align:center;vertical-align:middle;").format(B=B)
 
-    FS   = "font-size:13px;"
-    FSS  = "font-size:12px;"
-    PAD  = "padding:3px 2px;"
-    CTR  = "text-align:center;vertical-align:middle;"
-    BG1  = "background:#f0f0f0;"
-    BG2  = "background:#d0d8e0;"
-    BOLD = "font-weight:700;"
-
-    def th1(extra=""):
-        return f'border:{B};{PAD}{FS}{BOLD}{CTR}{extra}'
-    def th2(extra=""):
-        return f'border:{B};{PAD}{FSS}{BOLD}{CTR}{extra}'
-
-    r1  = '<tr>'
-    r1 += f'<th rowspan="2" style="{th1(BG1)}text-align:left;white-space:normal;word-break:break-word;">Employee<br><span style="font-size:10px;font-weight:400;color:#555;">ID</span></th>'
+    header_tr = "<tr>"
+    header_tr += '<th style="{th}{bg}">Sr</th>'.format(th=TH, bg=BG1)
+    header_tr += (
+        '<th style="{th}{bg}text-align:left;">'
+        'Employee Name / ID'
+        '</th>'.format(th=TH, bg=BG1)
+    )
     for c in dcols:
-        r1 += f'<th rowspan="2" style="{th1(BG1)}">{c["label"]}</th>'
-    for tl, *_ in SUMM_PAIRS:
-        r1 += f'<th style="{th1(BG2)}">{tl}</th>'
-    r1 += "</tr>"
-
-    r2  = '<tr>'
-    for _, __, bl, ___ in SUMM_PAIRS:
-        r2 += f'<th style="{th2(BG2)}">{bl}</th>'
-    r2 += "</tr>"
-
-    ch    = r1 + r2
-    ncols = 1 + nd + n_summ
-
-    COLOR = {
-        "A":"#c0392b","LWP":"#8e44ad","WO":"#2980b9","H":"#27ae60",
-        "EL":"#d35400","CL":"#16a085","CO":"#7f8c8d","ECO":"#c0392b","T":"#2c3e50",
-        "HD":"#e67e22","P":"#1a6b1a",
-    }
+        header_tr += '<th style="{th}{bg}">{lbl}</th>'.format(
+            th=TH, bg=BG1, lbl=c["label"])
+    for lbl, fn in SUMM_COLS:
+        cc = SUMM_COLOR.get(fn, "#000")
+        header_tr += (
+            '<th style="{th}{bg}color:{cc};">{lbl}</th>'.format(
+                th=TH, bg=BG2, cc=cc, lbl=lbl)
+        )
+    header_tr += "</tr>"
 
     def _disp(v):
-        if v is None or v == "" or v == 0 or v == 0.0: return ""
-        return str(int(v)) if isinstance(v, float) and v == int(v) else str(v)
+        """Format as integer if whole, else 1 decimal place."""
+        if v is None or v == "" or v == 0 or v == 0.0:
+            return ""
+        try:
+            fv = float(v)
+            if fv == 0:
+                return ""
+            return str(int(fv)) if fv == int(fv) else "{:.1f}".format(fv)
+        except (TypeError, ValueError):
+            return str(v)
 
-    def _build_rows(page_data):
-        rows_html = ""
-        for i, row in enumerate(page_data):
-            bg  = "#f9f9f9" if i % 2 else "#ffffff"
-            SBG = "#eef2f7"
-
-            tr1  = "<tr>"
-            tr1 += (
-                f'<td rowspan="2" style="border:{B};padding:3px 4px;'
-                f'vertical-align:middle;background:{bg};">'
-                f'<div style="font-size:13px;font-weight:700;line-height:1.3;word-break:break-word;">'
-                f'{row.get("employee_name","")}</div>'
-                f'<div style="font-size:11px;color:#555;line-height:1.3;">'
-                f'{row.get("employee","")}</div></td>'
+    def _emp_row(row, i):
+        bg  = "#f9f9f9" if i % 2 else "#ffffff"
+        SBG = "#eef2f7"
+        html = "<tr>"
+        html += (
+            '<td style="border:{B};text-align:center;padding:2px 1px;'
+            'vertical-align:middle;background:{bg};font-size:8.5px;color:#555;">'
+            '{sr}</td>'.format(B=B, bg=bg, sr=row.get("sr_no", ""))
+        )
+        html += (
+            '<td style="border:{B};padding:2px 3px;vertical-align:middle;background:{bg};">'
+            '<div style="font-size:8.5px;font-weight:700;line-height:1.3;'
+            'word-break:break-word;">{name}</div>'
+            '<div style="font-size:7.5px;color:#555;line-height:1.3;">{eid}</div>'
+            '</td>'.format(B=B, bg=bg,
+                           name=row.get("employee_name", ""),
+                           eid=row.get("employee", ""))
+        )
+        for c in dcols:
+            v     = row.get(c["fieldname"], "") or ""
+            color = COLOR.get(v, "#000")
+            cell  = (
+                '<span style="font-weight:700;color:{c};font-size:8.5px;">{v}</span>'.format(
+                    c=color, v=v)
+                if v and v != "-"
+                else '<span style="color:#ddd;">&#8211;</span>'
             )
-            for c in dcols:
-                v     = row.get(c["fieldname"], "") or ""
-                color = COLOR.get(v, "#000")
-                cell  = v if v != "-" else '<span style="color:#ddd;">–</span>'
-                tr1 += (
-                    f'<td rowspan="2" style="border:{B};font-size:13px;font-weight:700;'
-                    f'text-align:center;padding:2px 0;background:{bg};'
-                    f'color:{color};vertical-align:middle;">{cell}</td>'
-                )
-            for tl, tfn, bl, bfn in SUMM_PAIRS:
-                tv = _disp(row.get(tfn))
-                tr1 += (
-                    f'<td style="border-left:{B};border-right:{B};border-top:{B};'
-                    f'border-bottom:1px solid #aaa;'
-                    f'font-size:13px;font-weight:700;text-align:center;'
-                    f'padding:2px 1px;background:{SBG};vertical-align:middle;">{tv}</td>'
-                )
-            tr1 += "</tr>"
+            html += (
+                '<td style="border:{B};text-align:center;padding:1px 0;'
+                'background:{bg};vertical-align:middle;">{cell}</td>'.format(
+                    B=B, bg=bg, cell=cell)
+            )
+        for lbl, fn in SUMM_COLS:
+            val = _disp(row.get(fn))
+            vc  = SUMM_COLOR.get(fn, "#000") if val else "#bbb"
+            html += (
+                '<td style="border:{B};font-size:8.5px;font-weight:700;'
+                'color:{vc};text-align:center;padding:2px 0;'
+                'background:{SBG};vertical-align:middle;">'
+                '{val}</td>'.format(B=B, SBG=SBG, vc=vc, val=val)
+            )
+        html += "</tr>"
+        return html
 
-            tr2  = "<tr>"
-            for tl, tfn, bl, bfn in SUMM_PAIRS:
-                bv = _disp(row.get(bfn)) if bfn else ""
-                tr2 += (
-                    f'<td style="border-left:{B};border-right:{B};border-bottom:{B};'
-                    f'border-top:none;'
-                    f'font-size:13px;font-weight:700;text-align:center;'
-                    f'padding:2px 1px;background:{SBG};vertical-align:middle;">{bv}</td>'
-                )
-            tr2 += "</tr>"
-
-            rows_html += tr1 + tr2
-        return rows_html
-
-    def _make_table(page_data):
-        body_html = (
-            _build_rows(page_data) if page_data
-            else f'<tr><td colspan="{ncols}" class="nd">No data for this period</td></tr>'
-        )
+    def _page_table(rows, start_i):
+        tbody = "<tbody>"
+        for j, row in enumerate(rows):
+            tbody += _emp_row(row, start_i + j)
+        tbody += "</tbody>"
         return (
-            f'<table style="width:100%;table-layout:fixed;border-collapse:collapse;margin-top:6px;">'
-            f'{cg}<thead>{ch}</thead><tbody>{body_html}</tbody></table>'
-        )
+            '<table class="data-tbl">{cg}<thead>{hdr}</thead>{tbody}</table>'
+        ).format(cg=cg, hdr=header_tr, tbody=tbody)
 
     if not data:
-        body = f'<div style="display:block;">{hdr}{_make_table([])}</div>'
+        pages = [[]]
     else:
-        # FIX 2: correct per-page employee limits
-        # Each employee = 2 HTML rows; page 1 has title+legend so fewer fit
-        FIRST, OTHER = 11, 14    # was 13, 16
         pages, idx, first = [], 0, True
         while idx < len(data):
-            lim = FIRST if first else OTHER
+            lim = ROWS_FIRST_PAGE if first else ROWS_OTHER_PAGE
             pages.append(data[idx: idx + lim])
             idx  += lim
             first = False
 
-        parts = []
-        for pn, pr in enumerate(pages):
-            # FIX 1 & 4: page break on outer wrapper div; hdr repeats
-            # on every page so reader always sees company/month context
-            pb_style = "break-before:page;page-break-before:always;" if pn > 0 else ""
-            parts.append(
-                f'<div style="display:block;{pb_style}">'
-                f'{hdr}{_make_table(pr)}'
-                f'</div>'
-            )
-        body = "".join(parts)
+    total_pages = len(pages)
+    parts       = []
+    row_counter = 0
+
+    for pn, page_rows in enumerate(pages):
+        pb_style = "" if pn == total_pages - 1 else "page-break-after:always;"
+        is_last  = (pn == total_pages - 1)
+        page_hdr = (page1_hdr if pn == 0 else cont_hdr) + lgd_bar
+
+        if not data:
+            tbl = (
+                '<table class="data-tbl">{cg}<thead>{hdr}</thead>'
+                '<tbody><tr><td colspan="{n}" class="nd">'
+                'No data for this period</td></tr></tbody></table>'
+            ).format(cg=cg, hdr=header_tr, n=2 + nd + ns)
+        else:
+            tbl = _page_table(page_rows, row_counter)
+            row_counter += len(page_rows)
+
+        pg_foot = '<div class="pg-foot">Page {p} of {t}</div>'.format(
+            p=pn + 1, t=total_pages)
+        sig = _sig_html() if is_last else ""
+
+        parts.append(
+            '<div style="display:block;overflow:hidden;{pb}">'
+            '{hdr}{tbl}{foot}{sig}'
+            '</div>'.format(
+                pb=pb_style, hdr=page_hdr, tbl=tbl, foot=pg_foot, sig=sig)
+        )
 
     return (
-        f'<!DOCTYPE html><html><head><meta charset="UTF-8">{_CSS}</head>'
-        f'<body>{body}{_SIG}</body></html>'
-    )
+        '<!DOCTYPE html><html><head><meta charset="UTF-8">{css}</head>'
+        '<body>{body}</body></html>'
+    ).format(css=_CSS, body="".join(parts))
 
 
 def _save_pdf(html, prefix):
     pdf = get_pdf(html, options={
         "page-size":     "A4",
         "orientation":   "Landscape",
-        "margin-top":    "8mm",
-        "margin-right":  "8mm",
-        "margin-bottom": "8mm",
-        "margin-left":   "8mm",
+        "margin-top":    "7mm",
+        "margin-right":  "6mm",
+        "margin-bottom": "9mm",
+        "margin-left":   "6mm",
         "encoding":      "UTF-8",
         "no-outline":    None,
     })
+
     ts  = frappe.utils.now_datetime().strftime("%Y%m%d_%H%M%S")
-    fn  = f"{prefix}_{ts}.pdf"
+    fn  = "{0}_{1}.pdf".format(prefix, ts)
     with open(frappe.utils.get_files_path(fn, is_private=0), "wb") as fh:
         fh.write(pdf)
     doc = frappe.get_doc({
-        "doctype":   "File",
-        "file_name": fn,
+        "doctype":    "File",
+        "file_name":  fn,
         "is_private": 0,
-        "file_url":  f"/files/{fn}",
+        "file_url":   "/files/{0}".format(fn),
     })
     doc.insert(ignore_permissions=True)
     frappe.db.commit()
@@ -440,12 +547,10 @@ def print_report(filters):
     if isinstance(filters, str):
         filters = json.loads(filters)
     cols, data = _get_data(filters)
+    co = _company_label(filters)
+    mo = filters.get("month", "")
+    yr = filters.get("year", "")
     return _save_pdf(
-        _build_html(
-            cols, data,
-            _company_label(filters),
-            filters.get("month", ""),
-            filters.get("year", ""),
-        ),
+        _build_html(cols, data, co, mo, yr),
         "Monthly_Attendance_Report",
     )

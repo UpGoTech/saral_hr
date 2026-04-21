@@ -101,14 +101,12 @@ frappe.query_reports["Monthly Attendance Report"] = {
         }, "printer");
 
         // ── Legend injection via MutationObserver ─────────────────────
-        // Watch for the datatable appearing in the DOM — most reliable
-        // method across all Frappe versions since wrapper is undefined here.
         const $page = $("#page-query-report");
 
         function _do_inject() {
             $page.find("#mar-legend-bar").remove();
-            const bar  = _mar_build_legend();
-            const $dt  = $page.find(".dt-wrapper, .frappe-datatable").first();
+            const bar = _mar_build_legend();
+            const $dt = $page.find(".dt-wrapper, .frappe-datatable").first();
             if ($dt.length) {
                 $dt.before(bar);
             } else {
@@ -116,12 +114,11 @@ frappe.query_reports["Monthly Attendance Report"] = {
             }
         }
 
-        // MutationObserver fires whenever the datatable is added/updated
         let _legendTimer = null;
         const _legendObserver = new MutationObserver(() => {
             const $dt = $page.find(".dt-wrapper, .frappe-datatable").first();
             if (!$dt.length) return;
-            if ($page.find("#mar-legend-bar").length) return; // already present
+            if ($page.find("#mar-legend-bar").length) return;
             clearTimeout(_legendTimer);
             _legendTimer = setTimeout(_do_inject, 200);
         });
@@ -131,7 +128,6 @@ frappe.query_reports["Monthly Attendance Report"] = {
             { childList: true, subtree: true }
         );
 
-        // Also fire on after_refresh as a belt-and-suspenders approach
         $(frappe.query_report).on("after_refresh", () => {
             setTimeout(_do_inject, 300);
         });
@@ -143,46 +139,78 @@ frappe.query_reports["Monthly Attendance Report"] = {
         const fn  = column.fieldname;
         const def = v => default_formatter(v, row, column, data);
 
+        // ── Sr No column ──────────────────────────────────────────────
+        if (fn === "sr_no") {
+            if (!value) return def(value);
+            return `<span style="font-size:11px;color:#555;text-align:center;">${value}</span>`;
+        }
+
+        // ── Employee ID column ────────────────────────────────────────
+        if (fn === "employee") {
+            if (!value) return def(value);
+            return `<span style="font-size:11px;color:#555;font-family:monospace;">${value}</span>`;
+        }
+
+        // ── Day cells: colour-coded status codes ──────────────────────
         if (fn && fn.startsWith("day_")) {
             if (!value || value === "-") {
                 return '<span style="color:#ccc;">-</span>';
             }
-            const colors = {
-                P:   "#1a6b1a",
-                A:   "#c0392b",
-                HD:  "#e67e22",
-                T:   "#2c3e50",
-                H:   "#27ae60",
-                WO:  "#2980b9",
-                LWP: "#8e44ad",
-                EL:  "#d35400",
-                CL:  "#16a085",
-                CO:  "#7f8c8d",
-                ECO: "#a93226",
-            };
-            const color = colors[value] || "#1a202c";
+            const color = _MAR_COLORS[value] || "#1a202c";
             return `<span style="font-weight:700;color:${color};">${value}</span>`;
+        }
+
+        // ── Summary cells: colour-coded values ────────────────────────
+        // NOTE: present_days (Eff.P) removed — not shown on screen either
+        const summaryColorMap = {
+            absent_days:          _MAR_COLORS["A"],
+            half_days:            _MAR_COLORS["HD"],
+            on_tour_days:         _MAR_COLORS["T"],
+            earned_leave_days:    _MAR_COLORS["EL"],
+            casual_leave_days:    _MAR_COLORS["CL"],
+            comp_off_days:        _MAR_COLORS["CO"],
+            earned_comp_off_days: _MAR_COLORS["ECO"],
+            weekly_off_days:      _MAR_COLORS["WO"],
+            holiday_days:         _MAR_COLORS["H"],
+            lwp_days:             _MAR_COLORS["LWP"],
+        };
+        if (fn && summaryColorMap[fn] && value) {
+            return `<span style="font-weight:700;color:${summaryColorMap[fn]};">${value}</span>`;
         }
 
         return def(value);
     },
 };
 
-// ── Legend builder (shared constant, defined once at module level) ────────────
+// ── Shared colour map ─────────────────────────────────────────────────────────
+const _MAR_COLORS = {
+    P:   "#1a6b1a",
+    A:   "#c0392b",
+    HD:  "#e67e22",
+    T:   "#2c3e50",
+    H:   "#27ae60",
+    WO:  "#2980b9",
+    LWP: "#8e44ad",
+    EL:  "#d35400",
+    CL:  "#16a085",
+    CO:  "#7f8c8d",
+    ECO: "#a93226",
+};
 
+// ── Legend builder — Eff.P removed ───────────────────────────────────────────
 function _mar_build_legend() {
     const LEGEND = [
-        { code:"P",   label:"Present",          color:"#1a6b1a" },
-        { code:"A",   label:"Absent",           color:"#c0392b" },
-        { code:"HD",  label:"Half Day",         color:"#e67e22" },
-        { code:"T",   label:"On Tour",          color:"#2c3e50" },
-        { code:"H",   label:"Holiday",          color:"#27ae60" },
-        { code:"WO",  label:"Weekly Off",       color:"#2980b9" },
-        { code:"LWP", label:"Leave Without Pay",color:"#8e44ad" },
-        { code:"EL",  label:"Earned Leave",     color:"#d35400" },
-        { code:"CL",  label:"Casual Leave",     color:"#16a085" },
-        { code:"CO",  label:"Comp Off",         color:"#7f8c8d" },
-        { code:"ECO", label:"Earned Comp Off",  color:"#a93226" },
+        { code:"P",   label:"Present",            color:_MAR_COLORS.P   },
+        { code:"A",   label:"Absent",             color:_MAR_COLORS.A   },
+        { code:"HD",  label:"Half Day",           color:_MAR_COLORS.HD  },
+        { code:"T",   label:"On Tour",            color:_MAR_COLORS.T   },
+        { code:"H",   label:"Holiday",            color:_MAR_COLORS.H   },
+        { code:"WO",  label:"Weekly Off",         color:_MAR_COLORS.WO  },
+        { code:"LWP", label:"Leave Without Pay",  color:_MAR_COLORS.LWP },
+        { code:"EL",  label:"Earned Leave",       color:_MAR_COLORS.EL  },
+        { code:"CL",  label:"Casual Leave",       color:_MAR_COLORS.CL  },
+        { code:"CO",  label:"Comp Off",           color:_MAR_COLORS.CO  },
+        { code:"ECO", label:"Earned Comp Off",    color:_MAR_COLORS.ECO },
     ];
     const items = LEGEND.map(({ code, label, color }) =>
         `<span style="display:inline-flex;align-items:center;gap:4px;

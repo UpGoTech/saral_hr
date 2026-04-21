@@ -5,95 +5,66 @@ import json
 import frappe
 import calendar
 from frappe import _
-from datetime import datetime
 from frappe.utils.pdf import get_pdf
+
+B = "1px solid #000"
+ROWS_FIRST_PAGE = 21
+ROWS_OTHER_PAGE = 23
 
 
 def execute(filters=None):
     filters = filters or {}
-    columns = get_columns()
-    data    = get_data(filters)
-    return columns, data
+    return get_columns(), get_data(filters)
 
-
-# ------------------------------------------------------------------ #
-#  Columns                                                             #
-# ------------------------------------------------------------------ #
 
 def get_columns():
     return [
-        {"label": _("Employee ID"),    "fieldname": "employee",             "fieldtype": "Link", "options": "Employee", "width": 180},
-        {"label": _("Employee Name"),  "fieldname": "employee_name",        "fieldtype": "Data",                        "width": 190},
-        {"label": _("Loan ID"),"fieldname": "loan_advance_id",      "fieldtype": "Link", "options": "Employee Loan Advance", "width": 220},
-        {"label": _("Total Loan"),     "fieldname": "total_loan",           "fieldtype": "Float",                       "width": 180},
-        {"label": _("Loan Recovered"), "fieldname": "recovered_this_month", "fieldtype": "Float",                       "width": 220},
-        {"label": _("Loan Balance"),   "fieldname": "loan_balance",         "fieldtype": "Float",                       "width": 220},
+        {"label": _("Sr"),             "fieldname": "sr_no",                "fieldtype": "Int",   "width":  50},
+        {"label": _("Employee ID"),    "fieldname": "employee",             "fieldtype": "Link",  "options": "Employee",             "width": 140},
+        {"label": _("Employee Name"),  "fieldname": "employee_name",        "fieldtype": "Data",                                      "width": 220},
+        {"label": _("Loan ID"),        "fieldname": "loan_advance_id",      "fieldtype": "Link",  "options": "Employee Loan Advance", "width": 180},
+        {"label": _("Total Loan"),     "fieldname": "total_loan",           "fieldtype": "Float",                                     "width": 150},
+        {"label": _("Loan Recovered"), "fieldname": "recovered_this_month", "fieldtype": "Float",                                     "width": 150},
+        {"label": _("Loan Balance"),   "fieldname": "loan_balance",         "fieldtype": "Float",                                     "width": 150},
     ]
 
-
-# ------------------------------------------------------------------ #
-#  Employee dropdown                                                   #
-# ------------------------------------------------------------------ #
 
 @frappe.whitelist()
 @frappe.validate_and_sanitize_search_inputs
 def get_employees_with_loans(doctype, txt, searchfield, start, page_len, filters):
     company = filters.get("company") if filters else None
-
-    params = {
-        "txt": f"%{txt}%",
-        "start": start,
-        "page_len": page_len,
-    }
-
+    params  = {"txt": f"%{txt}%", "start": start, "page_len": page_len}
     company_cond = ""
     if company:
         company_cond = "AND ela.company = %(company)s"
         params["company"] = company
-
     results = frappe.db.sql("""
-        SELECT DISTINCT
-            ela.employee,
-            COALESCE(e.employee_name, ela.full_name, ela.employee) AS employee_name
+        SELECT DISTINCT ela.employee,
+               COALESCE(e.employee_name, ela.full_name, ela.employee) AS employee_name
         FROM `tabEmployee Loan Advance` ela
         INNER JOIN `tabEmployee` e ON e.name = ela.employee
-        WHERE ela.docstatus = 1
-            AND ela.type = 'Loan'
-            {company_cond}
-            AND (ela.employee LIKE %(txt)s OR e.employee_name LIKE %(txt)s)
+        WHERE ela.docstatus = 1 AND ela.type = 'Loan'
+              {company_cond}
+              AND (ela.employee LIKE %(txt)s OR e.employee_name LIKE %(txt)s)
         ORDER BY ela.employee ASC
         LIMIT %(page_len)s OFFSET %(start)s
     """.format(company_cond=company_cond), params)
+    return [[r[0], r[1] or r[0]] for r in results]
 
-    return [[emp[0], emp[1] or emp[0]] for emp in results]
-
-
-# ------------------------------------------------------------------ #
-#  Filter → SQL Conditions                                             #
-# ------------------------------------------------------------------ #
 
 def build_base_conditions(filters):
-    conditions = ""
-    values     = {}
-
+    conditions, values = "", {}
     if filters.get("company"):
         conditions += " AND ela.company = %(company)s"
         values["company"] = filters["company"]
-
     if filters.get("employee"):
         conditions += " AND ela.employee = %(employee)s"
         values["employee"] = filters["employee"]
-
     return conditions, values
 
 
-# ------------------------------------------------------------------ #
-#  Main data                                                           #
-# ------------------------------------------------------------------ #
-
 def get_data(filters):
     base_conditions, values = build_base_conditions(filters)
-
     selected_month = filters.get("month")
     selected_year  = filters.get("year")
     selected_label = f"{selected_month} {selected_year}" if selected_month and selected_year else None
@@ -113,29 +84,20 @@ def get_data(filters):
             ela.amount                                                AS total_loan,
             COALESCE(SUM(CASE
                 WHEN elass.is_deducted = 1 {recovered_condition}
-                THEN elass.deduction_amount
-                ELSE 0
+                THEN elass.deduction_amount ELSE 0
             END), 0)                                                  AS recovered_this_month,
             ela.amount - COALESCE(SUM(CASE
                 WHEN elass.is_deducted = 1
-                THEN elass.deduction_amount
-                ELSE 0
+                THEN elass.deduction_amount ELSE 0
             END), 0)                                                  AS loan_balance
-        FROM
-            `tabEmployee Loan Advance` ela
-        LEFT JOIN
-            `tabEmployee Loan Advance Schedule` elass ON elass.parent = ela.name
-        WHERE
-            ela.type = 'Loan'
-            AND ela.docstatus = 1
-            {base_conditions}
-        GROUP BY
-            ela.name, ela.employee, ela.full_name, ela.amount
-        ORDER BY
-            ela.employee ASC, ela.name ASC
+        FROM `tabEmployee Loan Advance` ela
+        LEFT JOIN `tabEmployee Loan Advance Schedule` elass ON elass.parent = ela.name
+        WHERE ela.type = 'Loan' AND ela.docstatus = 1
+              {base_conditions}
+        GROUP BY ela.name, ela.employee, ela.full_name, ela.amount
+        ORDER BY ela.employee ASC, ela.name ASC
         """,
-        values,
-        as_dict=True
+        values, as_dict=True
     )
 
     if not rows:
@@ -147,151 +109,181 @@ def get_data(filters):
     if not rows:
         return []
 
-    # Calculate grand totals
+    # add serial numbers
+    for i, r in enumerate(rows, 1):
+        r["sr_no"] = i
+
     grand_loan      = sum(r.total_loan           or 0 for r in rows)
     grand_recovered = sum(r.recovered_this_month or 0 for r in rows)
     grand_balance   = sum(r.loan_balance         or 0 for r in rows)
 
     rows.append({
-        "employee":             "TOTAL",
-        "employee_name":        "",
-        "loan_advance_id":      "",
-        "total_loan":           round(grand_loan,      2),
-        "recovered_this_month": round(grand_recovered, 2),
-        "loan_balance":         round(grand_balance,   2),
+        "sr_no":               "",
+        "employee":            "",
+        "employee_name":       "Total",
+        "loan_advance_id":     "",
+        "total_loan":          round(grand_loan,      2),
+        "recovered_this_month":round(grand_recovered, 2),
+        "loan_balance":        round(grand_balance,   2),
+        "bold":                1,
     })
-
     return rows
 
 
-# ------------------------------------------------------------------ #
-#  PDF helpers                                                         #
-# ------------------------------------------------------------------ #
+# ---------------------------------------------------------------------------
+# HTML builder — Other Bank Advice structure
+# ---------------------------------------------------------------------------
 
 _CSS = """<style>
 *{margin:0;padding:0;box-sizing:border-box}
-body{font-family:Arial,sans-serif;font-size:16px;color:#000;background:#fff}
-.hdr{text-align:center;border-bottom:2px solid #000;padding:10px 6px 6px;margin-bottom:6px}
-.hdr .co{font-size:28px;font-weight:900;letter-spacing:1px;text-transform:uppercase}
-.hdr .ttl{font-size:20px;font-weight:700;margin-top:2px}
-.hdr .per{font-size:16px;margin-top:2px}
-.sig{display:flex;justify-content:space-between;margin-top:16px;padding-top:8px}
-.sig-b{text-align:center;width:180px}
-.sig-l{border-top:1px solid #000;margin-bottom:4px}
-.sig-t{font-size:15px;color:#333}
-table{width:100%;border-collapse:collapse;margin-top:8px}
-th{border:1px solid #000;padding:10px 12px;font-size:16px;font-weight:700;background:#f0f0f0;color:#000;white-space:nowrap;text-align:left}
-td{border:1px solid #000;padding:10px 12px;font-size:16px;vertical-align:middle;color:#000;text-align:left}
-tr.tot td{background:#e8e8e8;font-weight:700}
-.nd{text-align:center;padding:10px;color:#888;font-size:16px}
+body{font-family:Arial,sans-serif;font-size:10px;color:#000;background:#fff}
+.hdr{text-align:center;border-bottom:2px solid #000;padding:6px 6px 5px;margin-bottom:4px;}
+.hdr .co{font-size:18px;font-weight:900;letter-spacing:1px;text-transform:uppercase}
+.hdr .ttl{font-size:13px;font-weight:700;margin-top:2px}
+.hdr .per{font-size:11px;margin-top:2px}
+.cont-hdr{text-align:center;font-size:9px;color:#555;margin-bottom:3px;border-bottom:1px solid #000;padding-bottom:2px;}
+table.data-tbl{width:100%;border-collapse:collapse;table-layout:fixed;}
+table.data-tbl th{border:1px solid #000;padding:4px 6px;font-size:10px;font-weight:700;background:#f0f0f0;color:#000;white-space:nowrap;text-align:center;vertical-align:middle;}
+table.data-tbl td{border:1px solid #000;padding:4px 6px;font-size:10px;vertical-align:middle;}
+.nd{text-align:center;padding:14px;color:#888;font-size:10px}
+.pg-foot{text-align:right;font-size:8.5px;color:#555;margin-top:2px;}
+.sig{display:flex;justify-content:space-between;width:100%;margin-top:18px;padding-top:6px;}
+.sig-b{text-align:center;width:170px}
+.sig-l{border-top:1px solid #000;margin-bottom:3px}
+.sig-t{font-size:10px;color:#333}
+.sig-d{font-size:9px;color:#555;margin-top:5px}
 </style>"""
 
-_SIG = '<div class="sig">' + "".join(
-    f'<div class="sig-b"><div class="sig-l"></div><div class="sig-t">{l}</div></div>'
-    for l in ["Prepared By", "Checked By", "Authorised Signatory"]
-) + '</div>'
+_NUMERIC = {"total_loan", "recovered_this_month", "loan_balance"}
+
+
+def _sig_html():
+    labels = ["Prepared By", "Checked By", "Authorised Signatory"]
+    blocks = "".join(
+        '<div class="sig-b"><div class="sig-l"></div>'
+        '<div class="sig-t">{l}</div>'
+        '<div class="sig-d">Date: ___________</div></div>'.format(l=l)
+        for l in labels
+    )
+    return '<div class="sig">{}</div>'.format(blocks)
 
 
 def _fmt(v):
-    if v is None or v == "":
-        return ""
-    try:
-        return f"{float(v):,.2f}"
-    except (TypeError, ValueError):
-        return str(v)
+    if v is None or v == "": return ""
+    try: return "{:,.2f}".format(float(v))
+    except: return str(v)
 
 
-def _build_html(cols, data, co, title, mo, yr):
-    hdr = (
-        f'<div class="hdr">'
-        f'<div class="co">{co}</div>'
-        f'<div class="ttl">{title}</div>'
-        f'<div class="per">For the Month of {mo} {yr}</div>'
-        f'</div>'
-    )
+def _build_html(cols, data, co, mo, yr):
+    col_pct = {
+        "sr_no":               "4%",
+        "employee":            "12%",
+        "employee_name":       "28%",
+        "loan_advance_id":     "20%",
+        "total_loan":          "12%",
+        "recovered_this_month":"12%",
+        "loan_balance":        "12%",
+    }
+    cg = "<colgroup>" + "".join(
+        '<col style="width:{w};"/>'.format(w=col_pct.get(c["fieldname"], "12%"))
+        for c in cols
+    ) + "</colgroup>"
 
-    def _th():
-        return "<tr>" + "".join(f'<th>{c.get("label","")}</th>' for c in cols) + "</tr>"
+    period = "For the Month of {mo} {yr}".format(mo=mo, yr=yr) if mo and yr else ("For the Year {yr}".format(yr=yr) if yr else "All Records")
 
-    def _dr(row):
-        h = "<tr>"
+    page1_hdr = (
+        '<div class="hdr"><div class="co">{co}</div>'
+        '<div class="ttl">Loan Register</div>'
+        '<div class="per">{period}</div></div>'
+    ).format(co=co, period=period)
+
+    cont_hdr = (
+        '<div class="cont-hdr">{co} &mdash; Loan Register &mdash; {period} (contd.)</div>'
+    ).format(co=co, period=period)
+
+    TH = "border:{B};padding:4px 6px;font-size:10px;font-weight:700;background:#f0f0f0;text-align:center;vertical-align:middle;".format(B=B)
+    header_tr = "<tr>" + "".join(
+        '<th style="{th}">{lbl}</th>'.format(th=TH, lbl=c["label"]) for c in cols
+    ) + "</tr>"
+
+    def _row_html(row, idx):
+        is_tot = bool(row.get("bold"))
+        bg     = "#e8e8e8" if is_tot else ("#f9f9f9" if idx % 2 else "#ffffff")
+        fw     = "font-weight:700;" if is_tot else ""
+        html   = "<tr>"
         for c in cols:
-            val = row.get(c.get("fieldname", ""), "")
-            h += f'<td>{_fmt(val) if isinstance(val, (int, float)) else (val or "")}</td>'
-        return h + "</tr>"
-
-    def _tr(row):
-        amount_cols = {"total_loan", "recovered_this_month", "loan_balance"}
-        h = '<tr class="tot">'
-        for c in cols:
-            fn = c.get("fieldname", "")
-            if fn == "employee":
-                h += "<td>TOTAL</td>"
-            elif fn in amount_cols:
-                h += f'<td>{_fmt(row.get(fn, ""))}</td>'
+            fn  = c["fieldname"]
+            val = row.get(fn, "")
+            if fn == "sr_no":
+                html += '<td style="border:{B};text-align:center;background:{bg};font-size:9px;color:#555;{fw}">{v}</td>'.format(
+                    B=B, bg=bg, fw=fw, v="" if val == "" else val)
+            elif fn in _NUMERIC:
+                html += '<td style="border:{B};text-align:right;background:{bg};{fw}">{v}</td>'.format(
+                    B=B, bg=bg, fw=fw, v=_fmt(val) if val not in ("", None) else "")
             else:
-                h += "<td></td>"
-        return h + "</tr>"
+                html += '<td style="border:{B};text-align:left;background:{bg};{fw}">{v}</td>'.format(
+                    B=B, bg=bg, fw=fw, v=val or "")
+        html += "</tr>"
+        return html
 
-    detail_rows = [r for r in data if r.get("employee") != "TOTAL"]
-    total_row   = next((r for r in data if r.get("employee") == "TOTAL"), None)
-    ncols       = len(cols) or 1
+    def _page_table(rows, start_idx):
+        tbody = "<tbody>" + "".join(
+            _row_html(row, start_idx + j) for j, row in enumerate(rows)
+        ) + "</tbody>"
+        return '<table class="data-tbl">{cg}<thead>{hdr}</thead>{tbody}</table>'.format(
+            cg=cg, hdr=header_tr, tbody=tbody)
 
-    if not detail_rows:
-        return (
-            f'<!DOCTYPE html><html><head><meta charset="UTF-8">{_CSS}</head>'
-            f'<body>{hdr}'
-            f'<table><thead>{_th()}</thead>'
-            f'<tbody><tr><td colspan="{ncols}" class="nd">No data for this period</td></tr>'
-            f'</tbody></table>{_SIG}</body></html>'
-        )
+    emp_rows = [r for r in data if not r.get("bold")]
+    tot_rows = [r for r in data if r.get("bold")]
 
-    FIRST, OTHER = 20, 25
-    pages, idx, first = [], 0, True
-    while idx < len(detail_rows):
-        lim = FIRST if first else OTHER
-        pages.append(detail_rows[idx: idx + lim])
-        idx += lim
-        first = False
+    if not emp_rows:
+        pages, has_data = [[]], False
+    else:
+        has_data = True
+        pages, idx, first = [], 0, True
+        while idx < len(emp_rows):
+            lim = ROWS_FIRST_PAGE if first else ROWS_OTHER_PAGE
+            pages.append(emp_rows[idx: idx + lim])
+            idx += lim; first = False
+        if tot_rows:
+            pages[-1] = pages[-1] + tot_rows
 
-    html = ""
-    for pn, pr in enumerate(pages):
-        last = (pn == len(pages) - 1)
-        if pn > 0:
-            html += '<div style="page-break-before:always;"></div>'
-        html += hdr
-        html += f'<tr><thead>{_th()}</thead><tbody>'
-        for row in pr:
-            html += _dr(row)
-        if last and total_row:
-            html += _tr(total_row)
-        html += '</tbody></table>'
+    total_pages = len(pages)
+    parts, row_counter = [], 0
 
-    html += _SIG
-    return f'<!DOCTYPE html><html><head><meta charset="UTF-8">{_CSS}</head><body>{html}</body></html>'
+    for pn, page_rows in enumerate(pages):
+        pb       = '<div style="page-break-before:always;"></div>' if pn > 0 else ""
+        is_last  = (pn == total_pages - 1)
+        page_hdr = page1_hdr if pn == 0 else cont_hdr
+
+        if not has_data:
+            nc  = len(cols)
+            tbl = '<table class="data-tbl">{cg}<thead>{hdr}</thead><tbody><tr><td colspan="{nc}" class="nd">No data for this period</td></tr></tbody></table>'.format(
+                cg=cg, hdr=header_tr, nc=nc)
+        else:
+            tbl = _page_table(page_rows, row_counter)
+            row_counter += len([r for r in page_rows if not r.get("bold")])
+
+        pg_foot = '<div class="pg-foot">Page {p} of {t}</div>'.format(p=pn+1, t=total_pages)
+        sig     = _sig_html() if is_last else ""
+        parts.append("{pb}{hdr}{tbl}{foot}{sig}".format(pb=pb, hdr=page_hdr, tbl=tbl, foot=pg_foot, sig=sig))
+
+    return '<!DOCTYPE html><html><head><meta charset="UTF-8">{css}</head><body>{body}</body></html>'.format(
+        css=_CSS, body="".join(parts))
 
 
 def _save_pdf(html, prefix):
     pdf = get_pdf(html, options={
-        "page-size":     "A4",
-        "orientation":   "Landscape",
-        "margin-top":    "8mm",
-        "margin-right":  "8mm",
-        "margin-bottom": "8mm",
-        "margin-left":   "8mm",
-        "encoding":      "UTF-8",
-        "no-outline":    None,
+        "page-size": "A4", "orientation": "Landscape",
+        "margin-top": "7mm", "margin-right": "6mm",
+        "margin-bottom": "9mm", "margin-left": "6mm",
+        "encoding": "UTF-8", "no-outline": None,
     })
     ts  = frappe.utils.now_datetime().strftime("%Y%m%d_%H%M%S")
-    fn  = f"{prefix}_{ts}.pdf"
+    fn  = "{prefix}_{ts}.pdf".format(prefix=prefix, ts=ts)
     with open(frappe.utils.get_files_path(fn, is_private=0), "wb") as fh:
         fh.write(pdf)
-    doc = frappe.get_doc({
-        "doctype":    "File",
-        "file_name":  fn,
-        "is_private": 0,
-        "file_url":   f"/files/{fn}",
-    })
+    doc = frappe.get_doc({"doctype": "File", "file_name": fn, "is_private": 0, "file_url": "/files/{fn}".format(fn=fn)})
     doc.insert(ignore_permissions=True)
     frappe.db.commit()
     return doc.file_url
@@ -301,13 +293,6 @@ def _save_pdf(html, prefix):
 def print_report(filters):
     if isinstance(filters, str):
         filters = json.loads(filters)
-
     cols, data = execute(filters)
-
-    co    = filters.get("company", "")
-    mo    = filters.get("month",   "")
-    yr    = filters.get("year",    "")
-    title = "Loan Register"
-
-    html = _build_html(cols, data, co, title, mo, yr)
+    html = _build_html(cols, data, filters.get("company", ""), filters.get("month", ""), filters.get("year", ""))
     return _save_pdf(html, "Loan_Register")

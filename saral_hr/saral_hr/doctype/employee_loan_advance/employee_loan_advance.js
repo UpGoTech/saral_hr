@@ -298,61 +298,152 @@ function apply_deferral(frm, cdt, cdn, emi) {
     const row = locals[cdt][cdn];
     const actual_emi = row.deduction_amount;
 
-    const month_options = frm.doc.schedule
-        .filter(r => r.name !== cdn && !r.is_deducted)
-        .map(r => r.month);
+    const MONTHS = ['January','February','March','April','May','June',
+                    'July','August','September','October','November','December'];
+    const YEARS  = ['2023','2024','2025','2026','2027'];
 
-    if (!month_options.length) {
-        frappe.msgprint({
-            title: __('No Months Available'),
-            indicator: 'orange',
-            message: __('There are no pending installments available to defer this amount to.')
-        });
-        _reverting_deferred = true;
-        frappe.model.set_value(cdt, cdn, 'is_deferred', 0);
-        _reverting_deferred = false;
-        return;
-    }
+    // Pre-select current month/year as default
+    const now = new Date();
+    let selected_year  = String(now.getFullYear());
+    let selected_month = MONTHS[now.getMonth()];
 
-    frappe.prompt([{
-        fieldname: 'deferred_to',
-        fieldtype: 'Select',
-        label: __('Select month to defer to'),
-        options: month_options.join('\n'),
-        reqd: 1
-    }],
-        function (values) {
-            const target_month = values.deferred_to;
+    const d = new frappe.ui.Dialog({
+        title: __('Select Defer Month'),
+        fields: [
+            {
+                fieldtype: 'HTML',
+                fieldname: 'picker_html',
+                options: `
+                <div id="defer-picker" style="padding:4px 0 8px">
+
+                  <div style="margin-bottom:14px">
+                    <label style="font-size:12px;color:#888;display:block;margin-bottom:6px">
+                      Year <span style="color:red">*</span>
+                    </label>
+                    <div style="display:flex;gap:8px;flex-wrap:wrap" id="year-btns">
+                      ${YEARS.map(y => `
+                        <button
+                          data-year="${y}"
+                          class="defer-year-btn"
+                          style="
+                            padding:6px 16px;border-radius:4px;
+                            border:1px solid #d1d8dd;
+                            background:${y === selected_year ? '#171717' : '#fff'};
+                            color:${y === selected_year ? '#fff' : '#333'};
+                            cursor:pointer;font-size:13px;font-weight:500;
+                          "
+                        >${y}</button>
+                      `).join('')}
+                    </div>
+                  </div>
+
+                  <div>
+                    <label style="font-size:12px;color:#888;display:block;margin-bottom:6px">
+                      Month <span style="color:red">*</span>
+                    </label>
+                    <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px" id="month-btns">
+                      ${MONTHS.map(m => `
+                        <button
+                          data-month="${m}"
+                          class="defer-month-btn"
+                          style="
+                            padding:6px 4px;border-radius:4px;
+                            border:1px solid #d1d8dd;
+                            background:${m === selected_month ? '#171717' : '#fff'};
+                            color:${m === selected_month ? '#fff' : '#333'};
+                            cursor:pointer;font-size:12px;
+                          "
+                        >${m.slice(0,3)}</button>
+                      `).join('')}
+                    </div>
+                  </div>
+
+                </div>`
+            }
+        ],
+        primary_action_label: __('Confirm'),
+        primary_action() {
+            const target_month = `${selected_month} ${selected_year}`;
+
+            d.hide();
 
             if (!frm.doc.__deferred_amounts) frm.doc.__deferred_amounts = {};
             frm.doc.__deferred_amounts[cdn] = actual_emi;
 
+            // Mark current row as deferred with 0 amount
             frappe.model.set_value(cdt, cdn, 'deferred_to', target_month);
             frappe.model.set_value(cdt, cdn, 'deduction_amount', 0);
 
-            const target_row = frm.doc.schedule.find(r => r.month === target_month);
-            if (target_row) {
-                const new_target_amt = Math.round((target_row.deduction_amount + actual_emi) * 100) / 100;
-                
+            if (frm.doc.__saved_schedule_amounts) {
+                frm.doc.__saved_schedule_amounts[cdn] = 0;
+            }
+
+            // Check if target month already exists in schedule
+            const existing_row = frm.doc.schedule.find(r => r.month === target_month);
+
+            if (existing_row) {
+                // Add to existing row's amount
+                const new_amt = Math.round((existing_row.deduction_amount + actual_emi) * 100) / 100;
+                _auto_adjusted_rows.add(existing_row.name);
                 frappe.model.set_value(
                     'Employee Loan Advance Schedule',
-                    target_row.name,
+                    existing_row.name,
                     'deduction_amount',
-                    new_target_amt
+                    new_amt
                 );
-
-                // ✅ FIX: Snapshot update — warna February edit karo to difference galat calculate hoga
                 if (frm.doc.__saved_schedule_amounts) {
-                    frm.doc.__saved_schedule_amounts[cdn] = 0;
-                    frm.doc.__saved_schedule_amounts[target_row.name] = new_target_amt;
+                    frm.doc.__saved_schedule_amounts[existing_row.name] = new_amt;
+                }
+            } else {
+                // Add a NEW row for the selected month with same EMI amount
+                const new_row = frm.add_child('schedule');
+                new_row.month           = target_month;
+                new_row.deduction_amount = actual_emi;
+                new_row.is_deducted     = 0;
+                new_row.is_deferred     = 0;
+                new_row.deferred_to     = '';
+
+                if (frm.doc.__saved_schedule_amounts) {
+                    frm.doc.__saved_schedule_amounts[new_row.name] = actual_emi;
                 }
             }
 
             frm.refresh_field('schedule');
-        },
-        __('Select Defer Month'), __('Confirm'));
-}
 
+            frappe.show_alert({
+                message: __(`Deferred ₹${actual_emi} to ${target_month}`),
+                indicator: 'green'
+            }, 5);
+        }
+    });
+
+    d.show();
+
+    // Wire up button clicks AFTER dialog is in the DOM
+    setTimeout(() => {
+        d.$wrapper.find('.defer-year-btn').on('click', function () {
+            selected_year = $(this).data('year');
+            d.$wrapper.find('.defer-year-btn').each(function () {
+                const active = $(this).data('year') === selected_year;
+                $(this).css({
+                    background: active ? '#171717' : '#fff',
+                    color:      active ? '#fff'    : '#333'
+                });
+            });
+        });
+
+        d.$wrapper.find('.defer-month-btn').on('click', function () {
+            selected_month = $(this).data('month');
+            d.$wrapper.find('.defer-month-btn').each(function () {
+                const active = $(this).data('month') === selected_month;
+                $(this).css({
+                    background: active ? '#171717' : '#fff',
+                    color:      active ? '#fff'    : '#333'
+                });
+            });
+        });
+    }, 100);
+}
 // ================================================================== //
 //  Auto Adjust Next Month — NEW                                      //
 // ================================================================== //

@@ -17,37 +17,69 @@ MONTH_MAP = {
 
 B = "1px solid #000"
 
+# ── Rows per page (same conservative strategy as MAR / LWF / Bank Advice) ──
+ROWS_FIRST_PAGE = 21
+ROWS_OTHER_PAGE = 23
+
 _CSS = """<style>
 *{margin:0;padding:0;box-sizing:border-box}
 body{font-family:Arial,sans-serif;font-size:10px;color:#000;background:#fff}
-.hdr{text-align:center;border-bottom:2px solid #000;padding:8px 4px 6px;margin-bottom:6px}
+
+/* ── Page-1 header (matches Monthly Attendance Report) ── */
+.hdr{text-align:center;border-bottom:2px solid #000;padding:6px 6px 5px;margin-bottom:4px;}
 .hdr .co{font-size:18px;font-weight:900;letter-spacing:1px;text-transform:uppercase}
-.hdr .ttl{font-size:13px;font-weight:700;margin-top:3px}
+.hdr .ttl{font-size:13px;font-weight:700;margin-top:2px}
 .hdr .per{font-size:11px;margin-top:2px}
-.sig{display:flex;justify-content:space-between;margin-top:24px;padding-top:6px}
-.sig-b{text-align:center;width:160px}
+
+/* ── Continuation header ── */
+.cont-hdr{
+    text-align:center;font-size:9px;color:#555;
+    margin-bottom:3px;border-bottom:1px solid #000;padding-bottom:2px;
+}
+
+/* ── Data table ── */
+table.data-tbl{width:100%;border-collapse:collapse;table-layout:fixed;}
+table.data-tbl th{
+    border:1px solid #000;padding:4px 6px;font-size:10px;font-weight:700;
+    background:#f0f0f0;color:#000;white-space:nowrap;
+    text-align:center;vertical-align:middle;
+}
+table.data-tbl td{
+    border:1px solid #000;padding:4px 6px;font-size:10px;vertical-align:middle;
+}
+tr.tot td{background:#e8e8e8;font-weight:700;}
+
+.nd{text-align:center;padding:14px;color:#888;font-size:10px}
+.hold{color:#c0392b;font-style:italic}
+
+/* ── Page footer ── */
+.pg-foot{text-align:right;font-size:8.5px;color:#555;margin-top:2px;}
+
+/* ── Signatures ── */
+.sig{display:flex;justify-content:space-between;width:100%;margin-top:18px;padding-top:6px;}
+.sig-b{text-align:center;width:170px}
 .sig-l{border-top:1px solid #000;margin-bottom:3px}
 .sig-t{font-size:10px;color:#333}
-table{width:100%;border-collapse:collapse;margin-top:6px}
-th{border:1px solid #000;padding:5px 7px;font-size:10px;font-weight:700;background:#f0f0f0;color:#000;white-space:nowrap}
-td{border:1px solid #000;padding:5px 7px;font-size:10px;vertical-align:middle;color:#000}
-tr.tot td{background:#e8e8e8;font-weight:700}
-.r{text-align:right}.l{text-align:left}
-.nd{text-align:center;padding:18px;color:#888;font-size:10px}
-.hold{color:#c0392b;font-style:italic}
+.sig-d{font-size:9px;color:#555;margin-top:5px}
 </style>"""
-
-_SIG = '<div class="sig">' + "".join(
-    f'<div class="sig-b"><div class="sig-l"></div><div class="sig-t">{l}</div></div>'
-    for l in ["Prepared By", "Checked By", "Authorised Signatory"]
-) + '</div>'
-
-_NUMERIC_FN = {"net_salary"}
 
 
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
+def _sig_html():
+    labels = ["Prepared By", "Checked By", "Authorised Signatory"]
+    blocks = "".join(
+        '<div class="sig-b">'
+        '<div class="sig-l"></div>'
+        '<div class="sig-t">{l}</div>'
+        '<div class="sig-d">Date: ___________</div>'
+        '</div>'.format(l=l)
+        for l in labels
+    )
+    return '<div class="sig">{}</div>'.format(blocks)
+
 
 def _parse_list(v):
     if not v: return []
@@ -66,7 +98,10 @@ def _date_range(f):
     y = int(f.get("year", 0) or 0)
     if not m or not y:
         return None, None
-    return f"{y}-{m:02d}-01", f"{y}-{m:02d}-{calendar.monthrange(y, m)[1]:02d}"
+    return (
+        "{y}-{m:02d}-01".format(y=y, m=m),
+        "{y}-{m:02d}-{d:02d}".format(y=y, m=m, d=calendar.monthrange(y, m)[1]),
+    )
 
 def _company_label(f):
     c = _parse_list(f.get("company"))
@@ -74,11 +109,10 @@ def _company_label(f):
 
 def _fmt(v):
     if v is None or v == "": return ""
-    try: return f"{float(v):,.2f}"
+    try: return "{:,.2f}".format(float(v))
     except (TypeError, ValueError): return str(v)
 
 def _bank_map(cos):
-    """Map company → home bank_name (lowercase stripped)."""
     if not cos: return {}
     return {
         r.name: (r.bank_name or "").strip().lower()
@@ -104,17 +138,18 @@ def _on_hold(f):
 
 
 # ---------------------------------------------------------------------------
-# Core data function  (mode = "other")
+# Core data function
 # ---------------------------------------------------------------------------
 
 def _get_data(f):
     cols = [
-        _col("Employee ID",    "employee_id",    w=150),
-        _col("Employee Name",  "employee_name",  w=280),
-        _col("IFSC Code",      "ifsc_code",      w=200),
-        _col("Account Number", "account_number", w=280),
+        _col("Sr",             "sr_no",          "Int",   55),
+        _col("Employee ID",    "employee_id",    "Data", 140),
+        _col("Employee Name",  "employee_name",  "Data", 260),
+        _col("IFSC Code",      "ifsc_code",      "Data", 190),
+        _col("Account Number", "account_number", "Data", 260),
         _col("Net Salary",     "net_salary",     "Data", 120),
-        _col("Bank Name",      "bank_name",      w=190),
+        _col("Bank Name",      "bank_name",      "Data", 180),
     ]
 
     if not f.get("company"):
@@ -158,40 +193,40 @@ def _get_data(f):
         )
 
     slips = frappe.db.sql(
-        f"""
-        SELECT ss.employee, ss.employee_name, ss.company, ss.net_salary,
-               emp.bank_name, emp.account_number, emp.ifsc_code
-        FROM `tabSalary Slip` ss
-        INNER JOIN `tabCompany Link` cla ON cla.name=ss.employee AND cla.is_active=1
-        LEFT JOIN `tabEmployee` emp ON emp.name=ss.employee
-        {catj}
-        WHERE {cond}{divc}
-        ORDER BY ss.employee_name
-        """,
+        "SELECT ss.employee, ss.employee_name, ss.company, ss.net_salary,"
+        "       emp.bank_name, emp.account_number, emp.ifsc_code"
+        " FROM `tabSalary Slip` ss"
+        " INNER JOIN `tabCompany Link` cla ON cla.name=ss.employee AND cla.is_active=1"
+        " LEFT JOIN `tabEmployee` emp ON emp.name=ss.employee"
+        " {catj}"
+        " WHERE {cond}{divc}"
+        " ORDER BY ss.employee_name".format(catj=catj, cond=cond, divc=divc),
         p, as_dict=1
     )
 
     if not slips:
         return cols, []
 
-    oh  = _on_hold(f)
-    hm  = _bank_map(list({sl.company for sl in slips if sl.company}))
+    oh = _on_hold(f)
+    hm = _bank_map(list({sl.company for sl in slips if sl.company}))
 
     data = []
     tot  = 0.0
+    sr   = 0
 
     for sl in slips:
         eb = (sl.bank_name or "").strip().lower()
         hb = hm.get(sl.company, "")
 
         # Other bank: employee's bank does NOT match company's home bank
-        # (also includes employees with no bank set on company, i.e. hb is empty)
         is_home = hb and eb == hb
         if is_home:
             continue
 
+        sr += 1
         if sl.employee in oh:
             data.append({
+                "sr_no":          sr,
                 "employee_id":    sl.employee,
                 "employee_name":  sl.employee_name,
                 "ifsc_code":      "On Hold",
@@ -203,21 +238,23 @@ def _get_data(f):
             n = flt(sl.net_salary, 2)
             tot += n
             data.append({
+                "sr_no":          sr,
                 "employee_id":    sl.employee,
                 "employee_name":  sl.employee_name,
                 "ifsc_code":      sl.ifsc_code      or "-",
                 "account_number": sl.account_number or "-",
-                "net_salary":     f"{n:,.2f}",
+                "net_salary":     "{:,.2f}".format(n),
                 "bank_name":      sl.bank_name      or "-",
             })
 
     if data:
         data.append({
+            "sr_no":          "",
             "employee_id":    "",
             "employee_name":  "Total",
             "ifsc_code":      "",
             "account_number": "",
-            "net_salary":     f"{flt(tot, 2):,.2f}",
+            "net_salary":     "{:,.2f}".format(flt(tot, 2)),
             "bank_name":      "",
             "bold":           1,
         })
@@ -234,114 +271,180 @@ def execute(filters=None):
 
 
 # ---------------------------------------------------------------------------
-# PDF helpers
+# HTML builder — manual pagination (same strategy as MAR / LWF / Bank Advice)
+# Each page gets its own <table> with a fresh <thead>.
+# No employee row is ever split across pages.
 # ---------------------------------------------------------------------------
 
 def _build_html(cols, data, co, mo, yr):
-    title = "Other Bank Advice"
 
-    hdr = (
-        f'<div class="hdr">'
-        f'<div class="co">{co}</div>'
-        f'<div class="ttl">{title}</div>'
-        f'<div class="per">For the Month of {mo} {yr}</div>'
-        f'</div>'
+    # ── colgroup ──────────────────────────────────────────────────────────
+    col_pct = {
+        "sr_no":          "4%",
+        "employee_id":    "11%",
+        "employee_name":  "24%",
+        "ifsc_code":      "16%",
+        "account_number": "22%",
+        "net_salary":     "11%",
+        "bank_name":      "12%",
+    }
+    cg = "<colgroup>" + "".join(
+        '<col style="width:{w};"/>'.format(w=col_pct.get(c["fieldname"], "12%"))
+        for c in cols
+    ) + "</colgroup>"
+
+    # ── page-1 header ─────────────────────────────────────────────────────
+    page1_hdr = (
+        '<div class="hdr">'
+        '<div class="co">{co}</div>'
+        '<div class="ttl">Other Bank Advice</div>'
+        '<div class="per">For the Month of {mo} {yr}</div>'
+        '</div>'
+    ).format(co=co, mo=mo, yr=yr)
+
+    # ── continuation header ───────────────────────────────────────────────
+    cont_hdr = (
+        '<div class="cont-hdr">'
+        '{co} &mdash; Other Bank Advice &mdash; {mo} {yr} (contd.)'
+        '</div>'
+    ).format(co=co, mo=mo, yr=yr)
+
+    # ── column header row ─────────────────────────────────────────────────
+    TH = ("border:{B};padding:4px 6px;font-size:10px;font-weight:700;"
+          "background:#f0f0f0;text-align:center;vertical-align:middle;").format(B=B)
+    header_tr = (
+        "<tr>"
+        + "".join('<th style="{th}">{lbl}</th>'.format(th=TH, lbl=c["label"]) for c in cols)
+        + "</tr>"
     )
 
-    def _th():
-        h = "<tr>"
+    # ── single data row ───────────────────────────────────────────────────
+    def _row_html(row, idx):
+        is_tot = bool(row.get("bold"))
+        bg     = "#e8e8e8" if is_tot else ("#f9f9f9" if idx % 2 else "#ffffff")
+        fw     = "font-weight:700;" if is_tot else ""
+        html   = "<tr>"
         for c in cols:
-            is_n = c.get("fieldname") in _NUMERIC_FN or c.get("fieldtype", "") in ("Float", "Currency")
-            h += f'<th class="{"r" if is_n else "l"}">{c.get("label", "")}</th>'
-        return h + "</tr>"
-
-    def _dr(row):
-        h = "<tr>"
-        for c in cols:
-            fn  = c.get("fieldname", "")
+            fn  = c["fieldname"]
             val = row.get(fn, "")
-            if fn == "net_salary":
-                if val == "On Hold":
-                    h += '<td class="r hold">On Hold</td>'
-                else:
-                    h += f'<td class="r">{val or ""}</td>'
+
+            if fn == "sr_no":
+                html += (
+                    '<td style="border:{B};text-align:center;background:{bg};'
+                    'font-size:9px;color:#555;{fw}">{v}</td>'
+                ).format(B=B, bg=bg, fw=fw, v="" if val == "" else val)
+
+            elif fn == "net_salary" and val == "On Hold":
+                html += (
+                    '<td style="border:{B};background:{bg};text-align:right;'
+                    'color:#c0392b;font-style:italic;">On Hold</td>'
+                ).format(B=B, bg=bg)
+
+            elif fn == "net_salary":
+                html += (
+                    '<td style="border:{B};text-align:right;background:{bg};{fw}">{v}</td>'
+                ).format(B=B, bg=bg, fw=fw, v=val or "")
+
+            elif fn in ("ifsc_code", "account_number"):
+                html += (
+                    '<td style="border:{B};text-align:left;background:{bg};'
+                    'font-family:monospace;font-size:9px;{fw}">{v}</td>'
+                ).format(B=B, bg=bg, fw=fw, v=val or "")
+
             else:
-                h += f'<td class="l">{val or ""}</td>'
-        return h + "</tr>"
+                html += (
+                    '<td style="border:{B};text-align:left;background:{bg};{fw}">{v}</td>'
+                ).format(B=B, bg=bg, fw=fw, v=val or "")
 
-    def _tr(row):
-        h = '<tr class="tot">'
-        for c in cols:
-            fn   = c.get("fieldname", "")
-            is_n = fn in _NUMERIC_FN or c.get("fieldtype", "") in ("Float", "Currency")
-            if is_n:
-                h += f'<td class="r">{_fmt(row.get(fn, ""))}</td>'
-            elif fn == "employee_name":
-                h += '<td class="l">Total</td>'
-            else:
-                h += '<td class="l"></td>'
-        return h + "</tr>"
+        html += "</tr>"
+        return html
 
-    detail_rows = [r for r in data if not r.get("bold")]
-    total_row   = next((r for r in data if r.get("bold")), None)
-    ncols       = len(cols) or 1
-
-    if not detail_rows:
+    # ── page table ────────────────────────────────────────────────────────
+    def _page_table(rows, start_idx):
+        tbody = "<tbody>" + "".join(
+            _row_html(row, start_idx + j) for j, row in enumerate(rows)
+        ) + "</tbody>"
         return (
-            f'<!DOCTYPE html><html><head><meta charset="UTF-8">{_CSS}</head>'
-            f'<body>{hdr}'
-            f'<table><thead>{_th()}</thead>'
-            f'<tbody><tr><td colspan="{ncols}" class="nd">No data for this period</td></tr></tbody>'
-            f'</table>{_SIG}</body></html>'
+            '<table class="data-tbl">{cg}<thead>{hdr}</thead>{tbody}</table>'
+        ).format(cg=cg, hdr=header_tr, tbody=tbody)
+
+    # ── paginate — emp rows only; total row always on last page ──────────
+    emp_rows = [r for r in data if not r.get("bold")]
+    tot_rows = [r for r in data if r.get("bold")]
+
+    if not emp_rows:
+        pages    = [[]]
+        has_data = False
+    else:
+        has_data = True
+        pages, idx, first = [], 0, True
+        while idx < len(emp_rows):
+            lim = ROWS_FIRST_PAGE if first else ROWS_OTHER_PAGE
+            pages.append(emp_rows[idx: idx + lim])
+            idx  += lim
+            first = False
+        if tot_rows:
+            pages[-1] = pages[-1] + tot_rows
+
+    total_pages = len(pages)
+    parts       = []
+    row_counter = 0
+
+    for pn, page_rows in enumerate(pages):
+        pb      = '<div style="page-break-before:always;"></div>' if pn > 0 else ""
+        is_last = (pn == total_pages - 1)
+        page_hdr = page1_hdr if pn == 0 else cont_hdr
+
+        if not has_data:
+            nc  = len(cols)
+            tbl = (
+                '<table class="data-tbl">{cg}<thead>{hdr}</thead>'
+                '<tbody><tr><td colspan="{nc}" class="nd">'
+                'No data for this period</td></tr></tbody></table>'
+            ).format(cg=cg, hdr=header_tr, nc=nc)
+        else:
+            tbl = _page_table(page_rows, row_counter)
+            row_counter += len([r for r in page_rows if not r.get("bold")])
+
+        pg_foot = '<div class="pg-foot">Page {p} of {t}</div>'.format(
+            p=pn + 1, t=total_pages)
+        sig = _sig_html() if is_last else ""
+
+        parts.append(
+            "{pb}{hdr}{tbl}{foot}{sig}".format(
+                pb=pb, hdr=page_hdr, tbl=tbl, foot=pg_foot, sig=sig)
         )
 
-    # Paginate: 30 rows first page, 35 on subsequent pages
-    FIRST, OTHER = 30, 35
-    pages, idx, first = [], 0, True
-    while idx < len(detail_rows):
-        lim = FIRST if first else OTHER
-        pages.append(detail_rows[idx: idx + lim])
-        idx  += lim
-        first = False
+    return (
+        '<!DOCTYPE html><html><head><meta charset="UTF-8">{css}</head>'
+        '<body>{body}</body></html>'
+    ).format(css=_CSS, body="".join(parts))
 
-    html = ""
-    for pn, pr in enumerate(pages):
-        last = (pn == len(pages) - 1)
-        if pn > 0:
-            html += '<div style="page-break-before:always;"></div>'
-        html += hdr
-        html += f'<table><thead>{_th()}</thead><tbody>'
-        for row in pr:
-            html += _dr(row)
-        if last and total_row:
-            html += _tr(total_row)
-        html += '</tbody></table>'
 
-    html += _SIG
-
-    return f'<!DOCTYPE html><html><head><meta charset="UTF-8">{_CSS}</head><body>{html}</body></html>'
-
+# ---------------------------------------------------------------------------
+# PDF save
+# ---------------------------------------------------------------------------
 
 def _save_pdf(html, prefix):
     pdf = get_pdf(html, options={
         "page-size":     "A4",
         "orientation":   "Landscape",
-        "margin-top":    "8mm",
-        "margin-right":  "8mm",
-        "margin-bottom": "8mm",
-        "margin-left":   "8mm",
+        "margin-top":    "7mm",
+        "margin-right":  "6mm",
+        "margin-bottom": "9mm",
+        "margin-left":   "6mm",
         "encoding":      "UTF-8",
         "no-outline":    None,
     })
     ts  = frappe.utils.now_datetime().strftime("%Y%m%d_%H%M%S")
-    fn  = f"{prefix}_{ts}.pdf"
+    fn  = "{prefix}_{ts}.pdf".format(prefix=prefix, ts=ts)
     with open(frappe.utils.get_files_path(fn, is_private=0), "wb") as fh:
         fh.write(pdf)
     doc = frappe.get_doc({
         "doctype":    "File",
         "file_name":  fn,
         "is_private": 0,
-        "file_url":   f"/files/{fn}",
+        "file_url":   "/files/{fn}".format(fn=fn),
     })
     doc.insert(ignore_permissions=True)
     frappe.db.commit()
@@ -353,8 +456,12 @@ def print_report(filters):
     if isinstance(filters, str):
         filters = json.loads(filters)
     cols, data = _get_data(filters)
-    co   = _company_label(filters)
-    mo   = filters.get("month", "")
-    yr   = filters.get("year",  "")
-    html = _build_html(cols, data, co, mo, yr)
-    return _save_pdf(html, "Other_Bank_Advice")
+    return _save_pdf(
+        _build_html(
+            cols, data,
+            _company_label(filters),
+            filters.get("month", ""),
+            filters.get("year",  ""),
+        ),
+        "Other_Bank_Advice",
+    )

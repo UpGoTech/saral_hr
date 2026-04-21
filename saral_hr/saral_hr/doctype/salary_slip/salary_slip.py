@@ -4,12 +4,20 @@ from frappe.utils import getdate, get_last_day, flt
 import calendar
 from datetime import timedelta, date as date_type
 import json
+from decimal import Decimal, ROUND_HALF_UP
 from PyPDF2 import PdfMerger
 import os
 
 BULK_PRINT_FORMAT = "Salary Slip Custom"
 
 ATTENDANCE_ALLOWANCE_COMPONENT = "Attendance Allowance"
+
+
+def _round_net_salary(value):
+    """Round net salary to nearest whole number using half-up rounding.
+    >= 0.5 rounds up, < 0.5 rounds down. e.g. 100.5 -> 101, 100.4 -> 100.
+    """
+    return int(Decimal(str(flt(value, 2))).quantize(Decimal("1"), rounding=ROUND_HALF_UP))
 
 
 class SalarySlip(Document):
@@ -496,7 +504,8 @@ def calculate_salary_slip_amounts_exact(
 
     salary_slip.total_earnings              = flt(total_earnings, 2)
     salary_slip.total_deductions            = flt(total_deductions, 2)
-    salary_slip.net_salary                  = flt(total_earnings - total_deductions, 2)
+    # ── Net salary: round half-up to nearest whole number ────────────────────
+    salary_slip.net_salary                  = _round_net_salary(total_earnings - total_deductions)
     salary_slip.total_basic_da              = flt(basic_amount + da_amount, 2)
     salary_slip.total_employer_contribution = flt(total_employer_contribution, 2)
     salary_slip.retention                   = flt(retention, 2)
@@ -903,7 +912,7 @@ def get_attendance_and_days(employee, start_date, working_days_calculation_metho
         working_days = total_days
         payment_days = flt(total_days - total_unpaid, 2)
     else:
-        working_days = total_days - weekly_off_count - holiday_count_in_range
+        working_days = total_days - weekly_off_count
         working_days = max(working_days, 0)
         payment_days = flt(working_days - total_unpaid, 2)
 
@@ -1136,8 +1145,8 @@ def bulk_generate_salary_slips(employees, year, month):
             ss.salary_structure = sd.get('salary_structure'); ss.working_days_calculation_method = wdcm
 
             ss.month_days              = att.get('total_days', 0)
-            ss.total_weekly_off_days   = att.get('total_weekly_off_days', 0)  # full month weekly offs
-            ss.weekly_offs_taken       = att.get('weekly_offs_taken', 0)       # attendance marked as Weekly Off
+            ss.total_weekly_off_days   = att.get('total_weekly_off_days', 0)
+            ss.weekly_offs_taken       = att.get('weekly_offs_taken', 0)
             ss.total_working_days      = att.get('working_days')
             ss.payment_days            = att.get('payment_days')
             ss.physical_working_days   = att.get('physical_working_days')

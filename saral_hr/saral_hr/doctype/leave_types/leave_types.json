@@ -9,15 +9,11 @@
  "field_order": [
   "leave_type",
   "abbr",
-  "column_break_basic",
-  "is_carry_forward",
-  "is_lwp",
-  "is_earned_leave",
-  "is_comp_off",
-  "allow_encashment",
-  "section_break_limits",
   "max_days_allowed",
-  "max_consecutive_days"
+  "column_break_sgrq",
+  "carry_forward",
+  "encashable",
+  "description"
  ],
  "fields": [
   {
@@ -36,70 +32,42 @@
    "reqd": 1
   },
   {
-   "fieldname": "column_break_basic",
-   "fieldtype": "Column Break"
-  },
-  {
-   "default": "0",
-   "description": "Unused leaves carry forward to next year. ",
-   "fieldname": "is_carry_forward",
-   "fieldtype": "Check",
-   "in_list_view": 1,
-   "label": "Is Carry Forward"
-  },
-  {
-   "default": "0",
-   "description": "Taking this leave results in Loss of Pay.",
-   "fieldname": "is_lwp",
-   "fieldtype": "Check",
-   "in_list_view": 1,
-   "label": "Is Leave Without Pay"
-  },
-  {
-   "default": "0",
-   "description": "Mark as Earned Leave. Allocated yearly in January.",
-   "fieldname": "is_earned_leave",
-   "fieldtype": "Check",
-   "in_list_view": 1,
-   "label": "Is Earned Leave"
-  },
-  {
-   "default": "0",
-   "description": "Mark as Comp Off. Auto-allocated from Attendance at month end. Valid from next month, expires in 3 months. ",
-   "fieldname": "is_comp_off",
-   "fieldtype": "Check",
-   "in_list_view": 1,
-   "label": "Is Comp Off"
-  },
-  {
-   "default": "0",
-   "description": "Unused Comp Off can be compensated (paid out) in salary.",
-   "fieldname": "allow_encashment",
-   "fieldtype": "Check",
-   "in_list_view": 1,
-   "label": "Allow Encashment"
-  },
-  {
-   "fieldname": "section_break_limits",
-   "fieldtype": "Section Break",
-   "label": "Limits"
-  },
-  {
    "description": "Maximum total leaves of this type per year. Leave blank for no limit.",
    "fieldname": "max_days_allowed",
    "fieldtype": "Int",
+   "in_list_view": 1,
    "label": "Max Days Allowed Per Year"
   },
   {
-   "description": "Maximum consecutive days per single application. Leave blank for no limit.",
-   "fieldname": "max_consecutive_days",
-   "fieldtype": "Int",
-   "label": "Max Consecutive Days Per Application"
+   "default": "0",
+   "description": "Allow unused leaves to carry forward to next year",
+   "fieldname": "carry_forward",
+   "fieldtype": "Check",
+   "in_list_view": 1,
+   "label": "Carry Forward"
+  },
+  {
+   "default": "0",
+   "description": "Allow unused leaves to be encashed",
+   "fieldname": "encashable",
+   "fieldtype": "Check",
+   "in_list_view": 1,
+   "label": "Encashable"
+  },
+  {
+   "fieldname": "description",
+   "fieldtype": "Small Text",
+   "in_list_view": 1,
+   "label": "Description"
+  },
+  {
+   "fieldname": "column_break_sgrq",
+   "fieldtype": "Column Break"
   }
  ],
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-03-23 17:44:30.476136",
+ "modified": "2026-04-16 00:57:05.253003",
  "modified_by": "Administrator",
  "module": "Saral Hr",
  "name": "Leave Types",
