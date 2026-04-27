@@ -30,32 +30,34 @@ B = "1px solid #000"
 #   "doj_dob"   → DOJ / DOB            (stacked, separate column)
 #   "pf_uan"    → PF No. / UAN No.     (stacked, single column)
 #   "wd_pd"     → WD / PD              (stacked)
+#   "pf_type"   → PF Type              (from pf_applicable)
 #   EDLI & PF Admin widths reduced (values are small)
 # ---------------------------------------------------------------------------
 
 _COLS = [
-    ("sr",            "Sr",              "c",  2.5),
-    ("employee",      "Employee",        "l", 12.0),  # Name + ID stacked
-    ("doj_dob",       "DOJ / DOB",       "c",  7.5),  # DOJ stacked over DOB
-    ("pf_uan",        "PF No. / UAN No.","c",  9.5),  # PF No. stacked over UAN No.
-    ("wd_pd",         "WD / PD",         "c",  4.5),  # WD stacked over PD
-    ("gross",         "Gross Salary",    "r",  8.5),
-    ("basic_da",      "Basic + DA",      "r",  8.5),
-    ("emp_pf",        "Emp PF",          "r",  7.0),
+    ("sr",            "Sr",              "c",  2.3),
+    ("employee",      "Employee",        "l", 10.5),  # Name + ID stacked
+    ("doj_dob",       "DOJ / DOB",       "c",  6.8),  # DOJ stacked over DOB
+    ("pf_uan",        "PF No. / UAN No.","c",  8.8),  # PF No. stacked over UAN No.
+    ("pf_type",       "PF Type",         "c",  5.5),  # PF applicable type
+    ("wd_pd",         "WD / PD",         "c",  4.0),  # WD stacked over PD
+    ("gross",         "Gross Salary",    "r",  7.8),
+    ("basic_da",      "Basic + DA",      "r",  7.8),
+    ("emp_pf",        "Emp PF",          "r",  6.5),
     # ── Employer Contribution group (4 sub-columns) ──
-    ("employer_eps",  "EPS",             "r",  7.0),
-    ("employer_pf",   "Empr PF",         "r",  7.0),
-    ("employer_edli", "EDLI",            "r",  4.5),
-    ("employer_admin","PF Admin",        "r",  4.5),
+    ("employer_eps",  "EPS",             "r",  6.5),
+    ("employer_pf",   "Empr PF",         "r",  6.5),
+    ("employer_edli", "EDLI",            "r",  4.2),
+    ("employer_admin","PF Admin",        "r",  4.2),
     # ────────────────────────────────────────────────
-    ("total_amount",  "Total",           "r",  8.0),
+    ("total_amount",  "Total",           "r",  7.5),
 ]
 
 # Columns that belong to the "Employer Contribution" group header
 _EMPR_GROUP = {"employer_eps", "employer_pf", "employer_edli", "employer_admin"}
 
 _SKIP_ON_TOTAL = {
-    "sr", "employee", "doj_dob", "pf_uan", "wd_pd",
+    "sr", "employee", "doj_dob", "pf_uan", "pf_type", "wd_pd",
 }
 _NUMERIC = {
     "gross","basic_da","emp_pf","employer_eps",
@@ -143,6 +145,9 @@ table.data-tbl td{{
 .wd-val{{font-size:7.5px;font-weight:600;text-align:center;}}
 .pd-val{{font-size:7.0px;color:#333;margin-top:2px;border-top:1px dashed #ccc;padding-top:2px;text-align:center;}}
 .wd-lbl,.pd-lbl{{font-size:6px;color:#777;}}
+
+/* PF Type */
+.pf-type-val{{font-size:7.5px;text-align:center;word-wrap:break-word;}}
 
 .r{{text-align:right}}.c{{text-align:center}}.l{{text-align:left}}
 .nd{{text-align:center;padding:12px;color:#888}}
@@ -263,6 +268,7 @@ def _get_data(f):
         _col("DOB",           "employee_dob",   w=110),
         _col("PF No.",        "pf_no",          w=180),
         _col("UAN No.",       "uan_no",         w=180),
+        _col("PF Type",       "pf_type",        w=120),
         _col("WD / PD",       "wd_pd",          w=100),
         _col("Gross Salary",  "gross",          "Float", 120, precision=2),
         _col("Basic + DA",    "basic_da",       "Float", 100, precision=2),
@@ -361,6 +367,23 @@ def _get_data(f):
         )
     }
 
+    # ── Fetch PF Type (pf_applicable) from Salary Structure Assignment ──
+    sd_date = p.get("start_date", "")
+    pf_type_map = {}
+    if eids and sd_date:
+        for r in frappe.db.sql(
+            "SELECT ssa.employee, ssa.pf_applicable"
+            " FROM `tabSalary Structure Assignment` ssa"
+            " WHERE ssa.employee IN %(eids)s"
+            "   AND ssa.docstatus=1"
+            "   AND ssa.from_date <= %(sd)s"
+            "   AND (ssa.to_date IS NULL OR ssa.to_date >= %(sd)s)"
+            " ORDER BY ssa.from_date DESC",
+            {"eids": eids, "sd": sd_date}, as_dict=1
+        ):
+            if r.employee not in pf_type_map:
+                pf_type_map[r.employee] = r.pf_applicable or ""
+
     data = []
     tot  = {k: 0.0 for k in [
         "gross","basic_da","emp_pf","employer_eps",
@@ -397,12 +420,13 @@ def _get_data(f):
             "employee_dob": dob,
             "pf_no": emp.get("pf_no") or "",
             "uan_no": emp.get("uan_no") or "",
+            "pf_type": pf_type_map.get(s.eid, ""),
 
-            # ✅ FIX: required for PDF
+            # required for PDF
             "working_days": s.working_days,
             "payment_days": s.payment_days,
 
-            # ✅ UI display
+            # UI display
             "wd_pd": "{} / {}".format(
                 _fmt_days(s.working_days),
                 _fmt_days(s.payment_days)
@@ -427,23 +451,23 @@ def _get_data(f):
             "employee_dob": "",
             "pf_no": "",
             "uan_no": "",
+            "pf_type": "",
             "wd_pd": "",
-
-            # ✅ FIX for PDF
             "working_days": None,
             "payment_days": None,
-
             **{k: flt(v, 2) for k, v in tot.items()},
             "bold": 1,
         })
 
     return cols, data
+
+
 def execute(filters=None):
     return _get_data(filters or {})
 
 
 # ---------------------------------------------------------------------------
-# HTML builder — updated layout with stacked cells
+# HTML builder — updated layout with pf_type column
 # ---------------------------------------------------------------------------
 
 def _colgroup():
@@ -458,11 +482,9 @@ def _colgroup():
 def _thead_html():
     """
     Two header rows:
-      Row 1: Sr | Employee | DOJ/DOB | PF No./UAN No. | WD/PD | Gross | Basic+DA |
-             Emp PF | [Employer Contribution — colspan 4] | Total
+      Row 1: Sr | Employee | DOJ/DOB | PF No./UAN No. | PF Type | WD/PD |
+             Gross | Basic+DA | Emp PF | [Employer Contribution — colspan 4] | Total
       Row 2: (rowspan=2 for non-group cols) | EPS | Empr PF | EDLI | PF Admin
-
-    The DOJ/DOB, PF/UAN and WD/PD columns each get a two-line header.
     """
     empr_span = sum(1 for fn, _, _, _ in _COLS if fn in _EMPR_GROUP)
     empr_fns  = [fn for fn, _, _, _ in _COLS if fn in _EMPR_GROUP]
@@ -478,7 +500,6 @@ def _thead_html():
         elif fn in _EMPR_GROUP:
             continue
         elif fn == "doj_dob":
-            # Two-line header: DOJ over DOB
             row1 += (
                 '<th rowspan="2" class="c" style="vertical-align:middle;">'
                 '<div style="font-weight:700;">DOJ</div>'
@@ -487,7 +508,6 @@ def _thead_html():
                 '</th>'
             )
         elif fn == "pf_uan":
-            # Two-line header: PF No. over UAN No.
             row1 += (
                 '<th rowspan="2" class="c" style="vertical-align:middle;">'
                 '<div style="font-weight:700;">PF No.</div>'
@@ -496,7 +516,6 @@ def _thead_html():
                 '</th>'
             )
         elif fn == "wd_pd":
-            # Two-line header: WD over PD
             row1 += (
                 '<th rowspan="2" class="c" style="vertical-align:middle;">'
                 '<div style="font-weight:700;">WD</div>'
@@ -528,15 +547,15 @@ def _render_row(row, is_total=False, row_idx=0):
         # ── Total row: suppress identity columns ───────────────────────
         if is_total and fn in _SKIP_ON_TOTAL:
             if fn == "employee":
-                # Span across employee + doj_dob + pf_uan + wd_pd
+                # Span across employee + doj_dob + pf_uan + pf_type + wd_pd
                 tr += (
-                    '<td class="l" colspan="4" style="background:{bg};font-weight:700;">'
+                    '<td class="l" colspan="5" style="background:{bg};font-weight:700;">'
                     'Total</td>'
                 ).format(bg=bg)
-            # doj_dob, pf_uan and wd_pd cells absorbed by colspan above — skip
+            # absorbed columns — skip
             continue
 
-        # ── Employee cell — Name / ID stacked (DOJ/DOB moved out) ──────
+        # ── Employee cell — Name / ID stacked ──────────────────────────
         if fn == "employee":
             name = row.get("employee_name", "") or ""
             eid  = row.get("employee_id",   "") or ""
@@ -552,7 +571,7 @@ def _render_row(row, is_total=False, row_idx=0):
             )
             continue
 
-        # ── DOJ / DOB stacked (separate column) ─────────────────────────
+        # ── DOJ / DOB stacked ───────────────────────────────────────────
         if fn == "doj_dob":
             doj = row.get("employee_doj", "") or ""
             dob = row.get("employee_dob", "") or ""
@@ -574,6 +593,16 @@ def _render_row(row, is_total=False, row_idx=0):
                 '<div class="uan-val">{uan}</div>'
                 '</td>'
             ).format(bg=bg, fw=fw, pf=pf, uan=uan)
+            continue
+
+        # ── PF Type ─────────────────────────────────────────────────────
+        if fn == "pf_type":
+            pft = row.get("pf_type", "") or ""
+            tr += (
+                '<td class="c" style="background:{bg};{fw}">'
+                '<div class="pf-type-val">{pft}</div>'
+                '</td>'
+            ).format(bg=bg, fw=fw, pft=pft)
             continue
 
         # ── WD / PD stacked ─────────────────────────────────────────────
