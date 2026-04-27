@@ -1,0 +1,13 @@
+{
+ "doctype": "Page",
+ "module": "Saral Hr",
+ "name": "daily-wage-attendance",
+ "page_name": "Daily Wage Attendance",
+ "roles": [
+  {"role": "Saral HR Manager"},
+  {"role": "Saral HR User"}
+ ],
+ "standard": "No",
+ "title": "Daily Wage Attendance",
+ "is_searchable": 1
+}

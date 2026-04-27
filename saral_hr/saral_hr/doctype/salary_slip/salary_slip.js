@@ -51,7 +51,7 @@ frappe.ui.form.on("Salary Details", {
     employer_share_remove(frm) { recalculate_salary(frm); }
 });
 
-// ─── Attendance Allowance detection ───────────────────────────────────────────
+// ─── Attendance Allowance ─────────────────────────────────────────────────────
 
 const ATTENDANCE_ALLOWANCE_COMPONENT = "Attendance Allowance";
 
@@ -96,7 +96,7 @@ function is_pt(comp_name) {
     return (comp_name || "").trim() === "Professional Tax";
 }
 
-// ─── Net salary rounding (>=0.5 → ceil, <0.5 → floor) ───────────────────────
+// ─── Net salary rounding ──────────────────────────────────────────────────────
 
 function round_net_salary(value) {
     return Math.floor(value + 0.5);
@@ -319,14 +319,15 @@ function apply_salary_structure(frm, data) {
 }
 
 // ─── Apply attendance to form fields ─────────────────────────────────────────
+// Note: payment_days now comes directly from the server (sandwich-rule-computed).
+// The frontend does NOT recalculate payment_days — it uses the server value as-is.
 
 function apply_attendance(frm, d, variable_pay_pct) {
     frm.set_value({
-        // ── Month Reference fields ───────────────────────────────────────────
         total_weekly_off_days:   d.total_weekly_off_days || 0,
         weekly_offs_taken:       d.weekly_offs_taken || 0,
         total_holidays:          d.total_holidays || 0,
-        // ── Payment / attendance fields ──────────────────────────────────────
+        holidays_taken:          d.holidays_taken || 0,   // ← ADD THIS
         weekly_offs_count:       d.weekly_offs || 0,
         present_days:            d.present_days || 0,
         total_on_tour:           d.total_on_tour || 0,
@@ -346,12 +347,14 @@ function apply_attendance(frm, d, variable_pay_pct) {
     if (variable_pay_pct !== undefined) frm.variable_pay_percentage = variable_pay_pct;
     recalculate_salary(frm, d.working_days, d.payment_days, d.physical_working_days);
 }
-
 // ─── Salary Calculation ───────────────────────────────────────────────────────
+// payment_days is sourced from the server (sandwich-rule applied).
+// The recalculate function uses it directly for proration — it does not
+// recompute payment_days from attendance breakdown fields.
 
 function recalculate_salary(frm, wd_override, pd_override, phd_override) {
-    const wd = flt(wd_override !== undefined ? wd_override : frm.doc.total_working_days);
-    const pd = flt(pd_override !== undefined ? pd_override : frm.doc.payment_days);
+    const wd  = flt(wd_override  !== undefined ? wd_override  : frm.doc.total_working_days);
+    const pd  = flt(pd_override  !== undefined ? pd_override  : frm.doc.payment_days);
     const phd = flt(phd_override !== undefined ? phd_override : frm.doc.physical_working_days);
     const variable_pct = flt(frm.variable_pay_percentage || 0);
 
@@ -463,7 +466,6 @@ function recalculate_salary(frm, wd_override, pd_override, phd_override) {
         total_employer_contribution += row.amount;
     });
 
-    // ── Net salary: round half-up to nearest whole number ────────────────────
     const raw_net = total_earnings - total_deductions;
     const net = round_net_salary(raw_net);
 

@@ -14,9 +14,6 @@ ATTENDANCE_ALLOWANCE_COMPONENT = "Attendance Allowance"
 
 
 def _round_net_salary(value):
-    """Round net salary to nearest whole number using half-up rounding.
-    >= 0.5 rounds up, < 0.5 rounds down. e.g. 100.5 -> 101, 100.4 -> 100.
-    """
     return int(Decimal(str(flt(value, 2))).quantize(Decimal("1"), rounding=ROUND_HALF_UP))
 
 
@@ -504,7 +501,6 @@ def calculate_salary_slip_amounts_exact(
 
     salary_slip.total_earnings              = flt(total_earnings, 2)
     salary_slip.total_deductions            = flt(total_deductions, 2)
-    # ── Net salary: round half-up to nearest whole number ────────────────────
     salary_slip.net_salary                  = _round_net_salary(total_earnings - total_deductions)
     salary_slip.total_basic_da              = flt(basic_amount + da_amount, 2)
     salary_slip.total_employer_contribution = flt(total_employer_contribution, 2)
@@ -771,6 +767,152 @@ def _classify_half(status):
     return base
 
 
+# ─── Sandwich Rule: statuses that are considered "paid" for holiday eligibility ───
+# A day with any of these statuses will NOT break the sandwich around a holiday.
+# Absent and LWP are unpaid and will break the sandwich.
+_PAID_STATUSES_FOR_SANDWICH = {
+    "Present", "On Tour", "Earned Comp Off",
+    "Earned Leave", "Casual Leave", "Comp Off"
+}
+
+
+def _build_day_status_map(attendance_records, effective_start, effective_end):
+    """
+    Build a dict mapping each date in the effective range to its attendance status.
+    Days with no attendance record are treated as Absent (unpaid).
+    Half Day records are stored as a tuple of (first_half_status, second_half_status)
+    so the sandwich check can evaluate them correctly.
+    """
+    day_map = {}
+
+    # Pre-fill every day in the effective range as Absent (no record = unpaid)
+    cur = effective_start
+    while cur <= effective_end:
+        day_map[cur] = "Absent"
+        cur += timedelta(days=1)
+
+    for a in attendance_records:
+        att_date = getdate(a.attendance_date) if hasattr(a, "attendance_date") else None
+        if not att_date:
+            continue
+        status = (a.status or "").strip()
+        if status == "Half Day":
+            fh = (a.custom_first_half or "").strip()
+            sh = (a.custom_second_half or "").strip()
+            day_map[att_date] = ("Half Day", fh, sh)
+        else:
+            day_map[att_date] = status
+
+    return day_map
+
+
+def _is_paid_day(day_status):
+    """
+    Returns True if the given day status is considered a paid working day
+    for the purpose of sandwich rule evaluation.
+    Weekly Off days return None (neutral/transparent — the check looks through them).
+    Absent and LWP return False (break the sandwich).
+    Half Day: paid if at least one half is a paid status.
+    """
+    if day_status is None:
+        return None
+    if isinstance(day_status, tuple) and day_status[0] == "Half Day":
+        _, fh, sh = day_status
+        fh_paid = fh in _PAID_STATUSES_FOR_SANDWICH
+        sh_paid = sh in _PAID_STATUSES_FOR_SANDWICH
+        # If at least one half is paid, the day is considered paid for sandwich purposes
+        return fh_paid or sh_paid
+    if day_status in ("Weekly Off",):
+        return None  # transparent — look further
+    if day_status in _PAID_STATUSES_FOR_SANDWICH:
+        return True
+    return False  # Absent, LWP, or unknown
+
+
+def _find_nearest_working_day_status(day_map, from_date, direction, holiday_date_set, off_weekday):
+    """
+    Walk in the given direction (+1 = forward, -1 = backward) from from_date,
+    skipping over Weekly Offs and other holidays (they are neutral for sandwich check).
+    Returns True if the nearest actual working day is paid, False if unpaid,
+    or True if no working day exists in the effective range (benefit of doubt
+    for first/last day of the employee's service period).
+    """
+    cur = from_date + timedelta(days=direction)
+    while cur in day_map:
+        # Skip weekly off days (neutral — look through them)
+        if off_weekday is not None and cur.weekday() == off_weekday:
+            cur += timedelta(days=direction)
+            continue
+        # Skip other holidays in the block (they are also neutral during block evaluation)
+        if cur in holiday_date_set:
+            cur += timedelta(days=direction)
+            continue
+        status = day_map.get(cur)
+        result = _is_paid_day(status)
+        if result is None:
+            # Another weekly off encountered — keep walking
+            cur += timedelta(days=direction)
+            continue
+        return result
+    # No working day found in effective range — benefit of doubt: treat as paid
+    return True
+
+
+def _calculate_eligible_holidays(holiday_date_set, day_map, off_weekday):
+    """
+    Apply the sandwich rule to each holiday (or consecutive holiday block) and
+    return the count of holidays the employee is eligible to be paid for.
+
+    Sandwich Rule:
+    - Identify contiguous blocks of holidays (consecutive calendar dates that are holidays).
+    - For each block, find the nearest paid working day before the block and after the block,
+      skipping through Weekly Offs transparently.
+    - If BOTH the preceding and following working days are paid → entire block is paid.
+    - If EITHER is absent/LWP → entire block is unpaid.
+    - If no working day exists on one or both sides (start/end of service) → benefit of doubt → paid.
+    """
+    if not holiday_date_set:
+        return 0.0
+
+    sorted_holidays = sorted(holiday_date_set)
+    visited         = set()
+    eligible_count  = 0.0
+
+    for hdate in sorted_holidays:
+        if hdate in visited:
+            continue
+
+        # Build the contiguous block starting from hdate
+        block = [hdate]
+        visited.add(hdate)
+        nxt = hdate + timedelta(days=1)
+        while nxt in holiday_date_set:
+            block.append(nxt)
+            visited.add(nxt)
+            nxt += timedelta(days=1)
+
+        block_start = block[0]
+        block_end   = block[-1]
+
+        # Check the working day immediately before the block (skipping weekly offs)
+        before_paid = _find_nearest_working_day_status(
+            day_map, block_start, direction=-1,
+            holiday_date_set=holiday_date_set, off_weekday=off_weekday
+        )
+
+        # Check the working day immediately after the block (skipping weekly offs)
+        after_paid = _find_nearest_working_day_status(
+            day_map, block_end, direction=+1,
+            holiday_date_set=holiday_date_set, off_weekday=off_weekday
+        )
+
+        # Both sides must be paid for the holiday block to be eligible
+        if before_paid and after_paid:
+            eligible_count += len(block)
+
+    return flt(eligible_count, 2)
+
+
 @frappe.whitelist()
 def get_attendance_and_days(employee, start_date, working_days_calculation_method=None):
     start_date = getdate(start_date)
@@ -806,15 +948,13 @@ def get_attendance_and_days(employee, start_date, working_days_calculation_metho
 
     total_days = (effective_end - effective_start).days + 1
 
-    # ── Weekly off setup ─────────────────────────────────────────────────────
     weekly_off = frappe.db.get_value("Company Link", employee, "weekly_off")
-    day_map = {
+    day_map_weekday = {
         "Monday": 0, "Tuesday": 1, "Wednesday": 2, "Thursday": 3,
         "Friday": 4, "Saturday": 5, "Sunday": 6,
     }
-    off_weekday = day_map.get(weekly_off) if weekly_off else None
+    off_weekday = day_map_weekday.get(weekly_off) if weekly_off else None
 
-    # ── Total weekly offs in FULL calendar month (for Month Reference display) ──
     total_weekly_off_days_full_month = 0
     if off_weekday is not None:
         cur = start_date
@@ -823,7 +963,6 @@ def get_attendance_and_days(employee, start_date, working_days_calculation_metho
                 total_weekly_off_days_full_month += 1
             cur += timedelta(days=1)
 
-    # ── Weekly offs in employee's EFFECTIVE range (for payment calculation) ──
     weekly_off_count = 0
     if off_weekday is not None:
         cur = effective_start
@@ -832,10 +971,8 @@ def get_attendance_and_days(employee, start_date, working_days_calculation_metho
                 weekly_off_count += 1
             cur += timedelta(days=1)
 
-    # ── Holidays in effective range ──────────────────────────────────────────
     company = frappe.db.get_value("Company Link", employee, "company")
-    holiday_count_in_range = 0
-    holiday_date_set       = set()
+    holiday_date_set = set()
 
     if company:
         holiday_list = frappe.db.get_value("Company", company, "default_holiday_list")
@@ -849,15 +986,17 @@ def get_attendance_and_days(employee, start_date, working_days_calculation_metho
                 pluck="holiday_date"
             )
             for h in holidays:
-                hd = getdate(h)
-                holiday_date_set.add(hd)
-            holiday_count_in_range = len(holiday_date_set)
+                holiday_date_set.add(getdate(h))
 
+    holiday_count_in_range = len(holiday_date_set)
+
+    # Remove holidays that fall on weekly off days (a day cannot be both)
     if off_weekday is not None:
         overlap = sum(1 for h in holiday_date_set if h.weekday() == off_weekday)
         weekly_off_count = max(weekly_off_count - overlap, 0)
+        holiday_date_set = {h for h in holiday_date_set if h.weekday() != off_weekday}
 
-    # ── Attendance records in effective range ────────────────────────────────
+    # Fetch attendance records
     attendance_records = frappe.db.get_all(
         "Attendance",
         filters={
@@ -865,20 +1004,42 @@ def get_attendance_and_days(employee, start_date, working_days_calculation_metho
             "attendance_date": ["between", [effective_start, effective_end]],
             "docstatus":       ["<", 2],
         },
-        fields=["status", "custom_first_half", "custom_second_half"]
+        fields=["attendance_date", "status", "custom_first_half", "custom_second_half"]
     )
 
-    present_days    = 0.0
-    on_tour         = 0.0
-    earned_comp_off = 0.0
-    earned_leave    = 0.0
-    casual_leave    = 0.0
-    comp_off        = 0.0
-    absent_days     = 0.0
-    lwp_days        = 0.0
-    half_day_count  = 0
-    # ── Count Weekly Off attendance records actually marked ──────────────────
+    # Build set of dates that have a REAL attendance record
+    dates_with_real_attendance = {getdate(a.attendance_date) for a in attendance_records}
+
+    # ── Build per-day status map for sandwich rule evaluation ─────────────────
+    day_map = _build_day_status_map(attendance_records, effective_start, effective_end)
+
+    # Mark holiday dates in the day_map so the sandwich walker can skip them.
+    # Only mark as "Holiday" if there is NO real attendance record for this date.
+    # If the employee has a real attendance status on a holiday date, keep it.
+    for hdate in holiday_date_set:
+        if hdate not in dates_with_real_attendance:
+            day_map[hdate] = "Holiday"
+        # else: real attendance exists — keep it as-is in day_map
+
+    # Mark weekly off dates in the day_map so the sandwich walker can skip them
+    if off_weekday is not None:
+        cur = effective_start
+        while cur <= effective_end:
+            if cur.weekday() == off_weekday:
+                day_map[cur] = "Weekly Off"
+            cur += timedelta(days=1)
+
+    present_days      = 0.0
+    on_tour           = 0.0
+    earned_comp_off   = 0.0
+    earned_leave      = 0.0
+    casual_leave      = 0.0
+    comp_off          = 0.0
+    absent_days       = 0.0
+    lwp_days          = 0.0
+    half_day_count    = 0
     weekly_offs_taken = 0
+    holidays_taken    = 0.0   # ← NEW: count of "Holiday" status records in attendance
 
     for a in attendance_records:
         status = (a.status or "").strip()
@@ -891,6 +1052,7 @@ def get_attendance_and_days(employee, start_date, working_days_calculation_metho
         elif status == "Absent":           absent_days     += 1.0
         elif status == "LWP":              lwp_days        += 1.0
         elif status == "Weekly Off":       weekly_offs_taken += 1
+        elif status == "Holiday":          holidays_taken  += 1.0   # ← NEW
         elif status == "Half Day":
             half_day_count += 1
             fh = (a.custom_first_half  or "").strip()
@@ -906,31 +1068,52 @@ def get_attendance_and_days(employee, start_date, working_days_calculation_metho
                 absent_days     += c["absent"]
                 lwp_days        += c["lwp"]
 
-    total_unpaid = flt(absent_days + lwp_days, 2)
+    # ── Apply sandwich rule ONLY to holidays with no real attendance record ────
+    # Holidays where the employee was marked with a real status (Present, Holiday,
+    # Absent, etc.) are already handled above. Only unattended holidays go through
+    # the sandwich rule to decide if they are eligible as paid days.
+    holidays_no_attendance   = {h for h in holiday_date_set if h not in dates_with_real_attendance}
+    holidays_with_attendance = holiday_date_set - holidays_no_attendance
 
+    eligible_holidays   = _calculate_eligible_holidays(holidays_no_attendance, day_map, off_weekday)
+    ineligible_holidays = (holiday_count_in_range - len(holidays_with_attendance)) - eligible_holidays
+
+    # ── Working Days: contractual denominator for proration (unchanged) ───────
     if calculation_method == "Include Weekly Offs":
         working_days = total_days
-        payment_days = flt(total_days - total_unpaid, 2)
     else:
-        working_days = total_days - weekly_off_count
-        working_days = max(working_days, 0)
-        payment_days = flt(working_days - total_unpaid, 2)
+        working_days = max(total_days - weekly_off_count, 0)
 
+    # ── Payment Days ──────────────────────────────────────────────────────────
+    # = present + on_tour + leaves + comp_off
+    #   + holidays_taken (explicitly marked Holiday in attendance)
+    #   + eligible_holidays (sandwich-rule approved unattended holidays)
+    payment_days = flt(
+        present_days + on_tour +
+        earned_leave + casual_leave + comp_off +
+        holidays_taken +           # ← NEW: directly marked Holiday status
+        eligible_holidays,         # sandwich-rule holidays (no attendance record)
+        2
+    )
     payment_days = max(payment_days, 0.0)
 
+    # ── Physical Working Days ─────────────────────────────────────────────────
     physical_working_days = flt(payment_days - earned_leave - casual_leave - comp_off, 2)
     if physical_working_days < 0:
         physical_working_days = 0.0
 
+    total_unpaid = flt(absent_days + lwp_days + ineligible_holidays, 2)
+
     return {
         "attendance_count":           len(attendance_records),
         "total_days":                 total_days,
-        # ── Month Reference fields ────────────────────────────────────────────
-        "total_weekly_off_days":      total_weekly_off_days_full_month,  # all Sundays in the month
-        "weekly_offs_taken":          weekly_offs_taken,                 # attendance marked as Weekly Off
-        # ── Payment calc fields ───────────────────────────────────────────────
-        "weekly_offs":                weekly_off_count,                  # used for working_days calc
+        "total_weekly_off_days":      total_weekly_off_days_full_month,
+        "weekly_offs_taken":          weekly_offs_taken,
+        "weekly_offs":                weekly_off_count,
         "total_holidays":             holiday_count_in_range,
+        "holidays_taken":             flt(holidays_taken, 2),          # ← NEW
+        "eligible_holidays":          eligible_holidays,
+        "ineligible_holidays":        ineligible_holidays,
         "working_days":               flt(working_days, 2),
         "payment_days":               flt(payment_days, 2),
         "physical_working_days":      flt(physical_working_days, 2),
@@ -946,8 +1129,6 @@ def get_attendance_and_days(employee, start_date, working_days_calculation_metho
         "total_unpaid_days":          flt(total_unpaid, 2),
         "calculation_method":         calculation_method,
     }
-
-
 def _empty_attendance_result(start_date, month_end, calculation_method="Exclude Weekly Offs"):
     total_days = (month_end - start_date).days + 1
     return {
@@ -957,6 +1138,9 @@ def _empty_attendance_result(start_date, month_end, calculation_method="Exclude 
         "weekly_offs_taken":     0,
         "weekly_offs":           0,
         "total_holidays":        0,
+        "holidays_taken":        0,   # ← ADD THIS
+        "eligible_holidays":     0,
+        "ineligible_holidays":   0,
         "working_days":          0,
         "payment_days":          0,
         "physical_working_days": 0,
@@ -972,7 +1156,6 @@ def _empty_attendance_result(start_date, month_end, calculation_method="Exclude 
         "total_unpaid_days":     0,
         "calculation_method":    calculation_method,
     }
-
 
 @frappe.whitelist()
 def get_eligible_employees_for_salary_slip(company, year, month, category=None, division=None):

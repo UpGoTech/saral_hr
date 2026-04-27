@@ -233,7 +233,20 @@ const REPORTS = [
     { key:"advance_register",          label:"Advance Register"          },
 ];
 
-let _idx = 0, _cache = {}, _debounce_timer = null, _prefetch_xhr = null, _loading_key = null;
+// ── State ─────────────────────────────────────────────────────────────────────
+// _prefetch_gen: increments on every filter change so stale callbacks self-discard
+// _action_gen:   increments on every Print/Export click so duplicate clicks are ignored
+
+let _idx            = 0;
+let _cache          = {};
+let _debounce_timer = null;
+let _prefetch_xhr   = null;
+let _loading_key    = null;
+let _prefetch_gen   = 0;      // FIX: generation counter for stale prefetch results
+let _action_gen     = 0;      // FIX: generation counter for debouncing action buttons
+let _action_timer   = null;   // FIX: timer for action button debounce
+
+// ── Filter helpers ────────────────────────────────────────────────────────────
 
 function _filter_key(report) {
     const f = report._live_filters ? report._live_filters() : (frappe.query_report.get_values() || {});
@@ -339,6 +352,12 @@ function _ensure_styles() {
             outline: none;
         }
         .pr-split-main:hover { filter: brightness(0.93); }
+        .pr-split-main:disabled,
+        .pr-split-arrow:disabled {
+            opacity: 0.55;
+            cursor: not-allowed;
+            filter: none;
+        }
 
         /* ── Chevron toggle part ── */
         .pr-split-arrow {
@@ -358,7 +377,7 @@ function _ensure_styles() {
         }
         .pr-split-arrow:hover { filter: brightness(0.88); }
 
-        /* PDF button — red */
+        /* PDF button — black */
         .pr-split-pdf .pr-split-main,
         .pr-split-pdf .pr-split-arrow {
             background: #000000;
@@ -449,17 +468,26 @@ function _inject_nav(report) {
         _go(report, +$(this).data("idx"));
     });
 
+    // FIX: cancel in-flight prefetch and reset generation counter on filter change
     report.page.wrapper.on("change.pr", ".frappe-control input, .frappe-control select", function () {
         _cache       = {};
         _loading_key = null;
-        if (_prefetch_xhr) { _prefetch_xhr.abort?.(); _prefetch_xhr = null; }
+        _prefetch_gen++;   // invalidate any in-flight prefetch callback
+
+        if (_prefetch_xhr && typeof _prefetch_xhr.abort === "function") {
+            _prefetch_xhr.abort();
+        }
+        _prefetch_xhr = null;
+
         clearTimeout(_debounce_timer);
         _debounce_timer = setTimeout(() => {
             if (!report._filters_filled()) return;
+            _cache = {};   // clear again — filters may have changed mid-wait
             _prefetch_all(report);
         }, 1500);
     });
 
+    // FIX: use .off() before .on() so re-injection never stacks listeners
     _bind_refresh_listener(report);
 
     $(frappe.query_report).one("after_refresh.pr_init", () => {
@@ -518,7 +546,10 @@ function _render_cached(cached) {
     }
 }
 
+// FIX: always call .off() before .on() to prevent listener accumulation
+// across multiple _inject_nav calls (e.g. route changes, Frappe re-renders)
 function _bind_refresh_listener(report) {
+    $(frappe.query_report).off("after_refresh.pr");
     $(frappe.query_report).on("after_refresh.pr", () => {
         const fk      = _filter_key(report);
         const modeKey = frappe.query_report.get_filter_value("report_mode");
@@ -535,9 +566,12 @@ function _bind_refresh_listener(report) {
     });
 }
 
+// FIX: capture generation at call time; discard result if filters changed
+// while the request was in flight
 function _prefetch_all(report) {
-    const fk = _filter_key(report);
-    const f  = report._live_filters ? report._live_filters() : (frappe.query_report.get_values() || {});
+    const fk      = _filter_key(report);
+    const myGen   = ++_prefetch_gen;
+    const f       = report._live_filters ? report._live_filters() : (frappe.query_report.get_values() || {});
     if (!f.company || !f.year || !f.month) return;
 
     _prefetch_xhr = frappe.call({
@@ -553,12 +587,16 @@ function _prefetch_all(report) {
         },
         callback(res) {
             _prefetch_xhr = null;
+            // FIX: discard stale result if filters changed while in-flight
+            if (myGen !== _prefetch_gen) return;
             if (!res.message) return;
             if (fk !== _filter_key(report)) return;
             if (!_cache[fk]) _cache[fk] = {};
             Object.assign(_cache[fk], res.message);
         },
-        error() { _prefetch_xhr = null; }
+        error() {
+            _prefetch_xhr = null;
+        }
     });
 }
 
@@ -630,10 +668,6 @@ const _ICON_XL_BTN = `<svg xmlns="http://www.w3.org/2000/svg" width="12" height=
 </svg>`;
 
 // ── Build a split-button ──────────────────────────────────────────────────────
-// mainLabel  — text shown on the main button
-// mainAction — fn called when main button is clicked
-// menuItems  — array of { icon, label, action }
-// colorClass — "pr-split-pdf" | "pr-split-excel"
 
 function _make_split_btn(mainLabel, mainIcon, mainAction, menuItems, colorClass) {
     const $wrap = $(`
@@ -652,24 +686,20 @@ function _make_split_btn(mainLabel, mainIcon, mainAction, menuItems, colorClass)
         </div>
     `);
 
-    // Main button click → main action
     $wrap.find(".pr-split-main").on("click", function(e) {
         e.stopPropagation();
         $wrap.find(".pr-split-menu").removeClass("open");
         mainAction();
     });
 
-    // Arrow click → toggle dropdown
     $wrap.find(".pr-split-arrow").on("click", function(e) {
         e.stopPropagation();
         const $menu = $wrap.find(".pr-split-menu");
         const wasOpen = $menu.hasClass("open");
-        // close all other open menus first
         $(".pr-split-menu.open").removeClass("open");
         if (!wasOpen) $menu.addClass("open");
     });
 
-    // Menu item clicks
     $wrap.find(".pr-split-menu-item").on("click", function(e) {
         e.stopPropagation();
         $wrap.find(".pr-split-menu").removeClass("open");
@@ -689,51 +719,46 @@ $(document).on("click.pr-split", function() {
 // ── Action buttons (two split-buttons) ───────────────────────────────────────
 
 function _set_action_buttons(report) {
-    // Remove any previously injected buttons to avoid duplicates
     report.page.wrapper.find(
         ".pr-split-wrap, .pr-select-print-btn, .pr-select-excel-btn, .pr-excel-cur-btn, .pr-excel-btn"
     ).remove();
 
     const actions = report.page.wrapper.find(".page-actions");
 
-    // ── PDF split-button ─────────────────────────────────────────────────────
     const $pdfBtn = _make_split_btn(
         __("Print PDF"),
         _ICON_PDF_BTN,
-        // Main action → current report PDF
-        () => _print_current(report),
+        () => _debounced_action(() => _print_current(report)),
         [
             {
                 icon:   _ICON_PDF,
                 label:  __("Current Report"),
-                action: () => _print_current(report),
+                action: () => _debounced_action(() => _print_current(report)),
             },
             {
-                icon:   _ICON_MULTI,
-                label:  __("Select Reports…"),
-                action: () => _show_select_dialog(report, $pdfBtn, "pdf"),
+                icon:    _ICON_MULTI,
+                label:   __("Select Reports…"),
+                action:  () => _show_select_dialog(report, $pdfBtn, "pdf"),
                 divider: true,
             },
         ],
         "pr-split-pdf"
     );
 
-    // ── Excel split-button ───────────────────────────────────────────────────
     const $xlBtn = _make_split_btn(
         __("Export Excel"),
         _ICON_XL_BTN,
-        // Main action → current report Excel
-        () => _excel_current(report),
+        () => _debounced_action(() => _excel_current(report)),
         [
             {
                 icon:   _ICON_EXCEL,
                 label:  __("Current Report"),
-                action: () => _excel_current(report),
+                action: () => _debounced_action(() => _excel_current(report)),
             },
             {
-                icon:   _ICON_MULTI,
-                label:  __("Select Reports…"),
-                action: () => _show_select_dialog(report, $xlBtn, "excel"),
+                icon:    _ICON_MULTI,
+                label:   __("Select Reports…"),
+                action:  () => _show_select_dialog(report, $xlBtn, "excel"),
                 divider: true,
             },
         ],
@@ -742,6 +767,26 @@ function _set_action_buttons(report) {
 
     actions.prepend($xlBtn);
     actions.prepend($pdfBtn);
+}
+
+// ── Debounced action wrapper ──────────────────────────────────────────────────
+// FIX: prevents double-click / rapid re-click from firing duplicate backend jobs.
+// Disables all action buttons for 2 s after the first click.
+
+function _debounced_action(fn) {
+    const myGen = ++_action_gen;
+    // Disable buttons immediately to give visual feedback
+    $(".pr-split-main, .pr-split-arrow").prop("disabled", true);
+
+    clearTimeout(_action_timer);
+    _action_timer = setTimeout(() => {
+        // Only proceed if no newer click has superseded this one
+        if (myGen === _action_gen) {
+            fn();
+        }
+        // Re-enable buttons regardless (the progress bar takes over UX from here)
+        $(".pr-split-main, .pr-split-arrow").prop("disabled", false);
+    }, 400);   // 400 ms absorbs accidental double-clicks; feels instant to users
 }
 
 // ── Print / Excel current tab ─────────────────────────────────────────────────
