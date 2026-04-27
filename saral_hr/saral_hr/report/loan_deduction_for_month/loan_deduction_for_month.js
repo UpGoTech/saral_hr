@@ -29,7 +29,7 @@ frappe.query_reports["Loan Deduction For Month"] = {
                 frappe.query_report.refresh();
             }
         },
-        {
+        { 
             fieldname: "employee",
             label: __("Employee"),
             fieldtype: "Link",
