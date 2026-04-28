@@ -666,10 +666,10 @@ def get_loan_advance_deductions(employee, start_date):
         if doc.type == "Loan":
             for row in doc.schedule:
                 if row.month == slip_month_label and not row.is_deducted:
-                    loan_suffix = f"{doc.type}-" + "-".join(doc.name.split("-")[-2:])
+                    component_name = f"{doc.type}-{doc.name.split('-')[-1]}"  # ✅ "Loan-0001"
                     deductions.append({
-                        "salary_component": loan_suffix,
-                        "abbr":             loan_suffix,
+                        "salary_component": component_name,
+                        "abbr":             component_name,
                         "amount":           flt(row.deduction_amount),
                         "is_deferred":      int(row.get("is_deferred", 0)),
                         "loan_name":        doc.name,
@@ -679,10 +679,10 @@ def get_loan_advance_deductions(employee, start_date):
 
         elif doc.type == "Advance":
             if not doc.is_deducted:
-                adv_suffix = f"{doc.type}-" + "-".join(doc.name.split("-")[-2:])
+                component_name = f"{doc.type}-{doc.name.split('-')[-1]}"  # ✅ "Advance-0001"
                 deductions.append({
-                    "salary_component": adv_suffix,
-                    "abbr":             adv_suffix,
+                    "salary_component": component_name,
+                    "abbr":             component_name,
                     "amount":           flt(doc.amount),
                     "is_deferred":      0,
                     "loan_name":        doc.name,
@@ -690,7 +690,7 @@ def get_loan_advance_deductions(employee, start_date):
                     "loan_type":        "Advance"
                 })
 
-    return deductions
+    return deductions  # ✅ Outside the loop
 
 
 def _employee_requires_variable_pay(employee):

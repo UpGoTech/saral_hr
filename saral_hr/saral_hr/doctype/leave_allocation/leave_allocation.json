@@ -1,9 +1,8 @@
 {
  "actions": [],
  "allow_import": 1,
- "allow_rename": 0,
  "autoname": "LAL-.#####",
- "creation": "2026-03-23 00:00:00.000000",
+ "creation": "2026-03-23 00:00:00",
  "doctype": "DocType",
  "engine": "InnoDB",
  "field_order": [
@@ -84,12 +83,12 @@
    "fieldname": "leave_ledger_html",
    "fieldtype": "HTML",
    "label": "Leave Ledger",
-   "options": "<div id='leave-ledger-container'></div>"
+   "options": "<div id=\"leave-ledger-container\"></div>"
   }
  ],
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-04-16 00:00:00.000000",
+ "modified": "2026-04-27 15:30:13.300932",
  "modified_by": "Administrator",
  "module": "Saral Hr",
  "name": "Leave Allocation",
@@ -97,25 +96,42 @@
  "owner": "Administrator",
  "permissions": [
   {
-   "create": 1, "delete": 1, "email": 1, "export": 1, "print": 1,
-   "read": 1, "report": 1, "role": "Saral HR Manager",
-   "select": 1, "share": 1, "write": 1
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "Saral HR User",
+   "select": 1,
+   "share": 1
   },
   {
-   "create": 1, "delete": 1, "email": 1, "export": 1, "print": 1,
-   "read": 1, "report": 1, "role": "System Manager",
-   "select": 1, "share": 1, "write": 1
-  },
-  {
-   "email": 1, "export": 1, "print": 1, "read": 1, "report": 1,
-   "role": "Saral HR User", "select": 1, "share": 1
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "Saral HR Manager",
+   "share": 1,
+   "write": 1
   }
  ],
  "sort_field": "modified",
  "sort_order": "DESC",
  "states": [
-  { "color": "Green", "title": "Active" },
-  { "color": "Gray",  "title": "Expired" },
-  { "color": "Red",   "title": "Cancelled" }
+  {
+   "color": "Green",
+   "title": "Active"
+  },
+  {
+   "color": "Gray",
+   "title": "Expired"
+  },
+  {
+   "color": "Red",
+   "title": "Cancelled"
+  }
  ]
 }

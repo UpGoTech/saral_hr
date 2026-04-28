@@ -64,7 +64,7 @@ def get_employees_with_loans(doctype, txt, searchfield, start, page_len, filters
 
 def get_summary_columns():
     return [
-        {"label": _("Loan ID"),       "fieldname": "loan_id",       "fieldtype": "Link",  "options": "Employee Loan Advance", "width": 200},
+        {"label": _("Loan/AdvanceID"),       "fieldname": "loan_id",       "fieldtype": "Link",  "options": "Employee Loan Advance", "width": 200},
         {"label": _("Employee ID"),   "fieldname": "employee",      "fieldtype": "Link",  "options": "Employee",              "width": 130},
         {"label": _("Employee Name"), "fieldname": "employee_name", "fieldtype": "Data",                                      "width": 170},
         {"label": _("Loan Type"),     "fieldname": "type",          "fieldtype": "Data",                                      "width": 90},
@@ -214,19 +214,20 @@ def get_loan_detail(loan_id):
             elif row.is_deferred:
                 status     = "Deferred"
                 actual_amt = 0.0
+                # running_bal stays unchanged — correct, deferred not paid
             else:
                 status     = "Pending"
                 actual_amt = 0.0
+                # running_bal stays unchanged — correct
 
             rows.append({
                 "month":         row.month or "",
-                "scheduled_amt": float(loan.base_emi or 0),
+                "scheduled_amt": float(row.deduction_amount or 0),  # ✅ row's own amount
                 "actual_amt":    actual_amt,
                 "status":        status,
                 "deferred_to":   row.deferred_to or "",
                 "running_bal":   running_bal,
             })
-
     else:
         if loan.date:
             month_label = frappe.utils.formatdate(loan.date, "MMMM yyyy")
@@ -244,12 +245,13 @@ def get_loan_detail(loan_id):
             actual_amt  = 0.0
             running_bal = float(loan.amount)
 
+                # ✅ Fix — use the actual row's deduction_amount as scheduled_amt
         rows.append({
-            "month":         month_label,
-            "scheduled_amt": float(loan.amount),
+            "month":         row.month or "",
+            "scheduled_amt": float(row.deduction_amount or 0),  # ← each row's own amount
             "actual_amt":    actual_amt,
             "status":        status,
-            "deferred_to":   "",
+            "deferred_to":   row.deferred_to or "",
             "running_bal":   running_bal,
         })
 
