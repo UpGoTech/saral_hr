@@ -571,7 +571,7 @@
     "type": "Link"
    }
   ],
-  "modified": "2026-04-20 14:17:21.230211",
+  "modified": "2026-04-28 17:02:53.931444",
   "module": "Saral Hr",
   "name": "Saral HR",
   "number_cards": [],
@@ -612,7 +612,7 @@
     "restrict_to_domain": null,
     "stats_filter": null,
     "type": "URL",
-    "url": "/app/query-report/Daily%20Wage%20Calculation%20Report"
+    "url": "/app/query-report/Attendance%20Daily%20Rate%20Workers%20Report"
    },
    {
     "color": "Grey",

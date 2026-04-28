@@ -1,7 +1,7 @@
 {
  "charts": [],
  "content": "[{\"id\":\"quLY2RmqsK\",\"type\":\"header\",\"data\":{\"text\":\"<span class=\\\"h4\\\">Saral HR</span>\",\"col\":12}},{\"id\":\"vX7k3MjFpF\",\"type\":\"card\",\"data\":{\"card_name\":\"Companies Master Data\",\"col\":4}},{\"id\":\"UXBG6dAVhA\",\"type\":\"card\",\"data\":{\"card_name\":\"Employees Master Data\",\"col\":4}},{\"id\":\"tcNJEXnjQA\",\"type\":\"card\",\"data\":{\"card_name\":\"Salaries Master Data\",\"col\":4}},{\"id\":\"s7XR35vZsk\",\"type\":\"card\",\"data\":{\"card_name\":\"Monthly Transactions\",\"col\":4}},{\"id\":\"cLCTEGWswg\",\"type\":\"card\",\"data\":{\"card_name\":\"Leaves Process\",\"col\":4}},{\"id\":\"2AtGjch4al\",\"type\":\"card\",\"data\":{\"card_name\":\"Report\",\"col\":4}},{\"id\":\"ad8Ylo2JQq\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"View Salary Insight\",\"col\":3}},{\"id\":\"0meWuWmuDh\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Bulk Mark Attendance\",\"col\":3}},{\"id\":\"5CJdLnloTi\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"View Payroll Report\",\"col\":3}},{\"id\":\"DzpOy7QolO\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"View Salary Statistics\",\"col\":3}},{\"id\":\"I8XwI9v3a9\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"View Attendance Dashboard\",\"col\":3}},{\"id\":\"h0lo5909XG\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"HR Workforce & Payroll Overview\",\"col\":3}},{\"id\":\"0nabSA8nAP\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Daily Wage Attendance\",\"col\":3}},{\"id\":\"9q7-_C9IIg\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Daily Wage Calculation Report\",\"col\":3}}]",
- "creation": "2026-04-20 13:54:07.949862",
+ "creation": "2026-04-28 17:00:46.504822",
  "custom_blocks": [],
  "docstatus": 0,
  "doctype": "Workspace",
@@ -320,7 +320,7 @@
    "type": "Link"
   }
  ],
- "modified": "2026-04-20 14:17:21.230211",
+ "modified": "2026-04-28 17:02:53.931444",
  "modified_by": "Administrator",
  "module": "Saral Hr",
  "name": "Saral HR",
@@ -344,7 +344,7 @@
    "doc_view": "List",
    "label": "Daily Wage Calculation Report",
    "type": "URL",
-   "url": "/app/query-report/Daily%20Wage%20Calculation%20Report"
+   "url": "/app/query-report/Attendance%20Daily%20Rate%20Workers%20Report"
   },
   {
    "color": "Grey",
