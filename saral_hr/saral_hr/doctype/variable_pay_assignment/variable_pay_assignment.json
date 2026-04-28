@@ -41,6 +41,7 @@
  "modified_by": "Administrator",
  "module": "Saral Hr",
  "name": "Variable Pay Assignment",
+ "default_print_format": "Variable Pay",
  "naming_rule": "Expression",
  "owner": "Administrator",
  "permissions": [
