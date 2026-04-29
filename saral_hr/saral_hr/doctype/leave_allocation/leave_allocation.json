@@ -88,7 +88,7 @@
  ],
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-04-27 15:30:13.300932",
+ "modified": "2026-04-29 14:18:19.489813",
  "modified_by": "Administrator",
  "module": "Saral Hr",
  "name": "Leave Allocation",
@@ -96,6 +96,8 @@
  "owner": "Administrator",
  "permissions": [
   {
+   "create": 1,
+   "delete": 1,
    "email": 1,
    "export": 1,
    "print": 1,
@@ -103,7 +105,8 @@
    "report": 1,
    "role": "Saral HR User",
    "select": 1,
-   "share": 1
+   "share": 1,
+   "write": 1
   },
   {
    "create": 1,
@@ -114,6 +117,7 @@
    "read": 1,
    "report": 1,
    "role": "Saral HR Manager",
+   "select": 1,
    "share": 1,
    "write": 1
   }

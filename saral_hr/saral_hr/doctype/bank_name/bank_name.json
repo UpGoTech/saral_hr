@@ -21,7 +21,7 @@
  ],
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-04-27 15:32:40.040643",
+ "modified": "2026-04-29 14:19:49.381673",
  "modified_by": "Administrator",
  "module": "Saral Hr",
  "name": "Bank Name",
@@ -50,6 +50,7 @@
    "read": 1,
    "report": 1,
    "role": "Saral HR User",
+   "select": 1,
    "share": 1,
    "write": 1
   }

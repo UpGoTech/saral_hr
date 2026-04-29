@@ -6,7 +6,6 @@ frappe.query_reports["Loan Deduction For Month"] = {
         if (co) {
             setTimeout(() => {
                 report.set_filter_value("company", co);
-                // Set current month & year as defaults
                 const now = new Date();
                 const months = ["January", "February", "March", "April", "May", "June",
                     "July", "August", "September", "October", "November", "December"];
@@ -23,13 +22,12 @@ frappe.query_reports["Loan Deduction For Month"] = {
             label: __("Company"),
             fieldtype: "Link",
             options: "Company",
-            // ✅ reqd removed
             on_change() {
                 frappe.query_report.set_filter_value("employee", "");
                 frappe.query_report.refresh();
             }
         },
-        { 
+        {
             fieldname: "employee",
             label: __("Employee"),
             fieldtype: "Link",
@@ -46,21 +44,18 @@ frappe.query_reports["Loan Deduction For Month"] = {
             fieldname: "loan_type",
             label: __("Type"),
             fieldtype: "Select",
-            // ✅ blank first = "All" (optional filter)
             options: "\nLoan\nAdvance"
         },
         {
             fieldname: "month",
             label: __("Month"),
             fieldtype: "Select",
-            // ✅ blank removed — current month set in onload
-            options: "January\nFebruary\nMarch\nApril\nMay\nJune\nJuly\nAugust\nSeptember\nOctober\nNovember\nDecember"
+            options: "\nJanuary\nFebruary\nMarch\nApril\nMay\nJune\nJuly\nAugust\nSeptember\nOctober\nNovember\nDecember"
         },
         {
             fieldname: "year",
             label: __("Year"),
             fieldtype: "Select",
-            // ✅ blank removed — current year is default
             options: "2023\n2024\n2025\n2026\n2027\n2028",
             default: String(new Date().getFullYear())
         }
@@ -80,7 +75,7 @@ frappe.query_reports["Loan Deduction For Month"] = {
 
         if (column.fieldname === "type") {
             const map = {
-                "Loan": { color: "#1E3A8A", bg: "#DBEAFE", dot: "#3B82F6" },
+                "Loan":    { color: "#1E3A8A", bg: "#DBEAFE", dot: "#3B82F6" },
                 "Advance": { color: "#065F46", bg: "#D1FAE5", dot: "#10B981" }
             };
             const c = map[data.type] || { color: "#374151", bg: "#F3F4F6", dot: "#9CA3AF" };
@@ -91,6 +86,23 @@ frappe.query_reports["Loan Deduction For Month"] = {
                         <span style="width:6px;height:6px;border-radius:50%;
                             background:${c.dot};display:inline-block;"></span>
                         ${data.type}
+                    </span>`;
+        }
+
+        if (column.fieldname === "status") {
+            const map = {
+                "Deducted": { color: "#065F46", bg: "#D1FAE5", dot: "#10B981" },
+                "Pending":  { color: "#92400E", bg: "#FEF3C7", dot: "#F59E0B" },
+                "Deferred": { color: "#1E3A8A", bg: "#DBEAFE", dot: "#3B82F6" }
+            };
+            const c = map[data.status] || { color: "#374151", bg: "#F3F4F6", dot: "#9CA3AF" };
+            return `<span style="display:inline-flex;align-items:center;gap:5px;
+                        color:${c.color};background:${c.bg};
+                        padding:3px 10px;border-radius:20px;
+                        font-size:11px;font-weight:600;">
+                        <span style="width:6px;height:6px;border-radius:50%;
+                            background:${c.dot};display:inline-block;"></span>
+                        ${data.status}
                     </span>`;
         }
 

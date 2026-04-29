@@ -31,26 +31,37 @@ def get_columns():
 
 @frappe.whitelist()
 @frappe.validate_and_sanitize_search_inputs
-def get_employees_with_advances(doctype, txt, searchfield, start, page_len, filters):
-    company = filters.get("company") if filters else None
-    params  = {"txt": f"%{txt}%", "start": start, "page_len": page_len}
+def get_employees_with_advances(doctype, txt, searchfield, start, page_len, filters):  # ✅ correct name
+    if isinstance(filters, str):
+        import json
+        filters = json.loads(filters)
+
     company_cond = ""
-    if company:
+    params = {
+        "txt": f"%{txt}%",
+        "start": start,
+        "page_len": page_len,
+    }
+
+    if filters and filters.get("company"):
         company_cond = "AND ela.company = %(company)s"
-        params["company"] = company
+        params["company"] = filters["company"]
+
     results = frappe.db.sql("""
-        SELECT DISTINCT ela.employee,
-               COALESCE(e.employee_name, ela.full_name, ela.employee) AS employee_name
+        SELECT DISTINCT
+            ela.employee,
+            COALESCE(e.employee_name, ela.full_name, ela.employee) AS employee_name
         FROM `tabEmployee Loan Advance` ela
-        INNER JOIN `tabEmployee` e ON e.name = ela.employee
+        LEFT JOIN `tabEmployee` e ON e.name = ela.employee
         WHERE ela.docstatus = 1 AND ela.type = 'Advance'
-              {company_cond}
-              AND (ela.employee LIKE %(txt)s OR e.employee_name LIKE %(txt)s)
+            {company_cond}
+            AND (ela.employee LIKE %(txt)s OR e.employee_name LIKE %(txt)s
+                 OR ela.full_name LIKE %(txt)s)
         ORDER BY ela.employee ASC
         LIMIT %(page_len)s OFFSET %(start)s
     """.format(company_cond=company_cond), params)
-    return [[r[0], r[1] or r[0]] for r in results]
 
+    return [[r[0], r[1] or r[0]] for r in results]
 
 def build_conditions(filters):
     conditions, values = "", {}

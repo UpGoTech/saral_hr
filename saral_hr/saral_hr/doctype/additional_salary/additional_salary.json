@@ -1,8 +1,7 @@
 {
  "actions": [],
- "allow_rename": 0,
  "autoname": "format:ADDSAL-{YYYY}-{MM}-{##}",
- "creation": "2026-03-06 00:00:00.000000",
+ "creation": "2026-03-06 00:00:00",
  "doctype": "DocType",
  "engine": "InnoDB",
  "field_order": [
@@ -18,29 +17,30 @@
   "section_break_totals",
   "currency",
   "total_amount",
-  "remarks"
+  "remarks",
+  "amended_from"
  ],
  "fields": [
   {
    "fieldname": "employee",
    "fieldtype": "Link",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
    "label": "Employee",
    "options": "Company Link",
-   "reqd": 1,
-   "in_list_view": 1,
-   "in_standard_filter": 1
+   "reqd": 1
   },
   {
    "fieldname": "column_break_1",
    "fieldtype": "Column Break"
   },
   {
+   "fetch_from": "employee.full_name",
    "fieldname": "employee_name",
    "fieldtype": "Data",
+   "in_list_view": 1,
    "label": "Employee Name",
-   "fetch_from": "employee.full_name",
-   "read_only": 1,
-   "in_list_view": 1
+   "read_only": 1
   },
   {
    "fieldname": "section_break_period",
@@ -50,11 +50,11 @@
   {
    "fieldname": "year",
    "fieldtype": "Select",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
    "label": "Year",
    "options": "2022\n2023\n2024\n2025\n2026\n2027",
-   "reqd": 1,
-   "in_list_view": 1,
-   "in_standard_filter": 1
+   "reqd": 1
   },
   {
    "fieldname": "column_break_2",
@@ -63,11 +63,11 @@
   {
    "fieldname": "month",
    "fieldtype": "Select",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
    "label": "Month",
    "options": "January\nFebruary\nMarch\nApril\nMay\nJune\nJuly\nAugust\nSeptember\nOctober\nNovember\nDecember",
-   "reqd": 1,
-   "in_list_view": 1,
-   "in_standard_filter": 1
+   "reqd": 1
   },
   {
    "fieldname": "section_break_components",
@@ -90,30 +90,40 @@
    "default": "INR",
    "fieldname": "currency",
    "fieldtype": "Link",
+   "hidden": 1,
    "label": "Currency",
    "options": "Currency",
-   "read_only": 1,
-   "hidden": 1
+   "read_only": 1
   },
   {
+   "bold": 1,
    "fieldname": "total_amount",
    "fieldtype": "Currency",
    "label": "Total Additional Amount",
    "options": "currency",
-   "read_only": 1,
-   "bold": 1,
-   "precision": "2"
+   "precision": "2",
+   "read_only": 1
   },
   {
    "fieldname": "remarks",
    "fieldtype": "Small Text",
    "label": "Remarks"
+  },
+  {
+   "fieldname": "amended_from",
+   "fieldtype": "Link",
+   "label": "Amended From",
+   "no_copy": 1,
+   "options": "Additional Salary",
+   "print_hide": 1,
+   "read_only": 1,
+   "search_index": 1
   }
  ],
  "index_web_pages_for_search": 1,
  "is_submittable": 1,
  "links": [],
- "modified": "2026-03-06 00:00:00.000000",
+ "modified": "2026-04-29 13:31:08.411069",
  "modified_by": "Administrator",
  "module": "Saral Hr",
  "name": "Additional Salary",
@@ -131,11 +141,14 @@
    "read": 1,
    "report": 1,
    "role": "Saral HR Manager",
+   "select": 1,
    "share": 1,
    "submit": 1,
    "write": 1
   },
   {
+   "create": 1,
+   "delete": 1,
    "email": 1,
    "export": 1,
    "print": 1,
@@ -143,7 +156,9 @@
    "report": 1,
    "role": "Saral HR User",
    "select": 1,
-   "share": 1
+   "share": 1,
+   "submit": 1,
+   "write": 1
   }
  ],
  "sort_field": "modified",
