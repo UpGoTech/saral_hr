@@ -221,12 +221,10 @@ def get_employee_profile_data(employee):
             cancelled_ssas.append(_serialize_ssa(frappe.get_doc("Salary Structure Assignment", rec.name)))
         except Exception:
             pass
-        
-  # ── Loan Ledger ────────────────────────────────────────────────────────────
-    
+
+    # ── Loan Ledger ────────────────────────────────────────────────────────────
     loan_ledger = []
     try:
-        # Fetch ONLY submitted loans (docstatus = 1) for this employee
         loan_names = frappe.db.get_all(
             "Employee Loan Advance",
             filters={
@@ -236,35 +234,29 @@ def get_employee_profile_data(employee):
             fields=["name"],
             order_by="creation desc"
         )
-        
+
         for ln in loan_names:
             try:
                 loan_doc = frappe.get_doc("Employee Loan Advance", ln.name)
-                
+
                 schedule_rows = []
                 total_recovered = 0.0
                 total_outstanding = 0.0
-                
+
                 loan_type = loan_doc.get("type")
                 loan_amount = float(loan_doc.get("amount") or 0)
-                
-                # Check if this is Advance or Loan
+
                 if loan_type == "Advance":
-                    # ADVANCE: Single deduction, no schedule
                     is_deducted = loan_doc.get("is_deducted", 0)
-                    
                     if is_deducted:
                         total_recovered = loan_amount
                         total_outstanding = 0
                     else:
                         total_recovered = 0
                         total_outstanding = loan_amount
-                    
-                    # For display consistency
-                    schedule_rows = []  # No schedule for advance
-                    
+                    schedule_rows = []
+
                 else:
-                    # LOAN-I or LOAN-II: Has schedule table
                     if loan_doc.get("schedule") and len(loan_doc.schedule) > 0:
                         for row in loan_doc.schedule:
                             deducted = float(row.get("deduction_amount") or 0)
@@ -273,12 +265,12 @@ def get_employee_profile_data(employee):
                             if row.get("is_deferred"):
                                 status = "Deferred"
                             deferred_to = str(row.get("deferred_to")) if row.get("deferred_to") else None
-                            
+
                             if status == "Deducted":
                                 total_recovered += deducted
                             else:
                                 total_outstanding += base_emi
-                            
+
                             schedule_rows.append({
                                 "month": str(row.get("month")) if row.get("month") else None,
                                 "base_emi": base_emi,
@@ -287,18 +279,15 @@ def get_employee_profile_data(employee):
                                 "deferred_to": deferred_to,
                             })
                     else:
-                        # Should not happen for loans, but fallback
                         total_outstanding = loan_amount
-                
+
                 pct_recovered = round((total_recovered / loan_amount * 100), 1) if loan_amount else 0
-                
-                # Determine status
+
                 if total_outstanding <= 0:
                     status = "Completed"
                 else:
                     status = "Active"
-                
-                # Prepare loan data
+
                 loan_data = {
                     "name": loan_doc.name,
                     "loan_type": loan_type,
@@ -310,8 +299,7 @@ def get_employee_profile_data(employee):
                     "pct_recovered": pct_recovered,
                     "schedule": schedule_rows,
                 }
-                
-                # Add loan-specific fields
+
                 if loan_type == "Advance":
                     loan_data["is_deducted"] = loan_doc.get("is_deducted", 0)
                 else:
@@ -321,15 +309,16 @@ def get_employee_profile_data(employee):
                     loan_data["monthly_deduction"] = float(loan_doc.get("monthly_deduction") or 0)
                     loan_data["start_month"] = loan_doc.get("start_month") or ""
                     loan_data["start_year"] = loan_doc.get("start_year") or ""
-                
+
                 loan_ledger.append(loan_data)
-                
+
             except Exception as e:
                 frappe.log_error(f"Error loading loan {ln.name}: {str(e)}", "Employee Profile")
                 continue
-                    
+
     except Exception as e:
         frappe.log_error(f"Error fetching loans: {str(e)}", "Employee Profile")
+
     # ── Return data ────────────────────────────────────────────────────────────
     return {
         "employee":                  emp.employee,
@@ -351,14 +340,226 @@ def get_employee_profile_data(employee):
         "final_reporting_name":      final_reporting_name,
         "latest_ssa":                latest_ssa,
         "cancelled_ssas":            cancelled_ssas,
-        "loan_ledger":               loan_ledger, 
+        "loan_ledger":               loan_ledger,
     }
-    
+
+
+# ── Leave Balance for Employee Profile Page ───────────────────────────────────
+
+@frappe.whitelist()
+def get_employee_leave_balance(employee):
+    """
+    Returns the active Leave Allocation for the employee with per-leave-type
+    balances, used counts, and ledger entries.
+
+    Used by the Employee Profile page to display the Leave Balance card.
+
+    Returns:
+    {
+        "has_allocation": True/False,
+        "from_date": "...",
+        "to_date": "...",
+        "leave_types": [
+            {
+                "leave_type": "Earned Leave",
+                "allocated_leaves": 12,
+                "used_leaves": 3.0,
+                "remaining_leaves": 9.0,
+                "ledger": [ { date, day, status, leaves_in, leaves_out, balance }, ... ]
+            },
+            ...
+        ]
+    }
+    """
+    today_date = getdate(today())
+
+    # Find the most relevant active allocation:
+    # prefer one where today falls within the period; otherwise take the latest.
+    alloc = frappe.db.get_value(
+        "Leave Allocation",
+        {
+            "employee":  employee,
+            "from_date": ["<=", str(today_date)],
+            "to_date":   [">=", str(today_date)],
+            "docstatus": ["<", 2],
+        },
+        ["name", "from_date", "to_date", "status"],
+        as_dict=True
+    )
+
+    # Fallback: no current allocation — grab the most recent one
+    if not alloc:
+        alloc = frappe.db.get_value(
+            "Leave Allocation",
+            {
+                "employee":  employee,
+                "docstatus": ["<", 2],
+            },
+            ["name", "from_date", "to_date", "status"],
+            order_by="to_date desc",
+            as_dict=True
+        )
+
+    if not alloc:
+        return {"has_allocation": False}
+
+    # Get all leave type rows for this allocation
+    detail_rows = frappe.get_all(
+        "Leave Allocation Detail",
+        filters={"parent": alloc["name"]},
+        fields=["leave_type", "allocated_leaves", "used_leaves", "remaining_leaves"],
+        order_by="leave_type asc"
+    )
+
+    if not detail_rows:
+        return {"has_allocation": True, "from_date": str(alloc["from_date"]),
+                "to_date": str(alloc["to_date"]), "leave_types": []}
+
+    # Build ledger entries for each leave type
+    leave_types_data = []
+    for row in detail_rows:
+        ledger_entries = _get_ledger_entries(
+            employee=employee,
+            leave_type=row.leave_type,
+            allocated=float(row.allocated_leaves or 0),
+            from_date=str(alloc["from_date"]),
+            to_date=str(alloc["to_date"]),
+            today_date=today_date
+        )
+        leave_types_data.append({
+            "leave_type":       row.leave_type,
+            "allocated_leaves": row.allocated_leaves or 0,
+            "used_leaves":      row.used_leaves or 0,
+            "remaining_leaves": row.remaining_leaves or 0,
+            "ledger":           ledger_entries,
+        })
+
+    return {
+        "has_allocation": True,
+        "from_date":      str(alloc["from_date"]),
+        "to_date":        str(alloc["to_date"]),
+        "leave_types":    leave_types_data,
+    }
+
+
+# Maps Attendance status -> Leave Type name (reused from leave_allocation.py logic)
+_STATUS_LEAVE_MAP = {
+    "Sick Leave":      "Sick Leave",
+    "Casual Leave":    "Casual Leave",
+    "Annual Leave":    "Annual Leave",
+    "Earned Leave":    "Earned Leave",
+    "Comp Off":        "Comp Off",
+    "LWP":             "LWP",
+    "Earned Comp Off": "Earned Comp Off",
+}
+
+_HALF_DAY_FIELDS = ["custom_first_half", "custom_second_half"]
+
+
+def _get_ledger_entries(employee, leave_type, allocated, from_date, to_date, today_date):
+    """
+    Build a chronological ledger of Added / Used / Expired entries
+    for a single leave type within the allocation period.
+    """
+    entries = []
+    balance = 0.0
+
+    # ── Opening (Allocated) entry ─────────────────────────────────────────────
+    if allocated:
+        balance = float(allocated)
+        open_date = getdate(from_date)
+        entries.append({
+            "date":       frappe.utils.format_date(from_date),
+            "day":        open_date.strftime("%A"),
+            "status":     "Added",
+            "leaves_in":  allocated,
+            "leaves_out": "-",
+            "balance":    balance,
+        })
+
+    # ── Find attendance statuses that map to this leave type ─────────────────
+    attendance_statuses = [s for s, lt in _STATUS_LEAVE_MAP.items() if lt == leave_type]
+
+    if attendance_statuses:
+        # Full-day records
+        full_records = frappe.get_all(
+            "Attendance",
+            filters={
+                "employee":        ["in", frappe.db.get_all("Company Link",
+                                        filters={"employee": employee}, pluck="name") or [employee]],
+                "attendance_date": ["between", [from_date, to_date]],
+                "status":          ["in", attendance_statuses],
+                "docstatus":       ["<", 2],
+            },
+            fields=["attendance_date", "status"],
+            order_by="attendance_date asc"
+        )
+        for att in full_records:
+            att_date = getdate(att.attendance_date)
+            balance -= 1.0
+            entries.append({
+                "date":       frappe.utils.format_date(att.attendance_date),
+                "day":        att_date.strftime("%A"),
+                "status":     "Used",
+                "leaves_in":  "-",
+                "leaves_out": 1,
+                "balance":    balance,
+            })
+
+        # Half-day records
+        half_records = frappe.get_all(
+            "Attendance",
+            filters={
+                "employee":        ["in", frappe.db.get_all("Company Link",
+                                        filters={"employee": employee}, pluck="name") or [employee]],
+                "attendance_date": ["between", [from_date, to_date]],
+                "status":          "Half Day",
+                "docstatus":       ["<", 2],
+            },
+            fields=["attendance_date", "custom_first_half", "custom_second_half"],
+            order_by="attendance_date asc"
+        )
+        for att in half_records:
+            used_halves = sum(
+                1 for field in _HALF_DAY_FIELDS
+                if (att.get(field) or "") in attendance_statuses
+            )
+            if used_halves:
+                att_date  = getdate(att.attendance_date)
+                deduction = used_halves * 0.5
+                balance  -= deduction
+                entries.append({
+                    "date":       frappe.utils.format_date(att.attendance_date),
+                    "day":        att_date.strftime("%A"),
+                    "status":     "Used",
+                    "leaves_in":  "-",
+                    "leaves_out": deduction,
+                    "balance":    balance,
+                })
+
+    # Sort chronologically (opening entry stays first due to from_date)
+    entries.sort(key=lambda e: e["date"])
+
+    # ── Expiry entry (only when period has ended and balance > 0) ─────────────
+    period_end = getdate(to_date) if to_date else None
+    if balance > 0 and period_end and today_date >= period_end:
+        exp_date = period_end
+        entries.append({
+            "date":       frappe.utils.format_date(to_date),
+            "day":        exp_date.strftime("%A"),
+            "status":     "Expired",
+            "leaves_in":  "-",
+            "leaves_out": balance,
+            "balance":    0,
+        })
+
+    return entries
+
+
 @frappe.whitelist()
 def get_employee_deduction_breakdown(employee, month, year, start_date):
     from frappe.utils import flt
 
-    # Find salary slip for this employee + month
     slip = frappe.db.get_value(
         "Salary Slip",
         {"employee": employee, "start_date": start_date, "docstatus": ["in", [0, 1]]},
@@ -445,14 +646,13 @@ def get_employee_deduction_breakdown(employee, month, year, start_date):
         elif comp in additional_deduction_components:
             add_ded_deducted[comp] = amt
 
-    # ── Scan earnings for additional salary components (e.g. OT) ─────────────
+    # ── Scan earnings for additional salary components ────────────────────────
     for row in doc.earnings:
         comp = row.salary_component or ""
         amt  = flt(row.amount)
         if comp in additional_salary_components and comp not in add_sal_deducted:
             add_sal_deducted[comp] = amt
 
-    # Fill 0-amount entries
     for comp in additional_salary_components:
         if comp not in add_sal_deducted:
             add_sal_deducted[comp] = 0
