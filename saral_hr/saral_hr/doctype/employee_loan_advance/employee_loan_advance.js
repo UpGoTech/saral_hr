@@ -58,7 +58,12 @@ frappe.ui.form.on('Employee Loan Advance', {
     date:            frm => trigger_generate(frm),
     start_month:     frm => trigger_generate(frm),
     start_year:      frm => trigger_generate(frm),
-    installment_gap: frm => trigger_generate(frm),
+    installment_gap(frm) {
+    if (frm.doc.type !== 'Loan') return;
+    frm.clear_table('schedule');
+    frm.refresh_field('schedule');
+    trigger_generate(frm);
+},
 
     type(frm) {
         if (frm.doc.type === 'Loan') {
