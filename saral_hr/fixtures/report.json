@@ -676,7 +676,7 @@
   "javascript": null,
   "json": null,
   "letter_head": null,
-  "modified": "2026-03-25 17:14:22.950796",
+  "modified": "2026-04-28 18:13:22.092198",
   "module": "Saral Hr",
   "name": "Employee Loan Advance Ledger",
   "prepared_report": 0,
@@ -691,7 +691,13 @@
     "parent": "Employee Loan Advance Ledger",
     "parentfield": "roles",
     "parenttype": "Report",
-    "role": "System Manager"
+    "role": "Saral HR Manager"
+   },
+   {
+    "parent": "Employee Loan Advance Ledger",
+    "parentfield": "roles",
+    "parenttype": "Report",
+    "role": "Saral HR User"
    }
   ],
   "timeout": 0
@@ -726,6 +732,43 @@
    },
    {
     "parent": "Employee Timeline Report",
+    "parentfield": "roles",
+    "parenttype": "Report",
+    "role": "Saral HR User"
+   }
+  ],
+  "timeout": 0
+ },
+ {
+  "add_total_row": 0,
+  "columns": [],
+  "disabled": 0,
+  "docstatus": 0,
+  "doctype": "Report",
+  "filters": [],
+  "is_standard": "Yes",
+  "javascript": null,
+  "json": null,
+  "letter_head": null,
+  "modified": "2026-04-17 12:18:15.979363",
+  "module": "Saral Hr",
+  "name": "Loan Deduction For Month",
+  "prepared_report": 0,
+  "query": null,
+  "ref_doctype": "Employee Loan Advance",
+  "reference_report": null,
+  "report_name": "Loan Deduction For Month",
+  "report_script": null,
+  "report_type": "Script Report",
+  "roles": [
+   {
+    "parent": "Loan Deduction For Month",
+    "parentfield": "roles",
+    "parenttype": "Report",
+    "role": "Saral HR Manager"
+   },
+   {
+    "parent": "Loan Deduction For Month",
     "parentfield": "roles",
     "parenttype": "Report",
     "role": "Saral HR User"
