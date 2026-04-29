@@ -74,10 +74,18 @@ function render_all_ledgers(frm) {
 	const employee  = frm.doc.employee;
 	const from_date = frm.doc.from_date;
 	const to_date   = frm.doc.to_date;
-	const rows      = frm.doc.leave_allocation_details || [];
+	const all_rows  = frm.doc.leave_allocation_details || [];
 
-	if (!employee || !from_date || !to_date || !rows.length) {
+	// Only show leave types where allocated_leaves is strictly greater than 0
+	const rows = all_rows.filter(r => r.allocated_leaves > 0);
+
+	if (!employee || !from_date || !to_date || !all_rows.length) {
 		container.html(placeholder_html("Save the form with employee, period, and leave types to view the ledger."));
+		return;
+	}
+
+	if (!rows.length) {
+		container.html(placeholder_html("No leave types with allocated leaves to display."));
 		return;
 	}
 
@@ -95,6 +103,7 @@ function render_all_ledgers(frm) {
 		}).then(r => ({
 			leave_type: row.leave_type,
 			allocated:  row.allocated_leaves || 0,
+			to_date:    to_date,
 			entries:    (r && r.message) ? r.message : []
 		}))
 	);
@@ -125,7 +134,7 @@ function build_all_ledgers_html(results) {
 	if (!results.length) return placeholder_html("No leave types found.");
 
 	const cards = results.map(r =>
-		build_single_ledger_card(r.leave_type, r.allocated, r.entries)
+		build_single_ledger_card(r.leave_type, r.allocated, r.entries, r.to_date)
 	).join("");
 
 	return `
@@ -141,11 +150,38 @@ function build_all_ledgers_html(results) {
 		</div>`;
 }
 
-function build_single_ledger_card(leave_type, allocated, entries) {
+/**
+ * is_period_ended — returns true when today >= to_date.
+ * Used to decide whether to render the Expired row at all.
+ */
+function is_period_ended(to_date_str) {
+	if (!to_date_str) return false;
+	const today    = new Date();
+	today.setHours(0, 0, 0, 0);
+	const to_parts = to_date_str.split("-");
+	const to_d     = new Date(
+		parseInt(to_parts[0]),
+		parseInt(to_parts[1]) - 1,
+		parseInt(to_parts[2])
+	);
+	to_d.setHours(0, 0, 0, 0);
+	return today >= to_d;
+}
+
+function build_single_ledger_card(leave_type, allocated, entries, to_date) {
+	// Filter out Expired rows if the period has NOT ended yet.
+	// The Python side already handles this correctly, but we add a JS guard
+	// in case stale/cached data sneaks through.
+	const period_ended   = is_period_ended(to_date);
+	const filtered_entries = entries.filter(e => {
+		if (e.status === "Expired" && !period_ended) return false;
+		return true;
+	});
+
 	// Final balance: last entry's balance, or allocated if no entries
 	let final_balance = allocated;
-	if (entries.length) {
-		final_balance = entries[entries.length - 1].balance;
+	if (filtered_entries.length) {
+		final_balance = filtered_entries[filtered_entries.length - 1].balance;
 	}
 
 	const balance_color = final_balance > 0 ? "#1a73e8" : (final_balance < 0 ? "#c5221f" : "#888");
@@ -153,7 +189,7 @@ function build_single_ledger_card(leave_type, allocated, entries) {
 
 	let rows_html = "";
 
-	if (!entries.length) {
+	if (!filtered_entries.length) {
 		// No activity — show balance row only
 		rows_html = `
 			<tr>
@@ -166,7 +202,7 @@ function build_single_ledger_card(leave_type, allocated, entries) {
 				">No activity — Balance: ${allocated}</td>
 			</tr>`;
 	} else {
-		rows_html = entries.map((e, i) => {
+		rows_html = filtered_entries.map((e, i) => {
 			const is_added   = e.status === "Added";
 			const is_expired = e.status === "Expired";
 			const is_used    = e.status === "Used";
@@ -204,6 +240,18 @@ function build_single_ledger_card(leave_type, allocated, entries) {
 				</tr>`;
 		}).join("");
 	}
+
+	// Show a subtle "Period not ended" notice when expiry is not yet applicable
+	const period_notice = (!period_ended && allocated > 0)
+		? `<div style="
+				padding: 6px 14px;
+				font-size: 11px;
+				color: var(--text-muted, #6b7280);
+				background: #f8fafc;
+				border-top: 1px solid var(--border-color, #e2e8f0);
+				font-style: italic;
+			">Allocation period is still active — expiry will appear after ${frappe.utils.escape_html(to_date || "")}</div>`
+		: "";
 
 	return `
 		<div style="
@@ -246,6 +294,7 @@ function build_single_ledger_card(leave_type, allocated, entries) {
 				</thead>
 				<tbody>${rows_html}</tbody>
 			</table>
+			${period_notice}
 		</div>`;
 }
 

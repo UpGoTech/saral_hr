@@ -111,15 +111,15 @@ function get_ma_html() {
                     </thead>
                     <tbody>
                         <tr>
-                            <td class="ma-leave-row-label">Available</td>
-                            <td class="ma-leave-val ma-leave-bal">—</td>
-                            <td class="ma-leave-val ma-leave-bal">—</td>
+                            <td class="ma-leave-row-label">Allocated</td>
+                            <td class="ma-leave-val" id="ma_el_allocated">—</td>
+                            <td class="ma-leave-val" id="ma_cl_allocated">—</td>
                             <td class="ma-leave-val ma-leave-eco-val ma-eco-col" id="ma_eco_available">0</td>
                         </tr>
                         <tr>
                             <td class="ma-leave-row-label">Earned</td>
-                            <td class="ma-leave-val ma-leave-bal">—</td>
-                            <td class="ma-leave-val ma-leave-bal">—</td>
+                            <td class="ma-leave-val ma-leave-bal" id="ma_el_earned_row">—</td>
+                            <td class="ma-leave-val ma-leave-bal" id="ma_cl_earned_row">—</td>
                             <td class="ma-leave-val ma-leave-eco-val ma-eco-col" id="ma_eco_earned">0</td>
                         </tr>
                         <tr>
@@ -130,8 +130,8 @@ function get_ma_html() {
                         </tr>
                         <tr>
                             <td class="ma-leave-row-label">Balance</td>
-                            <td class="ma-leave-val ma-leave-bal">0</td>
-                            <td class="ma-leave-val ma-leave-bal">0</td>
+                            <td class="ma-leave-val" id="ma_el_balance">0</td>
+                            <td class="ma-leave-val" id="ma_cl_balance">0</td>
                             <td class="ma-leave-val ma-leave-eco-val ma-eco-col" id="ma_eco_balance">0</td>
                         </tr>
                     </tbody>
@@ -145,6 +145,9 @@ function get_ma_html() {
 
         <!-- Salary slip lock/warning banner (injected dynamically) -->
         <div id="ma_slip_banner" style="display:none;"></div>
+
+        <!-- No allocation warning banner -->
+        <div id="ma_alloc_banner" style="display:none;"></div>
 
         <div class="ma-table-scroll" id="ma_table_scroll">
             <table class="ma-table" id="ma_table" style="display:none;">
@@ -189,13 +192,13 @@ function get_ma_html() {
                                 <span class="ma-col-count" id="ma_cnt_lwp">0</span>
                             </div>
                         </th>
-                        <th rowspan="2" class="ma-th-status">
+                        <th rowspan="2" class="ma-th-status ma-el-th-col">
                             <div class="ma-th-inner">
                                 <span class="ma-th-label">Earned<br>Leave</span>
                                 <span class="ma-col-count" id="ma_cnt_el">0</span>
                             </div>
                         </th>
-                        <th rowspan="2" class="ma-th-status">
+                        <th rowspan="2" class="ma-th-status ma-cl-th-col">
                             <div class="ma-th-inner">
                                 <span class="ma-th-label">Casual<br>Leave</span>
                                 <span class="ma-col-count" id="ma_cnt_cl">0</span>
@@ -331,12 +334,16 @@ function init_mark_attendance($main) {
 
     // ── Salary slip lock state ──────────────────────────────────────────────
     var submittedSlipMonths   = {};
-    var currentMonthLockState = null;   // null | "submitted" | "draft"
+    var currentMonthLockState = null;
     var currentMonthSlipName  = null;
 
-    // ── NEW: tracks whether current employee's category has_subtype ──
+    // ── Tracks whether current employee's category has_subtype ──
     var employeeHasSubtypeMap = {};
     var currentEmployeeHasSubtype = false;
+
+    // ── Leave allocation state ──────────────────────────────────────────────
+    var currentHasAllocation = false;
+    var currentLeaveBalances  = null;
 
     var attendanceTableData = {};
     var originalAttendanceData = {};
@@ -406,6 +413,7 @@ function init_mark_attendance($main) {
     var tableScroll   = document.getElementById("ma_table_scroll");
     var hdPanel       = document.getElementById("ma_hd_panel");
     var slipBanner    = document.getElementById("ma_slip_banner");
+    var allocBanner   = document.getElementById("ma_alloc_banner");
     var saveBtn       = document.getElementById("ma_save_attendance");
 
     var allEmployees = [];
@@ -508,7 +516,6 @@ function init_mark_attendance($main) {
     function applyButtonLock() {
         var isLocked = (currentMonthLockState === "submitted");
 
-        // Save button
         if (isLocked) {
             saveBtn.disabled = true;
             saveBtn.classList.add("ma-btn-locked");
@@ -518,7 +525,6 @@ function init_mark_attendance($main) {
         }
         saveBtn.title = isLocked ? "Attendance is locked — salary slip has been submitted." : "";
 
-        // Bulk mark buttons
         ["ma_mark_present", "ma_mark_absent", "ma_mark_halfday", "ma_mark_lwp"].forEach(function (id) {
             var btn = document.getElementById(id);
             if (!btn) return;
@@ -531,7 +537,6 @@ function init_mark_attendance($main) {
         });
     }
 
-    // ── Apply/remove lock class on the TABLE element itself (no overlay) ──
     function applyTableLockClass() {
         if (!tableEl) return;
         if (currentMonthLockState === "submitted") {
@@ -539,10 +544,49 @@ function init_mark_attendance($main) {
         } else {
             tableEl.classList.remove("ma-table-locked");
         }
-        // Also update the scroll container cursor
         if (tableScroll) {
             tableScroll.classList.toggle("ma-table-scroll-locked", currentMonthLockState === "submitted");
         }
+    }
+
+    // ════════════════════════════════════════════════════════════════════════
+    //  LEAVE ALLOCATION BANNER & COLUMN GATING
+    // ════════════════════════════════════════════════════════════════════════
+
+    function renderAllocBanner() {
+        if (!allocBanner) return;
+        if (currentHasAllocation || !employeeSel.value || monthSel.value === "") {
+            allocBanner.style.display = "none";
+            allocBanner.innerHTML = "";
+            return;
+        }
+        var monthLbl = getMonthLabel();
+        allocBanner.innerHTML = `
+            <div class="ma-slip-banner ma-slip-banner-noalloc">
+                <span class="ma-slip-banner-icon">ℹ️</span>
+                <div class="ma-slip-banner-text">
+                    <strong>No Leave Allocation found</strong> for ${monthLbl}.
+                    Earned Leave, Casual Leave, and Comp Off columns have been disabled.
+                    Please create a Leave Allocation for this employee and period first.
+                </div>
+            </div>`;
+        allocBanner.style.display = "block";
+    }
+
+    function applyAllocationColumnGating() {
+        var leaveStatuses = ["Earned Leave", "Casual Leave", "Comp Off", "Earned Comp Off"];
+        var noAlloc = !currentHasAllocation;
+
+        document.querySelectorAll(".ma-el-th-col, .ma-cl-th-col, .ma-coff-th-col").forEach(function (el) {
+            el.classList.toggle("ma-no-alloc-col", noAlloc);
+        });
+
+        tbody.querySelectorAll("td[data-status]").forEach(function (td) {
+            var s = td.getAttribute("data-status");
+            if (leaveStatuses.includes(s)) {
+                td.classList.toggle("ma-no-alloc-cell", noAlloc);
+            }
+        });
     }
 
     // ════════════════════════════════════════════════════════════════════════
@@ -580,10 +624,11 @@ function init_mark_attendance($main) {
         if (!stickyBar || !tableScroll) return;
         var stickyH    = stickyBar.offsetHeight;
         var bannerH    = (slipBanner && slipBanner.style.display !== "none") ? slipBanner.offsetHeight : 0;
+        var allocH     = (allocBanner && allocBanner.style.display !== "none") ? allocBanner.offsetHeight : 0;
         var pageHead   = document.querySelector(".page-head");
         var pageHeadH  = pageHead ? pageHead.offsetHeight : 60;
         var BOTTOM_PAD = 16;
-        var availableH = window.innerHeight - pageHeadH - stickyH - bannerH - BOTTOM_PAD;
+        var availableH = window.innerHeight - pageHeadH - stickyH - bannerH - allocH - BOTTOM_PAD;
         tableScroll.style.height = Math.max(availableH, 200) + "px";
         document.documentElement.style.setProperty("--ma-sticky-bar-h", stickyH + "px");
     }
@@ -638,8 +683,10 @@ function init_mark_attendance($main) {
         attendanceTableData = {}; originalAttendanceData = {}; dirtyDates.clear();
         updateCounts();
         applySubtypeVisibility(false);
+        currentHasAllocation = false; currentLeaveBalances = null;
         submittedSlipMonths = {}; currentMonthLockState = null; currentMonthSlipName = null;
-        renderSlipBanner(); applyButtonLock(); applyTableLockClass();
+        renderSlipBanner(); renderAllocBanner(); applyButtonLock(); applyTableLockClass();
+        clearLeaveBalanceDisplay();
         if (!sel) { searchInput.disabled = true; employees = []; return; }
         employees = allEmployees.filter(function (e) { return e.company === sel; });
         searchInput.disabled = false;
@@ -794,13 +841,15 @@ function init_mark_attendance($main) {
                 .map(function (d) { return d.charAt(0).toUpperCase() + d.slice(1); }).join(", ");
 
         submittedSlipMonths = {}; currentMonthLockState = null; currentMonthSlipName = null;
-        renderSlipBanner(); applyButtonLock(); applyTableLockClass();
+        currentHasAllocation = false; currentLeaveBalances = null;
+        renderSlipBanner(); renderAllocBanner(); applyButtonLock(); applyTableLockClass();
+        clearLeaveBalanceDisplay();
 
         function proceedAfterSlipLoad() {
             if (joiningDateMap[emp.value] !== undefined) {
                 loadEmployeeSubtypeAndProceed(emp.value, function () {
                     generateTable();
-                    loadCompOffBalance(emp.value);
+                    loadLeaveBalance(emp.value);
                 });
             } else {
                 frappe.call({
@@ -812,7 +861,7 @@ function init_mark_attendance($main) {
                         leftDateMap[emp.value]    = data.left_date    || null;
                         loadEmployeeSubtypeAndProceed(emp.value, function () {
                             generateTable();
-                            loadCompOffBalance(emp.value);
+                            loadLeaveBalance(emp.value);
                         });
                     }
                 });
@@ -831,10 +880,12 @@ function init_mark_attendance($main) {
         clearBtn.classList.remove("show"); searchResults.classList.remove("show");
         tableEl.style.display = "none";
         attendanceTableData = {}; originalAttendanceData = {}; dirtyDates.clear();
-        clearTimeout(searchDebounceTimer); updateCounts(); clearCompOffBalance();
+        clearTimeout(searchDebounceTimer); updateCounts();
         applySubtypeVisibility(false);
+        currentHasAllocation = false; currentLeaveBalances = null;
         submittedSlipMonths = {}; currentMonthLockState = null; currentMonthSlipName = null;
-        renderSlipBanner(); applyButtonLock(); applyTableLockClass();
+        renderSlipBanner(); renderAllocBanner(); applyButtonLock(); applyTableLockClass();
+        clearLeaveBalanceDisplay();
     }
 
     clearBtn.addEventListener("click", clearSearch);
@@ -888,7 +939,7 @@ function init_mark_attendance($main) {
 
         generateTable();
         var emp = employeeSel.value;
-        if (emp) loadCompOffBalance(emp);
+        if (emp) loadLeaveBalance(emp);
     }
     yearSel.addEventListener("change",  updateDatesFromMonthYear);
     monthSel.addEventListener("change", updateDatesFromMonthYear);
@@ -927,6 +978,162 @@ function init_mark_attendance($main) {
             if (rec && rec.mode === "full" && rec.status === "Weekly Off") count++;
         });
         return count;
+    }
+
+    // ════════════════════════════════════════════════════════════════════════
+    //  LEAVE BALANCE — NET PENDING (unsaved changes only, not counting saved)
+    //
+    //  The server's currentLeaveBalances.el_used already includes ALL saved
+    //  attendance over the full allocation period.  To avoid double-counting,
+    //  we compute only the NET DELTA between what is currently in the table
+    //  (attendanceTableData) and what was originally loaded (originalAttendanceData).
+    //  This delta represents unsaved in-memory changes only.
+    // ════════════════════════════════════════════════════════════════════════
+
+    function countLeaveInRec(rec, leaveType) {
+        if (!rec) return 0;
+        if (rec.mode === "full") return rec.status === leaveType ? 1.0 : 0.0;
+        if (rec.mode === "half") {
+            return ((rec.first_half  === leaveType) ? 0.5 : 0) +
+                   ((rec.second_half === leaveType) ? 0.5 : 0);
+        }
+        return 0;
+    }
+
+    /**
+     * Computes the NET unsaved delta for EL, CL, Comp Off.
+     * = sum over all dates of (current count - original count)
+     * Positive means more leave marked than what was saved.
+     * Negative means leave was removed.
+     */
+    function computeNetPendingDelta() {
+        var deltaEl = 0, deltaCl = 0, deltaCoff = 0;
+        Object.keys(attendanceTableData).forEach(function (dateKey) {
+            var cur  = attendanceTableData[dateKey];
+            var orig = originalAttendanceData[dateKey] || null;
+            deltaEl   += countLeaveInRec(cur, "Earned Leave")  - countLeaveInRec(orig, "Earned Leave");
+            deltaCl   += countLeaveInRec(cur, "Casual Leave")  - countLeaveInRec(orig, "Casual Leave");
+            deltaCoff += countLeaveInRec(cur, "Comp Off")      - countLeaveInRec(orig, "Comp Off");
+        });
+        return { el: deltaEl, cl: deltaCl, coff: deltaCoff };
+    }
+
+    /**
+     * Check if marking `leaveType` with `increment` days (1.0 or 0.5) would
+     * exceed the server-loaded balance plus current unsaved delta.
+     *
+     * Returns { ok: bool, message: string|null }
+     *
+     * Hard block: returns ok=false when balance would be exceeded.
+     */
+    function checkLeaveBalance(leaveType, increment) {
+        if (!currentLeaveBalances) return { ok: true, message: null };
+        if (!currentHasAllocation) {
+            return {
+                ok: false,
+                message: "No active Leave Allocation found for this month. Cannot mark " + leaveType + "."
+            };
+        }
+
+        var delta = computeNetPendingDelta();
+
+        if (leaveType === "Earned Leave") {
+            var allocated    = currentLeaveBalances.el_allocated || 0;
+            var savedUsed    = currentLeaveBalances.el_used      || 0;
+            // Total that will be used = saved + net unsaved delta + this new increment
+            var totalAfter   = savedUsed + delta.el + increment;
+            if (totalAfter > allocated) {
+                var remaining = Math.max(0, allocated - savedUsed - delta.el);
+                return {
+                    ok: false,
+                    message: "Insufficient Earned Leave balance. " +
+                             "Allocated: <b>" + allocated + "</b>, " +
+                             "Already used: <b>" + savedUsed.toFixed(1) + "</b>, " +
+                             "Pending: <b>" + delta.el.toFixed(1) + "</b>, " +
+                             "Remaining: <b>" + remaining.toFixed(1) + "</b>. " +
+                             "Cannot add " + increment + " more."
+                };
+            }
+        } else if (leaveType === "Casual Leave") {
+            var allocated    = currentLeaveBalances.cl_allocated || 0;
+            var savedUsed    = currentLeaveBalances.cl_used      || 0;
+            var totalAfter   = savedUsed + delta.cl + increment;
+            if (totalAfter > allocated) {
+                var remaining = Math.max(0, allocated - savedUsed - delta.cl);
+                return {
+                    ok: false,
+                    message: "Insufficient Casual Leave balance. " +
+                             "Allocated: <b>" + allocated + "</b>, " +
+                             "Already used: <b>" + savedUsed.toFixed(1) + "</b>, " +
+                             "Pending: <b>" + delta.cl.toFixed(1) + "</b>, " +
+                             "Remaining: <b>" + remaining.toFixed(1) + "</b>. " +
+                             "Cannot add " + increment + " more."
+                };
+            }
+        } else if (leaveType === "Comp Off") {
+            var available    = (currentLeaveBalances.available || 0) + (currentLeaveBalances.earned || 0);
+            var savedUsed    = currentLeaveBalances.used        || 0;
+            var totalAfter   = savedUsed + delta.coff + increment;
+            if (totalAfter > available) {
+                var remaining = Math.max(0, available - savedUsed - delta.coff);
+                return {
+                    ok: false,
+                    message: "Insufficient Comp Off balance. " +
+                             "Available: <b>" + available + "</b>, " +
+                             "Already used: <b>" + savedUsed.toFixed(1) + "</b>, " +
+                             "Pending: <b>" + delta.coff.toFixed(1) + "</b>, " +
+                             "Remaining: <b>" + remaining.toFixed(1) + "</b>. " +
+                             "Cannot add " + increment + " more."
+                };
+            }
+        }
+
+        return { ok: true, message: null };
+    }
+
+    // ════════════════════════════════════════════════════════════════════════
+    //  LIVE LEAVE BALANCE TABLE — updated in real-time as user marks attendance
+    // ════════════════════════════════════════════════════════════════════════
+
+    function updateLiveLeaveBalanceDisplay() {
+        if (!currentLeaveBalances) return;
+
+        var delta = computeNetPendingDelta();
+
+        function fmt(n) {
+            if (n === undefined || n === null) return "—";
+            return (n % 1 === 0) ? String(n) : parseFloat(n).toFixed(1);
+        }
+        function setEl(id, val, isNegative) {
+            var el = document.getElementById(id);
+            if (!el) return;
+            el.textContent = fmt(val);
+            el.style.color = isNegative ? "#c5221f" : "";
+        }
+
+        var elAllocated  = currentLeaveBalances.el_allocated || 0;
+        var elSavedUsed  = currentLeaveBalances.el_used      || 0;
+        var elTotalUsed  = elSavedUsed + delta.el;
+        var elBalance    = elAllocated - elTotalUsed;
+
+        var clAllocated  = currentLeaveBalances.cl_allocated || 0;
+        var clSavedUsed  = currentLeaveBalances.cl_used      || 0;
+        var clTotalUsed  = clSavedUsed + delta.cl;
+        var clBalance    = clAllocated - clTotalUsed;
+
+        var coAvailable  = (currentLeaveBalances.available || 0) + (currentLeaveBalances.earned || 0);
+        var coSavedUsed  = currentLeaveBalances.used || 0;
+        var coTotalUsed  = coSavedUsed + delta.coff;
+        var coBalance    = coAvailable - coTotalUsed;
+
+        setEl("ma_el_taken",    elTotalUsed,  false);
+        setEl("ma_el_balance",  elBalance,    elBalance < 0);
+
+        setEl("ma_cl_taken",    clTotalUsed,  false);
+        setEl("ma_cl_balance",  clBalance,    clBalance < 0);
+
+        setEl("ma_eco_used",    coTotalUsed,  false);
+        setEl("ma_eco_balance", coBalance,    coBalance < 0);
     }
 
     // ════════════════════════════════════════════════════════════════════════
@@ -975,6 +1182,9 @@ function init_mark_attendance($main) {
         document.getElementById("ma_cnt_holiday").textContent   = fmt(cnt.holiday);
         document.getElementById("ma_cnt_wo").textContent        = fmt(cnt.wo);
         document.getElementById("ma_cnt_hd_total").textContent  = fmt(cnt.hd_total);
+
+        // ── Also update the live leave balance display ─────────────────────
+        updateLiveLeaveBalanceDisplay();
     }
 
     // ════════════════════════════════════════════════════════════════════════
@@ -1051,6 +1261,30 @@ function init_mark_attendance($main) {
     function applyHdPanel() {
         if (!hdPanelTarget) return;
         var dateKey = hdPanelTarget.dateKey;
+
+        var prevRec = attendanceTableData[dateKey] || {};
+        var leaveHalves = ["Earned Leave", "Casual Leave", "Comp Off"];
+
+        var newHalves  = [hdPanelFirstVal, hdPanelSecondVal];
+        var oldHalves  = (prevRec.mode === "half")
+            ? [prevRec.first_half || "", prevRec.second_half || ""]
+            : ["", ""];
+
+        // ── Hard balance check for each leave type ─────────────────────────
+        for (var li = 0; li < leaveHalves.length; li++) {
+            var lt = leaveHalves[li];
+            var newCount = newHalves.filter(function (h) { return h === lt; }).length;
+            var oldCount = oldHalves.filter(function (h) { return h === lt; }).length;
+            var netIncrement = (newCount - oldCount) * 0.5;
+            if (netIncrement > 0) {
+                var chk = checkLeaveBalance(lt, netIncrement);
+                if (!chk.ok) {
+                    frappe.show_alert({ message: chk.message, indicator: "red" });
+                    return; // HARD BLOCK — do not apply
+                }
+            }
+        }
+
         attendanceTableData[dateKey] = {
             mode:        "half",
             first_half:  hdPanelFirstVal,
@@ -1273,7 +1507,6 @@ function init_mark_attendance($main) {
         if (isRestDay && !isFuture && !isOutsideTenure) {
             var lbl = document.createElement("label");
             lbl.className = "ma-toggle" + (restStatus === "Holiday" ? " ma-toggle-holiday" : "");
-            // When locked, show toggle as visually disabled
             if (isLocked) lbl.classList.add("ma-toggle-locked");
             lbl.title = isRestMode ? "Click to override " + restStatus : "Click to restore " + restStatus;
             var chk = document.createElement("input");
@@ -1323,6 +1556,11 @@ function init_mark_attendance($main) {
             td.className = "ma-status-cell ma-cell-" + status.toLowerCase().replace(/ /g, "_");
             td.setAttribute("data-status", status);
             td.setAttribute("data-colidx", colIdx);
+
+            var leaveGatedStatuses = ["Earned Leave", "Casual Leave", "Comp Off", "Earned Comp Off"];
+            if (leaveGatedStatuses.includes(status) && !currentHasAllocation) {
+                td.classList.add("ma-no-alloc-cell");
+            }
 
             var isActive = (savedRec.mode === "full" && savedRec.status === status);
             var dot = document.createElement("div");
@@ -1395,6 +1633,16 @@ function init_mark_attendance($main) {
     function onFullDayClick(dateKey, status, isHoliday, isDefaultWeeklyOff) {
         var rec = attendanceTableData[dateKey] || {};
 
+        // ── No allocation guard for leave types ──────────────────────────
+        var leaveGated = ["Earned Leave", "Casual Leave", "Comp Off", "Earned Comp Off"];
+        if (leaveGated.includes(status) && !currentHasAllocation) {
+            frappe.show_alert({
+                message: "No active Leave Allocation for this month. Cannot mark " + status + ".",
+                indicator: "red"
+            });
+            return;
+        }
+
         if (status === "Weekly Off") {
             var limit   = calcMaxWeeklyOffInMonth();
             var cur     = countCurrentWeeklyOff();
@@ -1402,6 +1650,24 @@ function init_mark_attendance($main) {
             if (limit > 0 && !alreadyWo && cur + 1 > limit) {
                 frappe.show_alert({ message: "Weekly Off cannot exceed <b>" + limit + " days</b> in this month.", indicator: "red" });
                 return;
+            }
+        }
+
+        // ── HARD balance check when adding a leave-type status ────────────
+        // Only check if we are ADDING this status (not toggling it off)
+        var balanceGated = ["Earned Leave", "Casual Leave", "Comp Off"];
+        if (balanceGated.includes(status)) {
+            var alreadyThisStatus = (rec.mode === "full" && rec.status === status);
+            if (!alreadyThisStatus) {
+                // Also account for removing a different leave from this cell
+                // if it was previously a different leave type
+                var prevLeave = (rec.mode === "full" && balanceGated.includes(rec.status)) ? rec.status : null;
+                var chk = checkLeaveBalance(status, 1.0);
+                if (!chk.ok) {
+                    // HARD BLOCK — do not proceed
+                    frappe.show_alert({ message: chk.message, indicator: "red" });
+                    return;
+                }
             }
         }
 
@@ -1427,37 +1693,113 @@ function init_mark_attendance($main) {
     }
 
     // ════════════════════════════════════════════════════════════════════════
-    //  COMP OFF BALANCE
+    //  LEAVE BALANCE DISPLAY
     // ════════════════════════════════════════════════════════════════════════
-    function loadCompOffBalance(employee) {
-        var ecoAvailable = document.getElementById("ma_eco_available");
-        var ecoEarned    = document.getElementById("ma_eco_earned");
-        var ecoUsed      = document.getElementById("ma_eco_used");
-        var ecoBalance   = document.getElementById("ma_eco_balance");
-        var elTaken      = document.getElementById("ma_el_taken");
-        var clTaken      = document.getElementById("ma_cl_taken");
-        if (!ecoEarned) return;
-        [ecoAvailable, ecoEarned, ecoUsed, ecoBalance, elTaken, clTaken].forEach(function (el) { if (el) el.textContent = "…"; });
-        frappe.call({
-            method: "saral_hr.saral_hr.page.mark_attendance.mark_attendance.get_comp_off_balance",
-            args: { employee: employee, year: yearSel.value, month: monthSel.value },
-            callback: function (r) {
-                var data = (r && r.message) ? r.message : { available: 0, earned: 0, used: 0, balance: 0, el_taken: 0, cl_taken: 0 };
-                if (ecoAvailable) ecoAvailable.textContent = data.available || 0;
-                ecoEarned.textContent  = data.earned  || 0;
-                ecoUsed.textContent    = data.used     || 0;
-                ecoBalance.textContent = data.balance  || 0;
-                if (elTaken) elTaken.textContent = data.el_taken || 0;
-                if (clTaken) clTaken.textContent = data.cl_taken || 0;
-            },
-            error: function () {
-                [ecoAvailable, ecoEarned, ecoUsed, ecoBalance, elTaken, clTaken].forEach(function (el) { if (el) el.textContent = "0"; });
-            }
+
+    function clearLeaveBalanceDisplay() {
+        var ids = [
+            "ma_el_allocated", "ma_el_taken", "ma_el_balance",
+            "ma_cl_allocated", "ma_cl_taken", "ma_cl_balance",
+            "ma_eco_available", "ma_eco_earned", "ma_eco_used", "ma_eco_balance"
+        ];
+        ids.forEach(function (id) {
+            var el = document.getElementById(id);
+            if (el) { el.textContent = "—"; el.style.color = ""; }
         });
     }
-    function clearCompOffBalance() {
-        ["ma_eco_available", "ma_eco_earned", "ma_eco_used", "ma_eco_balance", "ma_el_taken", "ma_cl_taken"]
-            .forEach(function (id) { var el = document.getElementById(id); if (el) el.textContent = "0"; });
+
+    function updateLeaveBalanceDisplay(data) {
+        function fmt(n) {
+            if (n === undefined || n === null || n === "—") return "—";
+            return (n % 1 === 0) ? String(n) : parseFloat(n).toFixed(1);
+        }
+        function setEl(id, val) {
+            var el = document.getElementById(id);
+            if (el) el.textContent = fmt(val);
+        }
+
+        setEl("ma_el_allocated",  data.el_allocated);
+        setEl("ma_cl_allocated",  data.cl_allocated);
+
+        setEl("ma_eco_available", data.available);
+        setEl("ma_eco_earned",    data.earned);
+
+        // Taken and balance are rendered live via updateLiveLeaveBalanceDisplay
+        // so we seed them from server data initially
+        setEl("ma_el_taken",    data.el_used);
+        setEl("ma_el_balance",  data.el_remaining);
+        setEl("ma_cl_taken",    data.cl_used);
+        setEl("ma_cl_balance",  data.cl_remaining);
+        setEl("ma_eco_used",    data.used);
+        setEl("ma_eco_balance", data.balance);
+
+        // Colour the balance cells if zero or negative
+        var elBal = document.getElementById("ma_el_balance");
+        var clBal = document.getElementById("ma_cl_balance");
+        var coBal = document.getElementById("ma_eco_balance");
+        if (elBal) elBal.style.color = (data.el_remaining <= 0 && data.el_allocated > 0) ? "#c5221f" : "";
+        if (clBal) clBal.style.color = (data.cl_remaining <= 0 && data.cl_allocated > 0) ? "#c5221f" : "";
+        if (coBal) coBal.style.color = (data.balance <= 0 && (data.available + data.earned) > 0) ? "#c5221f" : "";
+    }
+
+    function loadLeaveBalance(employee) {
+        if (!employee || !yearSel.value || monthSel.value === "") {
+            clearLeaveBalanceDisplay();
+            currentHasAllocation = false;
+            currentLeaveBalances = null;
+            renderAllocBanner();
+            applyAllocationColumnGating();
+            return;
+        }
+
+        var ids = [
+            "ma_el_allocated", "ma_el_taken", "ma_el_balance",
+            "ma_cl_allocated", "ma_cl_taken", "ma_cl_balance",
+            "ma_eco_available", "ma_eco_earned", "ma_eco_used", "ma_eco_balance"
+        ];
+        ids.forEach(function (id) {
+            var el = document.getElementById(id);
+            if (el) el.textContent = "…";
+        });
+
+        frappe.call({
+            method: "saral_hr.saral_hr.page.mark_attendance.mark_attendance.get_leave_allocation_for_month",
+            args: { employee: employee, year: yearSel.value, month: monthSel.value },
+            callback: function (r) {
+                var allocData = (r && r.message) ? r.message : { has_allocation: false };
+                currentHasAllocation = allocData.has_allocation;
+                renderAllocBanner();
+                applyAllocationColumnGating();
+
+                frappe.call({
+                    method: "saral_hr.saral_hr.page.mark_attendance.mark_attendance.get_comp_off_balance",
+                    args: { employee: employee, year: yearSel.value, month: monthSel.value },
+                    callback: function (r2) {
+                        var data = (r2 && r2.message) ? r2.message : {
+                            el_allocated: 0, el_used: 0, el_remaining: 0,
+                            cl_allocated: 0, cl_used: 0, cl_remaining: 0,
+                            available: 0, earned: 0, used: 0, balance: 0
+                        };
+                        currentLeaveBalances = data;
+                        updateLeaveBalanceDisplay(data);
+                        // After loading, re-render with pending delta
+                        updateLiveLeaveBalanceDisplay();
+                        updateScrollHeight();
+                    },
+                    error: function () {
+                        clearLeaveBalanceDisplay();
+                        currentLeaveBalances = null;
+                    }
+                });
+            },
+            error: function () {
+                currentHasAllocation = false;
+                currentLeaveBalances = null;
+                renderAllocBanner();
+                applyAllocationColumnGating();
+                clearLeaveBalanceDisplay();
+            }
+        });
     }
 
     // ════════════════════════════════════════════════════════════════════════
@@ -1548,10 +1890,10 @@ function init_mark_attendance($main) {
                         }
 
                         applySubtypeColumnsToBdy();
+                        applyAllocationColumnGating();
                         hideTableLoading();
                         updateCounts();
                         updateScrollHeight();
-                        // Re-apply lock class after table rebuilt
                         applyTableLockClass();
                     },
                     error: function () { hideTableLoading(); }
@@ -1579,6 +1921,41 @@ function init_mark_attendance($main) {
         if (!employee || !startDateInput.value) {
             frappe.show_alert({ message: "Please select an employee and month first", indicator: "orange" }); return;
         }
+
+        // Block leave types if no allocation
+        var leaveGated = ["Earned Leave", "Casual Leave", "Comp Off", "Earned Comp Off"];
+        if (leaveGated.includes(status) && !currentHasAllocation) {
+            frappe.show_alert({
+                message: "No active Leave Allocation for this month. Cannot bulk-mark " + status + ".",
+                indicator: "red"
+            });
+            return;
+        }
+
+        // ── HARD balance check for bulk leave marking ──────────────────────
+        // Count how many unmarked days would receive this leave type
+        var balanceGated = ["Earned Leave", "Casual Leave", "Comp Off"];
+        if (balanceGated.includes(status)) {
+            var wouldMarkCount = 0;
+            Object.keys(attendanceTableData).forEach(function (dateKey) {
+                if (originalAttendanceData[dateKey]) return; // already saved
+                var rec = attendanceTableData[dateKey] || {};
+                var cur = rec.mode === "full" ? rec.status : null;
+                if (cur === "Weekly Off" || cur === "Holiday") return;
+                var rowEl = document.querySelector('tr[data-date="' + dateKey + '"]');
+                if (rowEl && rowEl.classList.contains("ma-future-row")) return;
+                wouldMarkCount++;
+            });
+
+            if (wouldMarkCount > 0) {
+                var chk = checkLeaveBalance(status, wouldMarkCount);
+                if (!chk.ok) {
+                    frappe.show_alert({ message: chk.message, indicator: "red" });
+                    return; // HARD BLOCK
+                }
+            }
+        }
+
         Object.keys(attendanceTableData).forEach(function (dateKey) {
             if (originalAttendanceData[dateKey]) return;
             var rec = attendanceTableData[dateKey] || {};
@@ -1615,6 +1992,7 @@ function init_mark_attendance($main) {
         if (a.mode === "full") return a.status === b.status;
         return a.first_half === b.first_half && a.second_half === b.second_half;
     }
+
     function doSave() {
         if (isSaving) return;
 
@@ -1668,7 +2046,8 @@ function init_mark_attendance($main) {
                         indicator: errors && errors.length ? "yellow" : "green"
                     });
                     setTimeout(function () {
-                        generateTable(); loadCompOffBalance(employee);
+                        generateTable();
+                        loadLeaveBalance(employee);
                         setTimeout(function () { if (tableScroll) tableScroll.scrollTop = scrollPos; }, 100);
                     }, 300);
                 } else {
@@ -1881,11 +2260,9 @@ function inject_ma_styles() {
 
         /* ══════════════════════════════════════════════════════
            SALARY SLIP BANNERS
-           — Full opacity, no fading, crisp Frappe-style
            ══════════════════════════════════════════════════════ */
-        #ma_slip_banner {
+        #ma_slip_banner, #ma_alloc_banner {
             margin: 0;
-            /* Ensure banner itself never inherits opacity from parent */
             opacity: 1 !important;
         }
 
@@ -1900,7 +2277,6 @@ function inject_ma_styles() {
             border-left: none;
             border-right: none;
             border-bottom: 1px solid transparent;
-            /* Crisp — no opacity reduction ever */
             opacity: 1 !important;
         }
         .ma-slip-banner-locked {
@@ -1915,28 +2291,29 @@ function inject_ma_styles() {
             color: #78350f;
             border-left: 4px solid #f59e0b !important;
         }
+        .ma-slip-banner-noalloc {
+            background: #f0f9ff;
+            border-color: #bae6fd;
+            color: #0c4a6e;
+            border-left: 4px solid #0284c7 !important;
+        }
         .ma-slip-banner-icon {
             font-size: 16px;
             flex-shrink: 0;
             margin-top: 1px;
-            /* Icon must never fade */
             opacity: 1 !important;
         }
         .ma-slip-banner-text {
             flex: 1;
-            /* Text must never fade */
             opacity: 1 !important;
             color: inherit;
         }
-
-        /* ── Banner links — ALWAYS fully visible, distinct style ── */
         .ma-slip-link {
             font-weight: 700;
             text-decoration: underline;
             text-underline-offset: 2px;
             color: inherit !important;
             opacity: 1 !important;
-            /* Never inherit any dimming from parents */
             filter: none !important;
         }
         .ma-slip-link:hover {
@@ -1948,15 +2325,28 @@ function inject_ma_styles() {
         }
 
         /* ══════════════════════════════════════════════════════
+           NO-ALLOCATION COLUMN GATING
+           ══════════════════════════════════════════════════════ */
+        .ma-no-alloc-col {
+            opacity: 0.3 !important;
+        }
+        .ma-no-alloc-cell {
+            opacity: 0.18 !important;
+            pointer-events: none !important;
+            cursor: not-allowed !important;
+        }
+        .ma-no-alloc-col .ma-col-count {
+            color: var(--text-muted) !important;
+        }
+
+        /* ══════════════════════════════════════════════════════
            LOCKED BUTTON STATE
-           — Clear, intentional disabled look
            ══════════════════════════════════════════════════════ */
         .ma-btn-locked {
             opacity: 0.38 !important;
             cursor: not-allowed !important;
             pointer-events: none !important;
             transform: none !important;
-            /* Subtle strikethrough feel via border */
             border-style: dashed !important;
         }
         .ma-btn-primary.ma-btn-locked {
@@ -1966,22 +2356,10 @@ function inject_ma_styles() {
 
         /* ══════════════════════════════════════════════════════
            TABLE LOCKED STATE
-           — No overlay. Table-level class controls behaviour.
            ══════════════════════════════════════════════════════ */
-
-        /* Scroll container shows not-allowed cursor when locked */
         .ma-table-scroll-locked {
             cursor: not-allowed;
         }
-
-        /*
-         * When the TABLE has .ma-table-locked:
-         *  - Status cells: dimmed + no pointer events
-         *  - Date / Day / count cells: FULLY VISIBLE (opacity:1 !important)
-         *  - Override toggles: dimmed + no pointer events
-         *  - Half-day pills: dimmed styling (handled via ma-hd-pill-locked)
-         *  - future rows keep their own 0.4 opacity
-         */
         .ma-table-locked tbody tr:not(.ma-future-row):not(.ma-before-joining-row) td.ma-status-cell {
             opacity: 0.30;
             pointer-events: none !important;
@@ -1992,15 +2370,11 @@ function inject_ma_styles() {
             pointer-events: none !important;
             cursor: not-allowed;
         }
-
-        /* Date, day, override CELLS stay fully readable */
         .ma-table-locked tbody td.ma-date-cell,
         .ma-table-locked tbody td.ma-day-cell {
             opacity: 1 !important;
             color: var(--text-color) !important;
         }
-
-        /* WO / Holiday date labels keep their colour when locked */
         .ma-table-locked tbody td.ma-date-cell.ma-date-wo,
         .ma-table-locked tbody td.ma-day-cell.ma-date-wo {
             color: #b8860b !important;
@@ -2011,20 +2385,15 @@ function inject_ma_styles() {
             color: #c05800 !important;
             opacity: 1 !important;
         }
-
-        /* Active dots (selected status) keep their colour but slightly muted */
         .ma-table-locked .ma-col-dot.active {
             opacity: 0.55;
         }
-
-        /* Locked half-day pill — no interactivity look */
         .ma-hd-pill-locked {
             cursor: default !important;
             pointer-events: none !important;
             filter: grayscale(0.3);
             opacity: 0.55;
         }
-        /* Empty locked pill — just a dash, no "Set half" affordance */
         .ma-hd-pill-empty.ma-hd-pill-locked {
             background: transparent !important;
             border: none !important;
@@ -2032,8 +2401,6 @@ function inject_ma_styles() {
             font-style: normal !important;
             opacity: 0.4 !important;
         }
-
-        /* Locked override toggle */
         .ma-toggle-locked {
             cursor: not-allowed !important;
             pointer-events: none !important;
@@ -2044,16 +2411,13 @@ function inject_ma_styles() {
         }
 
         /* ══════════════════════════════════════════════════════
-           SEARCH DROPDOWN — always above everything, no dim
+           SEARCH DROPDOWN
            ══════════════════════════════════════════════════════ */
         .ma-search-dropdown {
-            /* Hard z-index so it never sits behind overlay/banner */
             z-index: 9999 !important;
-            /* No opacity inheritance */
             opacity: 1 !important;
         }
         .ma-result-item {
-            /* Ensure result items never inherit any dimming */
             opacity: 1 !important;
             color: var(--text-color) !important;
         }
@@ -2080,7 +2444,7 @@ function inject_ma_styles() {
         .ma-month-lock-icon { font-size: 11px; margin-left: 4px; }
 
         /* ══════════════════════════════════════════════════════
-           STANDARD COMPONENTS (unchanged from original)
+           STANDARD COMPONENTS
            ══════════════════════════════════════════════════════ */
         .ma-header-actions { display:flex; align-items:center; gap:10px; margin-left:20px; }
         .ma-link { font-size:12px; color:var(--text-on-light-blue); cursor:pointer; text-decoration:underline; text-underline-offset:2px; background:none; border:none; padding:0; font-weight:500; transition:color 0.2s; white-space:nowrap; opacity:1 !important; }
