@@ -1,6 +1,48 @@
 import frappe
 
 
+@frappe.whitelist()
+@frappe.validate_and_sanitize_search_inputs
+def get_employees_with_loans(doctype, txt, searchfield, start, page_len, filters):
+    if isinstance(filters, str):
+        import json
+        filters = json.loads(filters)
+
+    company_cond = ""
+    params = {
+        "txt": f"%{txt}%",
+        "start": start,
+        "page_len": page_len,
+    }
+
+    if filters and filters.get("company"):
+        company_cond = "AND ela.company = %(company)s"
+        params["company"] = filters["company"]
+
+    results = frappe.db.sql("""
+        SELECT DISTINCT
+            ela.employee,
+            COALESCE(
+                NULLIF(TRIM(CONCAT_WS(' ', e.first_name, e.middle_name, e.last_name)), ''),
+                ela.full_name,
+                ela.employee
+            ) AS employee_name
+        FROM `tabEmployee Loan Advance` ela
+        LEFT JOIN `tabEmployee` e ON e.name = ela.employee
+        WHERE ela.docstatus = 1
+            {company_cond}
+            AND (
+                ela.employee LIKE %(txt)s
+                OR CONCAT_WS(' ', e.first_name, e.middle_name, e.last_name) LIKE %(txt)s
+                OR ela.full_name LIKE %(txt)s
+            )
+        ORDER BY ela.employee ASC
+        LIMIT %(page_len)s OFFSET %(start)s
+    """.format(company_cond=company_cond), params)
+
+    return [[r[0], r[1] or r[0]] for r in results]
+
+
 def execute(filters=None):
     filters = filters or {}
     columns = get_columns()
@@ -16,7 +58,7 @@ def get_columns():
         {"label": "Type",          "fieldname": "type",         "fieldtype": "Data",     "width": 120},
         {"label": "Total Amount",  "fieldname": "total_amount", "fieldtype": "Currency", "width": 160},
         {"label": "EMI to Deduct", "fieldname": "emi_amount",   "fieldtype": "Currency", "width": 160},
-        {"label": "Status",        "fieldname": "status",       "fieldtype": "Data",     "width": 110},  # ✅ NEW
+        {"label": "Status",        "fieldname": "status",       "fieldtype": "Data",     "width": 110},
     ]
 
 
@@ -35,7 +77,6 @@ def get_data(filters):
             "ela.docstatus = 1",
             "ela.company = %(company)s",
             "ela.type IN ('Loan','Loan-I','Loan-II')",
-            # ✅ REMOVED: "sch.is_deducted = 0"
         ]
         vals = {"company": company}
 
@@ -54,7 +95,6 @@ def get_data(filters):
             vals["yl"] = f"%{year}"
 
         if month or year:
-            # Specific period — show planned EMI regardless of deduction status
             rows += frappe.db.sql(f"""
                 SELECT
                     ela.employee,
@@ -73,8 +113,7 @@ def get_data(filters):
                 ORDER BY ela.full_name
             """, vals, as_dict=1)
         else:
-            # No period — show next EMI per loan (pending only)
-            cond.append("sch.is_deducted = 0")  # keep for "no filter" case
+            cond.append("sch.is_deducted = 0")
             rows += frappe.db.sql(f"""
                 SELECT
                     ela.employee,
@@ -102,7 +141,6 @@ def get_data(filters):
             "ela.docstatus = 1",
             "ela.company = %(company)s",
             "ela.type = 'Advance'",
-            # ✅ REMOVED: "ela.is_deducted = 0"
         ]
         vals = {"company": company}
 

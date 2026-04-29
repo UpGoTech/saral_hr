@@ -32,7 +32,6 @@ def get_columns():
 @frappe.whitelist()
 @frappe.validate_and_sanitize_search_inputs
 def get_employees_with_loans(doctype, txt, searchfield, start, page_len, filters):
-    # ✅ Always parse filters if string
     if isinstance(filters, str):
         import json
         filters = json.loads(filters)
@@ -48,17 +47,24 @@ def get_employees_with_loans(doctype, txt, searchfield, start, page_len, filters
         company_cond = "AND ela.company = %(company)s"
         params["company"] = filters["company"]
 
-    # ✅ Use tabEmployee with LEFT JOIN (safer than INNER JOIN)
     results = frappe.db.sql("""
         SELECT DISTINCT
             ela.employee,
-            COALESCE(e.employee_name, ela.full_name, ela.employee) AS employee_name
+            COALESCE(
+                NULLIF(TRIM(CONCAT_WS(' ', e.first_name, e.middle_name, e.last_name)), ''),
+                ela.full_name,
+                ela.employee
+            ) AS employee_name
         FROM `tabEmployee Loan Advance` ela
         LEFT JOIN `tabEmployee` e ON e.name = ela.employee
         WHERE ela.docstatus = 1
+            AND ela.type = 'Loan'
             {company_cond}
-            AND (ela.employee LIKE %(txt)s OR e.employee_name LIKE %(txt)s 
-                 OR ela.full_name LIKE %(txt)s)
+            AND (
+                ela.employee LIKE %(txt)s
+                OR CONCAT_WS(' ', e.first_name, e.middle_name, e.last_name) LIKE %(txt)s
+                OR ela.full_name LIKE %(txt)s
+            )
         ORDER BY ela.employee ASC
         LIMIT %(page_len)s OFFSET %(start)s
     """.format(company_cond=company_cond), params)

@@ -32,7 +32,6 @@ def execute(filters=None):
 @frappe.whitelist()
 @frappe.validate_and_sanitize_search_inputs
 def get_employees_with_loans(doctype, txt, searchfield, start, page_len, filters):
-    # ✅ Always parse filters if string
     if isinstance(filters, str):
         import json
         filters = json.loads(filters)
@@ -48,22 +47,29 @@ def get_employees_with_loans(doctype, txt, searchfield, start, page_len, filters
         company_cond = "AND ela.company = %(company)s"
         params["company"] = filters["company"]
 
-    # ✅ Use tabEmployee with LEFT JOIN (safer than INNER JOIN)
     results = frappe.db.sql("""
         SELECT DISTINCT
             ela.employee,
-            COALESCE(e.employee_name, ela.full_name, ela.employee) AS employee_name
+            COALESCE(
+                NULLIF(TRIM(CONCAT_WS(' ', e.first_name, e.middle_name, e.last_name)), ''),
+                ela.full_name,
+                ela.employee
+            ) AS employee_name
         FROM `tabEmployee Loan Advance` ela
         LEFT JOIN `tabEmployee` e ON e.name = ela.employee
         WHERE ela.docstatus = 1
             {company_cond}
-            AND (ela.employee LIKE %(txt)s OR e.employee_name LIKE %(txt)s 
-                 OR ela.full_name LIKE %(txt)s)
+            AND (
+                ela.employee LIKE %(txt)s
+                OR CONCAT_WS(' ', e.first_name, e.middle_name, e.last_name) LIKE %(txt)s
+                OR ela.full_name LIKE %(txt)s
+            )
         ORDER BY ela.employee ASC
         LIMIT %(page_len)s OFFSET %(start)s
     """.format(company_cond=company_cond), params)
 
     return [[r[0], r[1] or r[0]] for r in results]
+
 
 # ==================================================================
 #  SUMMARY — columns
@@ -71,17 +77,17 @@ def get_employees_with_loans(doctype, txt, searchfield, start, page_len, filters
 
 def get_summary_columns():
     return [
-        {"label": _("Loan/AdvanceID"),       "fieldname": "loan_id",       "fieldtype": "Link",  "options": "Employee Loan Advance", "width": 200},
-        {"label": _("Employee ID"),   "fieldname": "employee",      "fieldtype": "Link",  "options": "Employee",              "width": 130},
-        {"label": _("Employee Name"), "fieldname": "employee_name", "fieldtype": "Data",                                      "width": 170},
-        {"label": _("Loan Type"),     "fieldname": "type",          "fieldtype": "Data",                                      "width": 90},
-        {"label": _("Taken On"),      "fieldname": "taken_on",      "fieldtype": "Date",                                      "width": 120},
-        {"label": _("Frequency"),     "fieldname": "frequency",     "fieldtype": "Data",                                      "width": 100},
-        {"label": _("Loan Amount"),   "fieldname": "amount",        "fieldtype": "Float",                                     "width": 130},
-        {"label": _("Total Paid"),    "fieldname": "total_paid",    "fieldtype": "Float",                                     "width": 130},
-        {"label": _("Outstanding"),   "fieldname": "outstanding",   "fieldtype": "Float",                                     "width": 130},
-        {"label": _("Status"),        "fieldname": "status",        "fieldtype": "Data",                                      "width": 110},
-        {"label": _("Details"),       "fieldname": "detail_btn",    "fieldtype": "Data",                                      "width": 100},
+        {"label": _("Loan/Advance ID"),  "fieldname": "loan_id",       "fieldtype": "Link",  "options": "Employee Loan Advance", "width": 200},
+        {"label": _("Employee ID"),      "fieldname": "employee",      "fieldtype": "Link",  "options": "Employee",              "width": 130},
+        {"label": _("Employee Name"),    "fieldname": "employee_name", "fieldtype": "Data",                                      "width": 170},
+        {"label": _("Loan Type"),        "fieldname": "type",          "fieldtype": "Data",                                      "width": 90},
+        {"label": _("Taken On"),         "fieldname": "taken_on",      "fieldtype": "Date",                                      "width": 120},
+        {"label": _("Frequency"),        "fieldname": "frequency",     "fieldtype": "Data",                                      "width": 100},
+        {"label": _("Loan Amount"),      "fieldname": "amount",        "fieldtype": "Float",                                     "width": 130},
+        {"label": _("Total Paid"),       "fieldname": "total_paid",    "fieldtype": "Float",                                     "width": 130},
+        {"label": _("Outstanding"),      "fieldname": "outstanding",   "fieldtype": "Float",                                     "width": 130},
+        {"label": _("Status"),           "fieldname": "status",        "fieldtype": "Data",                                      "width": 110},
+        {"label": _("Details"),          "fieldname": "detail_btn",    "fieldtype": "Data",                                      "width": 100},
     ]
 
 
@@ -106,8 +112,7 @@ def get_summary_data(filters):
             ela.start_month       AS start_month,
             ela.start_year        AS start_year,
             ela.full_name         AS employee_name
-        FROM  `tabEmployee Loan Advance` ela
-        INNER JOIN `tabEmployee` e ON e.name = ela.employee
+        FROM `tabEmployee Loan Advance` ela
         WHERE ela.docstatus = 1
               {conditions}
         ORDER BY ela.company, ela.employee, ela.type, ela.creation
@@ -119,8 +124,8 @@ def get_summary_data(filters):
     grand_outstanding = 0.0
 
     for loan in loans:
-        lid       = loan.loan_id
-        emp_name  = loan.employee_name or loan.employee
+        lid      = loan.loan_id
+        emp_name = loan.employee_name or loan.employee
         has_sched = has_schedule(lid)
 
         total_paid  = get_schedule_paid(lid) if has_sched else (float(loan.amount) if loan.is_deducted else 0.0)
@@ -128,7 +133,6 @@ def get_summary_data(filters):
         outstanding = round(float(loan.amount) - total_paid, 2)
         status      = "Completed" if outstanding <= 0 else "Active"
 
-        # ── Taken On: always use ela.date directly ────────────────
         taken_on = loan.date if loan.date else None
 
         grand_amount      += float(loan.amount)
@@ -188,8 +192,7 @@ def get_loan_detail(loan_id):
             ela.start_month       AS start_month,
             ela.start_year        AS start_year,
             ela.full_name         AS employee_name
-        FROM  `tabEmployee Loan Advance` ela
-        INNER JOIN `tabEmployee` e ON e.name = ela.employee
+        FROM `tabEmployee Loan Advance` ela
         WHERE ela.name = %s AND ela.docstatus = 1
         LIMIT 1
     """, loan_id, as_dict=True)
@@ -221,15 +224,13 @@ def get_loan_detail(loan_id):
             elif row.is_deferred:
                 status     = "Deferred"
                 actual_amt = 0.0
-                # running_bal stays unchanged — correct, deferred not paid
             else:
                 status     = "Pending"
                 actual_amt = 0.0
-                # running_bal stays unchanged — correct
 
             rows.append({
                 "month":         row.month or "",
-                "scheduled_amt": float(row.deduction_amount or 0),  # ✅ row's own amount
+                "scheduled_amt": float(row.deduction_amount or 0),
                 "actual_amt":    actual_amt,
                 "status":        status,
                 "deferred_to":   row.deferred_to or "",
@@ -252,20 +253,17 @@ def get_loan_detail(loan_id):
             actual_amt  = 0.0
             running_bal = float(loan.amount)
 
-                # ✅ Fix — use the actual row's deduction_amount as scheduled_amt
         rows.append({
-            "month":         row.month or "",
-            "scheduled_amt": float(row.deduction_amount or 0),  # ← each row's own amount
+            "month":         month_label,
+            "scheduled_amt": float(loan.amount),
             "actual_amt":    actual_amt,
             "status":        status,
-            "deferred_to":   row.deferred_to or "",
+            "deferred_to":   "",
             "running_bal":   running_bal,
         })
 
-    # Format taken_on date for display in the modal
     taken_on_display = frappe.utils.formatdate(loan.date, "dd-MM-yyyy") if loan.date else "—"
 
-    # Derive status from rows
     total_paid  = sum(r["actual_amt"] for r in rows)
     outstanding = round(float(loan.amount) - total_paid, 2)
     status      = "Completed" if outstanding <= 0 else "Active"
@@ -314,7 +312,7 @@ def build_conditions(filters):
 
     if filters.get("employee"):
         employee_value = filters["employee"]
-        # Extract ID from "Name (ID)" format
+        # Extract ID from "Name (ID)" format if present
         if " (" in employee_value:
             employee_id = employee_value.split(" (")[-1].rstrip(")")
         else:
@@ -362,9 +360,9 @@ def build_conditions(filters):
 
 @frappe.whitelist()
 def print_loan_schedule(loan_id):
-    data     = get_loan_detail(loan_id)
-    html     = _build_schedule_html(data)
-    return   _save_schedule_pdf(html, loan_id)
+    data   = get_loan_detail(loan_id)
+    html   = _build_schedule_html(data)
+    return _save_schedule_pdf(html, loan_id)
 
 
 def _fmt_amt(v):
@@ -456,10 +454,10 @@ def _build_schedule_html(data):
         deferred      = row.get("deferred_to") or "—"
         tbody += (
             f"<tr>"
-            f"<td style='text-align:left;'>{row.get('month','—')}</td>"
+            f"<td style='text-align:left;'>{row.get('month', '—')}</td>"
             f"<td style='text-align:right;'>{_fmt_amt(row.get('scheduled_amt'))}</td>"
             f"<td style='text-align:right;'>{_fmt_amt(row.get('actual_amt'))}</td>"
-            f"<td style='text-align:center;'>{row.get('status','')}</td>"
+            f"<td style='text-align:center;'>{row.get('status', '')}</td>"
             + ("" if is_advance else f"<td style='text-align:center;'>{deferred}</td>") +
             f"<td style='text-align:right;{rb_style}'>{_fmt_amt(rb)}</td>"
             f"</tr>"
@@ -553,10 +551,7 @@ _REPORT_SIG = '<div class="sig">' + "".join(
     for l in ["Prepared By", "Checked By", "Authorised Signatory"]
 ) + '</div>'
 
-# Skip these columns in print — detail_btn is UI only
-_SKIP_COLS = {"detail_btn"}
-
-# Float columns for right-align
+_SKIP_COLS  = {"detail_btn"}
 _MONEY_COLS = {"amount", "total_paid", "outstanding"}
 
 
@@ -573,7 +568,7 @@ def _build_report_html(cols, data, co):
     def _th():
         return "<tr>" + "".join(
             f'<th style="text-align:{"right" if c["fieldname"] in _MONEY_COLS else "left"};">'
-            f'{c.get("label","")}</th>'
+            f'{c.get("label", "")}</th>'
             for c in print_cols
         ) + "</tr>"
 
@@ -602,7 +597,7 @@ def _build_report_html(cols, data, co):
             if fn == "loan_id":
                 h += "<td><strong>TOTAL</strong></td>"
             elif fn in _MONEY_COLS:
-                h += f'<td style="text-align:right;">{_fmt_amt(row.get(fn,""))}</td>'
+                h += f'<td style="text-align:right;">{_fmt_amt(row.get(fn, ""))}</td>'
             else:
                 h += "<td></td>"
         return h + "</tr>"
