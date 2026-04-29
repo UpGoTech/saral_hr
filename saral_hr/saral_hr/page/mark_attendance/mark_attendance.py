@@ -386,11 +386,91 @@ def get_holidays_between_dates(company, start_date, end_date):
 
 
 # ---------------------------------------------------------------------------
-# Comp Off / Leave balance
+# Leave Allocation check
+# ---------------------------------------------------------------------------
+
+@frappe.whitelist()
+def get_leave_allocation_for_month(employee, year, month):
+    """
+    Check whether an active Leave Allocation exists for the employee covering
+    the given month.  Returns:
+    {
+        "has_allocation": True/False,
+        "allocation_name": "LAL-00001" | None,
+    }
+    Used by the mark-attendance page to decide whether to enable leave columns.
+    """
+    import datetime
+
+    try:
+        year_int  = int(year)
+        month_int = int(month) + 1   # JS months are 0-based
+    except (ValueError, TypeError):
+        return {"has_allocation": False, "allocation_name": None}
+
+    month_start = datetime.date(year_int, month_int, 1)
+    if month_int == 12:
+        month_end = datetime.date(year_int + 1, 1, 1) - datetime.timedelta(days=1)
+    else:
+        month_end = datetime.date(year_int, month_int + 1, 1) - datetime.timedelta(days=1)
+
+    alloc_name = frappe.db.get_value(
+        "Leave Allocation",
+        {
+            "employee":  employee,
+            "from_date": ["<=", str(month_start)],
+            "to_date":   [">=", str(month_end)],
+            "docstatus": ["<", 2],
+        },
+        "name"
+    )
+
+    return {
+        "has_allocation":  bool(alloc_name),
+        "allocation_name": alloc_name or None,
+    }
+
+
+# ---------------------------------------------------------------------------
+# Comp Off / Leave balance  (extended to include EL and CL from Leave Allocation)
 # ---------------------------------------------------------------------------
 
 @frappe.whitelist()
 def get_comp_off_balance(employee, year=None, month=None):
+    """
+    Returns balances for Earned Leave (EL), Casual Leave (CL), and Comp Off
+    for the given employee and month.
+
+    EL / CL allocated and remaining come from the active Leave Allocation
+    Detail rows.  Used / taken are computed live from Attendance records
+    (supporting 0.5 for half-day leaves).
+
+    Comp Off available/earned/used/balance are computed from Attendance directly
+    (no allocation row needed — ECO earns, Comp Off uses).
+
+    Return structure:
+    {
+        # EL
+        "el_allocated":  int,
+        "el_used":       float,   # supports 0.5 increments
+        "el_remaining":  float,
+
+        # CL
+        "cl_allocated":  int,
+        "cl_used":       float,
+        "cl_remaining":  float,
+
+        # Comp Off (ECO / Comp Off)
+        "available":     int,    # balance carried in from before month
+        "earned":        int,    # ECO earned this month
+        "used":          float,  # Comp Off used this month (supports 0.5)
+        "balance":       float,  # available + earned - used
+
+        # Legacy keys (kept for backward compat)
+        "el_taken":      float,  # same as el_used
+        "cl_taken":      float,  # same as cl_used
+    }
+    """
     import datetime
 
     try:
@@ -400,6 +480,68 @@ def get_comp_off_balance(employee, year=None, month=None):
         year_int  = None
         month_int = None
 
+    # ── Helper: count full-day + half-day attendance for a leave type ────────
+    def count_leave_taken(emp, leave_type, from_dt, to_dt):
+        """
+        Returns float count of leave_type taken between from_dt and to_dt.
+        Full-day attendance with that status = 1.0
+        Half-day attendance where first_half or second_half matches = 0.5 each
+        """
+        total = 0.0
+
+        # Full-day records
+        full_count = frappe.db.count(
+            "Attendance",
+            filters={
+                "employee":        emp,
+                "status":          leave_type,
+                "attendance_date": ["between", [from_dt, to_dt]],
+                "docstatus":       ["<", 2],
+            }
+        )
+        total += float(full_count)
+
+        # Half-day records — first half
+        h1_count = frappe.db.count(
+            "Attendance",
+            filters={
+                "employee":           emp,
+                "status":             "Half Day",
+                "custom_first_half":  leave_type,
+                "attendance_date":    ["between", [from_dt, to_dt]],
+                "docstatus":          ["<", 2],
+            }
+        )
+        total += float(h1_count) * 0.5
+
+        # Half-day records — second half
+        h2_count = frappe.db.count(
+            "Attendance",
+            filters={
+                "employee":            emp,
+                "status":              "Half Day",
+                "custom_second_half":  leave_type,
+                "attendance_date":     ["between", [from_dt, to_dt]],
+                "docstatus":           ["<", 2],
+            }
+        )
+        total += float(h2_count) * 0.5
+
+        return total
+
+    # ── Helper: count full-day ECO/Comp Off (no half-day variant for ECO) ───
+    def count_eco_or_coff(emp, status, from_dt, to_dt):
+        full_count = frappe.db.count(
+            "Attendance",
+            filters={
+                "employee":        emp,
+                "status":          status,
+                "attendance_date": ["between", [from_dt, to_dt]],
+                "docstatus":       ["<", 2],
+            }
+        )
+        return float(full_count)
+
     if year_int is not None and month_int is not None:
         month_1based = month_int + 1
         month_start  = datetime.date(year_int, month_1based, 1)
@@ -408,57 +550,95 @@ def get_comp_off_balance(employee, year=None, month=None):
         else:
             month_end = datetime.date(year_int, month_1based + 1, 1) - datetime.timedelta(days=1)
 
-        earned_before = frappe.db.count("Attendance", filters={
-            "employee": employee, "status": "Earned Comp Off",
-            "attendance_date": ["<", month_start], "docstatus": ["<", 2],
-        })
-        used_before = frappe.db.count("Attendance", filters={
-            "employee": employee, "status": "Comp Off",
-            "attendance_date": ["<", month_start], "docstatus": ["<", 2],
-        })
-        available = max(0, earned_before - used_before)
+        # ── Find active Leave Allocation covering this month ─────────────────
+        alloc = frappe.db.get_value(
+            "Leave Allocation",
+            {
+                "employee":  employee,
+                "from_date": ["<=", str(month_start)],
+                "to_date":   [">=", str(month_end)],
+                "docstatus": ["<", 2],
+            },
+            ["name", "from_date", "to_date"],
+            as_dict=True
+        )
 
-        earned = frappe.db.count("Attendance", filters={
-            "employee": employee, "status": "Earned Comp Off",
-            "attendance_date": ["between", [month_start, month_end]], "docstatus": ["<", 2],
-        })
-        used = frappe.db.count("Attendance", filters={
-            "employee": employee, "status": "Comp Off",
-            "attendance_date": ["between", [month_start, month_end]], "docstatus": ["<", 2],
-        })
-        el_taken = frappe.db.count("Attendance", filters={
-            "employee": employee, "status": "Earned Leave",
-            "attendance_date": ["between", [month_start, month_end]], "docstatus": ["<", 2],
-        })
-        cl_taken = frappe.db.count("Attendance", filters={
-            "employee": employee, "status": "Casual Leave",
-            "attendance_date": ["between", [month_start, month_end]], "docstatus": ["<", 2],
-        })
-        balance = max(0, available + earned - used)
+        if alloc:
+            # Get allocated amounts from the Leave Allocation Detail child table
+            details = frappe.get_all(
+                "Leave Allocation Detail",
+                filters={"parent": alloc.name},
+                fields=["leave_type", "allocated_leaves"]
+            )
+            allocated_map = {d.leave_type: (d.allocated_leaves or 0) for d in details}
+
+            el_allocated = allocated_map.get("Earned Leave", 0)
+            cl_allocated = allocated_map.get("Casual Leave", 0)
+
+            # Compute used from Attendance over the FULL allocation period
+            # (so balance reflects the whole allocation, not just this month)
+            alloc_start = alloc.from_date
+            alloc_end   = alloc.to_date
+
+            el_used = count_leave_taken(employee, "Earned Leave", alloc_start, alloc_end)
+            cl_used = count_leave_taken(employee, "Casual Leave", alloc_start, alloc_end)
+        else:
+            el_allocated = 0
+            cl_allocated = 0
+            el_used      = 0.0
+            cl_used      = 0.0
+
+        el_remaining = max(0.0, float(el_allocated) - el_used)
+        cl_remaining = max(0.0, float(cl_allocated) - cl_used)
+
+        # ── Comp Off ─────────────────────────────────────────────────────────
+        earned_before = count_eco_or_coff(employee, "Earned Comp Off", "2000-01-01", month_start - datetime.timedelta(days=1))
+        used_before   = count_leave_taken(employee, "Comp Off", "2000-01-01", month_start - datetime.timedelta(days=1))
+        available     = max(0.0, earned_before - used_before)
+
+        earned  = count_eco_or_coff(employee, "Earned Comp Off", month_start, month_end)
+        co_used = count_leave_taken(employee, "Comp Off", month_start, month_end)
+        balance = max(0.0, available + earned - co_used)
 
     else:
-        available = 0
-        earned = frappe.db.count("Attendance", filters={
+        # No month specified — lifetime totals, no allocation lookup
+        el_allocated = 0
+        cl_allocated = 0
+        el_used      = 0.0
+        cl_used      = 0.0
+        el_remaining = 0.0
+        cl_remaining = 0.0
+        available    = 0.0
+        earned       = float(frappe.db.count("Attendance", filters={
             "employee": employee, "status": "Earned Comp Off", "docstatus": ["<", 2],
-        })
-        used = frappe.db.count("Attendance", filters={
-            "employee": employee, "status": "Comp Off", "docstatus": ["<", 2],
-        })
-        el_taken = frappe.db.count("Attendance", filters={
-            "employee": employee, "status": "Earned Leave", "docstatus": ["<", 2],
-        })
-        cl_taken = frappe.db.count("Attendance", filters={
-            "employee": employee, "status": "Casual Leave", "docstatus": ["<", 2],
-        })
-        balance = max(0, earned - used)
+        }))
+        co_used = count_leave_taken(employee, "Comp Off", "2000-01-01", "2099-12-31") if False else float(
+            frappe.db.count("Attendance", filters={
+                "employee": employee, "status": "Comp Off", "docstatus": ["<", 2],
+            })
+        )
+        balance = max(0.0, earned - co_used)
 
     return {
+        # EL
+        "el_allocated": el_allocated,
+        "el_used":      el_used,
+        "el_remaining": el_remaining,
+
+        # CL
+        "cl_allocated": cl_allocated,
+        "cl_used":      cl_used,
+        "cl_remaining": cl_remaining,
+
+        # Comp Off
         "available": available,
         "earned":    earned,
-        "used":      used,
+        "used":      co_used,
         "balance":   balance,
-        "el_taken":  el_taken,
-        "cl_taken":  cl_taken,
+
+        # Legacy keys
+        "el_taken":  el_used,
+        "cl_taken":  cl_used,
     }
 
 

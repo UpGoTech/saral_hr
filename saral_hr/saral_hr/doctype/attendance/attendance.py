@@ -15,15 +15,15 @@ class DuplicateAttendanceError(frappe.ValidationError):
 	pass
 
 
-# Valid statuses for each half of a half-day record
 VALID_HALF_STATUSES = {
 	"Present", "On Tour", "Earned Comp Off",
 	"Absent", "Earned Leave", "Casual Leave", "Comp Off", "LWP",
 }
 
-# Statuses that count as "working / present" — two of these in both halves
-# means it should just be a full Present/On Tour/etc, not Half Day
 PRESENT_LIKE = {"Present", "On Tour", "Earned Comp Off"}
+
+# Statuses that require an active Leave Allocation to be used
+ALLOCATION_REQUIRED_STATUSES = {"Earned Leave", "Casual Leave", "Comp Off"}
 
 
 class Attendance(Document):
@@ -34,6 +34,7 @@ class Attendance(Document):
 		self.validate_employee_active()
 		self.validate_half_day_fields()
 		self.clear_half_day_fields_if_not_half_day()
+		self.validate_leave_allocation()   # ← new
 
 	def validate_attendance_date(self):
 		if not self.employee or not self.attendance_date:
@@ -121,15 +122,6 @@ class Attendance(Document):
 			)
 
 	def validate_half_day_fields(self):
-		"""
-		When status is Half Day:
-		- At least one half must be filled
-		- Both halves cannot be the same "present-like" status
-		  (e.g. Present + Present should just be Present, not Half Day)
-		- Both halves cannot be the same "absent-like" status
-		  (e.g. Absent + Absent should just be Absent)
-		- If filled, values must be valid
-		"""
 		if self.status != "Half Day":
 			return
 
@@ -137,7 +129,6 @@ class Attendance(Document):
 		sh = (self.custom_second_half or "").strip()
 
 		if not fh and not sh:
-			# Allow saving without halves — mark-attendance page may save in two steps
 			return
 
 		if fh and fh not in VALID_HALF_STATUSES:
@@ -150,8 +141,6 @@ class Attendance(Document):
 				_("Invalid Second Half status: {0}").format(frappe.bold(sh))
 			)
 
-		# Warn if both halves are identical — it's technically valid (e.g., Absent + Absent
-		# might happen from biometric) but flag it as a note
 		if fh and sh and fh == sh:
 			frappe.msgprint(
 				_("Both halves are marked as <b>{0}</b>. Consider using a full-day status instead.").format(fh),
@@ -161,7 +150,60 @@ class Attendance(Document):
 			)
 
 	def clear_half_day_fields_if_not_half_day(self):
-		"""Clear half-day fields when status is not Half Day."""
 		if self.status != "Half Day":
 			self.custom_first_half  = ""
 			self.custom_second_half = ""
+
+	def validate_leave_allocation(self):
+		"""
+		Block saving if a leave type that requires an allocation
+		(Earned Leave, Casual Leave, Comp Off) is used but no active
+		Leave Allocation covers this employee on this attendance date.
+
+		Also checks the half-day fields for the same constraint.
+		"""
+		if not self.employee or not self.attendance_date:
+			return
+
+		# Collect all leave statuses being used in this record
+		statuses_used = set()
+
+		# Full-day status
+		if self.status in ALLOCATION_REQUIRED_STATUSES:
+			statuses_used.add(self.status)
+
+		# Half-day statuses
+		if self.status == "Half Day":
+			fh = (self.custom_first_half  or "").strip()
+			sh = (self.custom_second_half or "").strip()
+			if fh in ALLOCATION_REQUIRED_STATUSES:
+				statuses_used.add(fh)
+			if sh in ALLOCATION_REQUIRED_STATUSES:
+				statuses_used.add(sh)
+
+		if not statuses_used:
+			return  # Nothing to check
+
+		# Check whether an active Leave Allocation exists for this date
+		has_allocation = frappe.db.exists(
+			"Leave Allocation",
+			{
+				"employee":  self.employee,
+				"from_date": ["<=", self.attendance_date],
+				"to_date":   [">=", self.attendance_date],
+				"docstatus": ["<", 2],
+			}
+		)
+
+		if not has_allocation:
+			frappe.throw(
+				_(
+					"Cannot mark {0} for {1} on {2}: no active Leave Allocation found "
+					"covering this date. Please create a Leave Allocation first."
+				).format(
+					frappe.bold(", ".join(sorted(statuses_used))),
+					frappe.bold(self.employee),
+					frappe.bold(format_date(self.attendance_date)),
+				),
+				title=_("No Leave Allocation")
+			)

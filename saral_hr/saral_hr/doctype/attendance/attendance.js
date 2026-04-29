@@ -13,24 +13,23 @@ frappe.ui.form.on("Attendance", {
 		});
 
 		toggle_half_day_fields(frm);
-
-		// Check salary slip lock whenever the form is refreshed
-		// (covers both new records and opening existing ones)
 		check_salary_slip_lock(frm);
+		check_leave_allocation(frm);
 	},
 
 	employee(frm) {
 		check_salary_slip_lock(frm);
+		check_leave_allocation(frm);
 	},
 
 	attendance_date(frm) {
 		check_salary_slip_lock(frm);
+		check_leave_allocation(frm);
 	},
 
 	status(frm) {
 		toggle_half_day_fields(frm);
 
-		// Clear half-day fields when switching away from Half Day
 		if (frm.doc.status !== "Half Day") {
 			frm.set_value("custom_first_half",  "");
 			frm.set_value("custom_second_half", "");
@@ -46,17 +45,113 @@ frappe.ui.form.on("Attendance", {
 	},
 });
 
-// ── Salary Slip Lock ──────────────────────────────────────────────────────────
+// ── Leave Allocation Guard ────────────────────────────────────────────────────
+
+var LEAVE_STATUSES = ["Earned Leave", "Casual Leave", "Comp Off"];
 
 /**
- * Checks whether a submitted (or draft) salary slip exists for the
- * employee + month of this attendance record.
- *
- * - Submitted slip  → full read-only lock with red Frappe alert banner
- * - Draft slip      → orange Frappe alert banner (editable, but user is warned)
+ * Checks whether the employee has an active Leave Allocation covering the
+ * attendance_date. If not, removes EL / CL / Comp Off from the status
+ * dropdown and the half-day dropdowns, and shows a subtle notice.
  */
+function check_leave_allocation(frm) {
+	if (!frm.doc.employee || !frm.doc.attendance_date) {
+		// No employee/date yet — restore full options
+		set_leave_options_enabled(frm, true);
+		return;
+	}
+
+	frappe.db.get_value(
+		"Leave Allocation",
+		{
+			employee:  frm.doc.employee,
+			from_date: ["<=", frm.doc.attendance_date],
+			to_date:   [">=", frm.doc.attendance_date],
+			docstatus: ["<", 2],
+		},
+		"name",
+		function (r) {
+			var has_alloc = !!(r && r.name);
+			set_leave_options_enabled(frm, has_alloc);
+
+			if (!has_alloc) {
+				// Clear the field if it's currently set to a leave status
+				if (LEAVE_STATUSES.includes(frm.doc.status)) {
+					frm.set_value("status", "");
+					frappe.show_alert({
+						message: __("No active Leave Allocation found for this date. Earned Leave, Casual Leave, and Comp Off have been disabled."),
+						indicator: "orange"
+					});
+				}
+				// Clear half-day leave values too
+				if (LEAVE_STATUSES.includes(frm.doc.custom_first_half)) {
+					frm.set_value("custom_first_half", "");
+				}
+				if (LEAVE_STATUSES.includes(frm.doc.custom_second_half)) {
+					frm.set_value("custom_second_half", "");
+				}
+			}
+		}
+	);
+}
+
+/**
+ * Enable or disable the leave-type options in all three Select dropdowns:
+ * status, custom_first_half, custom_second_half.
+ *
+ * Frappe Select fields don't natively support per-option disabling,
+ * so we rebuild the options list — removing leave options when no
+ * allocation exists, restoring them when one is found.
+ */
+function set_leave_options_enabled(frm, enabled) {
+	var full_status_options = [
+		"",
+		"Present",
+		"Earned Comp Off",
+		"On Tour",
+		"Absent",
+		"Half Day",
+		"Holiday",
+		"Weekly Off",
+		"LWP",
+		"Earned Leave",
+		"Casual Leave",
+		"Comp Off",
+	];
+
+	var half_options = [
+		"",
+		"Present",
+		"On Tour",
+		"Earned Comp Off",
+		"Absent",
+		"Earned Leave",
+		"Casual Leave",
+		"Comp Off",
+		"LWP",
+	];
+
+	var filtered_full = enabled
+		? full_status_options
+		: full_status_options.filter(function (o) { return !LEAVE_STATUSES.includes(o); });
+
+	var filtered_half = enabled
+		? half_options
+		: half_options.filter(function (o) { return !LEAVE_STATUSES.includes(o); });
+
+	frm.set_df_property("status",              "options", filtered_full.join("\n"));
+	frm.set_df_property("custom_first_half",   "options", filtered_half.join("\n"));
+	frm.set_df_property("custom_second_half",  "options", filtered_half.join("\n"));
+
+	frm.refresh_field("status");
+	frm.refresh_field("custom_first_half");
+	frm.refresh_field("custom_second_half");
+}
+
+
+// ── Salary Slip Lock ──────────────────────────────────────────────────────────
+
 function check_salary_slip_lock(frm) {
-	// Remove any previously injected banners so we don't stack them
 	frm.dashboard.clear_headline();
 
 	if (!frm.doc.employee || !frm.doc.attendance_date) {
@@ -70,7 +165,6 @@ function check_salary_slip_lock(frm) {
 	);
 	var month_label = att_date.toLocaleDateString("en-US", { month: "long", year: "numeric" });
 
-	// Check submitted slip first
 	frappe.db.get_value(
 		"Salary Slip",
 		{ employee: frm.doc.employee, start_date: month_start, docstatus: 1 },
@@ -81,7 +175,6 @@ function check_salary_slip_lock(frm) {
 				return;
 			}
 
-			// No submitted slip — check for a draft slip
 			frappe.db.get_value(
 				"Salary Slip",
 				{ employee: frm.doc.employee, start_date: month_start, docstatus: 0 },
@@ -98,11 +191,7 @@ function check_salary_slip_lock(frm) {
 	);
 }
 
-/**
- * Make the entire form read-only and show a native Frappe red locked banner.
- */
 function lock_form_submitted(frm, slip_name, month_label) {
-	// Make every field read-only
 	frm.fields.forEach(function (field) {
 		frm.set_df_property(field.df.fieldname, "read_only", 1);
 	});
@@ -110,8 +199,6 @@ function lock_form_submitted(frm, slip_name, month_label) {
 
 	var slip_url = "/app/salary-slip/" + encodeURIComponent(slip_name);
 
-	// Use Frappe's native dashboard headline alert (renders in the standard
-	// blue/red/orange indicator bar at the top of the form body)
 	frm.dashboard.set_headline_alert(
 		`<div class="row">
 			<div class="col d-flex align-items-center" style="gap:8px;">
@@ -132,11 +219,8 @@ function lock_form_submitted(frm, slip_name, month_label) {
 	);
 }
 
-/**
- * Show a native Frappe orange warning banner but keep the form editable.
- */
 function show_draft_warning(frm, slip_name, month_label) {
-	unlock_form(frm); // ensure fields are not locked from a prior check
+	unlock_form(frm);
 
 	var slip_url = "/app/salary-slip/" + encodeURIComponent(slip_name);
 
@@ -160,9 +244,6 @@ function show_draft_warning(frm, slip_name, month_label) {
 	);
 }
 
-/**
- * Restore all fields to their natural editable state.
- */
 function unlock_form(frm) {
 	frm.fields.forEach(function (field) {
 		var original_ro = field.df.read_only_depends_on || field.df.__original_read_only;
@@ -181,9 +262,6 @@ function unlock_form(frm) {
 
 // ── Half Day helpers ──────────────────────────────────────────────────────────
 
-/**
- * Show the half-day section and fields only when status === "Half Day".
- */
 function toggle_half_day_fields(frm) {
 	var is_half = frm.doc.status === "Half Day";
 	frm.toggle_display("half_day_section",   is_half);
@@ -191,10 +269,6 @@ function toggle_half_day_fields(frm) {
 	frm.toggle_display("custom_second_half", is_half);
 }
 
-/**
- * Client-side hint: if both halves are the same status,
- * suggest using a full-day status.
- */
 function validate_half_combination(frm) {
 	var fh = frm.doc.custom_first_half  || "";
 	var sh = frm.doc.custom_second_half || "";

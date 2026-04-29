@@ -38,8 +38,7 @@ tr.tot td{background:#e8e8e8;font-weight:700;}
 .sig-d{font-size:9px;color:#555;margin-top:5px}
 </style>"""
 
-_NUMERIC_FT    = ("Float", "Currency", "Int", "Percent")
-_SKIP_ON_TOTAL = {"pt_type"}
+_NUMERIC_FT = ("Float", "Currency", "Int", "Percent")
 
 
 def _sig_html():
@@ -107,10 +106,9 @@ def _get_data(f):
     cols = [
         _col("Sr",             "sr_no",        "Int",   55),
         _col("Employee ID",    "employee_id",  "Data", 230),
-        _col("Employee Name",  "employee_name","Data", 260),
-        _col("PT Type",        "pt_type",      "Data", 190),
-        _col("Gross Salary",   "gross_salary", "Float", 250, precision=2),
-        _col("PT Amount (Rs.)","pt_amount",    "Float", 200, precision=2),
+        _col("Employee Name",  "employee_name","Data", 310),
+        _col("Gross Salary",   "gross_salary", "Float", 270, precision=2),
+        _col("PT Amount (Rs.)","pt_amount",    "Float", 220, precision=2),
     ]
 
     if not f.get("company"):
@@ -148,23 +146,6 @@ def _get_data(f):
     ):
         pm[r.slip] = flt(r.a)
 
-    sd_date = p.get("start_date", "")
-    eids = list({s.employee for s in slips})
-    pt_type_map = {}
-    if eids and sd_date:
-        for r in frappe.db.sql(
-            "SELECT ssa.employee, ssa.pf_applicable"
-            " FROM `tabSalary Structure Assignment` ssa"
-            " WHERE ssa.employee IN %(eids)s"
-            "   AND ssa.docstatus=1"
-            "   AND ssa.from_date <= %(sd)s"
-            "   AND (ssa.to_date IS NULL OR ssa.to_date >= %(sd)s)"
-            " ORDER BY ssa.from_date DESC",
-            {"eids": tuple(eids), "sd": sd_date}, as_dict=1
-        ):
-            if r.employee not in pt_type_map:
-                pt_type_map[r.employee] = r.pf_applicable or ""
-
     data = []
     gg = gp = 0.0
     sr = 0
@@ -174,15 +155,13 @@ def _get_data(f):
         if pt <= 0:
             continue
         sr += 1
-        gross   = flt(s.gross_salary, 2)
-        pt_type = pt_type_map.get(s.employee, "")
+        gross = flt(s.gross_salary, 2)
         gg += gross
         gp += pt
         data.append({
             "sr_no":         sr,
             "employee_id":   s.employee,
             "employee_name": s.employee_name,
-            "pt_type":       pt_type,
             "gross_salary":  gross,
             "pt_amount":     flt(pt, 2),
         })
@@ -192,7 +171,6 @@ def _get_data(f):
             "sr_no":         "",
             "employee_id":   "",
             "employee_name": "Total",
-            "pt_type":       "",
             "gross_salary":  flt(gg, 2),
             "pt_amount":     flt(gp, 2),
             "bold":          1,
@@ -208,11 +186,10 @@ def execute(filters=None):
 def _build_html(cols, data, co, mo, yr):
     col_pct = {
         "sr_no":         "4%",
-        "employee_id":   "17%",
-        "employee_name": "25%",
-        "pt_type":       "16%",
-        "gross_salary":  "19%",
-        "pt_amount":     "19%",
+        "employee_id":   "18%",
+        "employee_name": "38%",
+        "gross_salary":  "20%",
+        "pt_amount":     "20%",
     }
     cg = "<colgroup>" + "".join(
         '<col style="width:{w};"/>'.format(w=col_pct.get(c["fieldname"], "15%"))
@@ -244,19 +221,21 @@ def _build_html(cols, data, co, mo, yr):
             val = row.get(fn, "")
             ft  = c.get("fieldtype", "")
             if fn == "sr_no":
-                html += '<td style="border:{B};text-align:center;background:{bg};font-size:9px;color:#555;{fw}">{v}</td>'.format(B=B, bg=bg, fw=fw, v="" if val == "" else val)
-            elif is_tot and fn in _SKIP_ON_TOTAL:
-                html += '<td style="border:{B};background:{bg};"></td>'.format(B=B, bg=bg)
+                html += '<td style="border:{B};text-align:center;background:{bg};font-size:9px;color:#555;{fw}">{v}</td>'.format(
+                    B=B, bg=bg, fw=fw, v="" if val == "" else val)
             elif ft in _NUMERIC_FT:
-                html += '<td style="border:{B};text-align:right;background:{bg};{fw}">{v}</td>'.format(B=B, bg=bg, fw=fw, v=_fmt(val) if val not in ("", None) else "")
+                html += '<td style="border:{B};text-align:right;background:{bg};{fw}">{v}</td>'.format(
+                    B=B, bg=bg, fw=fw, v=_fmt(val) if val not in ("", None) else "")
             else:
-                html += '<td style="border:{B};text-align:left;background:{bg};{fw}">{v}</td>'.format(B=B, bg=bg, fw=fw, v=val or "")
+                html += '<td style="border:{B};text-align:left;background:{bg};{fw}">{v}</td>'.format(
+                    B=B, bg=bg, fw=fw, v=val or "")
         html += "</tr>"
         return html
 
     def _page_table(rows, start_idx):
         tbody = "<tbody>" + "".join(_row_html(row, start_idx + j) for j, row in enumerate(rows)) + "</tbody>"
-        return '<table class="data-tbl">{cg}<thead>{hdr}</thead>{tbody}</table>'.format(cg=cg, hdr=header_tr, tbody=tbody)
+        return '<table class="data-tbl">{cg}<thead>{hdr}</thead>{tbody}</table>'.format(
+            cg=cg, hdr=header_tr, tbody=tbody)
 
     emp_rows = [r for r in data if not r.get("bold")]
     tot_rows = [r for r in data if r.get("bold")]
@@ -282,7 +261,8 @@ def _build_html(cols, data, co, mo, yr):
         page_hdr = page1_hdr if pn == 0 else cont_hdr
 
         if not has_data:
-            tbl = '<table class="data-tbl">{cg}<thead>{hdr}</thead><tbody><tr><td colspan="{n}" class="nd">No data for this period</td></tr></tbody></table>'.format(cg=cg, hdr=header_tr, n=len(cols))
+            tbl = '<table class="data-tbl">{cg}<thead>{hdr}</thead><tbody><tr><td colspan="{n}" class="nd">No data for this period</td></tr></tbody></table>'.format(
+                cg=cg, hdr=header_tr, n=len(cols))
         else:
             tbl = _page_table(page_rows, row_counter)
             row_counter += len([r for r in page_rows if not r.get("bold")])
@@ -291,21 +271,37 @@ def _build_html(cols, data, co, mo, yr):
         sig = _sig_html() if is_last else ""
         parts.append("{pb}{hdr}{tbl}{foot}{sig}".format(pb=pb, hdr=page_hdr, tbl=tbl, foot=pg_foot, sig=sig))
 
-    return '<!DOCTYPE html><html><head><meta charset="UTF-8">{css}</head><body>{body}</body></html>'.format(css=_CSS, body="".join(parts))
+    return '<!DOCTYPE html><html><head><meta charset="UTF-8">{css}</head><body>{body}</body></html>'.format(
+        css=_CSS, body="".join(parts))
 
 
 def _save_pdf(html, prefix):
-    pdf = get_pdf(html, options={"page-size":"A4","orientation":"Landscape","margin-top":"7mm","margin-right":"6mm","margin-bottom":"9mm","margin-left":"6mm","encoding":"UTF-8","no-outline":None})
+    pdf = get_pdf(html, options={
+        "page-size": "A4", "orientation": "Landscape",
+        "margin-top": "7mm", "margin-right": "6mm",
+        "margin-bottom": "9mm", "margin-left": "6mm",
+        "encoding": "UTF-8", "no-outline": None
+    })
     ts  = frappe.utils.now_datetime().strftime("%Y%m%d_%H%M%S")
     fn  = "{prefix}_{ts}.pdf".format(prefix=prefix, ts=ts)
-    with open(frappe.utils.get_files_path(fn, is_private=0), "wb") as fh: fh.write(pdf)
-    doc = frappe.get_doc({"doctype":"File","file_name":fn,"is_private":0,"file_url":"/files/{fn}".format(fn=fn)})
-    doc.insert(ignore_permissions=True); frappe.db.commit()
+    with open(frappe.utils.get_files_path(fn, is_private=0), "wb") as fh:
+        fh.write(pdf)
+    doc = frappe.get_doc({
+        "doctype": "File", "file_name": fn,
+        "is_private": 0, "file_url": "/files/{fn}".format(fn=fn)
+    })
+    doc.insert(ignore_permissions=True)
+    frappe.db.commit()
     return doc.file_url
 
 
 @frappe.whitelist()
 def print_report(filters):
-    if isinstance(filters, str): filters = json.loads(filters)
+    if isinstance(filters, str):
+        filters = json.loads(filters)
     cols, data = _get_data(filters)
-    return _save_pdf(_build_html(cols, data, _company_label(filters), filters.get("month",""), filters.get("year","")), "Professional_Tax_Register")
+    return _save_pdf(
+        _build_html(cols, data, _company_label(filters),
+                    filters.get("month", ""), filters.get("year", "")),
+        "Professional_Tax_Register"
+    )

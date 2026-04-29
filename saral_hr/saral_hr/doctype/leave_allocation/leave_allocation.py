@@ -9,12 +9,31 @@ from frappe.utils import today, getdate
 class LeaveAllocation(Document):
 
     def validate(self):
+        self._recalculate_used_from_attendance()
         self._recalculate_remaining()
         self._update_status()
 
     def on_submit(self):
+        self._recalculate_used_from_attendance()
         self._recalculate_remaining()
         self._update_status()
+
+    def _recalculate_used_from_attendance(self):
+        """
+        Recalculate used_leaves for every row by querying Attendance directly.
+        This avoids drift caused by edits/deletions/status changes in Attendance.
+        Half-day leaves count as 0.5.
+        """
+        if not self.employee or not self.from_date or not self.to_date:
+            return
+
+        # Build a map: leave_type -> used count (float, supports half-days)
+        used_map = _compute_used_leaves_from_attendance(
+            self.employee, self.from_date, self.to_date
+        )
+
+        for row in self.leave_allocation_details:
+            row.used_leaves = used_map.get(row.leave_type, 0.0)
 
     def _recalculate_remaining(self):
         """Recalculate remaining_leaves for every row in the child table."""
@@ -22,14 +41,96 @@ class LeaveAllocation(Document):
             row.remaining_leaves = (row.allocated_leaves or 0) - (row.used_leaves or 0)
 
     def _update_status(self):
-        """Auto-set status based on to_date."""
+        """
+        Auto-set status based on to_date.
+        Only expire when today >= to_date AND there are/were remaining leaves.
+        If the period hasn't ended yet, keep Active regardless of balance.
+        """
         if self.status == "Cancelled":
             return
-        if self.to_date and getdate(self.to_date) < getdate(today()):
+
+        today_date = getdate(today())
+        to_date    = getdate(self.to_date) if self.to_date else None
+
+        if to_date and today_date >= to_date:
             self.status = "Expired"
         else:
             self.status = "Active"
 
+
+# ---------------------------------------------------------------------------
+# Internal helper: compute used leaves from Attendance (supports half-days)
+# ---------------------------------------------------------------------------
+
+# Maps Attendance status -> Leave Type name
+STATUS_LEAVE_MAP = {
+    "Sick Leave":      "Sick Leave",
+    "Casual Leave":    "Casual Leave",
+    "Annual Leave":    "Annual Leave",
+    "Earned Leave":    "Earned Leave",
+    "Comp Off":        "Comp Off",
+    "LWP":             "LWP",
+    "Earned Comp Off": "Earned Comp Off",
+}
+
+# Half-day fields to check for each leave type
+HALF_DAY_FIELDS = ["custom_first_half", "custom_second_half"]
+
+
+def _compute_used_leaves_from_attendance(employee, from_date, to_date):
+    """
+    Returns a dict  { leave_type: float_count }  where count supports 0.5
+    increments for half-day leaves.
+
+    Logic:
+    - Full-day Attendance with a leave status => 1.0 deducted
+    - Half-day Attendance (status == "Half Day"):
+        custom_first_half / custom_second_half => each side that matches
+        a leave type adds 0.5
+    """
+    used_map = {}
+
+    # 1. Full-day leave records
+    full_day_statuses = list(STATUS_LEAVE_MAP.keys())
+    full_records = frappe.get_all(
+        "Attendance",
+        filters={
+            "employee":        employee,
+            "attendance_date": ["between", [from_date, to_date]],
+            "status":          ["in", full_day_statuses],
+            "docstatus":       ["<", 2],
+        },
+        fields=["status"]
+    )
+    for rec in full_records:
+        lt = STATUS_LEAVE_MAP.get(rec.status)
+        if lt:
+            used_map[lt] = used_map.get(lt, 0.0) + 1.0
+
+    # 2. Half-day records — check custom_first_half / custom_second_half
+    half_records = frappe.get_all(
+        "Attendance",
+        filters={
+            "employee":        employee,
+            "attendance_date": ["between", [from_date, to_date]],
+            "status":          "Half Day",
+            "docstatus":       ["<", 2],
+        },
+        fields=["custom_first_half", "custom_second_half"]
+    )
+    for rec in half_records:
+        for field in HALF_DAY_FIELDS:
+            half_status = rec.get(field) or ""
+            lt = STATUS_LEAVE_MAP.get(half_status)
+            if lt:
+                used_map[lt] = used_map.get(lt, 0.0) + 0.5
+
+    return used_map
+
+
+# ---------------------------------------------------------------------------
+# Public API
+# ---------------------------------------------------------------------------
 
 @frappe.whitelist()
 def expire_allocation(name):
@@ -65,8 +166,6 @@ def get_all_leave_types():
 def get_flat_allocations():
     """
     Return one row per (employee, leave_type) for the custom list view.
-    emp.employee = the Full Name field on the Employee doctype (fieldname: employee, label: Full Name).
-    la.employee  = stores the Employee series ID e.g. HR-EMP-00001.
     """
     rows = frappe.db.sql("""
         SELECT
@@ -99,6 +198,11 @@ def get_leave_ledger(employee, leave_type, from_date, to_date):
 
     Each entry has:
         date, day, status, leaves_in, leaves_out, balance
+
+    Fix:
+    - Expiry entry only appears when today >= to_date AND remaining > 0
+    - Used count supports 0.5 (half-day)
+    - leaves_out on expiry = actual remaining at period end (not current balance variable)
     """
     alloc = frappe.db.get_value(
         "Leave Allocation",
@@ -138,24 +242,14 @@ def get_leave_ledger(employee, leave_type, from_date, to_date):
 
     # ── Usage entries from Attendance ────────────────────────────────────────
     # Map attendance status → leave type name
-    STATUS_LEAVE_MAP = {
-        "Sick Leave":      "Sick Leave",
-        "Casual Leave":    "Casual Leave",
-        "Annual Leave":    "Annual Leave",
-        "Earned Leave":    "Earned Leave",
-        "Comp Off":        "Comp Off",
-        "LWP":             "LWP",
-        "Earned Comp Off": "Earned Comp Off",
-    }
-
-    # Reverse-map: leave type → attendance status(es)
     attendance_statuses = [
         status for status, lt in STATUS_LEAVE_MAP.items()
         if lt == leave_type
     ]
 
     if attendance_statuses:
-        attendance_records = frappe.get_all(
+        # Full-day records
+        full_records = frappe.get_all(
             "Attendance",
             filters={
                 "employee":        employee,
@@ -167,7 +261,7 @@ def get_leave_ledger(employee, leave_type, from_date, to_date):
             order_by="attendance_date asc"
         )
 
-        for att in attendance_records:
+        for att in full_records:
             att_date = frappe.utils.getdate(att.attendance_date)
             balance -= 1.0
             entries.append({
@@ -179,15 +273,55 @@ def get_leave_ledger(employee, leave_type, from_date, to_date):
                 "balance":    balance
             })
 
+        # Half-day records — check custom_first_half / custom_second_half
+        half_records = frappe.get_all(
+            "Attendance",
+            filters={
+                "employee":        employee,
+                "attendance_date": ["between", [from_date, to_date]],
+                "status":          "Half Day",
+                "docstatus":       ["<", 2],
+            },
+            fields=["attendance_date", "custom_first_half", "custom_second_half"],
+            order_by="attendance_date asc"
+        )
+
+        for att in half_records:
+            used_halves = 0
+            for field in HALF_DAY_FIELDS:
+                half_status = att.get(field) or ""
+                if half_status in attendance_statuses:
+                    used_halves += 1
+
+            if used_halves:
+                att_date    = frappe.utils.getdate(att.attendance_date)
+                deduction   = used_halves * 0.5
+                balance    -= deduction
+                entries.append({
+                    "date":       frappe.utils.format_date(att.attendance_date),
+                    "day":        att_date.strftime("%A"),
+                    "status":     "Used",
+                    "leaves_in":  "-",
+                    "leaves_out": deduction,
+                    "balance":    balance
+                })
+
+    # Sort all entries by date (opening entry stays first due to from_date)
+    entries.sort(key=lambda e: e["date"])
+
     # ── Expiry entry at period end ───────────────────────────────────────────
-    if alloc and balance > 0:
-        exp_date = frappe.utils.getdate(to_date)
+    # Only append when today >= to_date AND there are remaining leaves
+    today_date = getdate(today())
+    period_end = frappe.utils.getdate(to_date) if to_date else None
+
+    if alloc and balance > 0 and period_end and today_date >= period_end:
+        exp_date = period_end
         entries.append({
             "date":       frappe.utils.format_date(to_date),
             "day":        exp_date.strftime("%A"),
             "status":     "Expired",
             "leaves_in":  "-",
-            "leaves_out": balance,
+            "leaves_out": balance,   # actual remaining at period end
             "balance":    0
         })
 
@@ -198,22 +332,15 @@ def get_leave_ledger(employee, leave_type, from_date, to_date):
 def update_used_leaves_from_attendance(employee, attendance_date, status):
     """
     Called after an Attendance record is saved/submitted.
-    Finds the active Leave Allocation for the employee on that date,
-    increments used_leaves for the matching leave type, and saves.
+    Instead of incrementing, we now RECALCULATE from Attendance directly
+    to avoid any drift.
     """
-    STATUS_LEAVE_MAP = {
-        "Sick Leave":      "Sick Leave",
-        "Casual Leave":    "Casual Leave",
-        "Annual Leave":    "Annual Leave",
-        "Earned Leave":    "Earned Leave",
-        "Comp Off":        "Comp Off",
-        "LWP":             "LWP",
-        "Earned Comp Off": "Earned Comp Off",
-    }
-
+    # Only proceed if status is a recognised leave type
     leave_type = STATUS_LEAVE_MAP.get(status)
     if not leave_type:
-        return  # Not a leave status — nothing to update
+        # Also handle half-day — recalculate if status is "Half Day"
+        if status != "Half Day":
+            return
 
     alloc_name = frappe.db.get_value(
         "Leave Allocation",
@@ -231,11 +358,90 @@ def update_used_leaves_from_attendance(employee, attendance_date, status):
 
     alloc_doc = frappe.get_doc("Leave Allocation", alloc_name)
 
+    # Recalculate live from Attendance
+    used_map = _compute_used_leaves_from_attendance(
+        employee, alloc_doc.from_date, alloc_doc.to_date
+    )
+
     for row in alloc_doc.leave_allocation_details:
-        if row.leave_type == leave_type:
-            row.used_leaves = (row.used_leaves or 0) + 1
-            row.remaining_leaves = (row.allocated_leaves or 0) - row.used_leaves
-            break
+        row.used_leaves      = used_map.get(row.leave_type, 0.0)
+        row.remaining_leaves = (row.allocated_leaves or 0) - row.used_leaves
 
     alloc_doc.save(ignore_permissions=True)
     frappe.db.commit()
+
+
+@frappe.whitelist()
+def get_leave_balance_for_month(employee, year, month):
+    """
+    Returns EL and CL allocated / used / remaining for the active Leave Allocation
+    covering the given month.  Used by the mark-attendance page.
+
+    Returns:
+    {
+        "has_allocation": True/False,
+        "el": { "allocated": 0, "used": 0.0, "remaining": 0.0 },
+        "cl": { "allocated": 0, "used": 0.0, "remaining": 0.0 },
+    }
+    """
+    import datetime
+
+    try:
+        year_int  = int(year)
+        month_int = int(month) + 1   # JS months are 0-based
+    except (ValueError, TypeError):
+        return {"has_allocation": False}
+
+    month_start = datetime.date(year_int, month_int, 1)
+    if month_int == 12:
+        month_end = datetime.date(year_int + 1, 1, 1) - datetime.timedelta(days=1)
+    else:
+        month_end = datetime.date(year_int, month_int + 1, 1) - datetime.timedelta(days=1)
+
+    # Find the active allocation that covers this month
+    alloc = frappe.db.get_value(
+        "Leave Allocation",
+        {
+            "employee":  employee,
+            "from_date": ["<=", str(month_start)],
+            "to_date":   [">=", str(month_end)],
+            "docstatus": ["<", 2],
+        },
+        ["name", "from_date", "to_date"],
+        as_dict=True
+    )
+
+    if not alloc:
+        return {"has_allocation": False}
+
+    # Get allocated amounts from child table
+    details = frappe.get_all(
+        "Leave Allocation Detail",
+        filters={"parent": alloc.name},
+        fields=["leave_type", "allocated_leaves"]
+    )
+    allocated_map = {d.leave_type: (d.allocated_leaves or 0) for d in details}
+
+    # Recalculate used from Attendance for the full allocation period
+    used_map = _compute_used_leaves_from_attendance(
+        employee, alloc.from_date, alloc.to_date
+    )
+
+    el_allocated  = allocated_map.get("Earned Leave", 0)
+    cl_allocated  = allocated_map.get("Casual Leave", 0)
+    el_used       = used_map.get("Earned Leave", 0.0)
+    cl_used       = used_map.get("Casual Leave", 0.0)
+
+    return {
+        "has_allocation": True,
+        "el": {
+            "allocated": el_allocated,
+            "used":      el_used,
+            "remaining": max(0, el_allocated - el_used),
+        },
+        "cl": {
+            "allocated": cl_allocated,
+            "used":      cl_used,
+            "remaining": max(0, cl_allocated - cl_used),
+        },
+    }

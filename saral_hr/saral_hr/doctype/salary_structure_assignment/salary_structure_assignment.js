@@ -21,8 +21,6 @@ const ALL_STATUTORY        = [...STATUTORY_DEDUCTION, ...STATUTORY_EMPLOYER];
 // ─────────────────────────────────────────────────────────────
 //  Guard: prevent concurrent statutory refresh calls
 // ─────────────────────────────────────────────────────────────
-// If refresh_statutory_rows is already in-flight, a second call
-// would race and double-add rows. We queue at most one pending call.
 let _statutory_inflight = false;
 let _statutory_pending  = false;
 
@@ -34,8 +32,12 @@ frappe.ui.form.on("Salary Structure Assignment", {
         toggle_skill_type(frm);
         if (frm.doc.salary_structure) {
             toggle_salary_sections(frm);
-            calculate_salary(frm);
-            maybe_render_daily_wage_panel(frm);
+            // FIX (Bug 2 — Amend/reload zeros): defer calculate + panel render
+            // so Frappe's docmap has time to register copied child rows.
+            setTimeout(() => {
+                calculate_salary(frm);
+                maybe_render_daily_wage_panel(frm);
+            }, 150);
         }
     },
 
@@ -128,6 +130,12 @@ frappe.ui.form.on("Salary Details", {
             return;
         }
 
+        // FIX (Bug 1 — Compute needs 2 clicks): skip auto statutory refresh
+        // while the Compute button is mid-loop setting multiple amounts.
+        // The Compute handler sets frm._computing_daily_wage = true before
+        // the loop and clears it after, then calls refresh_statutory_rows once.
+        if (frm._computing_daily_wage) return;
+
         if (row && row.parentfield === "earnings") {
             refresh_statutory_rows(frm);
         } else {
@@ -203,11 +211,17 @@ function _build_daily_wage_panel(frm, dw_rows, multiplier) {
     const is_readonly = frm.doc.docstatus !== 0;
 
     const rows_html = dw_rows.map((row, idx) => {
-        const saved_amount = flt(row.amount) || 0;
+        // FIX (Bug 2 — Amend zeros in panel): prefer the saved `per_day_rate`
+        // field over the in-memory `_dw_per_day` property (which is lost on
+        // reload/amend). Fall back to amount / multiplier only if both are absent.
+        const saved_per_day_rate = flt(row.per_day_rate);
         const per_day = flt(row._dw_per_day) > 0
             ? flt(row._dw_per_day)
-            : (saved_amount > 0 ? flt(saved_amount / multiplier, 4) : "");
+            : saved_per_day_rate > 0
+                ? saved_per_day_rate
+                : (flt(row.amount) > 0 ? flt(flt(row.amount) / multiplier, 4) : "");
 
+        const saved_amount = flt(row.amount) || 0;
         const monthly_display = saved_amount > 0
             ? flt(saved_amount, 2).toLocaleString("en-IN", {minimumFractionDigits:2, maximumFractionDigits:2})
             : "";
@@ -368,7 +382,13 @@ function _build_daily_wage_panel(frm, dw_rows, multiplier) {
         }
     });
 
-    // Compute
+    // ─────────────────────────────────────────────────────────
+    //  Compute button
+    //  FIX (Bug 1): set frm._computing_daily_wage = true before
+    //  the loop so the Salary Details `amount` trigger skips its
+    //  mid-loop statutory refresh calls. Clear the flag after all
+    //  values are set, then call refresh_statutory_rows once.
+    // ─────────────────────────────────────────────────────────
     $panel.find(".dw-compute-btn").on("click", function () {
         let any_missing = false;
         $panel.find(".dw-rate-input").each(function () {
@@ -384,6 +404,9 @@ function _build_daily_wage_panel(frm, dw_rows, multiplier) {
             frappe.show_alert({ message: __("Please enter a per-day rate for all components."), indicator: "orange" });
             return;
         }
+
+        // Block the amount-change trigger from firing mid-loop
+        frm._computing_daily_wage = true;
 
         $panel.find(".dw-rate-input").each(function () {
             const per_day = flt($(this).val());
@@ -404,6 +427,9 @@ function _build_daily_wage_panel(frm, dw_rows, multiplier) {
             $val.addClass("has-value");
         });
 
+        // All values set — now unblock and do a single statutory refresh
+        frm._computing_daily_wage = false;
+
         frm.refresh_fields(["earnings", "deductions", "employer_share"]);
         refresh_statutory_rows(frm);
         frappe.show_alert({ message: __("Monthly amounts applied."), indicator: "green" });
@@ -413,12 +439,16 @@ function _build_daily_wage_panel(frm, dw_rows, multiplier) {
     $panel.find(".dw-reset-btn").on("click", function () {
         $panel.find(".dw-rate-input").val("").removeClass("dw-error");
         $panel.find(".dw-computed-val").text("").removeClass("has-value");
+
+        frm._computing_daily_wage = true;
         dw_rows.forEach(row => {
             frappe.model.set_value("Salary Details", row.name, "amount",       0);
             frappe.model.set_value("Salary Details", row.name, "base_amount",  0);
             frappe.model.set_value("Salary Details", row.name, "per_day_rate", 0);
             row._dw_per_day = 0;
         });
+        frm._computing_daily_wage = false;
+
         frm.refresh_fields(["earnings", "deductions", "employer_share"]);
         refresh_statutory_rows(frm);
         frappe.show_alert({ message: __("Daily wage amounts reset."), indicator: "blue" });
@@ -642,30 +672,18 @@ function load_salary_structure(frm) {
 
 // ─────────────────────────────────────────────────────────────
 //  Refresh statutory rows
-//
-//  THE KEY FIX: use _remove_statutory_rows() which calls
-//  frm.clear_table() + frm.get_field().grid.refresh() so Frappe's
-//  internal child-table model is fully cleared before we add new rows.
-//  The old approach of re-assigning frm.doc.deductions = [...filter()]
-//  only updates the JS array; it does NOT remove rows from Frappe's
-//  internal docmap, so on the next add_child() the old rows remain
-//  and new ones are appended — producing duplicates.
 // ─────────────────────────────────────────────────────────────
 
 function _remove_statutory_rows(frm) {
-    // Collect non-statutory rows we want to keep
     const keep_ded  = (frm.doc.deductions    || []).filter(r => !ALL_STATUTORY.includes((r.salary_component || "").trim()));
     const keep_empr = (frm.doc.employer_share || []).filter(r => !ALL_STATUTORY.includes((r.salary_component || "").trim()));
 
-    // Save their data snapshots (name will be regenerated)
     const snap_ded  = keep_ded.map(r => ({ ...r }));
     const snap_empr = keep_empr.map(r => ({ ...r }));
 
-    // Fully clear both tables
     frm.clear_table("deductions");
     frm.clear_table("employer_share");
 
-    // Re-add the non-statutory rows we want to keep
     snap_ded.forEach(snap => {
         const child = frm.add_child("deductions");
         copy_row(child, snap);
@@ -681,14 +699,11 @@ function _remove_statutory_rows(frm) {
 function refresh_statutory_rows(frm) {
     if (!frm.doc.salary_structure || !frm.doc.company) return;
 
-    // Guard: if a call is already in flight, mark pending and return.
-    // The in-flight callback will re-run after it finishes.
     if (_statutory_inflight) {
         _statutory_pending = true;
         return;
     }
 
-    // Remove existing statutory rows cleanly
     _remove_statutory_rows(frm);
 
     const any_on = frm.doc.is_esic_applicable || frm.doc.is_pf_applicable
@@ -745,7 +760,6 @@ function refresh_statutory_rows(frm) {
                 calculate_salary(frm);
             }
 
-            // If another call was queued while we were in-flight, run it now
             if (_statutory_pending) {
                 _statutory_pending = false;
                 refresh_statutory_rows(frm);
@@ -873,7 +887,6 @@ function _sum_basic_da(frm) {
         const comp = (r.salary_component || "").toLowerCase();
         const abbr = (r.abbr || "").toLowerCase().trim();
         if (comp.includes("basic") || abbr === "basic") basic += amt;
-        // Match same DA detection logic as salary_slip.js
         if (comp.includes("dearness") || comp === "da"
             || abbr === "da" || abbr.startsWith("da-") || abbr.startsWith("da ")
             || abbr === "da - dr" || abbr.startsWith("da-dr")) da += amt;
