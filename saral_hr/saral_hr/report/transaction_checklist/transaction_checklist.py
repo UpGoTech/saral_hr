@@ -15,32 +15,29 @@ MONTH_MAP = {
     "July":7,"August":8,"September":9,"October":10,"November":11,"December":12,
 }
 
-ROWS_PER_PAGE = 8
-
-_B  = "1px solid #000"
-_BD = "1px dashed #aaa"
-
 # ---------------------------------------------------------------------------
-# Day-breakdown chips definition
-# Each entry: (fieldname_on_slip, short_label, is_currency, is_net_salary)
-# These map directly to Salary Slip fields fetched in the slip query.
+# Day-breakdown columns grouped into pairs for stacked display
+# Each tuple: (top_fieldname, top_label, bottom_fieldname, bottom_label, col_key)
 # ---------------------------------------------------------------------------
 
-DAY_CHIPS = [
-    ("payment_days",        "PD",   False, False),
-    ("total_working_days",  "WD",   False, False),
-    ("absent_days",         "AB",   False, False),
-    ("total_lwp",           "LWP",  False, False),
-    ("present_days",        "PR",   False, False),
-    ("total_earned_leaves", "EL",   False, False),
-    ("total_casual_leaves", "CL",   False, False),
-    ("total_comp_off",      "CO",   False, False),
-    ("total_earned_comp_off","ECO", False, False),
-    ("total_half_days",     "HD",   False, False),
-    ("total_on_tour",       "T",    False, False),
-    ("total_holidays",      "HOL",  False, False),
-    ("weekly_offs_taken",   "WO",   False, False),
+DAY_PAIRS = [
+    ("payment_days",         "PD",   "total_working_days",    "WD",   "pd_wd"),
+    ("absent_days",          "Abs",  "total_lwp",             "LWP",  "abs_lwp"),
+    ("present_days",         "Pres", "total_earned_leaves",   "EL",   "pres_el"),
+    ("total_casual_leaves",  "CL",   "total_comp_off",        "CO",   "cl_co"),
+    ("total_earned_comp_off","ECO",  "total_half_days",       "HD",   "eco_hd"),
+    ("total_on_tour",        "Tour", "total_holidays",        "Hol",  "tour_hol"),
+    ("weekly_offs_taken",    "WO",   None,                    "",     "wo"),
 ]
+
+ALL_DAY_FNS = [
+    "payment_days","total_working_days","absent_days","total_lwp",
+    "present_days","total_earned_leaves","total_casual_leaves","total_comp_off",
+    "total_earned_comp_off","total_half_days","total_on_tour","total_holidays",
+    "weekly_offs_taken",
+]
+
+IT_COMPONENT = "Income Tax"
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -63,63 +60,255 @@ def _date_range(f):
     y = int(f.get("year", 0) or 0)
     if not m or not y:
         return None, None
-    return "{0}-{1:02d}-01".format(y, m), "{0}-{1:02d}-{2:02d}".format(y, m, calendar.monthrange(y, m)[1])
+    return (
+        "{0}-{1:02d}-01".format(y, m),
+        "{0}-{1:02d}-{2:02d}".format(y, m, calendar.monthrange(y, m)[1]),
+    )
+
+def _month_name(m):
+    return [
+        "January","February","March","April","May","June",
+        "July","August","September","October","November","December"
+    ][m - 1]
+
+def _sanitize(s):
+    return (
+        s.strip().lower()
+        .replace(" ", "_").replace("-", "_")
+        .replace("(", "").replace(")", "")
+        .replace("__", "_")
+    )
 
 def _company_label(f):
     c = _parse_list(f.get("company"))
     return ", ".join(c) if c else (frappe.defaults.get_global_default("company") or "")
 
-def _sanitize(s):
-    return s.strip().lower().replace(" ", "_").replace("-", "_").replace("(", "").replace(")", "").replace("__","_")
+def _fmt_num(v):
+    if v is None or v == "": return ""
+    try:
+        fv = float(v)
+        if fv == 0: return ""
+        return "{0:,.2f}".format(fv)
+    except (TypeError, ValueError): return str(v)
 
-def _fn(prefix, abbr):
-    return "{0}_{1}".format(prefix, _sanitize(abbr))
+def _fmt_days(v):
+    if v is None or v == "": return ""
+    try:
+        fv = float(v)
+        if fv == 0: return ""
+        return str(int(fv)) if fv == int(fv) else "{0:.1f}".format(fv)
+    except (TypeError, ValueError): return str(v)
+
+def _fmt_pct(v):
+    if v is None or v == "": return ""
+    try:
+        fv = float(v)
+        if fv == 0: return ""
+        return "{0:.2f}%".format(fv)
+    except (TypeError, ValueError): return str(v)
 
 
 # ---------------------------------------------------------------------------
-# Fetch dynamic salary components
+# _get_components
 # ---------------------------------------------------------------------------
 
-def _get_components(w, p):
-    rows = frappe.db.sql(
-        """
-        SELECT DISTINCT sd.salary_component, sc.type, sc.employer_contribution,
-               COALESCE(sc.salary_component_abbr, sd.salary_component) AS abbr
-        FROM `tabSalary Slip` ss
-        INNER JOIN `tabSalary Details` sd ON sd.parent=ss.name
-            AND sd.parenttype='Salary Slip'
-        INNER JOIN `tabSalary Component` sc ON sc.name=sd.salary_component
-        WHERE {w}
-        ORDER BY sc.type, sc.employer_contribution, sd.salary_component
-        """.format(w=w),
-        p, as_dict=1
+def _get_components(where_clause, params):
+    try:
+        rows = frappe.db.sql(
+            "SELECT DISTINCT adc.{fn} AS comp"
+            " FROM `tabAdditional Deduction Component` adc"
+            " INNER JOIN `tabAdditional Deductions` ad ON ad.name = adc.parent"
+            " WHERE ad.docstatus = 1".format(
+                fn=_discover_child_fields("Additional Deduction Component")[0]
+            )
+        )
+        emp_ded_comps = sorted(r[0] for r in rows if r[0])
+    except Exception:
+        emp_ded_comps = []
+    return [], emp_ded_comps, []
+
+
+# ---------------------------------------------------------------------------
+# Child-table field discovery
+# ---------------------------------------------------------------------------
+
+_child_field_cache = {}
+
+def _discover_child_fields(child_doctype):
+    if child_doctype in _child_field_cache:
+        return _child_field_cache[child_doctype]
+
+    comp_fn = None
+    amt_fn  = None
+
+    try:
+        meta = frappe.get_meta(child_doctype)
+        for df in meta.fields:
+            fn  = df.fieldname
+            ft  = df.fieldtype
+            lbl = (df.label or "").lower()
+            if not comp_fn:
+                if ft == "Link" and (df.options or "").lower() in ("salary component","salary_component"):
+                    comp_fn = fn
+                elif ft in ("Data","Link","Select") and any(
+                    kw in lbl for kw in ("component","salary component","head","particular")
+                ):
+                    comp_fn = fn
+            if not amt_fn:
+                if ft in ("Currency","Float") and any(kw in lbl for kw in ("amount","value","rate")):
+                    amt_fn = fn
+        if comp_fn and amt_fn:
+            _child_field_cache[child_doctype] = (comp_fn, amt_fn)
+            return comp_fn, amt_fn
+    except Exception:
+        pass
+
+    try:
+        db_cols = [r[0] for r in frappe.db.sql("DESCRIBE `tab{0}`".format(child_doctype))]
+    except Exception:
+        db_cols = []
+
+    meta_cols = {
+        "name","creation","modified","modified_by","owner",
+        "docstatus","parent","parentfield","parenttype","idx",
+    }
+    comp_candidates = ["salary_component","component","salary_component_name","component_name","head","particular"]
+    amt_candidates  = ["amount","value","rate","total"]
+
+    comp_fn = next((c for c in comp_candidates if c in db_cols), None)
+    amt_fn  = next((c for c in amt_candidates  if c in db_cols), None)
+    if not comp_fn:
+        comp_fn = next((c for c in db_cols if c not in meta_cols and c not in amt_candidates), "name")
+    if not amt_fn:
+        amt_fn = "amount"
+
+    _child_field_cache[child_doctype] = (comp_fn, amt_fn)
+    return comp_fn, amt_fn
+
+
+# ---------------------------------------------------------------------------
+# Fetch Additional Salary / Deduction data
+# ---------------------------------------------------------------------------
+
+def _fetch_additional_data(parent_doctype, child_doctype, year, month, employee_ids=None):
+    comp_fn, amt_fn = _discover_child_fields(child_doctype)
+
+    filters = {"docstatus": 1, "year": year, "month": month}
+    if employee_ids:
+        filters["employee"] = ["in", list(employee_ids)]
+
+    parents = frappe.get_all(parent_doctype, filters=filters, fields=["name","employee"])
+    if not parents:
+        return [], {}
+
+    parent_names  = [p["name"]     for p in parents]
+    emp_by_parent = {p["name"]: p["employee"] for p in parents}
+
+    child_rows = frappe.get_all(
+        child_doctype,
+        filters={"parent": ["in", parent_names], "parenttype": parent_doctype},
+        fields=["parent", comp_fn, amt_fn],
     )
-    earn_comps, emp_ded_comps, empr_comps = [], [], []
-    seen = set()
-    for r in rows:
-        key = r["salary_component"]
-        if key in seen: continue
-        seen.add(key)
-        entry = (r["salary_component"], r["abbr"])
-        if r["type"] == "Earning":
-            earn_comps.append(entry)
-        elif r["employer_contribution"]:
-            empr_comps.append(entry)
-        else:
-            emp_ded_comps.append(entry)
-    return earn_comps, emp_ded_comps, empr_comps
+
+    emp_map    = {}
+    components = set()
+
+    for row in child_rows:
+        comp_name = row.get(comp_fn) or ""
+        amount    = flt(row.get(amt_fn) or 0, 2)
+        if not comp_name: continue
+        employee = emp_by_parent.get(row.get("parent"))
+        if not employee: continue
+        components.add(comp_name)
+        emp_map.setdefault(employee, {})
+        emp_map[employee][comp_name] = flt(emp_map[employee].get(comp_name, 0) + amount, 2)
+
+    return sorted(components), emp_map
 
 
-def _fetch_slip_comps(sn):
-    if not sn: return {}
-    r = {}
-    for x in frappe.db.sql(
-        "SELECT sd.parent AS slip, sd.salary_component AS comp, sd.amount "
-        "FROM `tabSalary Details` sd WHERE sd.parent IN %(sn)s",
-        {"sn": tuple(sn)}, as_dict=1
-    ):
-        r.setdefault(x["slip"], {})[x["comp"]] = x["amount"]
-    return r
+# ---------------------------------------------------------------------------
+# Fetch Income Tax
+# ---------------------------------------------------------------------------
+
+def _fetch_income_tax(slip_names):
+    if not slip_names:
+        return {}
+    result = {}
+    try:
+        rows = frappe.db.sql(
+            "SELECT sd.parent AS slip_name, SUM(sd.amount) AS v"
+            " FROM `tabSalary Details` sd"
+            " WHERE sd.parent IN %(sn)s"
+            "   AND sd.parenttype = 'Salary Slip'"
+            "   AND sd.parentfield = 'deductions'"
+            "   AND LOWER(sd.salary_component) = LOWER(%(comp)s)"
+            " GROUP BY sd.parent",
+            {"sn": tuple(slip_names), "comp": IT_COMPONENT},
+            as_dict=1,
+        )
+        for r in rows:
+            v = flt(r.get("v") or 0, 2)
+            if v > 0:
+                result[r["slip_name"]] = v
+    except Exception:
+        pass
+    return result
+
+
+# ---------------------------------------------------------------------------
+# Fetch Variable Pay %
+# ---------------------------------------------------------------------------
+
+def _fetch_variable_pay_pct(year, month, employee_ids):
+    if not employee_ids:
+        return {}
+
+    vp_map = {}
+    try:
+        emp_divisions = {}
+        cl_rows = frappe.db.sql(
+            "SELECT name AS employee, division"
+            " FROM `tabCompany Link`"
+            " WHERE name IN %(eids)s",
+            {"eids": tuple(employee_ids)},
+            as_dict=1,
+        )
+        for r in cl_rows:
+            if r.get("division"):
+                emp_divisions[r["employee"]] = r["division"]
+
+        if not emp_divisions:
+            return {}
+
+        divisions = list(set(emp_divisions.values()))
+
+        vpa_name = frappe.db.get_value(
+            "Variable Pay Assignment",
+            {"year": str(year), "month": month, "docstatus": ["!=", 2]},
+            "name",
+        )
+        if not vpa_name:
+            return {}
+
+        child_rows = frappe.get_all(
+            "Variable Pay Detail Table",
+            filters={
+                "parent": vpa_name,
+                "parenttype": "Variable Pay Assignment",
+                "division": ["in", divisions],
+            },
+            fields=["division", "percentage"],
+        )
+        div_pct = {r["division"]: flt(r.get("percentage") or 0, 2) for r in child_rows}
+
+        for emp, div in emp_divisions.items():
+            if div in div_pct:
+                vp_map[emp] = div_pct[div]
+
+    except Exception:
+        pass
+
+    return vp_map
 
 
 # ---------------------------------------------------------------------------
@@ -127,19 +316,35 @@ def _fetch_slip_comps(sn):
 # ---------------------------------------------------------------------------
 
 def _get_data(f):
-    if not f.get("company"):
-        return [_col("Employee", "employee", w=110)], []
+    cols = [
+        _col("Employee",      "employee",      w=130),
+        _col("Employee Name", "employee_name", w=200),
+    ]
+    for fn in ALL_DAY_FNS:
+        cols.append(_col(fn.replace("_"," ").title(), fn, "Float", 80, precision=2))
 
-    p = {}
+    cols.append(_col("Additional Salary",       "add_salary_combined",  "Data",  220))
+    cols.append(_col("Additional Deductions",   "add_ded_combined",     "Data",  220))
+    cols.append(_col("Income Tax",              "income_tax",           "Float", 120, precision=2))
+    cols.append(_col("Variable Pay %",          "variable_pay_pct",     "Data",   90))
+    cols.append(_col("Loan Recovered",          "loan_recovered",       "Float", 110, precision=2))
+    cols.append(_col("Advance Recovered",       "advance_recovered",    "Float", 110, precision=2))
+
+    if not f.get("company"):
+        return cols, []
+
     s, e = _date_range(f)
     if not s:
-        return [_col("Employee", "employee", w=110)], []
+        return cols, []
 
-    p.update(start_date=s, end_date=e)
+    year  = s[:4]
+    month = _month_name(int(s[5:7]))
+
+    p = {"start_date": s, "end_date": e}
     conds = [
-        "ss.docstatus=1",
-        "ss.start_date>=%(start_date)s",
-        "ss.end_date<=%(end_date)s",
+        "ss.docstatus = 1",
+        "ss.start_date >= %(start_date)s",
+        "ss.end_date   <= %(end_date)s",
     ]
 
     co = _parse_list(f.get("company"))
@@ -156,122 +361,121 @@ def _get_data(f):
     catj = ""
     if cat:
         p["category"] = cat
-        catj = "INNER JOIN `tabCompany Link` cl_cat ON cl_cat.name=ss.employee AND cl_cat.category=%(category)s"
+        catj = (
+            "INNER JOIN `tabCompany Link` cl_cat "
+            "ON cl_cat.name = ss.employee AND cl_cat.category = %(category)s"
+        )
 
     divs = _parse_list(f.get("division"))
     if divs:
         p["divisions"] = tuple(divs)
         conds.append(
-            "ss.employee IN (SELECT name FROM `tabCompany Link` "
+            "ss.employee IN ("
+            "SELECT name FROM `tabCompany Link` "
             "WHERE division IN %(divisions)s OR department IN %(divisions)s)"
         )
 
     w = " AND ".join(conds)
-    earn_comps, emp_ded_comps, empr_comps = _get_components(w, p)
 
-    # ── Build report columns ──────────────────────────────────────────────
-    cols = [
-        _col("Employee",           "employee",           w=150),
-        _col("Employee Name",      "employee_name",      w=200),
-        # Day breakdown columns
-        _col("Payment Days",       "payment_days",       "Float", 100, precision=2),
-        _col("Working Days",       "total_working_days", "Float", 100, precision=2),
-        _col("Absent Days",        "absent_days",        "Float", 100, precision=2),
-        _col("LWP",                "total_lwp",          "Float", 100, precision=2),
-        _col("Present Days",       "present_days",       "Float", 100, precision=2),
-        _col("Earned Leave",       "total_earned_leaves","Float", 100, precision=2),
-        _col("Casual Leave",       "total_casual_leaves","Float", 100, precision=2),
-        _col("Comp Off Taken",     "total_comp_off",     "Float", 100, precision=2),
-        _col("Earned Comp Off",    "total_earned_comp_off","Float",100, precision=2),
-        _col("Half Days",          "total_half_days",    "Float", 100, precision=2),
-        _col("On Tour",            "total_on_tour",      "Float", 100, precision=2),
-        _col("Holidays",           "total_holidays",     "Float", 100, precision=2),
-        _col("Weekly Offs Taken",  "weekly_offs_taken",  "Float", 100, precision=2),
-    ]
-    for name, abbr in earn_comps:
-        cols.append(_col("{0} ({1})".format(name, abbr), _fn("e", abbr), "Float", 180, precision=2))
-    cols.append(_col("Gross Earnings", "gross_earnings", "Float", 180, precision=2))
-    for name, abbr in emp_ded_comps:
-        cols.append(_col("{0} ({1})".format(name, abbr), _fn("d", abbr), "Float", 180, precision=2))
-    cols.append(_col("Total Deductions", "total_deductions", "Float", 180, precision=2))
-    for name, abbr in empr_comps:
-        cols.append(_col("{0} ({1})".format(name, abbr), _fn("r", abbr), "Float", 180, precision=2))
-    cols.append(_col("Employer Total", "employer_total", "Float", 180, precision=2))
-    cols.append(_col("Net Salary", "net_salary", "Float", 180, precision=2))
-
-    # ── All day fields to select from DB ─────────────────────────────────
-    day_fields_select = ", ".join(
-        "ss.{fn}".format(fn=chip[0]) for chip in DAY_CHIPS
-    )
+    day_select = ", ".join("ss.{fn}".format(fn=fn) for fn in ALL_DAY_FNS)
 
     slips = frappe.db.sql(
-        "SELECT ss.name AS slip, ss.employee, ss.employee_name,"
-        "       ss.net_salary,"
-        "       {day_fields}"
+        "SELECT ss.name AS slip, ss.employee, ss.employee_name, {ds}"
         " FROM `tabSalary Slip` ss {catj}"
         " WHERE {w}"
-        " ORDER BY ss.employee_name".format(
-            day_fields=day_fields_select, catj=catj, w=w
-        ),
-        p, as_dict=1
+        " ORDER BY ss.employee_name".format(ds=day_select, catj=catj, w=w),
+        p, as_dict=1,
     )
+
     if not slips:
         return cols, []
 
-    sn       = [sl["slip"] for sl in slips]
-    comp_map = _fetch_slip_comps(sn)
+    employee_ids = [sl["employee"] for sl in slips]
+    slip_names   = [sl["slip"]     for sl in slips]
 
-    data  = []
+    slip_by_emp  = {sl["employee"]: sl["slip"] for sl in slips}
 
-    # Initialise grand totals for all day fields + financial fields
-    grand = {chip[0]: 0.0 for chip in DAY_CHIPS}
+    as_comps, as_map = _fetch_additional_data(
+        "Additional Salary", "Additional Salary Component",
+        year, month, employee_ids,
+    )
+    ad_comps, ad_map = _fetch_additional_data(
+        "Additional Deductions", "Additional Deduction Component",
+        year, month, employee_ids,
+    )
+    it_map  = _fetch_income_tax(slip_names)
+    vp_map  = _fetch_variable_pay_pct(year, month, employee_ids)
+
+    grand = {fn: 0.0 for fn in ALL_DAY_FNS}
     grand.update({
-        "gross_earnings": 0.0, "total_deductions": 0.0,
-        "employer_total": 0.0, "net_salary": 0.0,
+        "total_add_salary":    0.0,
+        "total_add_deductions":0.0,
+        "income_tax":          0.0,
     })
-    for name, abbr in earn_comps:    grand[_fn("e", abbr)] = 0.0
-    for name, abbr in emp_ded_comps: grand[_fn("d", abbr)] = 0.0
-    for name, abbr in empr_comps:    grand[_fn("r", abbr)] = 0.0
 
+    data = []
     for sl in slips:
-        sc  = comp_map.get(sl["slip"], {})
         row = {
             "employee":      sl["employee"],
             "employee_name": sl["employee_name"],
-            "net_salary":    flt(sl["net_salary"], 2),
         }
 
-        # Copy all day fields from slip
-        for chip in DAY_CHIPS:
-            fn = chip[0]
+        for fn in ALL_DAY_FNS:
             val = flt(sl.get(fn) or 0, 2)
             row[fn] = val
             grand[fn] += val
 
-        ge = 0.0
-        for name, abbr in earn_comps:
-            amt = flt(sc.get(name), 2)
-            row[_fn("e", abbr)] = amt; ge += amt; grand[_fn("e", abbr)] += amt
-        row["gross_earnings"] = flt(ge, 2); grand["gross_earnings"] += ge
+        emp_as   = as_map.get(sl["employee"], {})
+        total_s  = 0.0
+        as_parts = []
+        for comp in as_comps:
+            amt = flt(emp_as.get(comp, 0), 2)
+            if amt:
+                as_parts.append("{0}: {1}".format(comp, "{:,.2f}".format(amt)))
+                total_s += amt
+        row["add_salary_combined"] = "|".join(as_parts)
+        row["_total_add_salary"]   = flt(total_s, 2)
+        grand["total_add_salary"] += total_s
 
-        td = 0.0
-        for name, abbr in emp_ded_comps:
-            amt = flt(sc.get(name), 2)
-            row[_fn("d", abbr)] = amt; td += amt; grand[_fn("d", abbr)] += amt
-        row["total_deductions"] = flt(td, 2); grand["total_deductions"] += td
+        emp_ad   = ad_map.get(sl["employee"], {})
+        total_d  = 0.0
+        ad_parts = []
+        for comp in ad_comps:
+            amt = flt(emp_ad.get(comp, 0), 2)
+            if amt:
+                ad_parts.append("{0}: {1}".format(comp, "{:,.2f}".format(amt)))
+                total_d += amt
+        row["add_ded_combined"]      = "|".join(ad_parts)
+        row["_total_add_deductions"] = flt(total_d, 2)
+        grand["total_add_deductions"] += total_d
 
-        et = 0.0
-        for name, abbr in empr_comps:
-            amt = flt(sc.get(name), 2)
-            row[_fn("r", abbr)] = amt; et += amt; grand[_fn("r", abbr)] += amt
-        row["employer_total"] = flt(et, 2); grand["employer_total"] += et
+        it_amt = flt(it_map.get(sl["slip"], 0), 2)
+        row["income_tax"] = it_amt if it_amt > 0 else None
+        grand["income_tax"] += it_amt
 
-        grand["net_salary"] += flt(sl["net_salary"], 2)
+        vp_pct = vp_map.get(sl["employee"])
+        row["variable_pay_pct"] = _fmt_pct(vp_pct) if vp_pct else ""
+
+        row["loan_recovered"]     = None
+        row["advance_recovered"]  = None
+
         data.append(row)
 
     if data:
-        grand_row = {"employee": "", "employee_name": "Grand Total", "bold": 1}
-        grand_row.update({k: flt(v, 2) for k, v in grand.items()})
+        grand_row = {
+            "employee":              "",
+            "employee_name":         "Grand Total",
+            "add_salary_combined":   "",
+            "add_ded_combined":      "",
+            "_total_add_salary":     flt(grand["total_add_salary"], 2),
+            "_total_add_deductions": flt(grand["total_add_deductions"], 2),
+            "income_tax":            flt(grand["income_tax"], 2) or None,
+            "variable_pay_pct":      "",
+            "loan_recovered":        None,
+            "advance_recovered":     None,
+            "bold": 1,
+        }
+        grand_row.update({fn: flt(grand[fn], 2) for fn in ALL_DAY_FNS})
         data.append(grand_row)
 
     return cols, data
@@ -282,625 +486,406 @@ def execute(filters=None):
 
 
 # ---------------------------------------------------------------------------
-# CSS  — print format only
+# CSS
 # ---------------------------------------------------------------------------
 
 _CSS = """<style>
-* { margin:0; padding:0; box-sizing:border-box; }
-body { font-family: Arial, sans-serif; font-size: 10px; color: #000; background: #fff; width: 100%; }
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:Arial,sans-serif;font-size:8.5px;color:#000;background:#fff}
 
-/* ── Page header ── */
-.hdr {
-    text-align: center;
-    border-bottom: 1px solid #000;
-    padding: 6px 4px 5px;
-    margin-bottom: 6px;
+table.data-tbl{width:100%;border-collapse:collapse;table-layout:fixed;}
+table.data-tbl th{
+    border:1px solid #000;
+    padding:3px 2px;
+    font-size:7px;
+    font-weight:700;
+    background:#f0f0f0;
+    white-space:normal;
+    word-wrap:break-word;
+    vertical-align:middle;
+    text-align:center;
+    line-height:1.25;
 }
-.hdr .co  { font-size: 18px; font-weight: 900; letter-spacing: 1px; text-transform: uppercase; }
-.hdr .ttl { font-size: 14px; font-weight: 700; margin-top: 3px; }
-.hdr .per { font-size: 11px; margin-top: 2px; color: #333; }
+table.data-tbl th.grp-att{background:#d5e8d4;font-size:7.5px;}
+table.data-tbl th.grp-as {background:#d5e8d4;font-size:7.5px;}
+table.data-tbl th.grp-ad {background:#f8d7da;font-size:7.5px;}
+table.data-tbl th.grp-ex {background:#dce6f1;font-size:7.5px;}
 
-.cont-hdr {
-    text-align: center;
-    font-size: 10px;
-    color: #555;
-    margin-bottom: 4px;
-    border-bottom: 1px solid #000;
-    padding-bottom: 3px;
+table.data-tbl td{
+    border:1px solid #000;
+    padding:2px 2px;
+    font-size:7px;
+    vertical-align:middle;
+    white-space:normal;
+    word-wrap:break-word;
+    overflow:hidden;
+    line-height:1.3;
 }
+table.data-tbl tbody tr{page-break-inside:avoid;}
 
-/* ── Main table ── */
-table.main {
-    width: 100%;
-    border-collapse: separate;
-    border-spacing: 0;
-    table-layout: fixed;
-}
-table.main th, table.main td {
-    vertical-align: middle;
-    padding: 2px 3px;
-    font-size: 9px;
-}
+.emp-name{font-weight:800;font-size:8px;word-wrap:break-word;white-space:normal;line-height:1.35;}
+.emp-id{font-size:6.5px;color:#222;margin-top:1px;}
 
-/* ── Section subheader row ── */
-th.sect-hdr {
-    background: #2c3e6b;
-    color: #fff;
-    font-weight: 700;
-    font-size: 8px;
-    text-align: center;
-    text-transform: uppercase;
-    letter-spacing: 0.6px;
-    padding: 2px 3px;
-    border-top: 1px solid #000;
-    border-bottom: 1px solid #000;
-    white-space: nowrap;
-    overflow: hidden;
-}
-th.sect-hdr.s-att  { background: #3d5a80; }
-th.sect-hdr.s-earn { background: #2d6a4f; }
-th.sect-hdr.s-ded  { background: #7b2d00; }
-th.sect-hdr.s-empr { background: #5c4033; }
-th.sect-hdr.s-net  { background: #1a1a2e; }
+.day-top{font-size:7px;font-weight:600;text-align:center;}
+.day-bot{font-size:6.5px;color:#333;margin-top:1px;border-top:1px dashed #ccc;padding-top:1px;text-align:center;}
 
-/* section-left border only on leftmost column of each section */
-th.sect-hdr.sect-left  { border-left: 1px solid #000; }
-th.sect-hdr.sect-right { border-right: 1px solid #000; }
-th.sect-hdr.sect-mid   { border-left: 1px dashed rgba(255,255,255,0.3); border-right: none; }
+.comb-total{font-weight:700;font-size:7.5px;text-align:right;}
+.comb-detail{font-size:6px;color:#444;margin-top:2px;border-top:1px dashed #ccc;
+             padding-top:2px;text-align:left;line-height:1.4;word-wrap:break-word;
+             white-space:normal;}
 
-/* ── Sr / Employee header cells ── */
-th.h-sr {
-    background: #e0e0e0;
-    font-weight: 700;
-    text-align: center;
-    font-size: 9px;
-    border: 1px solid #000;
-    white-space: nowrap;
-}
-th.h-emp {
-    background: #e0e0e0;
-    font-weight: 700;
-    text-align: left;
-    font-size: 9px;
-    border-top: 1px solid #000;
-    border-bottom: 1px solid #000;
-    border-left: none;
-    border-right: 1px solid #000;
-}
+.r{text-align:right}.c{text-align:center}.l{text-align:left}
+.nd{text-align:center;padding:12px;color:#888}
 
-/* ── Chip cells ── */
-/* row1 = label row (top half of zigzag), row2 = value row (bottom half) */
-td.chip-r1, td.chip-r2 {
-    white-space: normal;
-    word-break: break-all;
-    overflow: visible;
-    vertical-align: middle;
-    padding: 2px 3px;
-}
-td.chip-r1 {
-    border-top: 1px solid #000;
-    border-bottom: 1px dashed #aaa;
-}
-td.chip-r2 {
-    border-top: none;
-    border-bottom: 1px solid #000;
-}
-/* section boundary: solid left on first chip of each section */
-td.sect-left  { border-left: 1px solid #000; }
-td.sect-right { border-right: 1px solid #000; }
-td.sect-mid   { border-left: 1px dashed #aaa; border-right: none; }
-
-/* grand total row background */
-td.grand { background: #e8e8e8 !important; }
-
-/* ── Chip label / value typography ── */
-.ck {
-    display: block;
-    font-weight: 700;
-    font-size: 8px;
-    color: #222;
-    line-height: 1.25;
-    white-space: nowrap;
-}
-.cv {
-    display: block;
-    font-size: 9px;
-    color: #333;
-    line-height: 1.25;
-}
-
-/* Net salary highlight chip */
-.ns-lbl {
-    display: block;
-    background: #1a1a2e;
-    color: #aaa;
-    border-radius: 3px 3px 0 0;
-    padding: 1px 3px 0;
-    font-size: 8px;
-    font-weight: 700;
-    text-align: center;
-}
-.ns-val {
-    display: block;
-    background: #1a1a2e;
-    color: #fff;
-    border-radius: 0 0 3px 3px;
-    padding: 0 3px 1px;
-    font-size: 9px;
-    font-weight: 700;
-    text-align: center;
-}
-
-/* Sr / Employee cells */
-td.sr-cell {
-    text-align: center;
-    vertical-align: middle;
-    font-size: 8px;
-    color: #444;
-    border-top: 1px solid #000;
-    border-bottom: 1px solid #000;
-    border-left: 1px solid #000;
-    border-right: 1px solid #000;
-}
-td.sr-cell.grand { background: #e8e8e8; }
-
-td.emp-cell {
-    vertical-align: top;
-    padding: 4px 5px;
-    text-align: left;
-    word-break: break-word;
-    white-space: normal;
-    border-top: 1px solid #000;
-    border-bottom: 1px solid #000;
-    border-left: none;
-    border-right: 1px solid #000;
-}
-td.emp-cell.grand { background: #e8e8e8; }
-
-/* ── Legend ── */
-.legend {
-    margin-top: 10px;
-    padding: 5px 8px;
-    border: 1px solid #bbb;
-    background: #f9f9f9;
-    font-size: 8.5px;
-}
-.legend-title { font-weight: 700; font-size: 9px; margin-bottom: 3px; }
-.legend-body  { line-height: 1.7; }
-
-/* ── Footer ── */
-.pg-foot { text-align: right; font-size: 8.5px; color: #555; margin-top: 3px; }
-.sig { display: flex; justify-content: space-between; margin-top: 24px; }
-.sig-box  { text-align: center; width: 160px; }
-.sig-line { border-top: 1px solid #000; margin-bottom: 3px; }
-.sig-lbl  { font-size: 10px; color: #333; }
+.sig{display:flex;justify-content:space-between;width:100%;margin-top:18px;}
+.sig-b{text-align:center;width:150px}
+.sig-l{border-top:1px solid #000;margin-bottom:2px}
+.sig-t{font-size:9px;color:#333}
+.sig-d{font-size:8px;color:#555;margin-top:4px}
 </style>"""
 
 
 # ---------------------------------------------------------------------------
-# HTML builder
+# HTML column layout
 # ---------------------------------------------------------------------------
+
+_HTML_COLS = [
+    ("sr",               "Sr",                    None,   "c",  1.8),
+    ("employee",         "Employee",              None,   "l", 11.0),
+    ("pd_wd",            "PD",                    "WD",   "c",  3.2),
+    ("abs_lwp",          "Abs",                   "LWP",  "c",  3.2),
+    ("pres_el",          "Pres",                  "EL",   "c",  3.2),
+    ("cl_co",            "CL",                    "CO",   "c",  3.2),
+    ("eco_hd",           "ECO",                   "HD",   "c",  3.2),
+    ("tour_hol",         "Tour",                  "Hol",  "c",  3.2),
+    ("wo",               "WO",                    None,   "c",  2.5),
+    ("add_salary",       "Additional Salary",     None,   "r", 20.0),
+    ("add_ded",          "Additional Deductions", None,   "r", 20.0),
+    ("income_tax",       "Income Tax",            None,   "r",  6.5),
+    ("variable_pay_pct", "Var Pay %",             None,   "c",  4.5),
+    ("loan_recovered",   "Loan Rec.",             None,   "r",  5.5),
+    ("advance_recovered","Adv. Rec.",             None,   "r",  5.5),
+]
+
+_ATT_KEYS   = {"pd_wd","abs_lwp","pres_el","cl_co","eco_hd","tour_hol","wo"}
+_EXTRA_KEYS = {"income_tax","variable_pay_pct","loan_recovered","advance_recovered"}
+_PAIR_MAP   = {p[4]: (p[0], p[2]) for p in DAY_PAIRS}
+
+# ── FIX: Only Sr is skipped (empty cell). Employee is handled in its own block. ──
+_SKIP_ON_TOTAL = {"sr"}
+
+ROWS_FIRST_PAGE = 14
+ROWS_OTHER_PAGE = 17
+
+
+def _sig_html():
+    labels = ["Prepared By","Checked By","Authorised Signatory"]
+    blocks = "".join(
+        '<div class="sig-b"><div class="sig-l"></div>'
+        '<div class="sig-t">{l}</div>'
+        '<div class="sig-d">Date: ___________</div></div>'.format(l=l)
+        for l in labels
+    )
+    return '<div class="sig">{}</div>'.format(blocks)
+
+
+def _colgroup():
+    total_pct = sum(c[4] for c in _HTML_COLS)
+    parts = "<colgroup>"
+    for c in _HTML_COLS:
+        parts += '<col style="width:{0:.3f}%;">'.format(c[4] * 100.0 / total_pct)
+    parts += "</colgroup>"
+    return parts
+
+
+def _thead_html(co="", mo="", yr=""):
+    nc = len(_HTML_COLS)
+
+    # Row 0 — compact title row: repeats on every page via native thead repeat.
+    # On page 1 it sits just above the column-group headers, acting as a
+    # subtitle. On page 2+ it is the only page header.
+    cont_row = (
+        '<tr>'
+        '<th colspan="{nc}" style="'
+        'text-align:center;background:#fff;border:1px solid #000;'
+        'padding:3px 4px;font-size:8px;font-weight:700;line-height:1.5;">'
+        '{co} &nbsp;|&nbsp; Transaction Checklist'
+        ' &nbsp;&mdash;&nbsp; For the Month of {mo} {yr}'
+        '</th>'
+        '</tr>'
+    ).format(nc=nc, co=co, mo=mo, yr=yr)
+
+    att_keys_ordered  = [c[0] for c in _HTML_COLS if c[0] in _ATT_KEYS]
+    att_span          = len(att_keys_ordered)
+    first_att         = att_keys_ordered[0] if att_keys_ordered else None
+
+    extra_keys_ordered = [c[0] for c in _HTML_COLS if c[0] in _EXTRA_KEYS]
+    extra_span         = len(extra_keys_ordered)
+    first_extra        = extra_keys_ordered[0] if extra_keys_ordered else None
+
+    row1 = "<tr>"
+    for key, top_lbl, bot_lbl, align, _ in _HTML_COLS:
+        if key == "sr":
+            row1 += '<th rowspan="2" class="c" style="vertical-align:middle;">Sr</th>'
+        elif key == "employee":
+            row1 += '<th rowspan="2" class="l" style="vertical-align:middle;">Employee</th>'
+        elif key == first_att:
+            row1 += (
+                '<th class="grp-att" colspan="{span}" '
+                'style="text-align:center;border-bottom:1px solid #999;">'
+                'Attendance</th>'
+            ).format(span=att_span)
+        elif key in _ATT_KEYS:
+            continue
+        elif key == "add_salary":
+            row1 += (
+                '<th rowspan="2" class="grp-as r" style="vertical-align:middle;">'
+                'Additional Salary'
+                '<br><span style="font-weight:400;font-size:6px;">(Total + Breakup)</span>'
+                '</th>'
+            )
+        elif key == "add_ded":
+            row1 += (
+                '<th rowspan="2" class="grp-ad r" style="vertical-align:middle;">'
+                'Additional Deductions'
+                '<br><span style="font-weight:400;font-size:6px;">(Total + Breakup)</span>'
+                '</th>'
+            )
+        elif key == first_extra:
+            row1 += (
+                '<th class="grp-ex" colspan="{span}" '
+                'style="text-align:center;border-bottom:1px solid #999;">'
+                'Other Transactions</th>'
+            ).format(span=extra_span)
+        elif key in _EXTRA_KEYS:
+            continue
+    row1 += "</tr>"
+
+    row2 = "<tr>"
+    for key, top_lbl, bot_lbl, align, _ in _HTML_COLS:
+        if key in _ATT_KEYS:
+            if bot_lbl:
+                row2 += (
+                    '<th class="{a}" style="vertical-align:middle;">'
+                    '<div style="font-weight:700;">{t}</div>'
+                    '<div style="border-top:1px dashed #999;margin-top:2px;'
+                    'padding-top:2px;font-weight:700;">{b}</div>'
+                    '</th>'
+                ).format(a=align, t=top_lbl, b=bot_lbl)
+            else:
+                row2 += '<th class="{a}">{t}</th>'.format(a=align, t=top_lbl)
+        elif key in _EXTRA_KEYS:
+            row2 += '<th class="{a}">{t}</th>'.format(a=align, t=top_lbl)
+    row2 += "</tr>"
+
+    return "<thead>{cr}{r1}{r2}</thead>".format(cr=cont_row, r1=row1, r2=row2)
+
+
+def _render_row(row, is_total=False, row_idx=0):
+    bg = "#e0e0e0" if is_total else ("#f5f7fa" if row_idx % 2 else "#ffffff")
+    fw = "font-weight:700;" if is_total else ""
+
+    tr = "<tr>"
+    for key, top_lbl, bot_lbl, align, _ in _HTML_COLS:
+
+        # ── FIX: Only skip Sr for total (render empty cell), let all others
+        #    fall through to their dedicated rendering blocks below. ──
+        if is_total and key in _SKIP_ON_TOTAL:
+            tr += '<td class="c" style="background:{bg};"></td>'.format(bg=bg)
+            continue
+
+        # ── Employee ────────────────────────────────────────────────────
+        if key == "employee":
+            if is_total:
+                # Grand Total label spans full employee cell
+                tr += (
+                    '<td class="l" style="background:{bg};font-weight:700;">'
+                    '<strong>Grand Total</strong>'
+                    '</td>'
+                ).format(bg=bg)
+            else:
+                name = row.get("employee_name","") or ""
+                eid  = row.get("employee","") or ""
+                tr += (
+                    '<td class="l" style="background:{bg};">'
+                    '<div class="emp-name">{name}</div>'
+                    '{id_div}'
+                    '</td>'
+                ).format(
+                    bg=bg, name=name,
+                    id_div='<div class="emp-id">{}</div>'.format(eid) if eid else "",
+                )
+            continue
+
+        # ── Sr ──────────────────────────────────────────────────────────
+        if key == "sr":
+            tr += '<td class="c" style="background:{bg};{fw}">{v}</td>'.format(
+                bg=bg, fw=fw, v=row.get("sr","") or "")
+            continue
+
+        # ── Stacked attendance pair ─────────────────────────────────────
+        if key in _ATT_KEYS:
+            top_fn, bot_fn = _PAIR_MAP.get(key, (None, None))
+            top_val = _fmt_days(row.get(top_fn)) if top_fn else ""
+            bot_val = _fmt_days(row.get(bot_fn)) if bot_fn else ""
+            if bot_fn:
+                tr += (
+                    '<td class="c" style="background:{bg};{fw}">'
+                    '<div class="day-top">{tv}</div>'
+                    '<div class="day-bot">{bv}</div>'
+                    '</td>'
+                ).format(bg=bg, fw=fw, tv=top_val or "&nbsp;", bv=bot_val or "&nbsp;")
+            else:
+                tr += (
+                    '<td class="c" style="background:{bg};{fw}">'
+                    '<div class="day-top">{tv}</div>'
+                    '</td>'
+                ).format(bg=bg, fw=fw, tv=top_val or "&nbsp;")
+            continue
+
+        # ── Combined Add. Salary ────────────────────────────────────────
+        if key == "add_salary":
+            total    = flt(row.get("_total_add_salary") or 0, 2)
+            detail   = row.get("add_salary_combined","") or ""
+            parts    = [p.strip() for p in detail.split("|") if p.strip()]
+            total_s  = _fmt_num(total) if total else ""
+            detail_s = "<br>".join(parts) if parts else ""
+            tr += (
+                '<td class="r" style="background:{bg};{fw}">'
+                '{tot}'
+                '{det}'
+                '</td>'
+            ).format(
+                bg=bg, fw=fw,
+                tot='<div class="comb-total">{}</div>'.format(total_s) if total_s else '<div class="comb-total">&nbsp;</div>',
+                det='<div class="comb-detail">{}</div>'.format(detail_s) if detail_s else "",
+            )
+            continue
+
+        # ── Combined Add. Deductions ────────────────────────────────────
+        if key == "add_ded":
+            total    = flt(row.get("_total_add_deductions") or 0, 2)
+            detail   = row.get("add_ded_combined","") or ""
+            parts    = [p.strip() for p in detail.split("|") if p.strip()]
+            total_s  = _fmt_num(total) if total else ""
+            detail_s = "<br>".join(parts) if parts else ""
+            tr += (
+                '<td class="r" style="background:{bg};{fw}">'
+                '{tot}'
+                '{det}'
+                '</td>'
+            ).format(
+                bg=bg, fw=fw,
+                tot='<div class="comb-total">{}</div>'.format(total_s) if total_s else '<div class="comb-total">&nbsp;</div>',
+                det='<div class="comb-detail">{}</div>'.format(detail_s) if detail_s else "",
+            )
+            continue
+
+        # ── Income Tax ──────────────────────────────────────────────────
+        if key == "income_tax":
+            v = row.get("income_tax")
+            tr += '<td class="r" style="background:{bg};{fw}">{v}</td>'.format(
+                bg=bg, fw=fw, v=_fmt_num(v) if v else "&nbsp;")
+            continue
+
+        # ── Variable Pay % ──────────────────────────────────────────────
+        if key == "variable_pay_pct":
+            v = row.get("variable_pay_pct","") or ""
+            tr += '<td class="c" style="background:{bg};{fw}">{v}</td>'.format(
+                bg=bg, fw=fw, v=v or "&nbsp;")
+            continue
+
+        # ── Loan / Advance Recovered ────────────────────────────────────
+        if key in ("loan_recovered","advance_recovered"):
+            tr += '<td class="r" style="background:{bg};{fw}">&nbsp;</td>'.format(
+                bg=bg, fw=fw)
+            continue
+
+    tr += "</tr>"
+    return tr
+
+
+def _cont_header_html(co, mo, yr):
+    """
+    Compact header rendered on every page via wkhtmltopdf --header-html.
+    wkhtmltopdf injects this HTML file into the top margin of EVERY page,
+    including page 1.  To avoid a duplicate title on page 1, we make this
+    header very compact (single line) — it will sit above the full page-1
+    title block in the top margin, which is set wide enough (14 mm) to hold it.
+    On page 1 it reads as a small subtitle above the main heading; on page 2+
+    it serves as the full page header since the main heading is gone.
+    """
+    return (
+        "<!DOCTYPE html><html><head>"
+        "<style>"
+        "* {{margin:0;padding:0;box-sizing:border-box;}}"
+        "body {{font-family:Arial,sans-serif;font-size:7.5px;color:#000;"
+        "       width:100%;background:#fff;}}"
+        ".cont-hdr {{text-align:center;border-bottom:1px solid #000;"
+        "            padding:2px 4px 2px;line-height:1.4;}}"
+        ".co  {{font-size:9px;font-weight:900;letter-spacing:0.5px;"
+        "        text-transform:uppercase;display:inline;}}"
+        ".sep {{margin:0 4px;color:#888;}}"
+        ".ttl {{font-size:8px;font-weight:700;display:inline;}}"
+        ".per {{font-size:7px;color:#444;display:inline;}}"
+        "</style></head><body>"
+        '<div class="cont-hdr">'
+        '<span class="co">{co}</span>'
+        '<span class="sep">|</span>'
+        '<span class="ttl">Transaction Checklist</span>'
+        '<span class="sep">—</span>'
+        '<span class="per">For the Month of {mo} {yr}</span>'
+        "</div>"
+        "</body></html>"
+    ).format(co=co, mo=mo, yr=yr)
+
 
 def _build_html(cols, data, co, mo, yr,
                 earn_comps=None, emp_ded_comps=None, empr_comps=None):
-
-    if earn_comps is None or emp_ded_comps is None or empr_comps is None:
-        earn_comps, emp_ded_comps, empr_comps = [], [], []
-        SKIP = {
-            "employee","employee_name",
-            "gross_earnings","total_deductions","employer_total","net_salary",
-        }
-        for chip in DAY_CHIPS:
-            SKIP.add(chip[0])
-        for c in cols:
-            fn = c["fieldname"]
-            if fn in SKIP: continue
-            label = c.get("label", fn)
-            if "(" in label and label.endswith(")"):
-                name = label[:label.rfind("(")].strip()
-                abbr = label[label.rfind("(")+1:-1].strip()
-            else:
-                name, abbr = label, fn
-            if fn.startswith("e_"):   earn_comps.append((name, abbr))
-            elif fn.startswith("d_"): emp_ded_comps.append((name, abbr))
-            elif fn.startswith("r_"): empr_comps.append((name, abbr))
-
-    first_hdr_html = (
-        '<div class="hdr">'
-        '<div class="co">{co}</div>'
-        '<div class="ttl">Transaction Checklist</div>'
-        '<div class="per">For the Month of {mo} {yr}</div>'
-        '</div>'.format(co=co, mo=mo, yr=yr)
-    )
-    cont_hdr_html = (
-        '<div class="cont-hdr">'
-        '{co} &mdash; Transaction Checklist &mdash; {mo} {yr} (Contd.)'
-        '</div>'.format(co=co, mo=mo, yr=yr)
-    )
-
-    if not data:
-        return (
-            '<!DOCTYPE html><html><head><meta charset="UTF-8">{css}</head>'
-            '<body>{hdr}<p style="text-align:center;padding:20px;color:#888;">No data for this period</p>'
-            '</body></html>'.format(css=_CSS, hdr=first_hdr_html)
-        )
-
+    """
+    Single-table layout. The compact title (co | report name | period) lives
+    inside <thead> row 0 so wkhtmltopdf repeats it on every page automatically.
+    No --header-html needed; no separate page-1 title div needed.
+    """
     detail_rows = [r for r in data if not r.get("bold")]
-    grand_row   = next((r for r in data if r.get("bold")), {})
+    total_row   = next((r for r in data if r.get("bold")), None)
 
-    # ──────────────────────────────────────────────────────────────────────
-    # Build section-aware chip list
-    # Each chip: dict with keys:
-    #   fk, lbl, is_cur, is_ns, section
-    # section ∈ {"att","earn","ded","empr","net"}
-    # ──────────────────────────────────────────────────────────────────────
-    all_chips = []
+    for idx, row in enumerate(detail_rows, 1):
+        row["sr"] = idx
 
-    # Attendance section
-    for fn, lbl, is_cur, is_ns in DAY_CHIPS:
-        all_chips.append(dict(fk=fn, lbl=lbl, is_cur=is_cur, is_ns=is_ns, section="att"))
+    tbody = "<tbody>"
+    for idx, row in enumerate(detail_rows):
+        tbody += _render_row(row, is_total=False, row_idx=idx)
+    if total_row:
+        tbody += _render_row(total_row, is_total=True, row_idx=0)
+    tbody += "</tbody>"
 
-    # Earnings section
-    for name, abbr in earn_comps:
-        all_chips.append(dict(fk=_fn("e", abbr), lbl=abbr, is_cur=True,  is_ns=False, section="earn"))
-    all_chips.append(dict(fk="gross_earnings",  lbl="GE",  is_cur=True,  is_ns=False, section="earn"))
+    if not detail_rows:
+        nc = len(_HTML_COLS)
+        tbody = (
+            "<tbody><tr><td colspan='{nc}' style='text-align:center;"
+            "padding:12px;color:#888;'>No data for this period</td></tr></tbody>"
+        ).format(nc=nc)
 
-    # Deductions section
-    for name, abbr in emp_ded_comps:
-        all_chips.append(dict(fk=_fn("d", abbr), lbl=abbr, is_cur=True,  is_ns=False, section="ded"))
-    all_chips.append(dict(fk="total_deductions", lbl="TD",  is_cur=True,  is_ns=False, section="ded"))
+    tbl = '<table class="data-tbl">{cg}{thead}{tbody}</table>'.format(
+        cg=_colgroup(), thead=_thead_html(co=co, mo=mo, yr=yr), tbody=tbody)
 
-    # Employer section (only if present)
-    if empr_comps:
-        for name, abbr in empr_comps:
-            all_chips.append(dict(fk=_fn("r", abbr), lbl=abbr, is_cur=True, is_ns=False, section="empr"))
-        all_chips.append(dict(fk="employer_total", lbl="ES", is_cur=True, is_ns=False, section="empr"))
-
-    # Net salary (always last, its own section)
-    all_chips.append(dict(fk="net_salary", lbl="NS", is_cur=True, is_ns=True, section="net"))
-
-    n_chips = len(all_chips)
-
-    # ── Assign border classes per chip ───────────────────────────────────
-    # Determine left/right border class for each chip index
-    # sect-left  → first chip in a section  → solid left border
-    # sect-right → last chip in a section   → solid right border
-    # sect-mid   → middle chips             → dashed left, no right
-
-    def _border_class(i):
-        cur_sec = all_chips[i]["section"]
-        # is first in section?
-        is_first = (i == 0) or (all_chips[i-1]["section"] != cur_sec)
-        # is last in section?
-        is_last  = (i == n_chips - 1) or (all_chips[i+1]["section"] != cur_sec)
-        if is_first and is_last:
-            return "sect-left sect-right"
-        elif is_first:
-            return "sect-left"
-        elif is_last:
-            return "sect-right"
-        else:
-            return "sect-mid"
-
-    border_classes = [_border_class(i) for i in range(n_chips)]
-
-    # ── Split into zigzag row1 / row2 ────────────────────────────────────
-    # row1 = chips at even index, row2 = chips at odd index
-    # We store the original index so border_classes still lines up
-    row1 = [(i, c) for i, c in enumerate(all_chips) if i % 2 == 0]
-    row2 = [(i, c) for i, c in enumerate(all_chips) if i % 2 == 1]
-    # pad row2 to same length as row1 with None placeholders
-    while len(row2) < len(row1):
-        row2.append(None)
-
-    n_cols = len(row1)   # number of td columns
-
-    # ── Column group widths ───────────────────────────────────────────────
-    # Day chips: fixed narrow (attendance numbers are small)
-    # Component chips: fluid, computed from remaining space
-    # NS: fixed wide
-
-    DAY_COL_W_PCT  = 2.0   # per day chip
-    NS_COL_W_PCT   = 4.0   # net salary chip
-    SR_PCT         = 2.0
-    EMP_PCT        = 11.0
-
-    n_day_in_row1  = sum(1 for _, c in row1 if c and c["section"] == "att")
-    n_comp_in_row1 = sum(1 for _, c in row1 if c and c["section"] in ("earn","ded","empr"))
-    n_ns_in_row1   = sum(1 for _, c in row1 if c and c["section"] == "net")
-
-    # Also count from row2
-    n_day_in_row2  = sum(1 for x in row2 if x and x[1]["section"] == "att")
-    n_comp_in_row2 = sum(1 for x in row2 if x and x[1]["section"] in ("earn","ded","empr"))
-    n_ns_in_row2   = sum(1 for x in row2 if x and x[1]["section"] == "net")
-
-    total_day_cols  = n_day_in_row1 + n_day_in_row2
-    total_ns_cols   = n_ns_in_row1 + n_ns_in_row2
-    total_comp_cols = n_comp_in_row1 + n_comp_in_row2
-
-    day_pct_total  = total_day_cols * DAY_COL_W_PCT
-    ns_pct_total   = total_ns_cols  * NS_COL_W_PCT
-    det_total_pct  = 100.0 - SR_PCT - EMP_PCT
-    comp_pct_avail = det_total_pct - day_pct_total - ns_pct_total
-    comp_w_each    = (comp_pct_avail / total_comp_cols) if total_comp_cols else comp_pct_avail
-
-    def _chip_w(chip):
-        if chip is None: return DAY_COL_W_PCT
-        sec = chip["section"]
-        if sec == "att":  return DAY_COL_W_PCT
-        if sec == "net":  return NS_COL_W_PCT
-        return comp_w_each
-
-    cg  = '<col style="width:{0}%;">'.format(SR_PCT)
-    cg += '<col style="width:{0}%;">'.format(EMP_PCT)
-    for _, c in row1:
-        cg += '<col style="width:{0:.3f}%;">'.format(_chip_w(c))
-
-    # ── Section subheader: compute colspan per section in row1 + row2 ────
-    # We need to know how many *columns* (row1 slots) each section spans.
-    # A column slot i covers row1[i] and row2[i].
-    # A section's colspan = number of column slots that have at least one chip from it.
-
-    sec_order = ["att", "earn", "ded"]
-    if empr_comps:
-        sec_order.append("empr")
-    sec_order.append("net")
-
-    sec_labels = {
-        "att":  "Attendance",
-        "earn": "Earnings",
-        "ded":  "Deductions",
-        "empr": "Employer",
-        "net":  "Net Salary",
-    }
-    sec_colors = {
-        "att":  "s-att",
-        "earn": "s-earn",
-        "ded":  "s-ded",
-        "empr": "s-empr",
-        "net":  "s-net",
-    }
-
-    # For each col slot, determine which sections appear in it
-    # (one slot can have chips from different sections if zigzag splits them)
-    # We treat a slot as belonging to a section if EITHER row1 or row2 chip is from it.
-    # We then group consecutive slots by their "primary" section.
-    # Primary = row1 chip's section if it exists, else row2 chip's section.
-    col_sections = []
-    for slot_i, (orig_i, c1) in enumerate(row1):
-        r2_entry = row2[slot_i]
-        r2_chip  = r2_entry[1] if r2_entry else None
-        sec1 = c1["section"] if c1 else None
-        sec2 = r2_chip["section"] if r2_chip else None
-        primary = sec1 or sec2
-        col_sections.append(primary)
-
-    # Build consecutive groups for subheader colspan
-    subhdr_groups = []  # list of (section, colspan)
-    if col_sections:
-        cur_sec   = col_sections[0]
-        cur_count = 1
-        for s in col_sections[1:]:
-            if s == cur_sec:
-                cur_count += 1
-            else:
-                subhdr_groups.append((cur_sec, cur_count))
-                cur_sec   = s
-                cur_count = 1
-        subhdr_groups.append((cur_sec, cur_count))
-
-    # ── Value helper ─────────────────────────────────────────────────────
-    def _v(row, key, currency=False):
-        val = row.get(key)
-        try:
-            fv = float(val or 0)
-            if currency: return "{0:,.2f}".format(fv)
-            return str(int(fv)) if fv == int(fv) else "{0:.2f}".format(fv)
-        except (TypeError, ValueError):
-            return "0"
-
-    def _chip_inner(lbl, val, is_ns=False):
-        if is_ns:
-            return (
-                '<span class="ns-lbl">{lbl}</span>'
-                '<span class="ns-val">{val}</span>'
-            ).format(lbl=lbl, val=val)
-        return (
-            '<span class="ck">{lbl}</span>'
-            '<span class="cv">{val}</span>'
-        ).format(lbl=lbl, val=val)
-
-    def _chip_td(chip, orig_i, row, is_row1, is_grand=False):
-        """Render a single chip <td>."""
-        grand_cls = " grand" if is_grand else ""
-        row_cls   = "chip-r1" if is_row1 else "chip-r2"
-        brd_cls   = border_classes[orig_i]
-        if chip is None:
-            # placeholder cell — just blank with borders
-            return '<td class="{rc} {bc}{gc}"></td>'.format(
-                rc=row_cls, bc=brd_cls, gc=grand_cls)
-        lbl   = chip["lbl"]
-        val   = _v(row, chip["fk"], currency=chip["is_cur"])
-        inner = _chip_inner(lbl, val, chip["is_ns"])
-        return '<td class="{rc} {bc}{gc}">{inner}</td>'.format(
-            rc=row_cls, bc=brd_cls, gc=grand_cls, inner=inner)
-
-    def _emp_inner(row):
-        name = row.get("employee_name", "")
-        eid  = row.get("employee", "")
-        if eid:
-            return (
-                '<span style="font-size:10px;font-weight:700;display:block;'
-                'line-height:1.4;word-break:break-word;">{name}</span>'
-                '<span style="font-size:8px;color:#555;font-family:monospace;'
-                'display:block;line-height:1.3;">{eid}</span>'
-            ).format(name=name, eid=eid)
-        return '<span style="font-size:10px;font-weight:700;">{name}</span>'.format(name=name)
-
-    def _render_employee_rows(row, sr_num, is_grand=False):
-        grand_cls = " grand" if is_grand else ""
-        sr_val    = "" if is_grand else str(sr_num)
-
-        # Sr cell spans 2 rows; note: no dashed border here — always solid
-        sr_td = (
-            '<td rowspan="2" class="sr-cell{gc}">{v}</td>'
-        ).format(gc=grand_cls, v=sr_val)
-
-        # Employee cell spans 2 rows
-        emp_td = (
-            '<td rowspan="2" class="emp-cell{gc}">{inner}</td>'
-        ).format(gc=grand_cls, inner=_emp_inner(row))
-
-        # Row 1 chips
-        chips_r1 = "".join(
-            _chip_td(c, orig_i, row, True, is_grand)
-            for orig_i, c in row1
-        )
-        # Row 2 chips
-        chips_r2 = "".join(
-            _chip_td(r2_entry[1] if r2_entry else None,
-                     r2_entry[0] if r2_entry else 0,
-                     row, False, is_grand)
-            for r2_entry in row2
-        )
-
-        return (
-            "<tr>{sr}{emp}{c1}</tr><tr>{c2}</tr>".format(
-                sr=sr_td, emp=emp_td, c1=chips_r1, c2=chips_r2)
-        )
-
-    # ── thead: 2 rows — subheader row + blank row for rowspan targets ────
-    # Row A: Sr (rowspan=2), Employee (rowspan=2), section subheaders
-    # Row B: empty (rowspan targets land here — nothing else needed)
-
-    subhdr_cells = ""
-    for sec, span in subhdr_groups:
-        lbl   = sec_labels.get(sec, sec)
-        color = sec_colors.get(sec, "")
-        # border: always solid left on first column of section, solid right on last
-        subhdr_cells += (
-            '<th class="sect-hdr {color}" colspan="{span}">'
-            '{lbl}</th>'
-        ).format(color=color, span=span, lbl=lbl)
-
-    thead = (
-        '<thead>'
-        '<tr>'
-        '<th class="h-sr"  rowspan="2">Sr</th>'
-        '<th class="h-emp" rowspan="2">Employee</th>'
-        '{subhdr}'
-        '</tr>'
-        '<tr></tr>'
-        '</thead>'
-    ).format(subhdr=subhdr_cells)
-
-    # ── Legend ───────────────────────────────────────────────────────────
-    legend_items = [
-        ("PD",  "Payment Days"),
-        ("WD",  "Working Days"),
-        ("AB",  "Absent Days"),
-        ("LWP", "Leave Without Pay"),
-        ("PR",  "Present Days"),
-        ("EL",  "Earned Leave"),
-        ("CL",  "Casual Leave"),
-        ("CO",  "Comp Off Taken"),
-        ("ECO", "Earned Comp Off"),
-        ("HD",  "Half Days"),
-        ("T",   "On Tour"),
-        ("HOL", "Holidays"),
-        ("WO",  "Weekly Offs Taken"),
-        ("GE",  "Gross Earnings"),
-        ("TD",  "Total Deductions"),
-        ("ES",  "Employer Share"),
-        ("NS",  "Net Salary"),
-    ]
-    for nm, ab in earn_comps:    legend_items.append((ab, nm))
-    for nm, ab in emp_ded_comps: legend_items.append((ab, nm))
-    for nm, ab in empr_comps:    legend_items.append((ab, nm))
-
-    seen_lgd = set()
-    legend_dedup = []
-    for ab, nm in legend_items:
-        if ab not in seen_lgd:
-            seen_lgd.add(ab)
-            legend_dedup.append((ab, nm))
-
-    legend_html = (
-        '<div class="legend">'
-        '<div class="legend-title">Legend:</div>'
-        '<div class="legend-body">{text}</div>'
-        '</div>'
-    ).format(text=", ".join(
-        "<b>{ab}</b>&nbsp;=&nbsp;{nm}".format(ab=ab, nm=nm)
-        for ab, nm in legend_dedup
-    ))
-
-    # ── Paginate ─────────────────────────────────────────────────────────
-    pages = []
-    for i in range(0, max(len(detail_rows), 1), ROWS_PER_PAGE):
-        pages.append(detail_rows[i: i + ROWS_PER_PAGE])
-    if not pages:
-        pages = [[]]
-
-    total_pages = len(pages)
-    parts       = []
-    sr_counter  = 1
-
-    for pn, pr in enumerate(pages):
-        is_first  = (pn == 0)
-        is_last_p = (pn == len(pages) - 1)
-
-        pb       = '<div style="page-break-before:always;"></div>' if not is_first else ""
-        page_hdr = first_hdr_html if is_first else cont_hdr_html
-
-        tbody = "<tbody>"
-        for row in pr:
-            tbody += _render_employee_rows(row, sr_counter)
-            sr_counter += 1
-        if is_last_p and grand_row:
-            tbody += _render_employee_rows(grand_row, "", is_grand=True)
-        tbody += "</tbody>"
-
-        parts.append(
-            '{pb}{hdr}'
-            '<table class="main"><colgroup>{cg}</colgroup>{thead}{tbody}</table>'
-            '<div class="pg-foot">Page {pn} of {tp}</div>'
-            '{legend}'.format(
-                pb=pb, hdr=page_hdr, cg=cg,
-                thead=thead, tbody=tbody,
-                pn=pn + 1, tp=total_pages,
-                legend=legend_html if is_last_p else ""
-            )
-        )
-
-    sig = (
-        '<div class="sig">'
-        + "".join(
-            '<div class="sig-box"><div class="sig-line"></div>'
-            '<div class="sig-lbl">{l}</div></div>'.format(l=l)
-            for l in ["Prepared By", "Checked By", "Authorised Signatory"]
-        )
-        + '</div>'
-    )
+    sig = _sig_html()
 
     return (
         '<!DOCTYPE html><html><head><meta charset="UTF-8">{css}</head>'
-        '<body>{body}{sig}</body></html>'
-    ).format(css=_CSS, body="".join(parts), sig=sig)
+        '<body>{tbl}{sig}</body></html>'
+    ).format(css=_CSS, tbl=tbl, sig=sig)
 
-
-# ---------------------------------------------------------------------------
-# PDF save
-# ---------------------------------------------------------------------------
 
 def _save_pdf(html, prefix):
     pdf = get_pdf(html, options={
         "page-size":     "A4",
         "orientation":   "Landscape",
-        "margin-top":    "8mm",
-        "margin-right":  "6mm",
+        "margin-top":    "7mm",
+        "margin-right":  "5mm",
         "margin-bottom": "8mm",
-        "margin-left":   "6mm",
+        "margin-left":   "5mm",
         "encoding":      "UTF-8",
         "no-outline":    None,
     })
@@ -923,48 +908,9 @@ def _save_pdf(html, prefix):
 def print_report(filters):
     if isinstance(filters, str):
         filters = json.loads(filters)
-
-    p = {}
-    s, e = _date_range(filters)
-    if not s:
-        return None
-
-    p.update(start_date=s, end_date=e)
-    conds = [
-        "ss.docstatus=1",
-        "ss.start_date>=%(start_date)s",
-        "ss.end_date<=%(end_date)s",
-    ]
-    co = _parse_list(filters.get("company"))
-    if co:
-        p["companies"] = tuple(co)
-        conds.append("ss.company IN %(companies)s")
-
-    em_filter = _parse_list(filters.get("employee"))
-    if em_filter:
-        p["employees"] = tuple(em_filter)
-        conds.append("ss.employee IN %(employees)s")
-
-    cat  = filters.get("category")
-    catj = ""
-    if cat:
-        p["category"] = cat
-        catj = "INNER JOIN `tabCompany Link` cl_cat ON cl_cat.name=ss.employee AND cl_cat.category=%(category)s"
-
-    divs = _parse_list(filters.get("division"))
-    if divs:
-        p["divisions"] = tuple(divs)
-        conds.append(
-            "ss.employee IN (SELECT name FROM `tabCompany Link` "
-            "WHERE division IN %(divisions)s OR department IN %(divisions)s)"
-        )
-
-    w = " AND ".join(conds)
-    earn_comps, emp_ded_comps, empr_comps = _get_components(w, p)
     cols, data = _get_data(filters)
-
-    co_label = _company_label(filters)
-    mo       = filters.get("month", "")
-    yr       = filters.get("year",  "")
-    html     = _build_html(cols, data, co_label, mo, yr, earn_comps, emp_ded_comps, empr_comps)
+    co_label   = _company_label(filters)
+    mo         = filters.get("month", "")
+    yr         = filters.get("year",  "")
+    html       = _build_html(cols, data, co_label, mo, yr)
     return _save_pdf(html, "Transaction_Checklist")
