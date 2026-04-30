@@ -256,6 +256,56 @@ def _fetch_income_tax(slip_names):
 
 
 # ---------------------------------------------------------------------------
+# Fetch Loan & Advance Recovered
+# Reads from `tabSalary Details` (deductions child table of Salary Slip).
+# salary_slip.py stores components as "Loan-0001" / "Advance-0001"
+# so we match by prefix: LIKE 'loan%' and LIKE 'advance%'
+# Returns two dicts keyed by slip name → total amount deducted that month.
+# ---------------------------------------------------------------------------
+
+def _fetch_loan_advance(slip_names):
+    if not slip_names:
+        return {}, {}
+
+    loan_map    = {}
+    advance_map = {}
+
+    try:
+        rows = frappe.db.sql(
+            "SELECT sd.parent AS slip_name,"
+            "       sd.salary_component,"
+            "       SUM(sd.amount) AS total"
+            " FROM `tabSalary Details` sd"
+            " WHERE sd.parent IN %(sn)s"
+            "   AND sd.parenttype = 'Salary Slip'"
+            "   AND sd.parentfield = 'deductions'"
+            "   AND ("
+            "       LOWER(sd.salary_component) LIKE 'loan%%'"
+            "    OR LOWER(sd.salary_component) LIKE 'advance%%'"
+            "   )"
+            " GROUP BY sd.parent, sd.salary_component",
+            {"sn": tuple(slip_names)},
+            as_dict=1,
+        )
+
+        for r in rows:
+            comp = (r.get("salary_component") or "").lower()
+            slip = r["slip_name"]
+            amt  = flt(r.get("total") or 0, 2)
+            if amt <= 0:
+                continue
+            if comp.startswith("loan"):
+                loan_map[slip] = flt(loan_map.get(slip, 0) + amt, 2)
+            elif comp.startswith("advance"):
+                advance_map[slip] = flt(advance_map.get(slip, 0) + amt, 2)
+
+    except Exception:
+        pass
+
+    return loan_map, advance_map
+
+
+# ---------------------------------------------------------------------------
 # Fetch Variable Pay %
 # ---------------------------------------------------------------------------
 
@@ -403,14 +453,18 @@ def _get_data(f):
         "Additional Deductions", "Additional Deduction Component",
         year, month, employee_ids,
     )
-    it_map  = _fetch_income_tax(slip_names)
-    vp_map  = _fetch_variable_pay_pct(year, month, employee_ids)
+    it_map                = _fetch_income_tax(slip_names)
+    vp_map                = _fetch_variable_pay_pct(year, month, employee_ids)
+    # ── Loan & Advance: read from Salary Slip deductions child table ──────────
+    loan_map, advance_map = _fetch_loan_advance(slip_names)
 
     grand = {fn: 0.0 for fn in ALL_DAY_FNS}
     grand.update({
         "total_add_salary":    0.0,
         "total_add_deductions":0.0,
         "income_tax":          0.0,
+        "loan_recovered":      0.0,
+        "advance_recovered":   0.0,
     })
 
     data = []
@@ -456,8 +510,13 @@ def _get_data(f):
         vp_pct = vp_map.get(sl["employee"])
         row["variable_pay_pct"] = _fmt_pct(vp_pct) if vp_pct else ""
 
-        row["loan_recovered"]     = None
-        row["advance_recovered"]  = None
+        # ── Loan & Advance amounts for this specific slip/month ───────────────
+        loan_val = flt(loan_map.get(sl["slip"], 0), 2)
+        adv_val  = flt(advance_map.get(sl["slip"], 0), 2)
+        row["loan_recovered"]    = loan_val if loan_val > 0 else None
+        row["advance_recovered"] = adv_val  if adv_val  > 0 else None
+        grand["loan_recovered"]    += loan_val
+        grand["advance_recovered"] += adv_val
 
         data.append(row)
 
@@ -471,8 +530,8 @@ def _get_data(f):
             "_total_add_deductions": flt(grand["total_add_deductions"], 2),
             "income_tax":            flt(grand["income_tax"], 2) or None,
             "variable_pay_pct":      "",
-            "loan_recovered":        None,
-            "advance_recovered":     None,
+            "loan_recovered":        flt(grand["loan_recovered"], 2) or None,
+            "advance_recovered":     flt(grand["advance_recovered"], 2) or None,
             "bold": 1,
         }
         grand_row.update({fn: flt(grand[fn], 2) for fn in ALL_DAY_FNS})
@@ -601,9 +660,6 @@ def _colgroup():
 def _thead_html(co="", mo="", yr=""):
     nc = len(_HTML_COLS)
 
-    # Row 0 — compact title row: repeats on every page via native thead repeat.
-    # On page 1 it sits just above the column-group headers, acting as a
-    # subtitle. On page 2+ it is the only page header.
     cont_row = (
         '<tr>'
         '<th colspan="{nc}" style="'
@@ -688,8 +744,6 @@ def _render_row(row, is_total=False, row_idx=0):
     tr = "<tr>"
     for key, top_lbl, bot_lbl, align, _ in _HTML_COLS:
 
-        # ── FIX: Only skip Sr for total (render empty cell), let all others
-        #    fall through to their dedicated rendering blocks below. ──
         if is_total and key in _SKIP_ON_TOTAL:
             tr += '<td class="c" style="background:{bg};"></td>'.format(bg=bg)
             continue
@@ -697,7 +751,6 @@ def _render_row(row, is_total=False, row_idx=0):
         # ── Employee ────────────────────────────────────────────────────
         if key == "employee":
             if is_total:
-                # Grand Total label spans full employee cell
                 tr += (
                     '<td class="l" style="background:{bg};font-weight:700;">'
                     '<strong>Grand Total</strong>'
@@ -795,10 +848,18 @@ def _render_row(row, is_total=False, row_idx=0):
                 bg=bg, fw=fw, v=v or "&nbsp;")
             continue
 
-        # ── Loan / Advance Recovered ────────────────────────────────────
-        if key in ("loan_recovered","advance_recovered"):
-            tr += '<td class="r" style="background:{bg};{fw}">&nbsp;</td>'.format(
-                bg=bg, fw=fw)
+        # ── Loan Recovered ──────────────────────────────────────────────
+        if key == "loan_recovered":
+            v = row.get("loan_recovered")
+            tr += '<td class="r" style="background:{bg};{fw}">{v}</td>'.format(
+                bg=bg, fw=fw, v=_fmt_num(v) if v else "&nbsp;")
+            continue
+
+        # ── Advance Recovered ───────────────────────────────────────────
+        if key == "advance_recovered":
+            v = row.get("advance_recovered")
+            tr += '<td class="r" style="background:{bg};{fw}">{v}</td>'.format(
+                bg=bg, fw=fw, v=_fmt_num(v) if v else "&nbsp;")
             continue
 
     tr += "</tr>"
@@ -806,15 +867,6 @@ def _render_row(row, is_total=False, row_idx=0):
 
 
 def _cont_header_html(co, mo, yr):
-    """
-    Compact header rendered on every page via wkhtmltopdf --header-html.
-    wkhtmltopdf injects this HTML file into the top margin of EVERY page,
-    including page 1.  To avoid a duplicate title on page 1, we make this
-    header very compact (single line) — it will sit above the full page-1
-    title block in the top margin, which is set wide enough (14 mm) to hold it.
-    On page 1 it reads as a small subtitle above the main heading; on page 2+
-    it serves as the full page header since the main heading is gone.
-    """
     return (
         "<!DOCTYPE html><html><head>"
         "<style>"
@@ -842,11 +894,6 @@ def _cont_header_html(co, mo, yr):
 
 def _build_html(cols, data, co, mo, yr,
                 earn_comps=None, emp_ded_comps=None, empr_comps=None):
-    """
-    Single-table layout. The compact title (co | report name | period) lives
-    inside <thead> row 0 so wkhtmltopdf repeats it on every page automatically.
-    No --header-html needed; no separate page-1 title div needed.
-    """
     detail_rows = [r for r in data if not r.get("bold")]
     total_row   = next((r for r in data if r.get("bold")), None)
 
