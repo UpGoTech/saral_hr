@@ -73,7 +73,7 @@
  ],
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-04-27 15:29:14.355121",
+ "modified": "2026-05-04 17:15:39.680127",
  "modified_by": "Administrator",
  "module": "Saral Hr",
  "name": "Daily Rates Worker",
@@ -89,6 +89,7 @@
    "read": 1,
    "report": 1,
    "role": "Saral HR Manager",
+   "select": 1,
    "share": 1,
    "write": 1
   },
@@ -101,6 +102,7 @@
    "read": 1,
    "report": 1,
    "role": "Saral HR User",
+   "select": 1,
    "share": 1,
    "write": 1
   }

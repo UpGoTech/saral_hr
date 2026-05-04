@@ -123,7 +123,7 @@
  "index_web_pages_for_search": 1,
  "is_submittable": 1,
  "links": [],
- "modified": "2026-04-29 13:31:58.610158",
+ "modified": "2026-05-04 17:10:11.428143",
  "modified_by": "Administrator",
  "module": "Saral Hr",
  "name": "Additional Deductions",
@@ -141,6 +141,7 @@
    "read": 1,
    "report": 1,
    "role": "Saral HR Manager",
+   "select": 1,
    "share": 1,
    "submit": 1,
    "write": 1

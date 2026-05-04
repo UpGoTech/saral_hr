@@ -49,7 +49,7 @@
  ],
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-02-21 17:15:06.100204",
+ "modified": "2026-05-04 17:23:56.182594",
  "modified_by": "Administrator",
  "module": "Saral Hr",
  "name": "Holiday List",
@@ -70,16 +70,13 @@
    "write": 1
   },
   {
-   "create": 1,
-   "delete": 1,
    "email": 1,
    "export": 1,
    "print": 1,
    "read": 1,
    "report": 1,
    "role": "Saral HR User",
-   "share": 1,
-   "write": 1
+   "share": 1
   }
  ],
  "sort_field": "modified",

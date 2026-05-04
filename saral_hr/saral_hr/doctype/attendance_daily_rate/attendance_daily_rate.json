@@ -1,7 +1,6 @@
 {
  "actions": [],
  "allow_import": 1,
- "allow_rename": 0,
  "autoname": "naming_series:",
  "creation": "2026-04-18 12:50:42.274708",
  "doctype": "DocType",
@@ -101,24 +100,24 @@
    "label": "Overtime"
   },
   {
+   "description": "Overtime in decimal hours. 4 = 4 hrs, 4.5 = 4 hrs 30 min, 7.5 = 7 hrs 30 min.",
    "fieldname": "ot_hours",
    "fieldtype": "Float",
-   "label": "OT Hours",
    "in_list_view": 1,
-   "description": "Overtime in decimal hours. 4 = 4 hrs, 4.5 = 4 hrs 30 min, 7.5 = 7 hrs 30 min.",
+   "label": "OT Hours",
    "precision": "2"
   },
   {
+   "description": "Optional note for this attendance record.",
    "fieldname": "remarks",
    "fieldtype": "Small Text",
-   "label": "Remarks",
    "in_list_view": 1,
-   "description": "Optional note for this attendance record."
+   "label": "Remarks"
   }
  ],
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-04-20 00:00:00.000000",
+ "modified": "2026-05-04 17:19:30.619236",
  "modified_by": "Administrator",
  "module": "Saral Hr",
  "name": "Attendance Daily Rate",

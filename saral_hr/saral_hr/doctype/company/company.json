@@ -302,7 +302,7 @@
  ],
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-04-01 11:43:28.795415",
+ "modified": "2026-05-04 17:07:03.008642",
  "modified_by": "Administrator",
  "module": "Saral Hr",
  "name": "Company",
@@ -329,7 +329,6 @@
    "read": 1,
    "report": 1,
    "role": "Saral HR User",
-   "select": 1,
    "share": 1
   }
  ],
