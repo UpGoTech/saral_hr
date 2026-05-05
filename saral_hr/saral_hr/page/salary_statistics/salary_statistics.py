@@ -4,19 +4,59 @@ from frappe.utils import getdate, get_last_day, flt
 import calendar
 
 
+# ─── Permission helper ────────────────────────────────────────────────────────
+
+def _get_permitted_employees():
+    """
+    Returns:
+        None  → no restriction
+        []    → 0 employees permitted (return empty everywhere)
+        [...] → list of allowed Company Link name IDs
+    """
+    user = frappe.session.user
+
+    if "System Manager" in frappe.get_roles(user):
+        return None
+
+    user_permissions = frappe.permissions.get_user_permissions(user)
+
+    if "Employee" in user_permissions and user_permissions["Employee"]:
+        permitted = [
+            p.get("doc")
+            for p in user_permissions["Employee"]
+            if p.get("doc")
+        ]
+        return permitted if permitted else None
+
+    return None
+
+
 @frappe.whitelist()
 def get_employees_for_company(company, year, month):
     """
-    Returns all active employees for a company with their
-    net pay for each month of the selected year.
+    Returns all active employees the current user is permitted to see,
+    with their net pay for each month of the selected year.
     """
     MONTHS = [
         "January", "February", "March", "April", "May", "June",
         "July", "August", "September", "October", "November", "December"
     ]
-    month_map = {m: i + 1 for i, m in enumerate(MONTHS)}
 
-    employees = frappe.db.sql("""
+    # ── Permission filter ─────────────────────────────────────────────────────
+    permitted = _get_permitted_employees()
+    if permitted is not None and len(permitted) == 0:
+        return []
+
+    # Build optional IN clause for SQL
+    emp_clause  = ""
+    emp_params  = {"company": company}
+    if permitted is not None:
+        placeholders = ", ".join([f"%(pe_{i})s" for i in range(len(permitted))])
+        emp_clause   = f"AND cl.name IN ({placeholders})"
+        for i, e in enumerate(permitted):
+            emp_params[f"pe_{i}"] = e
+
+    employees = frappe.db.sql(f"""
         SELECT
             cl.name        AS employee,
             cl.full_name   AS employee_name,
@@ -38,14 +78,14 @@ def get_employees_for_company(company, year, month):
             )
         WHERE cl.is_active = 1
           AND cl.company   = %(company)s
+          {emp_clause}
         ORDER BY cl.full_name
-    """, {"company": company}, as_dict=True)
+    """, emp_params, as_dict=True)
 
     employee_ids = [emp.employee for emp in employees]
     if not employee_ids:
         return []
 
-    # Fetch all salary slips for the year for these employees
     placeholders = ", ".join(["%s"] * len(employee_ids))
     slips = frappe.db.sql(f"""
         SELECT employee, start_date, net_salary
@@ -56,11 +96,10 @@ def get_employees_for_company(company, year, month):
         ORDER BY start_date
     """, tuple(employee_ids) + (year,), as_dict=True)
 
-    # Build a map: employee -> {month_name: net_salary}
     slip_map = {}
     for slip in slips:
-        emp_id = slip.employee
-        month_num = getdate(slip.start_date).month
+        emp_id     = slip.employee
+        month_num  = getdate(slip.start_date).month
         month_name = MONTHS[month_num - 1]
         if emp_id not in slip_map:
             slip_map[emp_id] = {}
@@ -90,6 +129,11 @@ def get_employee_month_details(employee, year, month):
     """
     Returns full salary slip details + attendance heatmap for a given employee/month.
     """
+    # ── Security check ────────────────────────────────────────────────────────
+    permitted = _get_permitted_employees()
+    if permitted is not None and employee not in permitted:
+        return None
+
     MONTHS = [
         "January", "February", "March", "April", "May", "June",
         "July", "August", "September", "October", "November", "December"
@@ -118,21 +162,18 @@ def get_employee_month_details(employee, year, month):
 
     salary_details = None
     if slip:
-        # Earnings rows
         earnings = frappe.db.get_all(
             "Salary Details",
             filters={"parent": slip.name, "parentfield": "earnings"},
             fields=["salary_component", "abbr", "amount"],
             order_by="idx"
         )
-        # Deduction rows
         deductions = frappe.db.get_all(
             "Salary Details",
             filters={"parent": slip.name, "parentfield": "deductions"},
             fields=["salary_component", "abbr", "amount"],
             order_by="idx"
         )
-        # Employer share rows
         employer_share = frappe.db.get_all(
             "Salary Details",
             filters={"parent": slip.name, "parentfield": "employer_share"},
@@ -140,7 +181,6 @@ def get_employee_month_details(employee, year, month):
             order_by="idx"
         )
 
-        # Additional Salary
         additional_salary_total = 0.0
         additional_salary_components = []
         add_sal_docs = frappe.db.get_all(
@@ -161,7 +201,6 @@ def get_employee_month_details(employee, year, month):
                     "amount": flt(c.amount)
                 })
 
-        # Additional Deductions
         additional_deduction_total = 0.0
         additional_deduction_components = []
         add_ded_docs = frappe.db.get_all(
@@ -197,7 +236,6 @@ def get_employee_month_details(employee, year, month):
             "additional_salary_components":    additional_salary_components,
             "additional_deduction_total":      flt(additional_deduction_total, 2),
             "additional_deduction_components": additional_deduction_components,
-            # attendance summary from slip
             "payment_days":           flt(slip.payment_days, 2),
             "total_working_days":     flt(slip.total_working_days, 2),
             "physical_working_days":  flt(slip.physical_working_days, 2),
@@ -214,8 +252,8 @@ def get_employee_month_details(employee, year, month):
         }
 
     # ── Attendance Heatmap ─────────────────────────────────────────────────────
-    start_dt = getdate(start_date)
-    end_dt = get_last_day(start_dt)
+    start_dt   = getdate(start_date)
+    end_dt     = get_last_day(start_dt)
     total_days = calendar.monthrange(start_dt.year, start_dt.month)[1]
 
     attendance_records = frappe.db.get_all(
@@ -241,39 +279,36 @@ def get_employee_month_details(employee, year, month):
     heatmap = []
     for day in range(1, total_days + 1):
         heatmap.append({
-            "day":    day,
-            "date":   f"{year}-{month_num:02d}-{day:02d}",
-            "status": att_map.get(day, {}).get("status", "No Record"),
+            "day":        day,
+            "date":       f"{year}-{month_num:02d}-{day:02d}",
+            "status":     att_map.get(day, {}).get("status", "No Record"),
             "in_time":    att_map.get(day, {}).get("in_time", ""),
             "out_time":   att_map.get(day, {}).get("out_time", ""),
             "late_entry": att_map.get(day, {}).get("late_entry", 0),
             "early_exit": att_map.get(day, {}).get("early_exit", 0),
         })
 
-    # ── Live attendance counts from actual records ───────────────────────────
+    # ── Live attendance counts ─────────────────────────────────────────────────
     from datetime import timedelta
 
-    # Get company settings for salary calculation method
-    company_name = frappe.db.get_value("Company Link", employee, "company")
+    company_name       = frappe.db.get_value("Company Link", employee, "company")
     salary_calc_method = ""
-    weekly_off_day = frappe.db.get_value("Company Link", employee, "weekly_off") or ""
+    weekly_off_day     = frappe.db.get_value("Company Link", employee, "weekly_off") or ""
     if company_name:
         salary_calc_method = frappe.db.get_value("Company", company_name, "salary_calculation_based_on") or ""
 
     use_calendar_days = "Include" in salary_calc_method
 
-    # Count weekly offs in month
-    day_map = {"Monday":0,"Tuesday":1,"Wednesday":2,"Thursday":3,"Friday":4,"Saturday":5,"Sunday":6}
+    day_map_wd = {"Monday":0,"Tuesday":1,"Wednesday":2,"Thursday":3,"Friday":4,"Saturday":5,"Sunday":6}
     weekly_off_count = 0
-    if weekly_off_day and weekly_off_day in day_map:
-        off_weekday = day_map[weekly_off_day]
+    if weekly_off_day and weekly_off_day in day_map_wd:
+        off_weekday = day_map_wd[weekly_off_day]
         cur = start_dt
         while cur <= end_dt:
             if cur.weekday() == off_weekday:
                 weekly_off_count += 1
             cur += timedelta(days=1)
 
-    # Count each status
     def count_status(st):
         return sum(1 for v in att_map.values() if v["status"] == st)
 
@@ -288,14 +323,9 @@ def get_employee_month_details(employee, year, month):
     comp_off         = count_status("Comp Off")
     earned_comp_off  = count_status("Earned Comp Off")
     weekly_off_taken = count_status("Weekly Off")
+    physical_present = present
+    combined_absent  = flt(absent + lwp, 2)
 
-    # Physical present = only actual physical presence (no EL/CL/Comp Off/Earned Comp Off)
-    physical_present = present  # raw "Present" status only
-
-    # Combined absent days (Absent + LWP)
-    combined_absent = flt(absent + lwp, 2)
-
-    # Working days & payment days based on company setting
     if use_calendar_days:
         working_days = total_days
         payment_days = flt(total_days - combined_absent, 2)
@@ -304,42 +334,45 @@ def get_employee_month_details(employee, year, month):
         payment_days = flt(working_days - combined_absent + comp_off + earned_comp_off, 2)
 
     live_attendance = {
-        "total_days":        total_days,
-        "working_days":      working_days,
-        "payment_days":      flt(payment_days, 2),
-        "physical_present":  physical_present,
-        "present":           present + earned_leave + casual_leave + comp_off + earned_comp_off + on_tour,
-        "absent":            combined_absent,
-        "half_days":         half_day,
+        "total_days":            total_days,
+        "working_days":          working_days,
+        "payment_days":          flt(payment_days, 2),
+        "physical_present":      physical_present,
+        "present":               present + earned_leave + casual_leave + comp_off + earned_comp_off + on_tour,
+        "absent":                combined_absent,
+        "half_days":             half_day,
         "weekly_offs_scheduled": weekly_off_count,
         "weekly_offs_taken":     weekly_off_taken,
-        "holidays":          holiday,
-        "lwp":               flt(lwp, 2),
-        "earned_leave":      earned_leave,
-        "casual_leave":      casual_leave,
-        "on_tour":           on_tour,
-        "comp_off":          comp_off,
-        "earned_comp_off":   earned_comp_off,
-        "calc_method":       salary_calc_method,
+        "holidays":              holiday,
+        "lwp":                   flt(lwp, 2),
+        "earned_leave":          earned_leave,
+        "casual_leave":          casual_leave,
+        "on_tour":               on_tour,
+        "comp_off":              comp_off,
+        "earned_comp_off":       earned_comp_off,
+        "calc_method":           salary_calc_method,
     }
 
     return {
-        "salary": salary_details,
-        "heatmap": heatmap,
+        "salary":          salary_details,
+        "heatmap":         heatmap,
         "live_attendance": live_attendance,
-        "total_days": total_days,
-        "month_num": month_num,
-        "year": int(year),
-        "month": month,
-        "has_attendance": len(att_map) > 0,
+        "total_days":      total_days,
+        "month_num":       month_num,
+        "year":            int(year),
+        "month":           month,
+        "has_attendance":  len(att_map) > 0,
     }
 
 
 @frappe.whitelist()
 def get_ytd_summary(employee, year):
     """Returns year-to-date net pay and total earnings for the employee."""
-    MONTHS = ["January","February","March","April","May","June",
-              "July","August","September","October","November","December"]
+    # ── Security check ────────────────────────────────────────────────────────
+    permitted = _get_permitted_employees()
+    if permitted is not None and employee not in permitted:
+        return {"ytd_net": 0.0, "ytd_earn": 0.0}
+
     slips = frappe.db.sql("""
         SELECT net_salary, total_earnings
         FROM `tabSalary Slip`
@@ -347,6 +380,7 @@ def get_ytd_summary(employee, year):
           AND YEAR(start_date) = %(year)s
           AND docstatus = 1
     """, {"employee": employee, "year": year}, as_dict=True)
-    ytd_net  = sum(flt(s.net_salary)    for s in slips)
+
+    ytd_net  = sum(flt(s.net_salary)     for s in slips)
     ytd_earn = sum(flt(s.total_earnings) for s in slips)
     return {"ytd_net": flt(ytd_net, 2), "ytd_earn": flt(ytd_earn, 2)}

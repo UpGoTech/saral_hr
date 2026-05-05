@@ -3,6 +3,33 @@ from frappe.utils import getdate
 import json
 
 
+def _get_permitted_employees():
+    """
+    Returns the list of employee IDs (Company Link names) the session user
+    may see, based on Frappe User Permissions.
+
+    None  → no restriction (show all)
+    []    → user has permissions set but 0 employees allowed
+    [...] → restricted to this list
+    """
+    user = frappe.session.user
+
+    if "System Manager" in frappe.get_roles(user):
+        return None
+
+    user_permissions = frappe.permissions.get_user_permissions(user)
+
+    if "Employee" in user_permissions and user_permissions["Employee"]:
+        permitted = [
+            p.get("doc")
+            for p in user_permissions["Employee"]
+            if p.get("doc")
+        ]
+        return permitted if permitted else None
+
+    return None
+
+
 @frappe.whitelist()
 def get_active_employees():
     user = frappe.session.user
@@ -16,6 +43,13 @@ def get_active_employees():
     filters = {}
     if companies:
         filters["company"] = ["in", companies]
+
+    # ── Employee-level restriction ────────────────────────────────────────────
+    permitted = _get_permitted_employees()
+    if permitted is not None:
+        if len(permitted) == 0:
+            return []
+        filters["name"] = ["in", permitted]
 
     employees = frappe.get_all(
         "Company Link",
@@ -39,16 +73,17 @@ def search_employees(query, company=None):
     user        = frappe.session.user
     search_term = f"%{query.strip()}%"
 
-    permitted = frappe.get_all(
+    # ── Company-level restriction from User Permissions ───────────────────────
+    permitted_companies = frappe.get_all(
         "User Permission",
         filters={"user": user, "allow": "Company"},
         pluck="for_value"
     )
 
     if company:
-        companies = [company] if (not permitted or company in permitted) else []
+        companies = [company] if (not permitted_companies or company in permitted_companies) else []
     else:
-        companies = permitted
+        companies = permitted_companies
 
     company_filter = ""
     company_params = {}
@@ -58,7 +93,19 @@ def search_employees(query, company=None):
         for i, c in enumerate(companies):
             company_params[f"company_{i}"] = c
 
-    params = {"search": search_term, **company_params}
+    # ── Employee-level restriction ────────────────────────────────────────────
+    permitted_employees = _get_permitted_employees()
+    emp_filter  = ""
+    emp_params  = {}
+    if permitted_employees is not None:
+        if len(permitted_employees) == 0:
+            return []
+        placeholders = ", ".join([f"%(emp_{i})s" for i in range(len(permitted_employees))])
+        emp_filter   = f"AND cl.name IN ({placeholders})"
+        for i, e in enumerate(permitted_employees):
+            emp_params[f"emp_{i}"] = e
+
+    params = {"search": search_term, **company_params, **emp_params}
 
     results = frappe.db.sql(f"""
         SELECT
@@ -74,6 +121,7 @@ def search_employees(query, company=None):
         LEFT JOIN `tabEmployee` e ON e.name = cl.employee
         WHERE 1=1
           {company_filter}
+          {emp_filter}
           AND (
               cl.full_name LIKE %(search)s
               OR cl.employee LIKE %(search)s
@@ -119,6 +167,11 @@ def get_submitted_slip_months(employee):
     if not employee:
         return {}
 
+    # ── Security: verify caller is permitted to view this employee ────────────
+    permitted = _get_permitted_employees()
+    if permitted is not None and employee not in permitted:
+        return {}
+
     slips = frappe.db.get_all(
         "Salary Slip",
         filters={
@@ -150,10 +203,14 @@ def get_attendance_between_dates(employee, start_date, end_date):
       - a dict { "mode": "half", "first_half": "...", "second_half": "..." }
         for half-day records that have custom_first_half / custom_second_half stored
     """
+    # ── Security check ────────────────────────────────────────────────────────
+    permitted = _get_permitted_employees()
+    if permitted is not None and employee not in permitted:
+        return {}
+
     start_date = getdate(start_date)
     end_date   = getdate(end_date)
 
-    # Fetch both the main status and the half-day fields in one query
     attendance_records = frappe.db.get_all(
         "Attendance",
         filters={
@@ -168,7 +225,6 @@ def get_attendance_between_dates(employee, start_date, end_date):
     for row in attendance_records:
         date_str = str(row.attendance_date)
         if row.status == "Half Day" and (row.custom_first_half or row.custom_second_half):
-            # Return structured half-day record so JS can populate both dropdown cells
             result[date_str] = {
                 "mode":        "half",
                 "first_half":  row.custom_first_half  or "",
@@ -184,23 +240,19 @@ def get_attendance_between_dates(employee, start_date, end_date):
 # Status constants
 # ---------------------------------------------------------------------------
 
-# Full-day UI statuses that map directly to DB
 VALID_FULL_STATUSES = {
     "Present", "On Tour", "Earned Comp Off",
     "Absent", "Earned Leave", "Casual Leave", "Comp Off",
     "LWP", "Holiday", "Weekly Off",
 }
 
-# Valid statuses for each half of a half-day record
 VALID_HALF_STATUSES = {
     "Present", "On Tour", "Earned Comp Off",
     "Absent", "Earned Leave", "Casual Leave", "Comp Off", "LWP",
-    "",  # empty / not set
+    "",
 }
 
-# UI label → DB status overrides for full-day records
 UI_TO_DB_STATUS = {
-    # "Regular" was used in the old UI — keep mapping for safety
     "Regular": "Present",
 }
 
@@ -210,42 +262,35 @@ def resolve_db_status(ui_status):
 
 
 # ---------------------------------------------------------------------------
-# Save batch  (handles both full-day and half-day records)
+# Save batch
 # ---------------------------------------------------------------------------
 
 @frappe.whitelist()
 def save_attendance_batch(attendance_data):
-    """
-    Accepts a list of records.  Each record is either:
-
-    Full-day:
-        { "employee": "...", "attendance_date": "YYYY-MM-DD",
-          "mode": "full", "status": "<FULL_DAY_STATUS>" }
-
-    Half-day:
-        { "employee": "...", "attendance_date": "YYYY-MM-DD",
-          "mode": "half", "first_half": "<HALF_STATUS>", "second_half": "<HALF_STATUS>" }
-    """
     user = frappe.session.user
 
     if isinstance(attendance_data, str):
         attendance_data = json.loads(attendance_data)
 
+    # ── Company-level permitted employees ─────────────────────────────────────
     companies = frappe.get_all(
         "User Permission",
         filters={"user": user, "allow": "Company"},
         pluck="for_value"
     )
 
-    permitted_employees = None
+    company_permitted_employees = None
     if companies:
-        permitted_employees = set(
+        company_permitted_employees = set(
             frappe.get_all(
                 "Company Link",
                 filters={"company": ["in", companies]},
                 pluck="name"
             )
         )
+
+    # ── Employee-level permitted employees ────────────────────────────────────
+    employee_level_permitted = _get_permitted_employees()
 
     saved_count = 0
     errors      = []
@@ -257,11 +302,17 @@ def save_attendance_batch(attendance_data):
                 attendance_date = getdate(record.get("attendance_date"))
                 mode            = record.get("mode", "full")
 
-                if permitted_employees is not None and employee not in permitted_employees:
+                # Company-level check
+                if company_permitted_employees is not None and employee not in company_permitted_employees:
                     errors.append(f"Not permitted for employee {employee} on {attendance_date}")
                     continue
 
-                # ── Server-side salary slip lock check ─────────────────────
+                # Employee-level check
+                if employee_level_permitted is not None and employee not in employee_level_permitted:
+                    errors.append(f"Not permitted for employee {employee} on {attendance_date}")
+                    continue
+
+                # ── Salary slip lock check ─────────────────────────────────
                 from frappe.utils import get_first_day
                 month_start = str(get_first_day(attendance_date))
                 submitted_slip = frappe.db.get_value(
@@ -299,7 +350,7 @@ def save_attendance_batch(attendance_data):
                         "custom_second_half": second_half,
                     }
 
-                else:  # mode == "full"
+                else:
                     ui_status = record.get("status", "").strip()
                     if not ui_status or ui_status not in VALID_FULL_STATUSES:
                         continue
@@ -391,20 +442,16 @@ def get_holidays_between_dates(company, start_date, end_date):
 
 @frappe.whitelist()
 def get_leave_allocation_for_month(employee, year, month):
-    """
-    Check whether an active Leave Allocation exists for the employee covering
-    the given month.  Returns:
-    {
-        "has_allocation": True/False,
-        "allocation_name": "LAL-00001" | None,
-    }
-    Used by the mark-attendance page to decide whether to enable leave columns.
-    """
     import datetime
+
+    # ── Security check ────────────────────────────────────────────────────────
+    permitted = _get_permitted_employees()
+    if permitted is not None and employee not in permitted:
+        return {"has_allocation": False, "allocation_name": None}
 
     try:
         year_int  = int(year)
-        month_int = int(month) + 1   # JS months are 0-based
+        month_int = int(month) + 1
     except (ValueError, TypeError):
         return {"has_allocation": False, "allocation_name": None}
 
@@ -432,46 +479,22 @@ def get_leave_allocation_for_month(employee, year, month):
 
 
 # ---------------------------------------------------------------------------
-# Comp Off / Leave balance  (extended to include EL and CL from Leave Allocation)
+# Comp Off / Leave balance
 # ---------------------------------------------------------------------------
 
 @frappe.whitelist()
 def get_comp_off_balance(employee, year=None, month=None):
-    """
-    Returns balances for Earned Leave (EL), Casual Leave (CL), and Comp Off
-    for the given employee and month.
-
-    EL / CL allocated and remaining come from the active Leave Allocation
-    Detail rows.  Used / taken are computed live from Attendance records
-    (supporting 0.5 for half-day leaves).
-
-    Comp Off available/earned/used/balance are computed from Attendance directly
-    (no allocation row needed — ECO earns, Comp Off uses).
-
-    Return structure:
-    {
-        # EL
-        "el_allocated":  int,
-        "el_used":       float,   # supports 0.5 increments
-        "el_remaining":  float,
-
-        # CL
-        "cl_allocated":  int,
-        "cl_used":       float,
-        "cl_remaining":  float,
-
-        # Comp Off (ECO / Comp Off)
-        "available":     int,    # balance carried in from before month
-        "earned":        int,    # ECO earned this month
-        "used":          float,  # Comp Off used this month (supports 0.5)
-        "balance":       float,  # available + earned - used
-
-        # Legacy keys (kept for backward compat)
-        "el_taken":      float,  # same as el_used
-        "cl_taken":      float,  # same as cl_used
-    }
-    """
     import datetime
+
+    # ── Security check ────────────────────────────────────────────────────────
+    permitted = _get_permitted_employees()
+    if permitted is not None and employee not in permitted:
+        return {
+            "el_allocated": 0, "el_used": 0.0, "el_remaining": 0.0,
+            "cl_allocated": 0, "cl_used": 0.0, "cl_remaining": 0.0,
+            "available": 0.0, "earned": 0.0, "used": 0.0, "balance": 0.0,
+            "el_taken": 0.0, "cl_taken": 0.0,
+        }
 
     try:
         year_int  = int(year)  if year  not in (None, "", "None") else None
@@ -480,16 +503,8 @@ def get_comp_off_balance(employee, year=None, month=None):
         year_int  = None
         month_int = None
 
-    # ── Helper: count full-day + half-day attendance for a leave type ────────
     def count_leave_taken(emp, leave_type, from_dt, to_dt):
-        """
-        Returns float count of leave_type taken between from_dt and to_dt.
-        Full-day attendance with that status = 1.0
-        Half-day attendance where first_half or second_half matches = 0.5 each
-        """
         total = 0.0
-
-        # Full-day records
         full_count = frappe.db.count(
             "Attendance",
             filters={
@@ -500,8 +515,6 @@ def get_comp_off_balance(employee, year=None, month=None):
             }
         )
         total += float(full_count)
-
-        # Half-day records — first half
         h1_count = frappe.db.count(
             "Attendance",
             filters={
@@ -513,8 +526,6 @@ def get_comp_off_balance(employee, year=None, month=None):
             }
         )
         total += float(h1_count) * 0.5
-
-        # Half-day records — second half
         h2_count = frappe.db.count(
             "Attendance",
             filters={
@@ -526,10 +537,8 @@ def get_comp_off_balance(employee, year=None, month=None):
             }
         )
         total += float(h2_count) * 0.5
-
         return total
 
-    # ── Helper: count full-day ECO/Comp Off (no half-day variant for ECO) ───
     def count_eco_or_coff(emp, status, from_dt, to_dt):
         full_count = frappe.db.count(
             "Attendance",
@@ -550,7 +559,6 @@ def get_comp_off_balance(employee, year=None, month=None):
         else:
             month_end = datetime.date(year_int, month_1based + 1, 1) - datetime.timedelta(days=1)
 
-        # ── Find active Leave Allocation covering this month ─────────────────
         alloc = frappe.db.get_value(
             "Leave Allocation",
             {
@@ -564,22 +572,16 @@ def get_comp_off_balance(employee, year=None, month=None):
         )
 
         if alloc:
-            # Get allocated amounts from the Leave Allocation Detail child table
             details = frappe.get_all(
                 "Leave Allocation Detail",
                 filters={"parent": alloc.name},
                 fields=["leave_type", "allocated_leaves"]
             )
             allocated_map = {d.leave_type: (d.allocated_leaves or 0) for d in details}
-
-            el_allocated = allocated_map.get("Earned Leave", 0)
-            cl_allocated = allocated_map.get("Casual Leave", 0)
-
-            # Compute used from Attendance over the FULL allocation period
-            # (so balance reflects the whole allocation, not just this month)
-            alloc_start = alloc.from_date
-            alloc_end   = alloc.to_date
-
+            el_allocated  = allocated_map.get("Earned Leave", 0)
+            cl_allocated  = allocated_map.get("Casual Leave", 0)
+            alloc_start   = alloc.from_date
+            alloc_end     = alloc.to_date
             el_used = count_leave_taken(employee, "Earned Leave", alloc_start, alloc_end)
             cl_used = count_leave_taken(employee, "Casual Leave", alloc_start, alloc_end)
         else:
@@ -591,17 +593,14 @@ def get_comp_off_balance(employee, year=None, month=None):
         el_remaining = max(0.0, float(el_allocated) - el_used)
         cl_remaining = max(0.0, float(cl_allocated) - cl_used)
 
-        # ── Comp Off ─────────────────────────────────────────────────────────
         earned_before = count_eco_or_coff(employee, "Earned Comp Off", "2000-01-01", month_start - datetime.timedelta(days=1))
         used_before   = count_leave_taken(employee, "Comp Off", "2000-01-01", month_start - datetime.timedelta(days=1))
         available     = max(0.0, earned_before - used_before)
-
-        earned  = count_eco_or_coff(employee, "Earned Comp Off", month_start, month_end)
-        co_used = count_leave_taken(employee, "Comp Off", month_start, month_end)
-        balance = max(0.0, available + earned - co_used)
+        earned        = count_eco_or_coff(employee, "Earned Comp Off", month_start, month_end)
+        co_used       = count_leave_taken(employee, "Comp Off", month_start, month_end)
+        balance       = max(0.0, available + earned - co_used)
 
     else:
-        # No month specified — lifetime totals, no allocation lookup
         el_allocated = 0
         cl_allocated = 0
         el_used      = 0.0
@@ -612,33 +611,24 @@ def get_comp_off_balance(employee, year=None, month=None):
         earned       = float(frappe.db.count("Attendance", filters={
             "employee": employee, "status": "Earned Comp Off", "docstatus": ["<", 2],
         }))
-        co_used = count_leave_taken(employee, "Comp Off", "2000-01-01", "2099-12-31") if False else float(
-            frappe.db.count("Attendance", filters={
-                "employee": employee, "status": "Comp Off", "docstatus": ["<", 2],
-            })
-        )
+        co_used = float(frappe.db.count("Attendance", filters={
+            "employee": employee, "status": "Comp Off", "docstatus": ["<", 2],
+        }))
         balance = max(0.0, earned - co_used)
 
     return {
-        # EL
         "el_allocated": el_allocated,
         "el_used":      el_used,
         "el_remaining": el_remaining,
-
-        # CL
         "cl_allocated": cl_allocated,
         "cl_used":      cl_used,
         "cl_remaining": cl_remaining,
-
-        # Comp Off
-        "available": available,
-        "earned":    earned,
-        "used":      co_used,
-        "balance":   balance,
-
-        # Legacy keys
-        "el_taken":  el_used,
-        "cl_taken":  cl_used,
+        "available":    available,
+        "earned":       earned,
+        "used":         co_used,
+        "balance":      balance,
+        "el_taken":     el_used,
+        "cl_taken":     cl_used,
     }
 
 
@@ -648,6 +638,11 @@ def get_comp_off_balance(employee, year=None, month=None):
 
 @frappe.whitelist()
 def get_employee_joining_date(employee):
+    # ── Security check ────────────────────────────────────────────────────────
+    permitted = _get_permitted_employees()
+    if permitted is not None and employee not in permitted:
+        return {"joining_date": None, "left_date": None}
+
     result = frappe.db.get_value(
         "Company Link",
         employee,

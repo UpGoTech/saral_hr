@@ -5,33 +5,53 @@ from datetime import timedelta, date
 
 
 # ─── Status groupings ─────────────────────────────────────────────────────────
-# Must match exactly what is stored in the Attendance doctype
 
-# Physically at work (counts toward physical working days)
 PHYSICALLY_PRESENT  = {"Present", "On Tour", "Earned Comp Off"}
-
-# Approved paid leave
 ON_LEAVE            = {"Earned Leave", "Casual Leave", "Comp Off"}
-
-# Unpaid / penalised
 UNPAID              = {"Absent", "LWP"}
-
-# Everything that counts as attendance being "marked" and paid
 ALL_PAID            = PHYSICALLY_PRESENT | ON_LEAVE | {"Half Day"}
-
-# All statuses that are "present" for daily trend (physically present only)
 PRESENT_STATUSES    = PHYSICALLY_PRESENT | {"Half Day"}
-
-# Statuses that are neither rest nor holiday
 ABSENT_STATUSES     = UNPAID
+
+
+# ─── Permission helper ────────────────────────────────────────────────────────
+
+def _get_permitted_employees():
+    """
+    Returns:
+        None  → no restriction (System Manager or no Employee permissions set)
+        []    → user has permissions set but zero employees allowed
+        [...] → list of permitted Company Link name IDs
+    """
+    user = frappe.session.user
+
+    if "System Manager" in frappe.get_roles(user):
+        return None
+
+    user_permissions = frappe.permissions.get_user_permissions(user)
+
+    if "Employee" in user_permissions and user_permissions["Employee"]:
+        permitted = [
+            p.get("doc")
+            for p in user_permissions["Employee"]
+            if p.get("doc")
+        ]
+        return permitted if permitted else None
+
+    return None
 
 
 # ─── Helpers ──────────────────────────────────────────────────────────────────
 
-def _active_employees(company, department=None):
+def _active_employees(company, department=None, permitted_employees=None):
     filters = {"is_active": 1, "company": company}
     if department:
         filters["department"] = department
+    if permitted_employees is not None:
+        if len(permitted_employees) == 0:
+            return []
+        filters["name"] = ["in", permitted_employees]
+
     return frappe.db.get_all(
         "Company Link",
         filters=filters,
@@ -39,24 +59,60 @@ def _active_employees(company, department=None):
     )
 
 
-def _attendance_for_date(company, att_date, department=None):
-    sql = """
+def _attendance_for_date(company, att_date, department=None, permitted_employees=None):
+    emp_clause = ""
+    params = {"company": company, "att_date": str(att_date)}
+
+    if department:
+        dept_clause = "AND cl.department = %(department)s"
+        params["department"] = department
+    else:
+        dept_clause = ""
+
+    if permitted_employees is not None:
+        if len(permitted_employees) == 0:
+            return []
+        placeholders = ", ".join([f"%(pe_{i})s" for i in range(len(permitted_employees))])
+        emp_clause   = f"AND cl.name IN ({placeholders})"
+        for i, e in enumerate(permitted_employees):
+            params[f"pe_{i}"] = e
+
+    sql = f"""
         SELECT a.employee, a.employee_name, a.status
         FROM `tabAttendance` a
         JOIN `tabCompany Link` cl ON cl.name = a.employee
         WHERE a.company = %(company)s
           AND a.attendance_date = %(att_date)s
           AND cl.is_active = 1
-          {dept}
-    """.format(dept="AND cl.department = %(department)s" if department else "")
-    params = {"company": company, "att_date": str(att_date)}
-    if department:
-        params["department"] = department
+          {dept_clause}
+          {emp_clause}
+    """
     return frappe.db.sql(sql, params, as_dict=True)
 
 
-def _attendance_for_range(company, from_date, to_date, department=None):
-    sql = """
+def _attendance_for_range(company, from_date, to_date, department=None, permitted_employees=None):
+    emp_clause = ""
+    params = {
+        "company":   company,
+        "from_date": str(from_date),
+        "to_date":   str(to_date),
+    }
+
+    if department:
+        dept_clause = "AND cl.department = %(department)s"
+        params["department"] = department
+    else:
+        dept_clause = ""
+
+    if permitted_employees is not None:
+        if len(permitted_employees) == 0:
+            return []
+        placeholders = ", ".join([f"%(pe_{i})s" for i in range(len(permitted_employees))])
+        emp_clause   = f"AND cl.name IN ({placeholders})"
+        for i, e in enumerate(permitted_employees):
+            params[f"pe_{i}"] = e
+
+    sql = f"""
         SELECT a.employee, a.employee_name, a.status,
                a.attendance_date, cl.department
         FROM `tabAttendance` a
@@ -64,16 +120,10 @@ def _attendance_for_range(company, from_date, to_date, department=None):
         WHERE a.company = %(company)s
           AND a.attendance_date BETWEEN %(from_date)s AND %(to_date)s
           AND cl.is_active = 1
-          {dept}
+          {dept_clause}
+          {emp_clause}
         ORDER BY a.attendance_date
-    """.format(dept="AND cl.department = %(department)s" if department else "")
-    params = {
-        "company":   company,
-        "from_date": str(from_date),
-        "to_date":   str(to_date),
-    }
-    if department:
-        params["department"] = department
+    """
     return frappe.db.sql(sql, params, as_dict=True)
 
 
@@ -81,15 +131,30 @@ def _attendance_for_range(company, from_date, to_date, department=None):
 
 @frappe.whitelist()
 def get_filter_meta(company):
-    departments = frappe.db.sql("""
+    permitted = _get_permitted_employees()
+
+    emp_clause = ""
+    params = {"company": company}
+
+    if permitted is not None:
+        if len(permitted) == 0:
+            return {"departments": []}
+        placeholders = ", ".join([f"%(pe_{i})s" for i in range(len(permitted))])
+        emp_clause   = f"AND name IN ({placeholders})"
+        for i, e in enumerate(permitted):
+            params[f"pe_{i}"] = e
+
+    departments = frappe.db.sql(f"""
         SELECT DISTINCT department
         FROM `tabCompany Link`
         WHERE is_active = 1
           AND company = %(company)s
           AND department IS NOT NULL
           AND department != ''
+          {emp_clause}
         ORDER BY department
-    """, {"company": company}, as_dict=True)
+    """, params, as_dict=True)
+
     return {"departments": [d.department for d in departments if d.department]}
 
 
@@ -101,17 +166,18 @@ def get_daily_summary(company, att_date=None, department=None):
         att_date = nowdate()
     att_date = getdate(att_date)
 
-    employees    = _active_employees(company, department)
+    permitted = _get_permitted_employees()
+
+    employees    = _active_employees(company, department, permitted)
     total_active = len(employees)
     emp_map      = {e.name: e for e in employees}
 
-    records  = _attendance_for_date(company, att_date, department)
+    records  = _attendance_for_date(company, att_date, department, permitted)
     rec_map  = {r.employee: r for r in records}
 
     marked_ids = set(rec_map.keys())
     not_marked = [e for e in employees if e.name not in marked_ids]
 
-    # Per-status counts
     status_counts = {}
     for r in records:
         status_counts[r.status] = status_counts.get(r.status, 0) + 1
@@ -123,7 +189,6 @@ def get_daily_summary(company, att_date=None, department=None):
     holiday_count      = status_counts.get("Holiday",    0)
     weekly_off_count   = status_counts.get("Weekly Off", 0)
 
-    # Build marked list with employee details
     marked_list = []
     for r in records:
         emp = emp_map.get(r.employee)
@@ -172,12 +237,12 @@ def get_monthly_summary(company, year, month, department=None):
     to_date    = get_last_day(from_date)
     total_days = calendar.monthrange(int(year), month_num)[1]
 
-    employees    = _active_employees(company, department)
+    permitted    = _get_permitted_employees()
+    employees    = _active_employees(company, department, permitted)
     total_active = len(employees)
 
-    records = _attendance_for_range(company, from_date, to_date, department)
+    records = _attendance_for_range(company, from_date, to_date, department, permitted)
 
-    # Day-wise present / absent counts for trend chart
     day_map = {}
     for r in records:
         d = getdate(r.attendance_date).day
@@ -197,7 +262,6 @@ def get_monthly_summary(company, year, month, department=None):
             "absent":  day_map.get(day_num, {}).get("absent",  0),
         })
 
-    # Per-employee counts
     emp_status_count = {}
     for r in records:
         emp = r.employee
@@ -223,12 +287,10 @@ def get_monthly_summary(company, year, month, department=None):
         })
     emp_attendance.sort(key=lambda x: x["pct"])
 
-    # Overall status counts for breakdown panel
     overall = {}
     for r in records:
         overall[r.status] = overall.get(r.status, 0) + 1
 
-    # Coverage stats
     employees_with_any_record = len(set(r.employee for r in records))
     employees_never_marked    = total_active - employees_with_any_record
 
@@ -297,6 +359,11 @@ def get_holidays_for_month(company, year, month):
 
 @frappe.whitelist()
 def get_employee_monthly_detail(employee, year, month):
+    # ── Security check ────────────────────────────────────────────────────────
+    permitted = _get_permitted_employees()
+    if permitted is not None and employee not in permitted:
+        return {}
+
     MONTHS    = ["January","February","March","April","May","June",
                  "July","August","September","October","November","December"]
     month_num  = MONTHS.index(month) + 1

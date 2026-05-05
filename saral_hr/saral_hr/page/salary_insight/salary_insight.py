@@ -14,29 +14,95 @@ def _start_date_for(year, month_num):
     return f"{year}-{month_num:02d}-01"
 
 
-def _slips_for_period(company, start_date):
-    return frappe.db.sql("""
-        SELECT
-            ss.name,
-            ss.employee,
-            ss.employee_name,
-            ss.docstatus,
-            ss.net_salary,
-            ss.total_earnings,
-            ss.total_deductions,
-            ss.total_employer_contribution,
-            ss.payment_days,
-            ss.category,
-            ss.department,
-            ss.designation,
-            ss.branch,
-            ss.division
-        FROM `tabSalary Slip` ss
-        WHERE ss.start_date = %(start_date)s
-          AND ss.company    = %(company)s
-          AND ss.docstatus  IN (0, 1, 2)
-        ORDER BY ss.employee_name ASC
-    """, {"company": company, "start_date": start_date}, as_dict=1)
+def _get_permitted_employees():
+    """
+    Returns a list of employee IDs the current user is permitted to see,
+    based on Frappe User Permissions.
+
+    - If the user has Employee-level User Permissions set → return only those employee IDs.
+    - If NO Employee-level permissions are set → return None (meaning: show all, no restriction).
+
+    This means Managers/Admins with no Employee permissions see everyone,
+    while restricted users (like Sagar) only see their permitted employees.
+    """
+    user = frappe.session.user
+
+    # System Manager / Administrator always sees everything
+    if "System Manager" in frappe.get_roles(user):
+        return None
+
+    user_permissions = frappe.permissions.get_user_permissions(user)
+
+    # Check if Employee-level restrictions exist
+    if "Employee" in user_permissions and user_permissions["Employee"]:
+        permitted = [perm.get("doc") for perm in user_permissions["Employee"] if perm.get("doc")]
+        return permitted if permitted else None
+
+    return None  # No restriction — show all
+
+
+def _slips_for_period(company, start_date, permitted_employees=None):
+    """
+    Fetch salary slips for a given company + period.
+    If permitted_employees is a list, only fetch slips for those employees.
+    If None, fetch all (no restriction).
+    """
+    if permitted_employees is not None and len(permitted_employees) == 0:
+        # User has permissions configured but 0 employees allowed — return empty
+        return []
+
+    if permitted_employees is not None:
+        # Build IN clause safely using frappe.db.sql with tuple
+        return frappe.db.sql("""
+            SELECT
+                ss.name,
+                ss.employee,
+                ss.employee_name,
+                ss.docstatus,
+                ss.net_salary,
+                ss.total_earnings,
+                ss.total_deductions,
+                ss.total_employer_contribution,
+                ss.payment_days,
+                ss.category,
+                ss.department,
+                ss.designation,
+                ss.branch,
+                ss.division
+            FROM `tabSalary Slip` ss
+            WHERE ss.start_date = %(start_date)s
+              AND ss.company    = %(company)s
+              AND ss.docstatus  IN (0, 1, 2)
+              AND ss.employee   IN %(permitted)s
+            ORDER BY ss.employee_name ASC
+        """, {
+            "company": company,
+            "start_date": start_date,
+            "permitted": tuple(permitted_employees)
+        }, as_dict=1)
+    else:
+        return frappe.db.sql("""
+            SELECT
+                ss.name,
+                ss.employee,
+                ss.employee_name,
+                ss.docstatus,
+                ss.net_salary,
+                ss.total_earnings,
+                ss.total_deductions,
+                ss.total_employer_contribution,
+                ss.payment_days,
+                ss.category,
+                ss.department,
+                ss.designation,
+                ss.branch,
+                ss.division
+            FROM `tabSalary Slip` ss
+            WHERE ss.start_date = %(start_date)s
+              AND ss.company    = %(company)s
+              AND ss.docstatus  IN (0, 1, 2)
+            ORDER BY ss.employee_name ASC
+        """, {"company": company, "start_date": start_date}, as_dict=1)
 
 
 @frappe.whitelist()
@@ -48,11 +114,28 @@ def get_salary_insight_data(company, year, month):
     year = int(year)
     start_date = _start_date_for(year, month_num)
 
+    # ── Determine permitted employees for this user ───────────────────────────
+    permitted_employees = _get_permitted_employees()
+
     # ── Active employees ──────────────────────────────────────────────────────
-    total_active = frappe.db.count("Company Link", {"company": company, "is_active": 1})
+    # If user is restricted, count only their permitted employees
+    if permitted_employees is not None:
+        if len(permitted_employees) == 0:
+            total_active = 0
+        else:
+            total_active = frappe.db.count(
+                "Company Link",
+                {
+                    "company": company,
+                    "is_active": 1,
+                    "name": ["in", permitted_employees]
+                }
+            )
+    else:
+        total_active = frappe.db.count("Company Link", {"company": company, "is_active": 1})
 
     # ── Salary slips for this period ──────────────────────────────────────────
-    salary_slips = _slips_for_period(company, start_date)
+    salary_slips = _slips_for_period(company, start_date, permitted_employees)
 
     # ── Aggregated totals (submitted only) ────────────────────────────────────
     def aggregate(slips):
@@ -71,7 +154,7 @@ def get_salary_insight_data(company, year, month):
     # ── Previous month totals ─────────────────────────────────────────────────
     prev_date_obj  = getdate(add_months(start_date, -1))
     prev_start     = _start_date_for(prev_date_obj.year, prev_date_obj.month)
-    prev_slips     = _slips_for_period(company, prev_start)
+    prev_slips     = _slips_for_period(company, prev_start, permitted_employees)
     prev_totals    = aggregate(prev_slips)
 
     # ── Trend: last 6 months ──────────────────────────────────────────────────
@@ -79,7 +162,7 @@ def get_salary_insight_data(company, year, month):
     for i in range(5, -1, -1):
         t_date  = getdate(add_months(start_date, -i))
         t_start = _start_date_for(t_date.year, t_date.month)
-        t_slips = _slips_for_period(company, t_start)
+        t_slips = _slips_for_period(company, t_start, permitted_employees)
         t_net   = sum(flt(s.net_salary) for s in t_slips if s.docstatus == 1)
         trend.append({
             "month": MONTH_NUM_TO_NAME[t_date.month],
@@ -88,12 +171,26 @@ def get_salary_insight_data(company, year, month):
         })
 
     # ── Category summary ──────────────────────────────────────────────────────
-    active_by_cat = frappe.db.sql("""
-        SELECT category, COUNT(*) AS cnt
-        FROM `tabCompany Link`
-        WHERE company = %(company)s AND is_active = 1
-        GROUP BY category
-    """, {"company": company}, as_dict=1)
+    if permitted_employees is not None:
+        if len(permitted_employees) == 0:
+            active_by_cat = []
+        else:
+            active_by_cat = frappe.db.sql("""
+                SELECT category, COUNT(*) AS cnt
+                FROM `tabCompany Link`
+                WHERE company = %(company)s
+                  AND is_active = 1
+                  AND name IN %(permitted)s
+                GROUP BY category
+            """, {"company": company, "permitted": tuple(permitted_employees)}, as_dict=1)
+    else:
+        active_by_cat = frappe.db.sql("""
+            SELECT category, COUNT(*) AS cnt
+            FROM `tabCompany Link`
+            WHERE company = %(company)s AND is_active = 1
+            GROUP BY category
+        """, {"company": company}, as_dict=1)
+
     cat_active_map = {r.category: r.cnt for r in active_by_cat}
 
     cat_map = {}
@@ -124,13 +221,27 @@ def get_salary_insight_data(company, year, month):
     # ── Employees with NO salary slip ─────────────────────────────────────────
     slip_employee_set = {s.employee for s in salary_slips if s.docstatus != 2}
 
-    all_active_emps = frappe.db.sql("""
-        SELECT cl.name, cl.full_name AS employee_name,
-               cl.category, cl.department, cl.designation
-        FROM `tabCompany Link` cl
-        WHERE cl.company = %(company)s AND cl.is_active = 1
-        ORDER BY cl.full_name ASC
-    """, {"company": company}, as_dict=1)
+    if permitted_employees is not None:
+        if len(permitted_employees) == 0:
+            all_active_emps = []
+        else:
+            all_active_emps = frappe.db.sql("""
+                SELECT cl.name, cl.full_name AS employee_name,
+                       cl.category, cl.department, cl.designation
+                FROM `tabCompany Link` cl
+                WHERE cl.company = %(company)s
+                  AND cl.is_active = 1
+                  AND cl.name IN %(permitted)s
+                ORDER BY cl.full_name ASC
+            """, {"company": company, "permitted": tuple(permitted_employees)}, as_dict=1)
+    else:
+        all_active_emps = frappe.db.sql("""
+            SELECT cl.name, cl.full_name AS employee_name,
+                   cl.category, cl.department, cl.designation
+            FROM `tabCompany Link` cl
+            WHERE cl.company = %(company)s AND cl.is_active = 1
+            ORDER BY cl.full_name ASC
+        """, {"company": company}, as_dict=1)
 
     pending_employees = [e for e in all_active_emps if e.name not in slip_employee_set]
 
@@ -150,6 +261,31 @@ def get_all_slip_deductions(slip_names):
     import json
     if isinstance(slip_names, str):
         slip_names = json.loads(slip_names)
+
+    # ── Guard: nothing to process ─────────────────────────────────────────────
+    if not slip_names:
+        return {}
+
+    # ── Security: filter slip_names to only those the user can access ─────────
+    permitted_employees = _get_permitted_employees()
+
+    if permitted_employees is not None:
+        if len(permitted_employees) == 0:
+            return {}
+        # tuple(slip_names) is safe here because we checked len > 0 above
+        allowed_slips = frappe.db.sql("""
+            SELECT name FROM `tabSalary Slip`
+            WHERE name IN %(names)s
+              AND employee IN %(permitted)s
+        """, {
+            "names":     tuple(slip_names),
+            "permitted": tuple(permitted_employees)
+        }, as_dict=1)
+        slip_names = [r.name for r in allowed_slips]
+
+    # ── Guard: nothing left after permission filter ───────────────────────────
+    if not slip_names:
+        return {}
 
     result = {}
 
@@ -322,6 +458,8 @@ def get_all_slip_deductions(slip_names):
             )
 
     return result
+
+
 # ── SSA Export ────────────────────────────────────────────────────────────────
 @frappe.whitelist()
 def export_ssa_to_excel(status_filter=None):
@@ -330,10 +468,19 @@ def export_ssa_to_excel(status_filter=None):
     from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
     from openpyxl.utils import get_column_letter
 
+    # ── Determine permitted employees ─────────────────────────────────────────
+    permitted_employees = _get_permitted_employees()
+
     # Build filters
     filters = {"docstatus": ["!=", 2]}
     if status_filter is not None and str(status_filter) != "":
         filters = {"docstatus": int(status_filter)}
+
+    # Add employee restriction if applicable
+    if permitted_employees is not None:
+        if len(permitted_employees) == 0:
+            frappe.throw("You do not have permission to export any records.")
+        filters["employee"] = ["in", permitted_employees]
 
     # Fetch SSA records
     assignments = frappe.get_all(
