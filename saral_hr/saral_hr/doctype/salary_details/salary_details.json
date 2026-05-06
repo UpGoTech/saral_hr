@@ -15,7 +15,9 @@
   "depends_on_payment_days",
   "depends_on_physical_working_days",
   "daily_wage_component",
-  "employer_contribution"
+  "employer_contribution",
+  "exclude_from_ctc",
+  "is_deferred"
  ],
  "fields": [
   {
@@ -45,15 +47,15 @@
   {
    "fieldname": "base_amount",
    "fieldtype": "Currency",
-   "label": "Base Amount",
-   "hidden": 1
+   "hidden": 1,
+   "label": "Base Amount"
   },
   {
    "default": "0",
    "fieldname": "per_day_rate",
    "fieldtype": "Currency",
-   "label": "Per Day Rate",
    "hidden": 1,
+   "label": "Per Day Rate",
    "options": "currency"
   },
   {
@@ -98,6 +100,15 @@
   },
   {
    "default": "0",
+   "fetch_from": "salary_component.exclude_from_ctc",
+   "fieldname": "exclude_from_ctc",
+   "fieldtype": "Check",
+   "in_list_view": 1,
+   "label": "Exclude from CTC",
+   "read_only": 1
+  },
+  {
+   "default": "0",
    "fieldname": "is_deferred",
    "fieldtype": "Check",
    "in_list_view": 1,
@@ -108,7 +119,7 @@
  "index_web_pages_for_search": 1,
  "istable": 1,
  "links": [],
- "modified": "2026-03-28 00:00:00.000000",
+ "modified": "2026-05-06 16:41:41.259897",
  "modified_by": "Administrator",
  "module": "Saral Hr",
  "name": "Salary Details",

@@ -67,10 +67,11 @@ class SalaryComponent(Document):
     # ──────────────────────────────────────────────
 
     def _sync_flags_to_salary_details(self):
-        """Push updated payment-day flags AND daily_wage_component flag
-        to every Salary Details row that references this component."""
+        """Push updated payment-day flags, daily_wage_component flag,
+        and exclude_from_ctc flag to every Salary Details row that
+        references this component."""
         try:
-            existing_columns = set(frappe.db.get_table_columns("Salary Details"))
+            existing_columns = set(frappe.db.get_table_columns("tabSalary Details"))
         except Exception:
             return
 
@@ -82,6 +83,9 @@ class SalaryComponent(Document):
 
         if "daily_wage_component" in existing_columns:
             updates["daily_wage_component"] = self.daily_wage_component or 0
+
+        if "exclude_from_ctc" in existing_columns:
+            updates["exclude_from_ctc"] = self.exclude_from_ctc or 0
 
         if not updates:
             return

@@ -18,11 +18,14 @@ const STATUTORY_DEDUCTION  = [SC.EMP_ESIC, SC.EMP_PF, SC.PT, SC.EMP_LWF];
 const STATUTORY_EMPLOYER   = [SC.EMPR_ESIC, SC.EMPR_PF, SC.EMPR_EPS, SC.EMPR_EDLI, SC.EMPR_PFADM, SC.EMPR_LWF];
 const ALL_STATUTORY        = [...STATUTORY_DEDUCTION, ...STATUTORY_EMPLOYER];
 
-// ─────────────────────────────────────────────────────────────
-//  Guard: prevent concurrent statutory refresh calls
-// ─────────────────────────────────────────────────────────────
 let _statutory_inflight = false;
 let _statutory_pending  = false;
+
+let _calc_debounce_timer = null;
+function _debounced_recalc(frm, fn, delay = 120) {
+    clearTimeout(_calc_debounce_timer);
+    _calc_debounce_timer = setTimeout(() => fn(frm), delay);
+}
 
 frappe.ui.form.on("Salary Structure Assignment", {
 
@@ -32,13 +35,12 @@ frappe.ui.form.on("Salary Structure Assignment", {
         toggle_skill_type(frm);
         if (frm.doc.salary_structure) {
             toggle_salary_sections(frm);
-            // FIX (Bug 2 — Amend/reload zeros): defer calculate + panel render
-            // so Frappe's docmap has time to register copied child rows.
             setTimeout(() => {
                 calculate_salary(frm);
                 maybe_render_daily_wage_panel(frm);
             }, 150);
         }
+        _bind_live_amount_inputs(frm);
     },
 
     setup(frm) {
@@ -130,22 +132,39 @@ frappe.ui.form.on("Salary Details", {
             return;
         }
 
-        // FIX (Bug 1 — Compute needs 2 clicks): skip auto statutory refresh
-        // while the Compute button is mid-loop setting multiple amounts.
-        // The Compute handler sets frm._computing_daily_wage = true before
-        // the loop and clears it after, then calls refresh_statutory_rows once.
         if (frm._computing_daily_wage) return;
 
-        if (row && row.parentfield === "earnings") {
-            refresh_statutory_rows(frm);
-        } else {
-            calculate_salary_silent(frm);
-        }
+        setTimeout(() => {
+            if (row && row.parentfield === "earnings") {
+                refresh_statutory_rows(frm);
+            } else {
+                calculate_salary(frm);
+            }
+        }, 50);
     },
-    salary_details_remove(frm) {
-        calculate_salary_silent(frm);
+    salary_details_remove(frm, cdt, cdn) {
+        _calculate_excluding_row(frm, cdn);
     }
 });
+
+// ─────────────────────────────────────────────────────────────
+//  Live amount input binding
+// ─────────────────────────────────────────────────────────────
+
+function _bind_live_amount_inputs(frm) {
+    $(frm.wrapper).off(".live_amount");
+
+    const AMOUNT_SEL = ".grid-row input[data-fieldname='amount']";
+
+    $(frm.wrapper).on("change.live_amount", AMOUNT_SEL, function () {
+        if (frm._computing_daily_wage) return;
+        const rowname     = $(this).closest("[data-name]").attr("data-name");
+        if (!rowname) return;
+        const in_earnings = !!(frm.doc.earnings || []).find(r => r.name === rowname);
+        if (!in_earnings) return;
+        _debounced_recalc(frm, refresh_statutory_rows, 150);
+    });
+}
 
 // ─────────────────────────────────────────────────────────────
 //  Daily Wage Panel
@@ -211,9 +230,6 @@ function _build_daily_wage_panel(frm, dw_rows, multiplier) {
     const is_readonly = frm.doc.docstatus !== 0;
 
     const rows_html = dw_rows.map((row, idx) => {
-        // FIX (Bug 2 — Amend zeros in panel): prefer the saved `per_day_rate`
-        // field over the in-memory `_dw_per_day` property (which is lost on
-        // reload/amend). Fall back to amount / multiplier only if both are absent.
         const saved_per_day_rate = flt(row.per_day_rate);
         const per_day = flt(row._dw_per_day) > 0
             ? flt(row._dw_per_day)
@@ -367,7 +383,6 @@ function _build_daily_wage_panel(frm, dw_rows, multiplier) {
         ? $anchor.find(".dw-panel")
         : $(frm.wrapper).find(".dw-panel").last();
 
-    // Live preview
     $panel.on("input", ".dw-rate-input", function () {
         const per_day = flt($(this).val());
         const monthly = per_day > 0 ? flt(per_day * multiplier, 2) : 0;
@@ -382,13 +397,6 @@ function _build_daily_wage_panel(frm, dw_rows, multiplier) {
         }
     });
 
-    // ─────────────────────────────────────────────────────────
-    //  Compute button
-    //  FIX (Bug 1): set frm._computing_daily_wage = true before
-    //  the loop so the Salary Details `amount` trigger skips its
-    //  mid-loop statutory refresh calls. Clear the flag after all
-    //  values are set, then call refresh_statutory_rows once.
-    // ─────────────────────────────────────────────────────────
     $panel.find(".dw-compute-btn").on("click", function () {
         let any_missing = false;
         $panel.find(".dw-rate-input").each(function () {
@@ -405,7 +413,6 @@ function _build_daily_wage_panel(frm, dw_rows, multiplier) {
             return;
         }
 
-        // Block the amount-change trigger from firing mid-loop
         frm._computing_daily_wage = true;
 
         $panel.find(".dw-rate-input").each(function () {
@@ -427,7 +434,6 @@ function _build_daily_wage_panel(frm, dw_rows, multiplier) {
             $val.addClass("has-value");
         });
 
-        // All values set — now unblock and do a single statutory refresh
         frm._computing_daily_wage = false;
 
         frm.refresh_fields(["earnings", "deductions", "employer_share"]);
@@ -435,7 +441,6 @@ function _build_daily_wage_panel(frm, dw_rows, multiplier) {
         frappe.show_alert({ message: __("Monthly amounts applied."), indicator: "green" });
     });
 
-    // Reset
     $panel.find(".dw-reset-btn").on("click", function () {
         $panel.find(".dw-rate-input").val("").removeClass("dw-error");
         $panel.find(".dw-computed-val").text("").removeClass("has-value");
@@ -745,6 +750,7 @@ function refresh_statutory_rows(frm) {
                     });
                 });
 
+                // ── CHANGED: exclude_from_ctc is now passed from Python response ──
                 (r.message.employer_share || []).forEach(d => {
                     const child = frm.add_child("employer_share");
                     frappe.model.set_value(child.doctype, child.name, {
@@ -753,6 +759,7 @@ function refresh_statutory_rows(frm) {
                         amount:                flt(d.amount),
                         base_amount:           flt(d.amount),
                         employer_contribution: 1,
+                        exclude_from_ctc:      d.exclude_from_ctc ? 1 : 0,
                     });
                 });
 
@@ -832,18 +839,24 @@ function check_overlap(frm) {
 function calculate_salary()        { _do_calculate(arguments[0], false); }
 function calculate_salary_silent() { _do_calculate(arguments[0], true);  }
 
-function _do_calculate(frm, silent) {
-    const gross   = _sum_earnings(frm);
-    let emp_ded   = 0;
-    let empr_cont = 0;
+// ─────────────────────────────────────────────────────────────
+//  Recalc after row deletion, excluding the just-deleted row
+// ─────────────────────────────────────────────────────────────
+
+function _calculate_excluding_row(frm, deleted_cdn) {
+    const gross       = _sum_earnings_excluding(frm, deleted_cdn);
+    let emp_ded       = 0;
+    let empr_cont     = 0;
+    let empr_cont_ctc = 0;
 
     (frm.doc.deductions || []).forEach(d => {
-        const live = frappe.get_doc(d.doctype, d.name);
-        emp_ded += flt(live ? live.amount : d.amount);
+        if (d.name !== deleted_cdn) emp_ded += flt(d.amount);
     });
     (frm.doc.employer_share || []).forEach(d => {
-        const live = frappe.get_doc(d.doctype, d.name);
-        empr_cont += flt(live ? live.amount : d.amount);
+        if (d.name !== deleted_cdn) {
+            empr_cont += flt(d.amount);
+            if (!d.exclude_from_ctc) empr_cont_ctc += flt(d.amount);
+        }
     });
 
     const values = {
@@ -851,8 +864,61 @@ function _do_calculate(frm, silent) {
         total_deductions:            emp_ded,
         total_employer_contribution: empr_cont,
         net_salary:                  gross - emp_ded,
-        monthly_ctc:                 gross + empr_cont,
-        annual_ctc:                  (gross + empr_cont) * 12,
+        monthly_ctc:                 gross + empr_cont_ctc,
+        annual_ctc:                  (gross + empr_cont_ctc) * 12,
+        total_basic_da:              _sum_basic_da_excluding(frm, deleted_cdn),
+    };
+
+    frm.set_value(values);
+    frm.refresh_fields(["gross_salary", "total_deductions",
+        "total_employer_contribution", "net_salary", "monthly_ctc", "annual_ctc", "total_basic_da"]);
+}
+
+function _sum_earnings_excluding(frm, excluded_cdn) {
+    let t = 0;
+    (frm.doc.earnings || []).forEach(r => {
+        if (r.name !== excluded_cdn) t += flt(r.amount);
+    });
+    return t;
+}
+
+function _sum_basic_da_excluding(frm, excluded_cdn) {
+    let basic = 0, da = 0;
+    (frm.doc.earnings || []).forEach(r => {
+        if (r.name === excluded_cdn) return;
+        const amt  = flt(r.amount);
+        const comp = (r.salary_component || "").toLowerCase();
+        const abbr = (r.abbr || "").toLowerCase().trim();
+        if (comp.includes("basic") || abbr === "basic") basic += amt;
+        if (comp.includes("dearness") || comp === "da"
+            || abbr === "da" || abbr.startsWith("da-") || abbr.startsWith("da ")
+            || abbr === "da - dr" || abbr.startsWith("da-dr")) da += amt;
+    });
+    return flt(basic + da, 2);
+}
+
+function _do_calculate(frm, silent) {
+    const gross       = _sum_earnings(frm);
+    let emp_ded       = 0;
+    let empr_cont     = 0;
+    let empr_cont_ctc = 0;
+
+    (frm.doc.deductions || []).forEach(d => {
+        emp_ded += flt(d.amount);
+    });
+    // ── CHANGED: split total employer cost from CTC-eligible portion ──
+    (frm.doc.employer_share || []).forEach(d => {
+        empr_cont += flt(d.amount);
+        if (!d.exclude_from_ctc) empr_cont_ctc += flt(d.amount);
+    });
+
+    const values = {
+        gross_salary:                gross,
+        total_deductions:            emp_ded,
+        total_employer_contribution: empr_cont,       // full cost — EDLI + admin included
+        net_salary:                  gross - emp_ded,
+        monthly_ctc:                 gross + empr_cont_ctc,   // excludes flagged components
+        annual_ctc:                  (gross + empr_cont_ctc) * 12,
         total_basic_da:              _sum_basic_da(frm),
     };
 
@@ -867,23 +933,22 @@ function _do_calculate(frm, silent) {
     } else {
         frm.set_value(values);
         frm.refresh_fields(["gross_salary", "total_deductions",
-            "total_employer_contribution", "net_salary", "monthly_ctc", "annual_ctc","total_basic_da"]);
+            "total_employer_contribution", "net_salary", "monthly_ctc", "annual_ctc", "total_basic_da"]);
     }
 }
 
 function _sum_earnings(frm) {
     let t = 0;
     (frm.doc.earnings || []).forEach(r => {
-        const live = frappe.get_doc(r.doctype, r.name);
-        t += flt(live ? live.amount : r.amount);
+        t += flt(r.amount);
     });
     return t;
 }
+
 function _sum_basic_da(frm) {
     let basic = 0, da = 0;
     (frm.doc.earnings || []).forEach(r => {
-        const live = frappe.get_doc(r.doctype, r.name);
-        const amt  = flt(live ? live.amount : r.amount);
+        const amt  = flt(r.amount);
         const comp = (r.salary_component || "").toLowerCase();
         const abbr = (r.abbr || "").toLowerCase().trim();
         if (comp.includes("basic") || abbr === "basic") basic += amt;
@@ -893,12 +958,12 @@ function _sum_basic_da(frm) {
     });
     return flt(basic + da, 2);
 }
+
 function _earnings_map(frm) {
     const map = {};
     (frm.doc.earnings || []).forEach(r => {
-        const live = frappe.get_doc(r.doctype, r.name);
         const comp = (r.salary_component || "").trim();
-        if (comp) map[comp] = flt(live ? live.amount : r.amount);
+        if (comp) map[comp] = flt(r.amount);
     });
     return map;
 }

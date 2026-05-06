@@ -78,12 +78,15 @@ def get_statutory_components(company, gross_salary, from_date,
     def abbr(name):
         return frappe.db.get_value("Salary Component", name, "salary_component_abbr") or ""
 
+    # ── CHANGED: now also fetches exclude_from_ctc from Salary Component ──
     def row(name, amount, employer=0):
+        exclude = frappe.db.get_value("Salary Component", name, "exclude_from_ctc") or 0
         return {
             "salary_component":      name,
             "abbr":                  abbr(name),
             "amount":                flt(amount, 2),
             "employer_contribution": employer,
+            "exclude_from_ctc":      int(exclude),
         }
 
     if is_esic_applicable and comp_doc:
@@ -229,16 +232,8 @@ def get_srr_for_ssa(start_date, skill_type):
     return None
 
 
-# ─────────────────────────────────────────────────────────────
-#  Daily Wage Multiplier — fetched from Skill Rate Revision
-# ─────────────────────────────────────────────────────────────
-
 @frappe.whitelist()
 def get_daily_wage_multiplier(start_date, skill_type):
-    """
-    Returns the daily_wage_multiplier from the submitted Skill Rate Revision
-    that covers start_date. Falls back to 26 if no matching record found.
-    """
     MONTH_NUM = {
         "January": 1, "February": 2, "March": 3,  "April": 4,
         "May": 5,     "June": 6,     "July": 7,    "August": 8,
@@ -265,10 +260,6 @@ def get_daily_wage_multiplier(start_date, skill_type):
 
     return {"multiplier": 26}
 
-
-# ─────────────────────────────────────────────────────────────
-#  Overlap helpers
-# ─────────────────────────────────────────────────────────────
 
 @frappe.whitelist()
 def check_overlap(employee, from_date, to_date=None, employee_name=None,

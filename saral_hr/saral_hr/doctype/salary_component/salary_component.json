@@ -16,6 +16,7 @@
   "depends_on_physical_working_days",
   "daily_wage_component",
   "employer_contribution",
+  "exclude_from_ctc",
   "is_special_component",
   "section_monthly_amounts",
   "monthly_amounts"
@@ -57,17 +58,24 @@
   },
   {
    "default": "0",
-   "description": "The amount entered in Salary Structure Assignment is a monthly figure. It will be prorated as: Amount \u00f7 Working Days \u00d7 Payment Days.",
+   "description": "The amount entered in Salary Structure Assignment is a monthly figure. It will be prorated as: Amount ÷ Working Days × Payment Days.",
    "fieldname": "depends_on_payment_days",
    "fieldtype": "Check",
    "label": "Depends on Payment Days"
   },
   {
    "default": "0",
-   "description": "Calculated as: Amount \u00f7 Working Days \u00d7 (Payment Days \u2212 EL \u2212 CL). Excludes Earned Leave and Casual Leave from the paid days.",
+   "description": "Calculated as: Amount ÷ Working Days × (Payment Days − EL − CL). Excludes Earned Leave and Casual Leave from the paid days.",
    "fieldname": "depends_on_physical_working_days",
    "fieldtype": "Check",
    "label": "Depends on Physical Working Days"
+  },
+  {
+   "default": "0",
+   "description": "For employees whose components are daily wage ",
+   "fieldname": "daily_wage_component",
+   "fieldtype": "Check",
+   "label": "Daily Wage Component"
   },
   {
    "default": "0",
@@ -78,14 +86,22 @@
   },
   {
    "default": "0",
-   "description": "When enabled, this component uses a fixed monthly amount that varies by month (January \u2013 December). The amount for the relevant month is picked up automatically during payroll processing.",
+   "depends_on": "eval:doc.employer_contribution == 1",
+   "description": "If checked, this employer contribution is excluded from Monthly CTC and Annual CTC (e.g. EDLI, PF Admin Charges). It will still appear in Total Employer Contribution.",
+   "fieldname": "exclude_from_ctc",
+   "fieldtype": "Check",
+   "label": "Exclude from CTC"
+  },
+  {
+   "default": "0",
+   "description": "When enabled, this component uses a fixed monthly amount that varies by month (January – December). The amount for the relevant month is picked up automatically during payroll processing.",
    "fieldname": "is_special_component",
    "fieldtype": "Check",
    "label": "Is Special Component"
   },
   {
    "depends_on": "eval:doc.is_special_component == 1",
-   "description": "Enter the fixed amount for each calendar month. Rows are pre-populated January to December. Amounts are applied as-is during payroll \u2014 no proration.",
+   "description": "Enter the fixed amount for each calendar month. Rows are pre-populated January to December. Amounts are applied as-is during payroll — no proration.",
    "fieldname": "section_monthly_amounts",
    "fieldtype": "Section Break",
    "label": "Monthly Amounts"
@@ -96,18 +112,11 @@
    "fieldtype": "Table",
    "label": "Monthly Amounts",
    "options": "Special Salary Component"
-  },
-  {
-   "default": "0",
-   "description": "For employees whose components are daily wage ",
-   "fieldname": "daily_wage_component",
-   "fieldtype": "Check",
-   "label": "Daily Wage Component"
   }
  ],
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-05-04 17:30:59.888687",
+ "modified": "2026-05-06 00:00:00.000000",
  "modified_by": "Administrator",
  "module": "Saral Hr",
  "name": "Salary Component",
