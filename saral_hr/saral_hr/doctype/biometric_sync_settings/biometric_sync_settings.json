@@ -1,0 +1,93 @@
+{
+ "actions": [],
+ "allow_rename": 1,
+ "creation": "2026-05-08 16:09:58.536046",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "fetch_only_after_last_sync",
+  "default_fetch_days",
+  "column_break_1",
+  "auto_process_to_checkin",
+  "scheduled_sync_interval"
+ ],
+ "fields": [
+  {
+   "fieldname": "fetch_only_after_last_sync",
+   "fieldtype": "Check",
+   "label": "Fetch Only After Last Sync",
+   "default": "1",
+   "description": "If enabled, only records newer than last_sync_time are fetched per machine"
+  },
+  {
+   "fieldname": "default_fetch_days",
+   "fieldtype": "Int",
+   "label": "Default Fetch Days",
+   "default": "3",
+   "description": "Fallback: how many days back to fetch if last_sync_time is not set"
+  },
+  {
+   "fieldname": "column_break_1",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "auto_process_to_checkin",
+   "fieldtype": "Check",
+   "label": "Auto Process to Checkin",
+   "default": "0",
+   "description": "Automatically create Employee Checkin records after fetching logs"
+  },
+  {
+   "fieldname": "scheduled_sync_interval",
+   "fieldtype": "Select",
+   "label": "Scheduled Sync Interval",
+   "options": "Every 15 Minutes\nEvery 30 Minutes\nEvery 1 Hour",
+   "default": "Every 30 Minutes",
+   "description": "For reference only — actual scheduling is set in hooks.py"
+  }
+ ],
+ "index_web_pages_for_search": 1,
+ "issingle": 1,
+ "links": [],
+ "modified": "2026-05-08 16:09:58.536046",
+ "modified_by": "Administrator",
+ "module": "Saral Hr",
+ "name": "Biometric sync settings",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  },
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "Saral HR Manager",
+   "select": 1,
+   "share": 1,
+   "write": 1
+  },
+  {
+   "read": 1,
+   "role": "Saral HR User",
+   "select": 1
+  }
+ ],
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": [],
+ "track_changes": 1
+}
