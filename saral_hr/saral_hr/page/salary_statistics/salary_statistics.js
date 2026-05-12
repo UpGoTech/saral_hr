@@ -100,6 +100,33 @@ frappe.pages["salary-statistics"].on_page_load = function (wrapper) {
 		.ss-empty { text-align: center; padding: 48px 24px; color: var(--text-muted); font-size: 14px; }
 		.ss-empty-icon { font-size: 36px; margin-bottom: 10px; }
 
+		/* ── Profile link button ── */
+		.ss-profile-link-btn {
+			display: flex; align-items: center; justify-content: center; gap: 6px;
+			margin: 10px 16px 4px; padding: 7px 12px;
+			border-radius: 7px; border: 1px solid var(--border-color);
+			background: var(--subtle-fg); color: var(--text-color);
+			font-size: 12px; font-weight: 600; text-decoration: none;
+			transition: all 0.15s; cursor: pointer;
+		}
+		.ss-profile-link-btn:hover {
+			background: var(--highlight-color); border-color: var(--primary);
+			color: var(--primary); text-decoration: none;
+		}
+
+		/* ── Row profile icon link ── */
+		.ss-row-profile-link {
+			display: inline-flex; align-items: center; gap: 3px;
+			font-size: 11px; font-weight: 600; color: var(--text-muted);
+			border: 1px solid var(--border-color); border-radius: 5px;
+			padding: 2px 8px; text-decoration: none; white-space: nowrap;
+			transition: all 0.12s;
+		}
+		.ss-row-profile-link:hover {
+			color: var(--primary); border-color: var(--primary);
+			background: var(--subtle-fg); text-decoration: none;
+		}
+
 		/* ── Skeleton ── */
 		.ss-skeleton {
 			background: linear-gradient(90deg, var(--subtle-fg) 25%, var(--border-color) 50%, var(--subtle-fg) 75%);
@@ -389,6 +416,18 @@ frappe.pages["salary-statistics"].on_page_load = function (wrapper) {
 	}
 
 	// ─────────────────────────────────────────────────────────────────────────
+	// HELPER: read URL search params
+	// ─────────────────────────────────────────────────────────────────────────
+	function getUrlParam(key) {
+		try {
+			var params = new URLSearchParams(window.location.search);
+			return params.get(key) || null;
+		} catch(e) {
+			return null;
+		}
+	}
+
+	// ─────────────────────────────────────────────────────────────────────────
 	// PAGE 1 — SEARCH
 	// ─────────────────────────────────────────────────────────────────────────
 	function renderSearchPage() {
@@ -436,6 +475,53 @@ frappe.pages["salary-statistics"].on_page_load = function (wrapper) {
 		});
 
 		if (state.employees.length) renderTable($results, state.employees);
+
+		// ── Direction 1: Deep-link from Employee Profile ──────────────────────
+		// If URL has ?ep_employee=..., auto-fetch and jump directly to detail view.
+		var deepEmpId   = getUrlParam("ep_employee");
+		var deepCompany = getUrlParam("ep_company");
+		var deepName    = getUrlParam("ep_name");
+
+		if (deepEmpId && deepCompany) {
+			state.company = deepCompany;
+			// Pre-select the company dropdown once options are loaded
+			frappe.db.get_list("Company", { fields:["name"], limit:200, order_by:"name asc" }).then(() => {
+				$csel.val(deepCompany);
+			});
+
+			// Fetch the employee list, then find and open the right employee
+			frappe.call({
+				method: "saral_hr.saral_hr.page.salary_statistics.salary_statistics.get_employees_for_company",
+				args: { company: deepCompany, year: state.year, month: state.month },
+				callback(r) {
+					var employees = r.message || [];
+					state.employees = employees;
+
+					// Find the matching employee record
+					var matched = employees.find(function(e) {
+						return e.employee === deepEmpId;
+					});
+
+					if (matched) {
+						renderDetailPage(matched);
+					} else if (deepEmpId && deepName) {
+						// Construct a minimal stub so the detail view can open
+						renderDetailPage({
+							employee:      deepEmpId,
+							employee_name: deepName,
+							department:    "",
+							designation:   "",
+							image:         "",
+							ctc_net_salary: null,
+							monthly_net:    {}
+						});
+					} else {
+						// Fallback: just show the table
+						renderTable($results, employees);
+					}
+				}
+			});
+		}
 	}
 
 	function fetchEmployees($results) {
@@ -487,6 +573,7 @@ frappe.pages["salary-statistics"].on_page_load = function (wrapper) {
 				<th style="width:34%">Employee</th><th>Employee ID</th>
 				<th>Department</th><th>Date of Birth</th>
 				<th style="text-align:right;">Net Salary (SSA)</th>
+				<th style="text-align:center;">Profile</th>
 			</tr></thead><tbody></tbody></table>`).appendTo($tw);
 			const $tb = $tbl.find("tbody");
 			list.forEach(emp => {
@@ -497,6 +584,13 @@ frappe.pages["salary-statistics"].on_page_load = function (wrapper) {
 				const netHtml = emp.ctc_net_salary != null
 					? `<span style="font-weight:700;color:#16a34a;">₹${fmtNum(emp.ctc_net_salary)}</span>`
 					: `<span style="color:var(--text-muted);font-style:italic;font-size:12px;">Not assigned</span>`;
+
+				// ── Direction 3: "Profile ↗" link on each row ─────────────────────
+				const profileUrl = "/app/employee-profile/" + encodeURIComponent(emp.employee);
+				const profileLink = `<a href="${profileUrl}" target="_blank" class="ss-row-profile-link" onclick="event.stopPropagation();">
+					👤 Profile ↗
+				</a>`;
+
 				const $tr = $(`<tr>
 					<td><div class="ss-emp-name-cell">${av}<div>
 						<div class="ss-emp-name">${emp.employee_name}</div>
@@ -506,6 +600,7 @@ frappe.pages["salary-statistics"].on_page_load = function (wrapper) {
 					<td>${emp.department ? `<span class="ss-dept-badge">${emp.department}</span>` : `<span style="color:var(--text-muted);">—</span>`}</td>
 					<td style="color:var(--text-muted);font-size:12px;">${fmtDate(emp.date_of_birth)}</td>
 					<td style="text-align:right;">${netHtml}</td>
+					<td style="text-align:center;">${profileLink}</td>
 				</tr>`);
 				$tr.on("click", () => renderDetailPage(emp));
 				$tb.append($tr);
@@ -530,13 +625,30 @@ frappe.pages["salary-statistics"].on_page_load = function (wrapper) {
 		const $dp   = $(`<div class="ss-detail-page"></div>`).appendTo($wrap);
 		const $left = $(`<div class="ss-detail-left"></div>`).appendTo($dp);
 
-		// ── Nav bar (replaces breadcrumb) ─────────────────────────────────────
+		// ── Nav bar: context-aware back button ────────────────────────────────
+		// If we arrived from Employee Profile (deep-link), go back there.
+		// If we arrived from the Salary Statistics search list, go back there.
+		var deepEmpId_nav  = getUrlParam("ep_employee");
+		var fromProfile    = !!deepEmpId_nav;
+		var profileBackUrl = fromProfile ? "/app/employee-profile/" + encodeURIComponent(deepEmpId_nav) : null;
+
+		var navBackLabel = fromProfile ? "← Employee Profile" : "← Salary Statistics";
+		var navChip      = fromProfile
+			? ""  // no company chip needed — context is already clear
+			: `<span class="ss-nav-sep">/</span><span class="ss-nav-current" title="${state.company}">${state.company}</span>`;
+
 		const $nav = $(`<div class="ss-nav-bar">
-			<span class="ss-nav-back">← Salary Statistics</span>
-			<span class="ss-nav-sep">/</span>
-			<span class="ss-nav-current" title="${state.company}">${state.company}</span>
+			<span class="ss-nav-back">${navBackLabel}</span>
+			${navChip}
 		</div>`).appendTo($left);
-		$nav.find(".ss-nav-back").on("click", renderSearchPage);
+
+		$nav.find(".ss-nav-back").on("click", function() {
+			if (fromProfile && profileBackUrl) {
+				window.location.href = profileBackUrl;
+			} else {
+				renderSearchPage();
+			}
+		});
 
 		// ── Employee name heading ─────────────────────────────────────────────
 		$left.append(`<div class="ss-emp-heading" title="${emp.employee_name}">${emp.employee_name}</div>`);
@@ -549,6 +661,12 @@ frappe.pages["salary-statistics"].on_page_load = function (wrapper) {
 			${emp.department  ? `<div class="ss-profile-meta-row"><span>🏢</span><span>${emp.department}</span></div>` : ""}
 			${emp.designation ? `<div class="ss-profile-meta-row"><span>💼</span><span>${emp.designation}</span></div>` : ""}
 		</div>`);
+
+		// ── Direction 2: "View Employee Profile" button ───────────────────────
+		var profileHref = "/app/employee-profile/" + encodeURIComponent(emp.employee);
+		$left.append(`<a href="${profileHref}" target="_blank" class="ss-profile-link-btn">
+			👤 View Employee Profile
+		</a>`);
 
 		// ── Year switcher ─────────────────────────────────────────────────────
 		const $ys = $(`<div class="ss-year-switcher">
