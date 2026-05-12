@@ -37,11 +37,10 @@
  ],
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-02-21 14:51:49.356989",
+ "modified": "2026-05-12 16:28:41.615453",
  "modified_by": "Administrator",
  "module": "Saral Hr",
  "name": "Variable Pay Assignment",
- "default_print_format": "Variable Pay",
  "naming_rule": "Expression",
  "owner": "Administrator",
  "permissions": [
@@ -53,13 +52,12 @@
    "print": 1,
    "read": 1,
    "report": 1,
-   "role": "Saral HR Manager",
+   "role": "Saral HR User",
    "select": 1,
    "share": 1,
    "write": 1
   }
  ],
- "sort_field": "modified",
  "sort_order": "DESC",
  "states": []
 }

@@ -12,34 +12,19 @@ def is_hr_manager(user=None):
 
 
 def get_permitted_companies(user=None):
-    """
-    Returns list of companies the user is allowed to see.
-    HR Manager → None  (meaning: no restriction, all companies)
-    HR User    → list of companies from User Permission
-    """
     user = user or frappe.session.user
     if is_hr_manager(user):
-        return None   # no restriction
+        return None
 
     companies = frappe.get_all(
         "User Permission",
         filters={"user": user, "allow": "Company"},
         pluck="for_value",
     )
-    return companies or []   # empty list = no access
+    return companies or []
 
 
 def get_permitted_employees(user=None, company=None):
-    """
-    Returns:
-      None  → no employee-level restriction (show all employees of the company)
-      list  → only these employee IDs are visible
-
-    Logic:
-      - HR Manager            → None (no restriction)
-      - User has Employee-level User Permissions for this company → return those IDs
-      - User has no Employee-level permissions → None (all employees of company visible)
-    """
     user = user or frappe.session.user
     if is_hr_manager(user):
         return None
@@ -55,11 +40,10 @@ def get_permitted_employees(user=None, company=None):
         pluck="for_value",
     )
 
-    # If no employee-level permissions set → user sees all employees of their companies
     if not emp_perms:
         return None
 
-    return emp_perms   # specific employees only
+    return emp_perms
 
 
 # ──────────────────────────────────────────────────────────────
@@ -78,7 +62,8 @@ def execute(filters=None):
 
 
 # ──────────────────────────────────────────────────────────────
-# COLUMNS
+# COLUMNS — widths tuned to fill ~1280px table evenly
+# Company: 380  |  Employees: 200  |  Assigned: 220  |  Unassigned: 230  |  CTC: 220
 # ──────────────────────────────────────────────────────────────
 
 def get_columns():
@@ -87,19 +72,19 @@ def get_columns():
             "fieldname": "company",
             "label":     _("Company Name"),
             "fieldtype": "Data",
-            "width":     260,
+            "width":     380,
         },
         {
             "fieldname": "total_employees",
             "label":     _("Number of Employee"),
             "fieldtype": "Int",
-            "width":     180,
+            "width":     200,
         },
         {
             "fieldname": "salary_structure_assigned",
             "label":     _("Salary Structure Assigned"),
             "fieldtype": "Int",
-            "width":     210,
+            "width":     200,
         },
         {
             "fieldname": "salary_structure_unassigned",
@@ -109,7 +94,7 @@ def get_columns():
         },
         {
             "fieldname": "total_ctc",
-            "label":     _("Total CTC (₹)"),
+            "label":     _("Total CTC (\u20b9)"),
             "fieldtype": "Float",
             "precision": 2,
             "width":     200,
@@ -125,7 +110,6 @@ def get_data(filters):
     user               = frappe.session.user
     permitted_companies = get_permitted_companies(user)
 
-    # If non-manager has no company permissions → show nothing
     if permitted_companies is not None and len(permitted_companies) == 0:
         return []
 
@@ -142,20 +126,14 @@ def get_data(filters):
 
 
 def get_companies(filters, permitted_companies):
-    """
-    Returns which companies to show rows for.
-    Respects: filter selection AND user permissions.
-    """
     if filters.get("company"):
         requested = [filters["company"]]
     else:
         if permitted_companies is None:
-            # HR Manager — all companies
             requested = frappe.db.get_all("Company", pluck="name", order_by="name asc")
         else:
             requested = permitted_companies
 
-    # Intersect with permitted if not manager
     if permitted_companies is not None:
         requested = [c for c in requested if c in permitted_companies]
 
@@ -165,7 +143,6 @@ def get_companies(filters, permitted_companies):
 def get_company_row(company, category=None, filters=None, user=None):
     user = user or frappe.session.user
 
-    # Get employee-level permission for this user
     permitted_emp_ids = get_permitted_employees(user, company)
 
     active_f = {"company": company, "is_active": 1}
@@ -184,21 +161,16 @@ def get_company_row(company, category=None, filters=None, user=None):
         if eid:
             active_ids.append(eid)
 
-    # Apply employee-level permission filter
-    # permitted_emp_ids = None  → no restriction (show all)
-    # permitted_emp_ids = [...]  → only those employees
     if permitted_emp_ids is not None:
         active_ids = [e for e in active_ids if e in permitted_emp_ids]
 
     active_ids      = list(set(active_ids))
     total_employees = len(active_ids)
 
-    # Staff/Worker counts — also respect employee permissions
     if permitted_emp_ids is None:
         total_staff   = frappe.db.count("Company Link", {"company": company, "is_active": 1, "category": "Staff"})
         total_workers = frappe.db.count("Company Link", {"company": company, "is_active": 1, "category": "Worker"})
     else:
-        # Count only within permitted employees
         all_cl = frappe.db.get_all(
             "Company Link",
             filters={"company": company, "is_active": 1},
@@ -317,7 +289,6 @@ def get_employees_for_filter(doctype, txt, searchfield, start, page_len, filters
     conditions = ["cl.is_active = 1"]
     values     = {"txt": f"%{txt}%", "start": start, "page_len": page_len}
 
-    # Restrict to permitted companies
     if permitted_companies is not None:
         if not permitted_companies:
             return []
@@ -328,11 +299,9 @@ def get_employees_for_filter(doctype, txt, searchfield, start, page_len, filters
         values["company"] = company
 
     if company and permitted_companies is None:
-        # HR Manager with company filter
         conditions.append("cl.company = %(company)s")
         values["company"] = company
 
-    # Restrict to permitted employees
     if permitted_emp_ids is not None:
         if not permitted_emp_ids:
             return []
@@ -368,12 +337,10 @@ def get_employees_for_filter(doctype, txt, searchfield, start, page_len, filters
 def get_company_employees(company, category=None):
     user = frappe.session.user
 
-    # Permission check — can this user see this company at all?
     permitted_companies = get_permitted_companies(user)
     if permitted_companies is not None and company not in permitted_companies:
         frappe.throw(_("Not permitted to view this company."), frappe.PermissionError)
 
-    # Employee-level restriction
     permitted_emp_ids = get_permitted_employees(user, company)
 
     active_f = {"company": company, "is_active": 1}
@@ -393,7 +360,6 @@ def get_company_employees(company, category=None):
     for rec in cl_records:
         eid = rec.get("employee") or rec.get("name")
         if eid:
-            # Apply employee-level permission
             if permitted_emp_ids is not None and eid not in permitted_emp_ids:
                 continue
             emp_map[eid] = rec
@@ -420,8 +386,8 @@ def get_company_employees(company, category=None):
         result.append({
             "employee":         eid,
             "full_name":        rec.get("full_name") or eid,
-            "department":       rec.get("department") or "—",
-            "category":         rec.get("category") or "—",
+            "department":       rec.get("department") or "\u2014",
+            "category":         rec.get("category") or "\u2014",
             "salary_structure": s.get("salary_structure") or "Not Assigned",
             "annual_ctc":       _flt(s.get("annual_ctc")),
         })
