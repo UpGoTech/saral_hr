@@ -72,7 +72,7 @@ def get_columns():
             "fieldname": "company",
             "label":     _("Company Name"),
             "fieldtype": "Data",
-            "width":     380,
+            "width":     370,
         },
         {
             "fieldname": "total_employees",
