@@ -76,6 +76,31 @@ class EmployeeLoanAdvance(Document):
 
     def on_cancel(self):
         if self.type == "Loan" and self.schedule:
+            # Collect ALL months that have a submitted salary slip
+            blocked = []
+            for row in self.schedule:
+                if not row.month or not row.month.strip():
+                    continue
+                slip = _get_submitted_slip_for_month(self.employee, row.month)
+                if slip:
+                    blocked.append((row.month, slip))
+
+            if blocked:
+                lines = "".join(
+                    f"<li><b>{month}</b> &nbsp;→&nbsp; Salary Slip <b>{slip}</b></li>"
+                    for month, slip in blocked
+                )
+                frappe.throw(
+                    f"Cannot cancel this Loan because Salary Slips have already been "
+                    f"generated for the following months:<br><br>"
+                    f"<ul style='margin:8px 0 12px 16px;'>{lines}</ul>"
+                    f"Please <b>cancel the Salary Slips</b> listed above first, then cancel this loan.<br><br>"
+                    f"<i>Note: Without cancelling this loan, you can still edit installment "
+                    f"amounts for months where no Salary Slip has been generated yet.</i>",
+                    title="Cannot Cancel — Salary Slips Exist"
+                )
+
+            # All clear — reset flags on all rows
             for row in self.schedule:
                 frappe.db.set_value(
                     "Employee Loan Advance Schedule",
@@ -83,14 +108,35 @@ class EmployeeLoanAdvance(Document):
                     {"is_deducted": 0, "is_deferred": 0, "deferred_to": ""},
                     update_modified=False
                 )
+
         elif self.type == "Advance":
+            if self.is_deducted:
+                if self.date:
+                    from frappe.utils import getdate, get_last_day
+                    d = getdate(self.date)
+                    month_start = d.strftime("%Y-%m-01")
+                    month_end = str(get_last_day(d))
+                    slip = frappe.db.get_value(
+                        "Salary Slip",
+                        {
+                            "employee": self.employee,
+                            "docstatus": 1,
+                            "start_date": ["between", [month_start, month_end]]
+                        },
+                        "name"
+                    )
+                    if slip:
+                        frappe.throw(
+                            f"Cannot cancel this Advance — Salary Slip <b>{slip}</b> is already submitted.<br><br>"
+                            f"Please <b>cancel Salary Slip {slip}</b> first, then cancel this advance.",
+                            title="Cancel Not Allowed"
+                        )
             frappe.db.set_value(
                 "Employee Loan Advance",
                 self.name,
                 "is_deducted", 0,
                 update_modified=False
             )
-
     # ------------------------------------------------------------------ #
     #  Calculations                                                        #
     # ------------------------------------------------------------------ #

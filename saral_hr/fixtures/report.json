@@ -812,5 +812,42 @@
    }
   ],
   "timeout": 0
+ },
+ {
+  "add_total_row": 0,
+  "columns": [],
+  "disabled": 0,
+  "docstatus": 0,
+  "doctype": "Report",
+  "filters": [],
+  "is_standard": "Yes",
+  "javascript": null,
+  "json": null,
+  "letter_head": null,
+  "modified": "2026-05-12 12:29:01.486406",
+  "module": "Saral Hr",
+  "name": "Company Enrollment Summary",
+  "prepared_report": 0,
+  "query": null,
+  "ref_doctype": "Salary Structure Assignment",
+  "reference_report": "Company Enrollment Summary",
+  "report_name": "Company Enrollment Summary",
+  "report_script": null,
+  "report_type": "Script Report",
+  "roles": [
+   {
+    "parent": "Company Enrollment Summary",
+    "parentfield": "roles",
+    "parenttype": "Report",
+    "role": "Saral HR Manager"
+   },
+   {
+    "parent": "Company Enrollment Summary",
+    "parentfield": "roles",
+    "parenttype": "Report",
+    "role": "Saral HR User"
+   }
+  ],
+  "timeout": 0
  }
 ]

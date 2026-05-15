@@ -5,7 +5,7 @@
 let _reverting_deferred   = false;
 let _salary_slip_msg_lock = false;
 let _manual_changes_made  = false;
-let _reverting_amount     = false;  // ✅ Blocks handler re-entry during field revert
+let _reverting_amount     = false;
 
 const _auto_adjusted_rows = new Set();
 
@@ -59,11 +59,11 @@ frappe.ui.form.on('Employee Loan Advance', {
     start_month:     frm => trigger_generate(frm),
     start_year:      frm => trigger_generate(frm),
     installment_gap(frm) {
-    if (frm.doc.type !== 'Loan') return;
-    frm.clear_table('schedule');
-    frm.refresh_field('schedule');
-    trigger_generate(frm);
-},
+        if (frm.doc.type !== 'Loan') return;
+        frm.clear_table('schedule');
+        frm.refresh_field('schedule');
+        trigger_generate(frm);
+    },
 
     type(frm) {
         if (frm.doc.type === 'Loan') {
@@ -78,19 +78,19 @@ frappe.ui.form.on('Employee Loan Advance', {
 });
 
 // ================================================================== //
-//  Message Helper                                                     //
-//  Uses frappe.ui.Dialog (NOT frappe.msgprint).                       //
-//  msgprint shares a global dialog — any Frappe-internal set_value   //
-//  call can close/replace it instantly. A new Dialog instance is     //
-//  fully isolated and stays open until the user clicks OK.           //
+//  Message Helpers                                                    //
+//                                                                     //
+//  Two separate dialogs — one for EDIT blocked, one for DEFER blocked //
+//  Both use frappe.ui.Dialog (NOT frappe.msgprint) so they stay open  //
+//  until user clicks OK and cannot be replaced by Frappe internals.   //
 // ================================================================== //
 
-function show_salary_slip_message(title, month) {
-    if (_salary_slip_msg_lock) return;   // already showing one — do nothing
+function show_edit_blocked_message(month) {
+    if (_salary_slip_msg_lock) return;
     _salary_slip_msg_lock = true;
 
     const dlg = new frappe.ui.Dialog({
-        title: title,
+        title: 'Edit Not Allowed',
         fields: [{
             fieldtype: 'HTML',
             fieldname: 'body',
@@ -111,8 +111,38 @@ function show_salary_slip_message(title, month) {
     });
 
     dlg.show();
+    dlg.onhide = () => { _salary_slip_msg_lock = false; };
+}
 
-    // Reset lock only when user explicitly closes the dialog
+function show_defer_blocked_message(slip_name, month) {
+    if (_salary_slip_msg_lock) return;
+    _salary_slip_msg_lock = true;
+
+    const dlg = new frappe.ui.Dialog({
+        title: 'Deferral Not Allowed',
+        fields: [{
+            fieldtype: 'HTML',
+            fieldname: 'body',
+            options: `
+                <div style="padding:8px 2px 10px; font-size:14px; line-height:1.75;">
+                    <p style="margin:0;">
+                        Salary Slip <b>${slip_name}</b> for <b>${month}</b>
+                        is already submitted.
+                    </p>
+                    <p style="margin:12px 0 0;">
+                        You cannot defer this installment.
+                    </p>
+                    <p style="margin:12px 0 0;">
+                        Please <b>cancel Salary Slip ${slip_name}</b> first,
+                        then try again.
+                    </p>
+                </div>`
+        }],
+        primary_action_label: 'OK',
+        primary_action() { dlg.hide(); }
+    });
+
+    dlg.show();
     dlg.onhide = () => { _salary_slip_msg_lock = false; };
 }
 
@@ -123,10 +153,7 @@ function show_salary_slip_message(title, month) {
 frappe.ui.form.on('Employee Loan Advance Schedule', {
 
     deduction_amount(frm, cdt, cdn) {
-
-        // ✅ KEY FIX: If WE are currently reverting this field, exit immediately.
-        // Without this, set_value() fires this handler again → opens a second
-        // dialog that closes the first one, making the message flash and disappear.
+        // If WE are currently reverting this field, exit immediately.
         if (_reverting_amount) return;
 
         const row = locals[cdt][cdn];
@@ -144,23 +171,24 @@ frappe.ui.form.on('Employee Loan Advance Schedule', {
             ? frm.doc.__saved_schedule_amounts[cdn]
             : null;
 
+        // Case 1 — row already marked deducted in DB → block immediately, no API call needed
         if (row.is_deducted) {
-            // Set flag ON → revert → set flag OFF
-            // Any re-trigger of this handler during set_value() exits at the top guard
             _reverting_amount = true;
             if (original_amt !== null) {
                 frappe.model.set_value(cdt, cdn, 'deduction_amount', original_amt);
             }
             _reverting_amount = false;
-
-            // Now safe to show message — no more re-triggers possible
-            show_salary_slip_message('Edit Not Allowed', row.month);
+            show_edit_blocked_message(row.month);
             return;
         }
 
-        if (original_amt !== null) {
-            frm.doc.__saved_schedule_amounts[cdn] = row.deduction_amount;
-        }
+        // Case 2 — row not yet marked deducted but salary slip may exist → check via API
+        check_salary_slip_for_month(frm, row, 'edit', cdt, cdn, row.deduction_amount, () => {
+            // Slip not found — allow the edit, update saved amount
+            if (original_amt !== null) {
+                frm.doc.__saved_schedule_amounts[cdn] = row.deduction_amount;
+            }
+        }, original_amt);
     },
 
     is_deferred(frm, cdt, cdn) {
@@ -168,14 +196,24 @@ frappe.ui.form.on('Employee Loan Advance Schedule', {
 
         const row = locals[cdt][cdn];
 
+        // Case 1 — row already marked deducted in DB → fetch slip name and block
         if (row.is_deducted) {
             _reverting_deferred = true;
             frappe.model.set_value(cdt, cdn, 'is_deferred', 0);
             _reverting_deferred = false;
-            show_salary_slip_message('Deferral Not Allowed', row.month);
+
+            frappe.call({
+                method: 'saral_hr.saral_hr.doctype.employee_loan_advance.employee_loan_advance.get_submitted_slip_for_month',
+                args: { employee: frm.doc.employee, month_name: row.month },
+                callback(r) {
+                    const slip_name = (r && r.message) ? r.message : 'Salary Slip';
+                    show_defer_blocked_message(slip_name, row.month);
+                }
+            });
             return;
         }
 
+        // Case 2 — not yet deducted → check via API then defer or undo
         if (row.is_deferred) {
             check_salary_slip_for_month(frm, row, 'defer', cdt, cdn, row.deduction_amount);
         } else {
@@ -191,12 +229,12 @@ $(document).on('keydown', function(e) {
 });
 
 // ================================================================== //
-//  Salary Slip Check — used for deferral                             //
+//  Salary Slip Check                                                  //
 // ================================================================== //
 
 let _checking_salary_slip = false;
 
-function check_salary_slip_for_month(frm, row, action, cdt, cdn, emi, on_success) {
+function check_salary_slip_for_month(frm, row, action, cdt, cdn, emi, on_success, original_amt) {
     if (_checking_salary_slip) return;
     _checking_salary_slip = true;
 
@@ -210,20 +248,26 @@ function check_salary_slip_for_month(frm, row, action, cdt, cdn, emi, on_success
             const slip_name = r && r.message;
 
             if (slip_name) {
-                frappe.msgprint({
-                    title: 'Action Not Allowed',
-                    indicator: 'red',
-                    message: `Salary Slip <b>${slip_name}</b> for <b>${row.month}</b> is already submitted.`
-                           + `<br><br>You cannot defer this installment.`
-                           + `<br><br>Please <b>cancel Salary Slip ${slip_name}</b> first, then try again.`
-                });
-
+                // Slip found — block the action with the correct dialog
                 if (action === 'defer') {
                     _reverting_deferred = true;
                     frappe.model.set_value(cdt, cdn, 'is_deferred', 0);
                     _reverting_deferred = false;
+                    show_defer_blocked_message(slip_name, row.month);
                 }
+
+                if (action === 'edit') {
+                    // Revert the amount back to original before showing message
+                    _reverting_amount = true;
+                    if (original_amt !== null && original_amt !== undefined) {
+                        frappe.model.set_value(cdt, cdn, 'deduction_amount', original_amt);
+                    }
+                    _reverting_amount = false;
+                    show_edit_blocked_message(row.month);
+                }
+
             } else {
+                // No slip — allow the action
                 if (action === 'defer') apply_deferral(frm, cdt, cdn, emi);
                 if (action === 'edit' && on_success) on_success();
             }
@@ -248,7 +292,7 @@ function undo_deferral(frm, cdt, cdn, emi) {
             : emi;
 
         if (target_row) {
-            const live_target        = locals['Employee Loan Advance Schedule'][target_row.name];
+            const live_target         = locals['Employee Loan Advance Schedule'][target_row.name];
             const current_target_amt  = live_target ? live_target.deduction_amount : target_row.deduction_amount;
             const restored_target_amt = Math.round((current_target_amt - deferred_amt) * 100) / 100;
 
@@ -412,9 +456,19 @@ function trigger_generate(frm) {
     if (!frm.doc.amount || !frm.doc.tenure_months || !frm.doc.start_month || !frm.doc.start_year || !frm.doc.installment_gap) return;
     if (_manual_changes_made) return;
 
-    const has_rows = frm.doc.schedule && frm.doc.schedule.length > 0;
-    if (has_rows) return;
+    // Block regeneration if any row is already deducted
+    const has_deducted = (frm.doc.schedule || []).some(r => r.is_deducted);
+    if (has_deducted) {
+        frappe.show_alert({
+            message: __('Cannot regenerate schedule — some months are already deducted.'),
+            indicator: 'red'
+        }, 5);
+        return;
+    }
 
+    // Always clear and regenerate on field change
+    frm.clear_table('schedule');
+    frm.refresh_field('schedule');
     generate_schedule(frm);
 }
 
@@ -451,7 +505,7 @@ function generate_schedule(frm) {
 }
 
 // ================================================================== //
-//  Add Next Month                                                    //
+//  Add Next Month                                                     //
 // ================================================================== //
 
 function add_extra_month(frm) {
