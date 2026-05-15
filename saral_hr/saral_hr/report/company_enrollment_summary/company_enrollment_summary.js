@@ -26,299 +26,293 @@ frappe.query_reports["Company Enrollment Summary"] = {
             const s = document.createElement("style");
             s.id = "ces-global-style";
             s.textContent = `
-                .dt-cell--col-0,
-                .dt-cell--col-0 .dt-cell__content,
-                .dt-header--col-0,
-                .dt-header--col-0 .dt-cell__content {
-                    width: 52px !important;
-                    min-width: 52px !important;
-                    max-width: 52px !important;
-                }
-                .dt-cell--col-0 .dt-cell__content {
-                    overflow: visible !important;
-                    text-overflow: unset !important;
-                    white-space: normal !important;
-                }
-                .page-form.flex { display: none !important; }
-                .dt-scrollable {
-                    padding-bottom: 8px !important;
-                    box-sizing: border-box !important;
-                }
-                .dt-scrollable .dt-row:last-child .dt-cell__content,
-                .dt-body .dt-row:last-child { margin-bottom: 8px !important; }
-                .report-summary { display: none !important; }
+    .dt-cell--col-0,
+    .dt-cell--col-0 .dt-cell__content,
+    .dt-header--col-0,
+    .dt-header--col-0 .dt-cell__content {
+        width: 52px !important;
+        min-width: 52px !important;
+        max-width: 52px !important;
+    }
+    .dt-cell--col-0 .dt-cell__content {
+        overflow: visible !important;
+        text-overflow: unset !important;
+        white-space: normal !important;
+    }
+    .page-form.flex { display: none !important; }
+    .dt-scrollable {
+        padding-bottom: 8px !important;
+        box-sizing: border-box !important;
+    }
+    .dt-scrollable .dt-row:last-child .dt-cell__content,
+    .dt-body .dt-row:last-child { margin-bottom: 8px !important; }
+    .report-summary { display: none !important; }
 
-                /* ── KPI bar ──────────────────────────────────────── */
-                #ces-kpi-bar {
-                    display: flex;
-                    gap: 12px;
-                    padding: 14px 16px;
-                    flex-wrap: wrap;
-                    background: transparent;
-                    margin: 0;
-                }
-                .ces-sc-card {
-                    flex: 1;
-                    min-width: 140px;
-                    background: var(--card-bg, #ffffff);
-                    border-radius: 8px;
-                    padding: 18px 20px 16px;
-                    text-align: center;
-                    display: flex;
-                    flex-direction: column;
-                    align-items: center;
-                    justify-content: center;
-                    border: 1px solid var(--border-color, #d1d8dd);
-                    box-shadow: 0 1px 4px rgba(0,0,0,0.06);
-                    transition: box-shadow 0.2s ease, transform 0.2s ease, border-color 0.2s ease;
-                    cursor: default;
-                    box-sizing: border-box;
-                }
-                .ces-sc-card.ces-sc-clickable { cursor: pointer; }
-                .ces-sc-card.ces-sc-clickable:hover {
-                    box-shadow: 0 6px 20px rgba(0,0,0,0.12);
-                    transform: translateY(-2px);
-                    border-color: var(--primary, #4361ee);
-                }
-                .ces-sc-lbl {
-                    display: block;
-                    font-size: 10px;
-                    font-weight: 700;
-                    color: var(--text-muted, #8d99a6);
-                    text-transform: uppercase;
-                    letter-spacing: 0.9px;
-                    margin-bottom: 8px;
-                    white-space: nowrap;
-                }
-                .ces-sc-val {
-                    display: block;
-                    font-size: 32px;
-                    font-weight: 800;
-                    line-height: 1.1;
-                }
+    /* ── KPI bar ──────────────────────────────────────── */
+    #ces-kpi-bar {
+        display: flex;
+        gap: 8px;
+        padding: 10px 12px;
+        flex-wrap: wrap;
+        background: transparent;
+        margin: 0;
+    }
 
-                /* ── Popup KPI cards ──────────────────────────────── */
-                .ces-kpi-card {
-                    flex: 1;
-                    min-width: 100px;
-                    background: var(--card-bg, #ffffff);
-                    border: 1px solid var(--border-color, #d1d8dd);
-                    border-radius: 6px;
-                    padding: 12px 16px;
-                    text-align: center;
-                    transition: box-shadow 0.18s ease, border-color 0.18s ease;
-                    box-sizing: border-box;
-                }
-                .ces-kpi-card.clickable { cursor: pointer; }
-                .ces-kpi-card.clickable:hover {
-                    box-shadow: 0 3px 10px rgba(0,0,0,0.10);
-                    border-color: var(--primary, #4361ee);
-                }
-                .ces-kpi-card.active-filter {
-                    border-color: var(--primary, #4361ee);
-                    box-shadow: 0 0 0 2px rgba(67,97,238,0.14);
-                    background: var(--bg-blue, #f0f4ff);
-                }
-                .ces-kpi-card.ces-ctc-card {
-                    flex: 2;
-                    min-width: 170px;
-                }
-                .ces-kpi-lbl {
-                    display: block;
-                    font-size: 11px;
-                    font-weight: 600;
-                    color: var(--text-muted, #8d99a6);
-                    text-transform: uppercase;
-                    letter-spacing: .7px;
-                    margin-bottom: 5px;
-                    white-space: nowrap;
-                }
-                .ces-kpi-val {
-                    display: block;
-                    font-size: 26px;
-                    font-weight: 800;
-                    line-height: 1.2;
-                }
-                .ces-kpi-val.ces-ctc-val {
-                    font-size: 18px;
-                    font-weight: 700;
-                }
+    /* ── Main report KPI cards ─── */
+    .ces-sc-card {
+        flex: 1;
+        min-width: 120px;
+        background: var(--card-bg);
+        border-radius: var(--border-radius-md, 6px);
+        padding: 10px 14px;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        border: 1px solid var(--border-color);
+        transition: box-shadow 0.15s ease, border-color 0.15s ease;
+        cursor: default;
+        box-sizing: border-box;
+        gap: 4px;
+        text-align: center;
+    }
+    .ces-sc-card.ces-sc-clickable { cursor: pointer; }
+    .ces-sc-card.ces-sc-clickable:hover {
+        box-shadow: var(--shadow-sm);
+        border-color: var(--primary);
+    }
+    .ces-sc-lbl {
+        display: block;
+        font-size: 10px;
+        font-weight: 600;
+        color: var(--text-muted);
+        text-transform: uppercase;
+        letter-spacing: 0.6px;
+        line-height: 1.3;
+        text-align: center;
+    }
+    .ces-sc-val {
+        display: block;
+        font-size: 20px;
+        font-weight: 700;
+        line-height: 1.2;
+        white-space: nowrap;
+        margin-top: 2px;
+        text-align: center;
+        color: var(--text-color);
+    }
 
-                /* ── Tables ─────────────────────────────────────────── */
-                .ces-tbl, .ces-all-tbl {
-                    width: 100%;
-                    border-collapse: collapse;
-                    table-layout: fixed;
-                    font-size: 13px;
-                }
-                .ces-tbl thead tr,
-                .ces-all-tbl thead tr {
-                    background: var(--control-bg, #f0f2f5);
-                    border-bottom: 2px solid var(--border-color, #d1d8dd);
-                    position: sticky;
-                    top: 0;
-                    z-index: 1;
-                }
-                .ces-tbl thead th,
-                .ces-all-tbl thead th {
-                    padding: 11px 14px;
-                    color: var(--text-muted, #8d99a6);
-                    font-size: 11px;
-                    font-weight: 600;
-                    text-align: left;
-                    letter-spacing: .5px;
-                    text-transform: uppercase;
-                    white-space: nowrap;
-                    user-select: none;
-                }
-                .ces-tbl thead th.th-sr,
-                .ces-all-tbl thead th.th-sr { text-align: center; padding: 11px 0; }
-                .ces-tbl thead th.th-ctc,
-                .ces-all-tbl thead th.th-ctc { text-align: right; }
-                .ces-tbl tbody tr,
-                .ces-all-tbl tbody tr {
-                    transition: background 0.12s ease;
-                }
-                .ces-tbl tbody tr:hover,
-                .ces-all-tbl tbody tr:hover { background: var(--bg-blue, #eef2ff) !important; }
+    /* ── Popup KPI cards ── */
+    .ces-kpi-card {
+        flex: 0 0 auto;
+        min-width: 90px;
+        background: var(--card-bg);
+        border: 1px solid var(--border-color);
+        border-radius: var(--border-radius-md, 6px);
+        padding: 8px 16px;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 3px;
+        transition: box-shadow 0.15s ease, border-color 0.15s ease;
+        box-sizing: border-box;
+        text-align: center;
+    }
+    .ces-kpi-card.clickable { cursor: pointer; }
+    .ces-kpi-card.clickable:hover {
+        box-shadow: var(--shadow-sm);
+        border-color: var(--primary);
+    }
+    .ces-kpi-card.active-filter {
+        border-color: var(--primary);
+        box-shadow: 0 0 0 2px var(--primary-light, rgba(67,97,238,0.10));
+        background: var(--bg-blue, #f0f3ff);
+    }
+    .ces-kpi-card.ces-ctc-card {
+        min-width: 130px;
+    }
+    .ces-kpi-lbl {
+        display: block;
+        font-size: 10px;
+        font-weight: 600;
+        color: var(--text-muted);
+        text-transform: uppercase;
+        letter-spacing: .6px;
+        white-space: nowrap;
+        line-height: 1.2;
+        text-align: center;
+    }
+    .ces-kpi-val {
+        display: block;
+        font-size: 17px;
+        font-weight: 700;
+        line-height: 1.2;
+        white-space: nowrap;
+        margin-top: 2px;
+        text-align: center;
+        color: var(--text-color);
+    }
+    .ces-kpi-val.ces-ctc-val {
+        font-size: 13px;
+        font-weight: 600;
+        color: var(--text-color);
+    }
 
-                /* ── Fade-in animation ──────────────────────────────── */
-                @keyframes ces-fade-in {
-                    from { opacity: 0; transform: translateY(6px); }
-                    to   { opacity: 1; transform: translateY(0); }
-                }
-                .ces-popup-body {
-                    animation: ces-fade-in 0.22s ease forwards;
-                }
+    /* ── Tables ─────────────────────────────────────────── */
+    .ces-tbl, .ces-all-tbl {
+        width: 100%;
+        border-collapse: collapse;
+        table-layout: fixed;
+        font-size: 13px;
+    }
+    .ces-tbl thead tr,
+    .ces-all-tbl thead tr {
+        background: var(--control-bg);
+        border-bottom: 2px solid var(--border-color);
+        position: sticky;
+        top: 0;
+        z-index: 1;
+    }
+    .ces-tbl thead th,
+    .ces-all-tbl thead th {
+        padding: 9px 12px;
+        color: var(--text-muted);
+        font-size: 11px;
+        font-weight: 600;
+        text-align: left;
+        letter-spacing: .5px;
+        text-transform: uppercase;
+        white-space: nowrap;
+        user-select: none;
+    }
+    .ces-tbl thead th.th-sr,
+    .ces-all-tbl thead th.th-sr { text-align: center; padding: 9px 0; }
+    .ces-tbl thead th.th-ctc,
+    .ces-all-tbl thead th.th-ctc { text-align: right; }
+    .ces-tbl tbody tr,
+    .ces-all-tbl tbody tr {
+        transition: background 0.1s ease;
+    }
+    .ces-tbl tbody tr:hover,
+    .ces-all-tbl tbody tr:hover { background: var(--fg-color) !important; }
 
-                /* ── Top toolbar: search + actions row ─────────────── */
-                .ces-toolbar {
-                    display: flex;
-                    align-items: center;
-                    justify-content: space-between;
-                    gap: 10px;
-                    margin-bottom: 14px;
-                    flex-wrap: wrap;
-                }
-                .ces-toolbar-left {
-                    font-size: 12px;
-                    color: var(--text-muted, #8d99a6);
-                    font-weight: 500;
-                }
-                .ces-toolbar-left strong {
-                    color: var(--text-color, #333843);
-                    font-weight: 700;
-                }
+    /* ── Fade-in animation ──────────────────────────────── */
+    @keyframes ces-fade-in {
+        from { opacity: 0; transform: translateY(4px); }
+        to   { opacity: 1; transform: translateY(0); }
+    }
+    .ces-popup-body {
+        animation: ces-fade-in 0.18s ease forwards;
+    }
 
-                /* ── Frappe-style search box ─────────────────────────── */
-                .ces-search-wrap {
-                    position: relative;
-                    width: 320px;
-                    flex-shrink: 0;
-                }
-                .ces-search-wrap .ces-search-icon {
-                    position: absolute;
-                    left: 10px;
-                    top: 50%;
-                    transform: translateY(-50%);
-                    color: var(--text-muted, #8d99a6);
-                    pointer-events: none;
-                    display: flex;
-                    align-items: center;
-                }
-                .ces-search-box {
-                    width: 100%;
-                    padding: 7px 12px 7px 34px;
-                    border: 1px solid var(--border-color, #d1d8dd);
-                    border-radius: 6px;
-                    font-size: 13px;
-                    background: var(--card-bg, #fff);
-                    color: var(--text-color, #333843);
-                    box-sizing: border-box;
-                    outline: none;
-                    transition: border-color 0.18s, box-shadow 0.18s;
-                    height: 34px;
-                    font-family: inherit;
-                }
-                .ces-search-box:focus {
-                    border-color: var(--primary, #4361ee);
-                    box-shadow: 0 0 0 2px rgba(67,97,238,0.12);
-                }
-                .ces-search-box::placeholder {
-                    color: var(--text-muted, #9ca3af);
-                    font-size: 13px;
-                }
+    /* ── Toolbar ─────────────────────────────────────────── */
+    .ces-toolbar {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 10px;
+        margin-bottom: 10px;
+        flex-wrap: wrap;
+    }
+    .ces-toolbar-left {
+        font-size: 12px;
+        color: var(--text-muted);
+        font-weight: 500;
+    }
+    .ces-toolbar-left strong {
+        color: var(--text-color);
+        font-weight: 600;
+    }
 
-                /* ── Summary header bar ─────────────────────────────── */
-                .ces-summary-bar {
-                    display: flex;
-                    align-items: center;
-                    gap: 8px;
-                    flex-wrap: wrap;
-                    margin-bottom: 14px;
-                    padding: 10px 14px;
-                    background: var(--control-bg, #f0f2f5);
-                    border-radius: 6px;
-                    border: 1px solid var(--border-color, #d1d8dd);
-                }
-                .ces-summary-bar .ces-summary-title {
-                    font-size: 12px;
-                    font-weight: 700;
-                    color: var(--text-color, #333843);
-                    text-transform: uppercase;
-                    letter-spacing: .5px;
-                }
-                .ces-summary-bar .ces-summary-sep {
-                    color: var(--border-color, #d1d8dd);
-                    font-weight: 300;
-                }
-                .ces-summary-bar .ces-summary-meta {
-                    font-size: 12px;
-                    color: var(--text-color, #333843);
-                }
-                .ces-summary-bar .ces-summary-meta strong {
-                    color: var(--text-color, #333843);
-                    font-weight: 600;
-                }
+    /* ── Search box ──────────────────────────────────────── */
+    .ces-search-wrap {
+        position: relative;
+        width: 360px;
+        flex-shrink: 0;
+    }
+    .ces-search-wrap .ces-search-icon {
+        position: absolute;
+        left: 9px;
+        top: 50%;
+        transform: translateY(-50%);
+        color: var(--text-muted);
+        pointer-events: none;
+        display: flex;
+        align-items: center;
+    }
+    .ces-search-box {
+        width: 100%;
+        padding: 6px 10px 6px 30px;
+        border: 1px solid var(--border-color);
+        border-radius: var(--border-radius, 5px);
+        font-size: 12px;
+        background: var(--card-bg);
+        color: var(--text-color);
+        box-sizing: border-box;
+        outline: none;
+        transition: border-color 0.15s, box-shadow 0.15s;
+        height: 30px;
+        font-family: inherit;
+    }
+    .ces-search-box:focus {
+        border-color: var(--primary);
+        box-shadow: 0 0 0 2px var(--primary-light, rgba(67,97,238,0.08));
+    }
+    .ces-search-box::placeholder {
+        color: var(--text-muted);
+        font-size: 12px;
+    }
 
-                /* ── Table scroll container ──────────────────────────── */
-                .ces-table-scroll {
-                    max-height: 420px;
-                    overflow-y: auto;
-                    border: 1px solid var(--border-color, #d1d8dd);
-                    border-radius: 8px;
-                    background: var(--card-bg, #fff);
-                    scrollbar-width: thin;
-                    scrollbar-color: var(--border-color, #d1d8dd) transparent;
-                }
-                .ces-table-scroll::-webkit-scrollbar { width: 5px; }
-                .ces-table-scroll::-webkit-scrollbar-thumb {
-                    background: var(--border-color, #d1d8dd);
-                    border-radius: 4px;
-                }
+    /* ── Table scroll container ──────────────────────────── */
+    .ces-table-scroll {
+        max-height: 400px;
+        overflow-y: auto;
+        border: 1px solid var(--border-color);
+        border-radius: var(--border-radius-md, 6px);
+        background: var(--card-bg);
+        scrollbar-width: thin;
+        scrollbar-color: var(--border-color) transparent;
+    }
+    .ces-table-scroll::-webkit-scrollbar { width: 4px; }
+    .ces-table-scroll::-webkit-scrollbar-thumb {
+        background: var(--border-color);
+        border-radius: 3px;
+    }
 
-                /* ── Footer ─────────────────────────────────────────── */
-                .ces-popup-footer {
-                    margin-top: 10px;
-                    font-size: 11px;
-                    color: var(--text-color, #333843);
-                    padding: 2px 0;
-                }
-                .ces-popup-footer strong {
-                    color: var(--text-color, #333843);
-                }
+    /* ── Footer ─────────────────────────────────────────── */
+    .ces-popup-footer {
+        margin-top: 8px;
+        font-size: 11px;
+        color: var(--text-color);
+        padding: 2px 0;
+    }
 
-                /* ── KPI row section label ───────────────────────────── */
-                .ces-section-label {
-                    font-size: 10px;
-                    font-weight: 700;
-                    color: var(--text-color, #333843);
-                    text-transform: uppercase;
-                    letter-spacing: .8px;
-                    margin-bottom: 6px;
-                    padding-left: 2px;
-                }
-            `;
+    /* ── Card group container ────────────────────────────── */
+    .ces-card-group {
+        border: 1px solid var(--border-color);
+        border-radius: var(--border-radius-md, 7px);
+        background: var(--card-bg);
+        padding: 10px 12px 12px 12px;
+        margin-bottom: 12px;
+        box-sizing: border-box;
+    }
+    .ces-card-group-label {
+        font-size: 12px;
+        font-weight: 700;
+        color: var(--text-muted);
+        text-transform: uppercase;
+        letter-spacing: .8px;
+        margin-bottom: 8px;
+        padding-left: 1px;
+        display: block;
+    }
+    .ces-card-group-row {
+        display: flex;
+        gap: 8px;
+        flex-wrap: wrap;
+    }
+`;
             document.head.appendChild(s);
         }
 
@@ -337,36 +331,35 @@ frappe.query_reports["Company Enrollment Summary"] = {
         value = default_formatter(value, row, column, data);
         if (!data) return value;
 
+        // All columns use Frappe default text-color; only "problem" values get accent colors
         if (column.fieldname === "company") {
             return `<span class="ces-company-link"
                          data-company="${frappe.utils.escape_html(data.company)}"
-                         style="font-weight:600;color:var(--text-color,#333843);font-size:13px;cursor:pointer;">
+                         style="font-weight:600;color:var(--text-color);font-size:13px;cursor:pointer;">
                          ${data.company}
                     </span>`;
         }
         if (column.fieldname === "total_employees") {
-            return `<span style="font-weight:600;color:var(--text-color,#333843);font-size:13px;">${data.total_employees || 0}</span>`;
+            return `<span style="font-weight:600;color:var(--text-color);font-size:13px;">${data.total_employees || 0}</span>`;
         }
         if (column.fieldname === "total_staff") {
-            const v = data.total_staff || 0;
-            return `<span style="color:var(--purple,#7b2d8b);font-weight:600;font-size:13px;">${v}</span>`;
+            return `<span style="font-weight:600;color:var(--text-color);font-size:13px;">${data.total_staff || 0}</span>`;
         }
         if (column.fieldname === "total_workers") {
-            const v = data.total_workers || 0;
-            return `<span style="color:var(--orange,#f4a261);font-weight:600;font-size:13px;">${v}</span>`;
+            return `<span style="font-weight:600;color:var(--text-color);font-size:13px;">${data.total_workers || 0}</span>`;
         }
         if (column.fieldname === "salary_structure_assigned") {
-            const v = data.salary_structure_assigned || 0;
-            return `<span style="color:var(--green,#28a745);font-weight:600;font-size:13px;">${v}</span>`;
+            return `<span style="font-weight:600;color:var(--text-color);font-size:13px;">${data.salary_structure_assigned || 0}</span>`;
         }
         if (column.fieldname === "salary_structure_unassigned") {
             const v = data.salary_structure_unassigned || 0;
-            const color = v > 0 ? "var(--red,#e03e3e)" : "var(--green,#28a745)";
+            // Only unassigned > 0 gets a warning color — everything else is default
+            const color = v > 0 ? "var(--red-500, #e74c3c)" : "var(--text-color)";
             return `<span style="color:${color};font-weight:600;font-size:13px;">${v}</span>`;
         }
         if (column.fieldname === "total_ctc") {
             const v = parseFloat(data.total_ctc || 0);
-            return `<span style="font-weight:600;color:var(--text-color,#333843);font-size:13px;">&#8377; ${ces_fmt(v)}</span>`;
+            return `<span style="font-weight:600;color:var(--text-color);font-size:13px;">&#8377; ${ces_fmt(v)}</span>`;
         }
         return value;
     },
@@ -389,7 +382,7 @@ function _ces_freeze(msg) {
             if (!document.getElementById("ces-freeze-overlay")) {
                 const el = document.createElement("div");
                 el.id = "ces-freeze-overlay";
-                el.style.cssText = "position:fixed;inset:0;z-index:9999;background:rgba(255,255,255,0.55);display:flex;align-items:center;justify-content:center;font-size:15px;font-weight:600;color:var(--primary,#4361ee);";
+                el.style.cssText = "position:fixed;inset:0;z-index:9999;background:rgba(255,255,255,0.55);display:flex;align-items:center;justify-content:center;font-size:15px;font-weight:600;color:var(--primary);";
                 el.textContent = msg || __("Loading…");
                 document.body.appendChild(el);
             }
@@ -446,20 +439,22 @@ function _ces_update_kpi_card(label_substring, value) {
 }
 
 function _ces_render_kpi_bar({ companies, employees, staff, workers, salary_unassigned, company_unassigned }) {
+    // No hardcoded colors — all values use Frappe default text-color via CSS class
+    // Only "problem" cards (unassigned) get a red accent via inline style
     const cards = [
-        { label: "Number of Companies",        value: companies,          color: "var(--primary,#4361ee)",    action: null                },
-        { label: "Number of Employees",         value: employees,          color: "var(--teal,#2ec4b6)",        action: "all"               },
-        { label: "Number of Staff",             value: staff,              color: "var(--purple,#7b2d8b)",      action: "staff"             },
-        { label: "Number of Workers",           value: workers,            color: "var(--orange,#f4a261)",      action: "worker"            },
-        { label: "Unassigned Salary Structure", value: salary_unassigned,  color: "var(--red-avatar,#e63946)",  action: "salary_unassigned" },
-        { label: "Company Unassigned",          value: company_unassigned, color: "var(--red-avatar,#e63946)",  action: "company_unassigned"},
+        { label: "Number of Companies",        value: companies,          warn: false, action: null                },
+        { label: "Number of Employees",         value: employees,          warn: false, action: "all"               },
+        { label: "Number of Staff",             value: staff,              warn: false, action: "staff"             },
+        { label: "Number of Workers",           value: workers,            warn: false, action: "worker"            },
+        { label: "Unassigned Salary Structure", value: salary_unassigned,  warn: true,  action: "salary_unassigned" },
+        { label: "Company Unassigned",          value: company_unassigned, warn: true,  action: "company_unassigned"},
     ];
 
     const cards_html = cards.map(c => `
         <div class="ces-sc-card${c.action ? " ces-sc-clickable" : ""}"
              ${c.action ? `data-ces-action="${c.action}"` : ""}>
             <span class="ces-sc-lbl">${c.label}</span>
-            <span class="ces-sc-val" style="color:${c.color};">${c.value}</span>
+            <span class="ces-sc-val"${c.warn ? ' style="color:var(--red-500,#e74c3c);"' : ""}>${c.value}</span>
         </div>
     `).join("");
 
@@ -567,86 +562,97 @@ function _build_company_popup_body(
         ? employees.map((emp, i) => {
             const annual_str = emp.annual_ctc
                 ? `&#8377; ${ces_fmt(emp.annual_ctc)}`
-                : `<span style="color:var(--red,#e03e3e);font-weight:600;">—</span>`;
+                : `<span style="color:var(--red-500,#e74c3c);font-weight:600;">—</span>`;
 
             const monthly_str = emp.monthly_ctc
                 ? `&#8377; ${ces_fmt(emp.monthly_ctc)}`
-                : `<span style="color:var(--red,#e03e3e);font-weight:600;">—</span>`;
+                : `<span style="color:var(--red-500,#e74c3c);font-weight:600;">—</span>`;
 
             const badge = emp.salary_structure === "Not Assigned"
-                ? `<span style="background:var(--red-highlight,#fff5f5);color:var(--red,#e03e3e);
-                               border:1px solid var(--red-border,#ffd5d5);
-                               padding:3px 10px;border-radius:4px;font-size:11px;font-weight:500;white-space:nowrap;display:inline-flex;align-items:center;gap:4px;">
+                ? `<span onclick="event.stopPropagation();"
+                         style="background:var(--bg-red,#fff5f5);color:var(--red-500,#e74c3c);
+                                border:1px solid var(--red-200,#ffd5d5);
+                                padding:3px 10px;border-radius:4px;font-size:11px;font-weight:500;
+                                white-space:nowrap;display:inline-flex;align-items:center;gap:4px;">
                                <svg width="10" height="10" viewBox="0 0 10 10" fill="none"><path d="M2 2l6 6M8 2l-6 6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
                                Not Assigned</span>`
-                : `<span style="background:var(--green-highlight,#eafaf1);color:var(--green,#28a745);
-                               border:1px solid var(--green-border,#c3e6cb);
-                               padding:3px 10px;border-radius:4px;font-size:11px;font-weight:500;white-space:nowrap;display:inline-flex;align-items:center;gap:4px;">
+                : `<span onclick="event.stopPropagation(); window.open('/app/salary-structure-assignment?employee=${emp.employee}','_blank');"
+                         title="Open Salary Structure Assignment"
+                         style="background:var(--bg-green,#eafaf1);color:var(--green-500,#27ae60);
+                                border:1px solid var(--green-200,#c3e6cb);
+                                padding:3px 10px;border-radius:4px;font-size:11px;font-weight:500;
+                                white-space:nowrap;display:inline-flex;align-items:center;gap:4px;cursor:pointer;">
                                <svg width="10" height="10" viewBox="0 0 10 10" fill="none"><path d="M1.5 5l3 3 4-4.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
                                ${emp.salary_structure}</span>`;
 
-            const row_bg = i % 2 === 0 ? "var(--card-bg,#fff)" : "var(--control-bg-input,#f8fafc)";
+            const row_bg = i % 2 === 0 ? "var(--card-bg)" : "var(--control-bg-input)";
             return `
-            <tr class="ces-emp-row" style="background:${row_bg};border-bottom:1px solid var(--border-color,#eef0f3);">
-                <td style="padding:10px 0;color:var(--text-muted,#8d99a6);font-size:12px;width:44px;text-align:center;vertical-align:middle;">${i + 1}</td>
+            <tr class="ces-emp-row"
+                onclick="window.open('/app/employee-profile/${emp.employee}','_blank')"
+                style="background:${row_bg};border-bottom:1px solid var(--border-color);cursor:pointer;">
+                <td style="padding:10px 0;color:var(--text-muted);font-size:12px;width:44px;text-align:center;vertical-align:middle;">${i + 1}</td>
                 <td style="padding:10px 14px;vertical-align:middle;overflow:hidden;">
-                    <div style="font-weight:600;color:var(--text-color,#495057);font-size:13px;line-height:1.4;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${emp.full_name}</div>
-                    <div style="font-size:11px;color:var(--text-muted,#8d99a6);margin-top:2px;">${emp.employee}</div>
+                    <div style="font-weight:600;color:var(--primary);font-size:13px;line-height:1.4;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${emp.full_name}</div>
+                    <div style="font-size:11px;color:var(--text-muted);margin-top:2px;">${emp.employee}</div>
                 </td>
                 <td style="padding:10px 14px;white-space:nowrap;vertical-align:middle;">
-                    <span style="background:var(--control-bg,#f0f2f5);color:var(--text-muted,#8d99a6);padding:3px 10px;border-radius:4px;font-size:11px;font-weight:600;border:1px solid var(--border-color,#d1d8dd);">${emp.category}</span>
+                    <span style="background:var(--control-bg);color:var(--text-muted);padding:3px 10px;border-radius:4px;font-size:11px;font-weight:600;border:1px solid var(--border-color);">${emp.category}</span>
                 </td>
                 <td style="padding:10px 14px;white-space:nowrap;vertical-align:middle;">${badge}</td>
-                <td style="padding:10px 14px;text-align:right;font-weight:600;color:var(--text-color,#333843);font-size:13px;white-space:nowrap;vertical-align:middle;">${monthly_str}</td>
-                <td style="padding:10px 14px;text-align:right;font-weight:600;color:var(--text-color,#333843);font-size:13px;white-space:nowrap;vertical-align:middle;">${annual_str}</td>
+                <td style="padding:10px 14px;text-align:right;font-weight:600;color:var(--text-color);font-size:13px;white-space:nowrap;vertical-align:middle;">${monthly_str}</td>
+                <td style="padding:10px 14px;text-align:right;font-weight:600;color:var(--text-color);font-size:13px;white-space:nowrap;vertical-align:middle;">${annual_str}</td>
             </tr>`;
         }).join("")
-        : `<tr><td colspan="6" style="text-align:center;padding:48px 20px;color:var(--text-muted,#8d99a6);font-size:13px;">
+        : `<tr><td colspan="6" style="text-align:center;padding:48px 20px;color:var(--text-muted);font-size:13px;">
                <svg width="32" height="32" viewBox="0 0 24 24" fill="none" style="display:block;margin:0 auto 10px;opacity:0.35"><circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="1.5"/><path d="M8 12h8M12 8v8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
                No employees found</td></tr>`;
 
     return `
     <div class="ces-popup-body">
 
-        <!-- Row 1: Salary filter cards + CTC cards -->
-        <div class="ces-section-label">Salary Structure</div>
-        <div style="display:flex;gap:10px;margin-bottom:14px;flex-wrap:wrap;">
-            <div class="ces-kpi-card clickable ${!filter_mode ? "active-filter" : ""}" data-filter="all" title="Show all">
-                <span class="ces-kpi-lbl">Total Employees</span>
-                <span class="ces-kpi-val" style="color:var(--primary,#4361ee);">${total}</span>
-            </div>
-            <div class="ces-kpi-card clickable ${filter_mode === "assigned" ? "active-filter" : ""}" data-filter="assigned" title="Show assigned only">
-                <span class="ces-kpi-lbl">Assigned</span>
-                <span class="ces-kpi-val" style="color:var(--green,#28a745);">${assigned}</span>
-            </div>
-            <div class="ces-kpi-card clickable ${filter_mode === "unassigned" ? "active-filter" : ""}" data-filter="unassigned" title="Show unassigned only">
-                <span class="ces-kpi-lbl">Unassigned</span>
-                <span class="ces-kpi-val" style="color:var(--red,#e03e3e);">${unassigned}</span>
-            </div>
-            <div class="ces-kpi-card ces-ctc-card">
-                <span class="ces-kpi-lbl">Monthly CTC</span>
-                <span class="ces-kpi-val ces-ctc-val" style="color:var(--text-color,#495057);">&#8377; ${ces_fmt(total_monthly_ctc)}</span>
-            </div>
-            <div class="ces-kpi-card ces-ctc-card">
-                <span class="ces-kpi-lbl">Annual CTC</span>
-                <span class="ces-kpi-val ces-ctc-val" style="color:var(--text-color,#495057);">&#8377; ${ces_fmt(total_annual_ctc)}</span>
+        <!-- Group 1: Salary Structure -->
+        <div class="ces-card-group">
+            <span class="ces-card-group-label">Salary Structure</span>
+            <div class="ces-card-group-row">
+                <div class="ces-kpi-card clickable ${!filter_mode ? "active-filter" : ""}" data-filter="all" title="Show all">
+                    <span class="ces-kpi-lbl">Total Employees</span>
+                    <span class="ces-kpi-val">${total}</span>
+                </div>
+                <div class="ces-kpi-card clickable ${filter_mode === "assigned" ? "active-filter" : ""}" data-filter="assigned" title="Show assigned only">
+                    <span class="ces-kpi-lbl">Assigned</span>
+                    <span class="ces-kpi-val">${assigned}</span>
+                </div>
+                <div class="ces-kpi-card clickable ${filter_mode === "unassigned" ? "active-filter" : ""}" data-filter="unassigned" title="Show unassigned only">
+                    <span class="ces-kpi-lbl">Unassigned</span>
+                    <span class="ces-kpi-val" style="color:var(--red-500,#e74c3c);">${unassigned}</span>
+                </div>
+                <div class="ces-kpi-card ces-ctc-card">
+                    <span class="ces-kpi-lbl">Monthly CTC</span>
+                    <span class="ces-kpi-val ces-ctc-val">&#8377; ${ces_fmt(total_monthly_ctc)}</span>
+                </div>
+                <div class="ces-kpi-card ces-ctc-card">
+                    <span class="ces-kpi-lbl">Annual CTC</span>
+                    <span class="ces-kpi-val ces-ctc-val">&#8377; ${ces_fmt(total_annual_ctc)}</span>
+                </div>
             </div>
         </div>
 
-        <!-- Row 2: Category filter cards -->
-        <div class="ces-section-label">Category</div>
-        <div style="display:flex;gap:10px;margin-bottom:16px;flex-wrap:wrap;">
-            <div class="ces-kpi-card clickable ${!cat_filter ? "active-filter" : ""}" data-cat="all" title="All categories">
-                <span class="ces-kpi-lbl">All Categories</span>
-                <span class="ces-kpi-val" style="color:var(--teal,#2ec4b6);">${total}</span>
-            </div>
-            <div class="ces-kpi-card clickable ${cat_filter === "staff" ? "active-filter" : ""}" data-cat="staff" title="Staff only">
-                <span class="ces-kpi-lbl">Staff</span>
-                <span class="ces-kpi-val" style="color:var(--purple,#7b2d8b);">${total_staff}</span>
-            </div>
-            <div class="ces-kpi-card clickable ${cat_filter === "worker" ? "active-filter" : ""}" data-cat="worker" title="Workers only">
-                <span class="ces-kpi-lbl">Workers</span>
-                <span class="ces-kpi-val" style="color:var(--orange,#f4a261);">${total_workers}</span>
+        <!-- Group 2: Category -->
+        <div class="ces-card-group">
+            <span class="ces-card-group-label">Category</span>
+            <div class="ces-card-group-row">
+                <div class="ces-kpi-card clickable ${!cat_filter ? "active-filter" : ""}" data-cat="all" title="All categories">
+                    <span class="ces-kpi-lbl">All Categories</span>
+                    <span class="ces-kpi-val">${total}</span>
+                </div>
+                <div class="ces-kpi-card clickable ${cat_filter === "staff" ? "active-filter" : ""}" data-cat="staff" title="Staff only">
+                    <span class="ces-kpi-lbl">Staff</span>
+                    <span class="ces-kpi-val">${total_staff}</span>
+                </div>
+                <div class="ces-kpi-card clickable ${cat_filter === "worker" ? "active-filter" : ""}" data-cat="worker" title="Workers only">
+                    <span class="ces-kpi-lbl">Workers</span>
+                    <span class="ces-kpi-val">${total_workers}</span>
+                </div>
             </div>
         </div>
 
@@ -780,62 +786,76 @@ function _show_all_employees_popup(all_employees, action) {
         ? all_employees.map((emp, i) => {
             const annual_str = emp.annual_ctc
                 ? `&#8377; ${ces_fmt(emp.annual_ctc)}`
-                : `<span style="color:var(--red,#e03e3e);font-weight:600;">—</span>`;
+                : `<span style="color:var(--red-500,#e74c3c);font-weight:600;">—</span>`;
 
             const monthly_str = emp.monthly_ctc
                 ? `&#8377; ${ces_fmt(emp.monthly_ctc)}`
-                : `<span style="color:var(--red,#e03e3e);font-weight:600;">—</span>`;
+                : `<span style="color:var(--red-500,#e74c3c);font-weight:600;">—</span>`;
 
             const badge = emp.salary_structure === "Not Assigned"
-                ? `<span style="background:var(--red-highlight,#fff5f5);color:var(--red,#e03e3e);
-                               border:1px solid var(--red-border,#ffd5d5);
-                               padding:3px 10px;border-radius:4px;font-size:11px;font-weight:500;white-space:nowrap;display:inline-flex;align-items:center;gap:4px;">
+                ? `<span onclick="event.stopPropagation();"
+                         style="background:var(--bg-red,#fff5f5);color:var(--red-500,#e74c3c);
+                                border:1px solid var(--red-200,#ffd5d5);
+                                padding:3px 10px;border-radius:4px;font-size:11px;font-weight:500;
+                                white-space:nowrap;display:inline-flex;align-items:center;gap:4px;">
                                <svg width="10" height="10" viewBox="0 0 10 10" fill="none"><path d="M2 2l6 6M8 2l-6 6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
                                Not Assigned</span>`
-                : `<span style="background:var(--green-highlight,#eafaf1);color:var(--green,#28a745);
-                               border:1px solid var(--green-border,#c3e6cb);
-                               padding:3px 10px;border-radius:4px;font-size:11px;font-weight:500;white-space:nowrap;display:inline-flex;align-items:center;gap:4px;">
+                : `<span onclick="event.stopPropagation(); window.open('/app/salary-structure-assignment?employee=${emp.employee}','_blank');"
+                         title="Open Salary Structure Assignment"
+                         style="background:var(--bg-green,#eafaf1);color:var(--green-500,#27ae60);
+                                border:1px solid var(--green-200,#c3e6cb);
+                                padding:3px 10px;border-radius:4px;font-size:11px;font-weight:500;
+                                white-space:nowrap;display:inline-flex;align-items:center;gap:4px;cursor:pointer;">
                                <svg width="10" height="10" viewBox="0 0 10 10" fill="none"><path d="M1.5 5l3 3 4-4.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
                                ${emp.salary_structure}</span>`;
 
-            const row_bg = i % 2 === 0 ? "var(--card-bg,#fff)" : "var(--control-bg-input,#f8fafc)";
+            const row_bg = i % 2 === 0 ? "var(--card-bg)" : "var(--control-bg-input)";
             return `
-            <tr class="ces-emp-row" style="background:${row_bg};border-bottom:1px solid var(--border-color,#eef0f3);">
-                <td style="padding:10px 0;color:var(--text-muted,#8d99a6);font-size:12px;width:44px;text-align:center;vertical-align:middle;">${i + 1}</td>
+            <tr class="ces-emp-row"
+                onclick="window.open('/app/employee-profile/${emp.employee}','_blank')"
+                style="background:${row_bg};border-bottom:1px solid var(--border-color);cursor:pointer;">
+                <td style="padding:10px 0;color:var(--text-muted);font-size:12px;width:44px;text-align:center;vertical-align:middle;">${i + 1}</td>
                 <td style="padding:10px 14px;vertical-align:middle;overflow:hidden;">
-                    <div style="font-weight:600;color:var(--text-color,#495057);font-size:13px;line-height:1.4;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${emp.full_name}</div>
-                    <div style="font-size:11px;color:var(--text-muted,#8d99a6);margin-top:2px;">${emp.employee}</div>
+                    <div style="font-weight:600;color:var(--primary);font-size:13px;line-height:1.4;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${emp.full_name}</div>
+                    <div style="font-size:11px;color:var(--text-muted);margin-top:2px;">${emp.employee}</div>
                 </td>
                 <td style="padding:10px 14px;vertical-align:middle;white-space:nowrap;overflow:hidden;">
-                    <span style="background:var(--control-bg,#f0f2f5);color:var(--text-muted,#8d99a6);padding:3px 10px;border-radius:4px;font-size:11px;font-weight:600;border:1px solid var(--border-color,#d1d8dd);display:inline-block;max-width:150px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${emp.company || "—"}</span>
+                    <span style="background:var(--control-bg);color:var(--text-muted);padding:3px 10px;border-radius:4px;font-size:11px;font-weight:600;border:1px solid var(--border-color);display:inline-block;max-width:150px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${emp.company || "—"}</span>
                 </td>
                 <td style="padding:10px 14px;vertical-align:middle;white-space:nowrap;">
-                    <span style="background:var(--control-bg,#f0f2f5);color:var(--text-muted,#8d99a6);padding:3px 10px;border-radius:4px;font-size:11px;font-weight:600;border:1px solid var(--border-color,#d1d8dd);">${emp.category}</span>
+                    <span style="background:var(--control-bg);color:var(--text-muted);padding:3px 10px;border-radius:4px;font-size:11px;font-weight:600;border:1px solid var(--border-color);">${emp.category}</span>
                 </td>
                 <td style="padding:10px 14px;white-space:nowrap;vertical-align:middle;">${badge}</td>
-                <td style="padding:10px 14px;text-align:right;font-weight:600;color:var(--text-color,#333843);font-size:13px;white-space:nowrap;vertical-align:middle;">${monthly_str}</td>
-                <td style="padding:10px 14px;text-align:right;font-weight:600;color:var(--text-color,#333843);font-size:13px;white-space:nowrap;vertical-align:middle;">${annual_str}</td>
+                <td style="padding:10px 14px;text-align:right;font-weight:600;color:var(--text-color);font-size:13px;white-space:nowrap;vertical-align:middle;">${monthly_str}</td>
+                <td style="padding:10px 14px;text-align:right;font-weight:600;color:var(--text-color);font-size:13px;white-space:nowrap;vertical-align:middle;">${annual_str}</td>
             </tr>`;
         }).join("")
-        : `<tr><td colspan="7" style="text-align:center;padding:48px 20px;color:var(--text-muted,#8d99a6);font-size:13px;">
+        : `<tr><td colspan="7" style="text-align:center;padding:48px 20px;color:var(--text-muted);font-size:13px;">
                <svg width="32" height="32" viewBox="0 0 24 24" fill="none" style="display:block;margin:0 auto 10px;opacity:0.35"><circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="1.5"/><path d="M8 12h8M12 8v8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
                No employees found</td></tr>`;
 
+    const summary_html = `
+    <div class="ces-card-group">
+        <span class="ces-card-group-label">Summary</span>
+        <div class="ces-card-group-row">
+            <div class="ces-kpi-card">
+                <span class="ces-kpi-lbl">Total Employees</span>
+                <span class="ces-kpi-val">${total}</span>
+            </div>
+            <div class="ces-kpi-card ces-ctc-card">
+                <span class="ces-kpi-lbl">Monthly CTC</span>
+                <span class="ces-kpi-val ces-ctc-val">&#8377; ${ces_fmt(total_monthly)}</span>
+            </div>
+            <div class="ces-kpi-card ces-ctc-card">
+                <span class="ces-kpi-lbl">Annual CTC</span>
+                <span class="ces-kpi-val ces-ctc-val">&#8377; ${ces_fmt(total_ctc)}</span>
+            </div>
+        </div>
+    </div>`;
+
     const body_html = `
     <div class="ces-popup-body">
-
-        <!-- Summary header bar -->
-        <div class="ces-summary-bar">
-            <span class="ces-summary-title">${popup_title}</span>
-            <span class="ces-summary-sep">—</span>
-            <span class="ces-summary-meta"><strong>${total}</strong> employee(s)</span>
-            <span class="ces-summary-sep">|</span>
-            <span class="ces-summary-meta">Monthly CTC: <strong>&#8377; ${ces_fmt(total_monthly)}</strong></span>
-            <span class="ces-summary-sep">|</span>
-            <span class="ces-summary-meta">Annual CTC: <strong>&#8377; ${ces_fmt(total_ctc)}</strong></span>
-        </div>
-
-        <!-- Toolbar: count left, search right -->
+        ${summary_html}
         <div class="ces-toolbar">
             <div class="ces-toolbar-left">
                 Showing <strong>${total}</strong> employee(s)
@@ -847,8 +867,6 @@ function _show_all_employees_popup(all_employees, action) {
                 <input type="text" class="ces-search-box" placeholder="Search by name or ID…" oninput="ces_filter_table(this)">
             </div>
         </div>
-
-        <!-- Table with scroll -->
         <div class="ces-table-scroll">
             <table class="ces-all-tbl">
                 <colgroup>
@@ -872,7 +890,6 @@ function _show_all_employees_popup(all_employees, action) {
                 <tbody id="ces-all-tbody">${rows_html}</tbody>
             </table>
         </div>
-
         <div id="ces-all-footer" class="ces-popup-footer" style="display:none;"></div>
     </div>`;
 
@@ -910,7 +927,6 @@ function ces_filter_table(input) {
         if (show) visible++;
     });
 
-    // Update the toolbar-left count instead of footer
     const $toolbar_left = $(input).closest(".ces-popup-body").find(".ces-toolbar-left");
     if ($toolbar_left.length) {
         const total = $rows.length;
@@ -942,6 +958,6 @@ function _ces_swap_content(dialog, new_html) {
 function _ces_style_modal(dialog) {
     dialog.$wrapper.find(".modal-body").css({
         padding:    "16px 20px",
-        background: "var(--bg-color, #f8f9fa)",
+        background: "var(--bg-color)",
     });
 }
