@@ -474,7 +474,7 @@
  "index_web_pages_for_search": 1,
  "is_submittable": 1,
  "links": [],
- "modified": "2026-05-12 18:33:51.735840",
+ "modified": "2026-05-15 14:02:26.076440",
  "modified_by": "Administrator",
  "module": "Saral Hr",
  "name": "Salary Slip",
@@ -489,9 +489,12 @@
    "print": 1,
    "read": 1,
    "report": 1,
-   "role": "Saral HR Manager",
+   "role": "Saral HR User",
    "select": 1,
    "share": 1,
+   "submit": 1,
+   "cancel": 1,
+   "amend": 1,
    "write": 1
   },
   {
@@ -502,12 +505,16 @@
    "print": 1,
    "read": 1,
    "report": 1,
-   "role": "Saral HR User",
+   "role": "Saral HR Manager",
    "select": 1,
    "share": 1,
+   "submit": 1,
+   "cancel": 1,
+   "amend": 1,
    "write": 1
   }
  ],
+ "sort_field": "modified",
  "sort_order": "DESC",
  "states": []
 }
