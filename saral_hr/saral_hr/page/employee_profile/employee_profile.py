@@ -2,6 +2,79 @@ import frappe
 from frappe.utils import today, getdate, date_diff
 
 
+# ── Permission helper (mirrors salary_insight.py) ─────────────────────────────
+
+def _get_permitted_employees():
+    """
+    Returns a list of employee IDs the current user is permitted to see,
+    based on Frappe User Permissions.
+
+    - System Manager / Administrator → None (no restriction, see all).
+    - User with Employee-level User Permissions → list of permitted employee IDs.
+    - User with NO Employee-level permissions → None (no restriction, see all).
+    """
+    user = frappe.session.user
+
+    if "System Manager" in frappe.get_roles(user):
+        return None
+
+    user_permissions = frappe.permissions.get_user_permissions(user)
+
+    if "Employee" in user_permissions and user_permissions["Employee"]:
+        permitted = [
+            perm.get("doc")
+            for perm in user_permissions["Employee"]
+            if perm.get("doc")
+        ]
+        return permitted if permitted else None
+
+    return None
+
+
+# ── New: search endpoint for the page-level search bar ───────────────────────
+
+@frappe.whitelist()
+def get_permitted_employees_for_search():
+    """
+    Returns the list of active employees the current user is allowed to view,
+    formatted for the client-side search dropdown.
+
+    Each entry: { name, full_name, designation, department, company }
+
+    Uses the same permission logic as salary_insight.py so that restricted
+    users (e.g. HR managers for a single company) only see their subset.
+    """
+    permitted = _get_permitted_employees()
+
+    base_filters = {"is_active": 1}
+
+    if permitted is not None:
+        if not permitted:
+            return []
+        base_filters["name"] = ["in", permitted]
+
+    rows = frappe.get_all(
+        "Company Link",
+        filters=base_filters,
+        fields=["name", "full_name", "designation", "department", "company"],
+        order_by="full_name asc",
+        limit=2000,
+    )
+
+    return [
+        {
+            "name":        r.name,
+            "full_name":   r.full_name or r.name,
+            "designation": r.designation or "",
+            "department":  r.department  or "",
+            "company":     r.company     or "",
+        }
+        for r in rows
+    ]
+
+
+# ── Existing methods (all unchanged) ─────────────────────────────────────────
+
 @frappe.whitelist()
 def get_employee_profile_data(employee):
     emp = frappe.get_doc("Employee", employee)
@@ -351,30 +424,9 @@ def get_employee_leave_balance(employee):
     """
     Returns the active Leave Allocation for the employee with per-leave-type
     balances, used counts, and ledger entries.
-
-    Used by the Employee Profile page to display the Leave Balance card.
-
-    Returns:
-    {
-        "has_allocation": True/False,
-        "from_date": "...",
-        "to_date": "...",
-        "leave_types": [
-            {
-                "leave_type": "Earned Leave",
-                "allocated_leaves": 12,
-                "used_leaves": 3.0,
-                "remaining_leaves": 9.0,
-                "ledger": [ { date, day, status, leaves_in, leaves_out, balance }, ... ]
-            },
-            ...
-        ]
-    }
     """
     today_date = getdate(today())
 
-    # Find the most relevant active allocation:
-    # prefer one where today falls within the period; otherwise take the latest.
     alloc = frappe.db.get_value(
         "Leave Allocation",
         {
@@ -387,7 +439,6 @@ def get_employee_leave_balance(employee):
         as_dict=True
     )
 
-    # Fallback: no current allocation — grab the most recent one
     if not alloc:
         alloc = frappe.db.get_value(
             "Leave Allocation",
@@ -403,7 +454,6 @@ def get_employee_leave_balance(employee):
     if not alloc:
         return {"has_allocation": False}
 
-    # Get all leave type rows for this allocation
     detail_rows = frappe.get_all(
         "Leave Allocation Detail",
         filters={"parent": alloc["name"]},
@@ -415,7 +465,6 @@ def get_employee_leave_balance(employee):
         return {"has_allocation": True, "from_date": str(alloc["from_date"]),
                 "to_date": str(alloc["to_date"]), "leave_types": []}
 
-    # Build ledger entries for each leave type
     leave_types_data = []
     for row in detail_rows:
         ledger_entries = _get_ledger_entries(
@@ -442,7 +491,6 @@ def get_employee_leave_balance(employee):
     }
 
 
-# Maps Attendance status -> Leave Type name (reused from leave_allocation.py logic)
 _STATUS_LEAVE_MAP = {
     "Sick Leave":      "Sick Leave",
     "Casual Leave":    "Casual Leave",
@@ -457,14 +505,9 @@ _HALF_DAY_FIELDS = ["custom_first_half", "custom_second_half"]
 
 
 def _get_ledger_entries(employee, leave_type, allocated, from_date, to_date, today_date):
-    """
-    Build a chronological ledger of Added / Used / Expired entries
-    for a single leave type within the allocation period.
-    """
     entries = []
     balance = 0.0
 
-    # ── Opening (Allocated) entry ─────────────────────────────────────────────
     if allocated:
         balance = float(allocated)
         open_date = getdate(from_date)
@@ -477,11 +520,9 @@ def _get_ledger_entries(employee, leave_type, allocated, from_date, to_date, tod
             "balance":    balance,
         })
 
-    # ── Find attendance statuses that map to this leave type ─────────────────
     attendance_statuses = [s for s, lt in _STATUS_LEAVE_MAP.items() if lt == leave_type]
 
     if attendance_statuses:
-        # Full-day records
         full_records = frappe.get_all(
             "Attendance",
             filters={
@@ -506,7 +547,6 @@ def _get_ledger_entries(employee, leave_type, allocated, from_date, to_date, tod
                 "balance":    balance,
             })
 
-        # Half-day records
         half_records = frappe.get_all(
             "Attendance",
             filters={
@@ -537,10 +577,8 @@ def _get_ledger_entries(employee, leave_type, allocated, from_date, to_date, tod
                     "balance":    balance,
                 })
 
-    # Sort chronologically (opening entry stays first due to from_date)
     entries.sort(key=lambda e: e["date"])
 
-    # ── Expiry entry (only when period has ended and balance > 0) ─────────────
     period_end = getdate(to_date) if to_date else None
     if balance > 0 and period_end and today_date >= period_end:
         exp_date = period_end
@@ -572,15 +610,12 @@ def get_employee_deduction_breakdown(employee, month, year, start_date):
 
     doc = frappe.get_doc("Salary Slip", slip.name)
 
-    # ── Attendance ────────────────────────────────────────────────────────────
     total_days  = flt(getattr(doc, "total_working_days", None) or 0)
     absent_days = flt(getattr(doc, "absent_days", None) or 0)
     paid_days   = flt(getattr(doc, "payment_days", None) or 0)
 
-    # ── Net from slip ─────────────────────────────────────────────────────────
     ss_net = flt(doc.net_salary)
 
-    # ── Net from SSA ──────────────────────────────────────────────────────────
     ssa_net = 0.0
     try:
         ssa_name = frappe.db.get_value(
@@ -595,7 +630,6 @@ def get_employee_deduction_breakdown(employee, month, year, start_date):
     except Exception:
         pass
 
-    # ── Additional components ─────────────────────────────────────────────────
     additional_salary_components    = {}
     additional_deduction_components = {}
 
@@ -617,7 +651,6 @@ def get_employee_deduction_breakdown(employee, month, year, start_date):
         for row in add_doc.deductions or []:
             additional_deduction_components[row.component_type] = flt(row.amount)
 
-    # ── Classify deductions ───────────────────────────────────────────────────
     loan_total         = 0.0
     retention_total    = 0.0
     loan_breakdown     = {}
@@ -646,7 +679,6 @@ def get_employee_deduction_breakdown(employee, month, year, start_date):
         elif comp in additional_deduction_components:
             add_ded_deducted[comp] = amt
 
-    # ── Scan earnings for additional salary components ────────────────────────
     for row in doc.earnings:
         comp = row.salary_component or ""
         amt  = flt(row.amount)
@@ -661,7 +693,6 @@ def get_employee_deduction_breakdown(employee, month, year, start_date):
         if comp not in add_ded_deducted:
             add_ded_deducted[comp] = 0
 
-    # ── Deferral check ────────────────────────────────────────────────────────
     _slip_month   = frappe.utils.formatdate(doc.start_date, "MMMM YYYY") if doc.start_date else ""
     loan_deferred = False
 
