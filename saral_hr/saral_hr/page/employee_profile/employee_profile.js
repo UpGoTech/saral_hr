@@ -6,10 +6,27 @@ frappe.pages["employee-profile"].on_page_load = function (wrapper) {
 frappe.pages["employee-profile"].on_page_show = function (wrapper) {
     var route = frappe.get_route();
     var emp = route[1];
-    if (!emp) { return; }
+
+    // Always render the search bar first (idempotent — skips if already rendered)
+    render_search_bar(wrapper);
+
+    if (!emp) {
+        // No employee in route — show a prompt inside main
+        var $main = $(wrapper).find(".layout-main-section");
+        $main.html(
+            "<div style='margin:60px auto;max-width:420px;text-align:center;padding:36px;" +
+            "background:var(--card-bg,#fff);border:1px solid var(--border-color,#e5e7eb);" +
+            "border-radius:12px;'>" +
+            "<div style='font-size:40px;margin-bottom:14px;'>🔍</div>" +
+            "<div style='font-size:15px;font-weight:600;color:var(--text-color);margin-bottom:8px;'>Search for an Employee</div>" +
+            "<div style='font-size:13px;color:var(--text-muted);'>Use the search bar above to find and view an employee profile.</div>" +
+            "</div>"
+        );
+        return;
+    }
 
     var $sidebar = $(wrapper).find(".layout-side-section");
-    var $main = $(wrapper).find(".layout-main-section");
+    var $main    = $(wrapper).find(".layout-main-section");
 
     $main.html(render_skeleton());
 
@@ -20,6 +37,8 @@ frappe.pages["employee-profile"].on_page_show = function (wrapper) {
             if (r.message) {
                 ep_fix_breadcrumbs(r.message.employee || emp);
                 $(wrapper).find(".title-text").text(r.message.employee || "Employee Profile");
+                // Update the "currently viewing" chip in the search bar
+                ep_update_viewing_chip(wrapper, r.message.employee || emp);
                 render_profile($sidebar, $main, r.message, emp);
             } else {
                 render_error($main, "No data returned for this employee.");
@@ -31,6 +50,223 @@ frappe.pages["employee-profile"].on_page_show = function (wrapper) {
     });
 };
 
+// ─── Permitted employees cache ────────────────────────────────────────────────
+var _ep_permitted_employees = null;   // null = not loaded yet; [] = loaded but empty
+
+function load_permitted_employees(callback) {
+    if (_ep_permitted_employees !== null) {
+        callback(_ep_permitted_employees);
+        return;
+    }
+    frappe.call({
+        method: "saral_hr.saral_hr.page.employee_profile.employee_profile.get_permitted_employees_for_search",
+        freeze: false,
+        callback: function (r) {
+            _ep_permitted_employees = r.message || [];
+            callback(_ep_permitted_employees);
+        },
+        error: function () {
+            _ep_permitted_employees = [];
+            callback([]);
+        }
+    });
+}
+
+// ─── Search bar (page-level) ──────────────────────────────────────────────────
+function render_search_bar(wrapper) {
+    // Only inject once per page lifecycle
+    if ($(wrapper).find("#ep-search-bar-root").length) return;
+
+    var $bar = $("<div id='ep-search-bar-root'></div>");
+    $bar.html(`
+        <div class="ep-searchbar-wrap">
+            <div class="ep-searchbar-inner">
+                <div class="ep-searchbar-left">
+                    <span class="ep-searchbar-icon">🔍</span>
+                    <div class="ep-searchbar-input-wrap" style="position:relative;">
+                        <input
+                            type="text"
+                            id="ep-global-search-input"
+                            class="ep-searchbar-input"
+                            placeholder="Search employee by name or ID…"
+                            autocomplete="off"
+                        />
+                        <button class="ep-searchbar-clear" id="ep-searchbar-clear-btn">✕</button>
+                        <div class="ep-searchbar-dropdown" id="ep-searchbar-dropdown"></div>
+                    </div>
+                </div>
+                <div class="ep-searchbar-right" id="ep-viewing-chip-wrap" style="display:none;">
+                    <span class="ep-viewing-label">Viewing:</span>
+                    <span class="ep-viewing-chip" id="ep-viewing-chip"></span>
+                </div>
+            </div>
+        </div>
+    `);
+
+    // Insert just above the page layout — before .layout-main-section
+    $(wrapper).find(".page-content").prepend($bar);
+
+    _init_search_bar_events(wrapper);
+}
+
+function ep_update_viewing_chip(wrapper, emp_name) {
+    var $wrap = $(wrapper).find("#ep-viewing-chip-wrap");
+    var $chip = $(wrapper).find("#ep-viewing-chip");
+    $chip.text(emp_name);
+    $wrap.show();
+}
+
+function _init_search_bar_events(wrapper) {
+    var $input     = $(wrapper).find("#ep-global-search-input");
+    var $dropdown  = $(wrapper).find("#ep-searchbar-dropdown");
+    var $clearBtn  = $(wrapper).find("#ep-searchbar-clear-btn");
+    var debounceT  = null;
+    var focusedIdx = -1;
+    var _last_results = [];
+
+    function esc_html(str) {
+        if (!str) return "";
+        return String(str)
+            .replace(/&/g, "&amp;")
+            .replace(/</g, "&lt;")
+            .replace(/>/g, "&gt;")
+            .replace(/"/g, "&quot;");
+    }
+
+    function highlight(text, term) {
+        if (!term) return esc_html(text);
+        var re = new RegExp("(" + term.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + ")", "gi");
+        return esc_html(text).replace(re, "<mark class='ep-search-highlight'>$1</mark>");
+    }
+
+    function filter_employees(list, term) {
+        if (!term) return list.slice(0, 12);
+        var q = term.toLowerCase();
+        return list.filter(function (e) {
+            return (e.full_name  || "").toLowerCase().includes(q) ||
+                   (e.name       || "").toLowerCase().includes(q) ||
+                   (e.department || "").toLowerCase().includes(q) ||
+                   (e.designation|| "").toLowerCase().includes(q);
+        }).slice(0, 12);
+    }
+
+    function show_dropdown(emps, term) {
+        focusedIdx = -1;
+        _last_results = emps;
+        if (!emps.length) {
+            $dropdown.html(
+                "<div class='ep-search-no-result'>No employees found</div>"
+            ).addClass("show");
+            return;
+        }
+        $dropdown.html(
+            emps.map(function (e, i) {
+                var meta_parts = [];
+                if (e.designation) meta_parts.push(e.designation);
+                if (e.department)  meta_parts.push(e.department);
+                if (e.company)     meta_parts.push(e.company);
+                var meta_html = meta_parts.length
+                    ? "<div class='ep-search-opt-meta'>" + esc_html(meta_parts.join(" · ")) + "</div>"
+                    : "";
+                return (
+                    "<div class='ep-search-opt' data-idx='" + i + "' data-name='" + esc_html(e.name) + "'>" +
+                    "<div class='ep-search-opt-name'>" + highlight(e.full_name || e.name, term) + "</div>" +
+                    "<div class='ep-search-opt-id'>" + highlight(e.name, term) + "</div>" +
+                    meta_html +
+                    "</div>"
+                );
+            }).join("")
+        ).addClass("show");
+
+        $dropdown.find(".ep-search-opt").on("click", function () {
+            var idx = parseInt($(this).data("idx"));
+            var emp = _last_results[idx];
+            if (emp) select_employee(emp);
+        });
+    }
+
+    function hide_dropdown() {
+        $dropdown.removeClass("show").html("");
+        focusedIdx = -1;
+        _last_results = [];
+    }
+
+    function select_employee(emp) {
+        $input.val(emp.full_name || emp.name);
+        $clearBtn.addClass("show");
+        hide_dropdown();
+        // Navigate to the employee profile
+        frappe.set_route("employee-profile", emp.name);
+    }
+
+    // Input — debounced filter
+    $input.on("input", function () {
+        var term = $(this).val().trim();
+        $clearBtn.toggleClass("show", term.length > 0);
+
+        if (!term) { hide_dropdown(); return; }
+
+        clearTimeout(debounceT);
+        debounceT = setTimeout(function () {
+            load_permitted_employees(function (list) {
+                var results = filter_employees(list, term);
+                show_dropdown(results, term);
+            });
+        }, 200);
+    });
+
+    // Focus — show recent / all if input already has text
+    $input.on("focus", function () {
+        var term = $(this).val().trim();
+        if (term) {
+            load_permitted_employees(function (list) {
+                show_dropdown(filter_employees(list, term), term);
+            });
+        }
+    });
+
+    // Keyboard navigation
+    $input.on("keydown", function (e) {
+        var $opts = $dropdown.find(".ep-search-opt");
+        if (!$dropdown.hasClass("show") || !$opts.length) {
+            if (e.key === "Escape") hide_dropdown();
+            return;
+        }
+        if (e.key === "ArrowDown") {
+            e.preventDefault();
+            focusedIdx = Math.min(focusedIdx + 1, $opts.length - 1);
+            $opts.removeClass("focused").eq(focusedIdx).addClass("focused");
+        } else if (e.key === "ArrowUp") {
+            e.preventDefault();
+            focusedIdx = Math.max(focusedIdx - 1, 0);
+            $opts.removeClass("focused").eq(focusedIdx).addClass("focused");
+        } else if (e.key === "Enter") {
+            if (focusedIdx >= 0) {
+                var emp = _last_results[focusedIdx];
+                if (emp) select_employee(emp);
+            }
+        } else if (e.key === "Escape") {
+            hide_dropdown();
+        }
+    });
+
+    // Clear button
+    $clearBtn.on("click", function () {
+        $input.val("");
+        $clearBtn.removeClass("show");
+        hide_dropdown();
+        $input.focus();
+    });
+
+    // Close on outside click
+    $(document).off("click.ep-searchbar").on("click.ep-searchbar", function (e) {
+        if (!$input[0].contains(e.target) && !$dropdown[0].contains(e.target)) {
+            hide_dropdown();
+        }
+    });
+}
+
+// ─── Skeleton / error helpers ─────────────────────────────────────────────────
 function render_skeleton() {
     var pulse = "animation:ep-pulse 1.5s ease-in-out infinite;";
     var box = function (w, h, r) {
@@ -74,6 +310,7 @@ function ep_fix_breadcrumbs(emp_name) {
     );
 }
 
+// ─── Styles ───────────────────────────────────────────────────────────────────
 function inject_ep_styles() {
     if (document.getElementById("ep-styles")) return;
     var style = document.createElement("style");
@@ -81,6 +318,127 @@ function inject_ep_styles() {
     style.innerHTML = `
         @keyframes ep-pulse { 0%,100%{opacity:1} 50%{opacity:0.4} }
 
+        /* ══════════════════════════════════════════════════════
+           SEARCH BAR
+           ══════════════════════════════════════════════════════ */
+        #ep-search-bar-root {
+            width: 100%;
+            margin-bottom: 0;
+        }
+        .ep-searchbar-wrap {
+            background: var(--card-bg, #fff);
+            border-bottom: 1px solid var(--border-color, #e5e7eb);
+            padding: 10px 20px;
+            position: sticky;
+            top: 0;
+            z-index: 400;
+        }
+        .ep-searchbar-inner {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 16px;
+            max-width: 900px;
+        }
+        .ep-searchbar-left {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            flex: 1;
+            min-width: 0;
+            position: relative;
+        }
+        .ep-searchbar-icon { font-size: 16px; flex-shrink: 0; }
+        .ep-searchbar-input-wrap { position: relative; flex: 1; }
+        .ep-searchbar-input {
+            width: 100%;
+            height: 36px;
+            padding: 0 34px 0 12px;
+            border: 1.5px solid var(--border-color, #d1d5db);
+            border-radius: var(--border-radius, 6px);
+            background: var(--control-bg, #f9fafb);
+            color: var(--text-color);
+            font-size: 13px;
+            font-family: var(--font-stack);
+            outline: none;
+            box-sizing: border-box;
+            transition: border-color 0.15s, box-shadow 0.15s;
+        }
+        .ep-searchbar-input:focus {
+            border-color: var(--primary, #1d4ed8);
+            box-shadow: 0 0 0 3px rgba(29, 78, 216, 0.1);
+            background: var(--card-bg, #fff);
+        }
+        .ep-searchbar-input::placeholder { color: var(--text-muted); }
+
+        .ep-searchbar-clear {
+            position: absolute; right: 8px; top: 50%; transform: translateY(-50%);
+            width: 18px; height: 18px; border-radius: 50%;
+            background: var(--text-muted); color: #fff; border: none;
+            cursor: pointer; font-size: 10px;
+            display: none; align-items: center; justify-content: center; padding: 0;
+            line-height: 1;
+        }
+        .ep-searchbar-clear.show { display: flex; }
+        .ep-searchbar-clear:hover { background: var(--text-color); }
+
+        /* Dropdown */
+        .ep-searchbar-dropdown {
+            display: none;
+            position: absolute; top: calc(100% + 4px); left: 0; right: 0; z-index: 600;
+            background: var(--card-bg, #fff);
+            border: 1px solid var(--border-color, #e5e7eb);
+            border-radius: var(--border-radius, 6px);
+            max-height: 320px; overflow-y: auto;
+            box-shadow: 0 8px 24px rgba(0,0,0,0.12);
+        }
+        .ep-searchbar-dropdown.show { display: block; }
+
+        .ep-search-opt {
+            padding: 10px 14px; cursor: pointer;
+            border-bottom: 1px solid var(--border-color, #f3f4f6);
+            transition: background 0.1s;
+        }
+        .ep-search-opt:last-child { border-bottom: none; }
+        .ep-search-opt:hover, .ep-search-opt.focused {
+            background: var(--control-bg, #f3f4f6);
+        }
+        .ep-search-opt-name {
+            font-size: 13px; font-weight: 600; color: var(--text-color); margin-bottom: 2px;
+        }
+        .ep-search-opt-id {
+            font-size: 11px; color: var(--text-muted); font-family: monospace;
+        }
+        .ep-search-opt-meta {
+            font-size: 11px; color: var(--text-muted); margin-top: 2px;
+        }
+        .ep-search-no-result {
+            padding: 14px; text-align: center; font-size: 12px; color: var(--text-muted);
+        }
+        mark.ep-search-highlight {
+            background: transparent; color: var(--primary, #1d4ed8); font-weight: 700;
+        }
+
+        /* Viewing chip */
+        .ep-searchbar-right {
+            display: flex; align-items: center; gap: 8px; flex-shrink: 0;
+        }
+        .ep-viewing-label {
+            font-size: 11px; font-weight: 600; color: var(--text-muted);
+            text-transform: uppercase; letter-spacing: 0.05em;
+        }
+        .ep-viewing-chip {
+            display: inline-flex; align-items: center; gap: 6px;
+            background: linear-gradient(135deg, #eff6ff, #dbeafe);
+            border: 1px solid #bfdbfe;
+            border-radius: 20px; padding: 4px 14px;
+            font-size: 12px; font-weight: 700; color: #1d4ed8;
+            white-space: nowrap;
+        }
+
+        /* ══════════════════════════════════════════════════════
+           REST OF EXISTING STYLES (unchanged)
+           ══════════════════════════════════════════════════════ */
         .ep-sidebar-inner { padding: 0 4px; }
         .ep-avatar {
             width:80px; height:80px; border-radius:50%;
@@ -109,7 +467,6 @@ function inject_ep_styles() {
         }
         .ep-link-btn:hover { color:#1e40af; text-decoration:underline; }
 
-        /* ── Salary Statistics cross-link button ── */
         .ep-stats-btn {
             display:flex; align-items:center; gap:7px; width:100%;
             margin-top:10px; padding:8px 12px; border-radius:7px;
@@ -165,7 +522,6 @@ function inject_ep_styles() {
         }
         .ep-today-btn:hover { background:#dbeafe; }
 
-        /* ── Multi-month filter button ── */
         .ep-months-filter-btn {
             position: relative;
             padding: 3px 10px; border-radius: 6px; font-size: 12px; font-weight: 600;
@@ -180,7 +536,6 @@ function inject_ep_styles() {
             background: #1d4ed8; color: #fff; font-size: 10px; font-weight: 700;
         }
 
-        /* ── Month picker popover ── */
         .ep-month-picker-popover {
             position: absolute; top: calc(100% + 6px); right: 0; z-index: 500;
             background: var(--card-bg,#fff); border: 1px solid var(--border-color,#e5e7eb);
@@ -299,9 +654,6 @@ function inject_ep_styles() {
         .ep-att-label   { font-size:10px; color:var(--text-muted); margin-top:2px; }
         .ep-att-pct     { font-size:10px; font-weight:600; margin-top:1px; }
 
-        /* ══════════════════════════════════════════════════════
-           LEAVE BALANCE CARD STYLES
-           ══════════════════════════════════════════════════════ */
         .ep-leave-summary-table {
             width: 100%; border-collapse: collapse; font-size: 12px;
             border: 1px solid var(--border-color, #e5e7eb); border-radius: 8px; overflow: hidden;
@@ -339,7 +691,6 @@ function inject_ep_styles() {
         .ep-leave-remaining.zero { color: #9ca3af; }
         .ep-leave-remaining.negative { color: #dc2626; }
 
-        /* Ledger rows (collapsible) */
         .ep-leave-ledger-row { display: none; }
         .ep-leave-ledger-row.open { display: table-row; }
         .ep-leave-ledger-cell {
@@ -508,9 +859,6 @@ function inject_ep_styles() {
         .ep-ssa-cancelled-ctc  { font-size:12px; font-weight:600; color:var(--text-color); }
         .ep-ssa-cancelled-badge { display:inline-block; padding:1px 7px; font-size:10px; font-weight:600; border-radius:10px; background:#fee2e2; color:#991b1b; }
 
-        /* ══════════════════════════════════════════════════════
-           LOAN LEDGER STYLES
-           ══════════════════════════════════════════════════════ */
         .ep-loan-section-title { font-size:15px; font-weight:600; color:var(--text-color); margin:0 0 12px 0; }
         .ep-loan-overview {
             display:grid; grid-template-columns:repeat(4,1fr);
@@ -728,10 +1076,6 @@ function render_profile($sidebar, $main, d, emp) {
         sb += "<a href='/app/company-link/" + encodeURIComponent(d.company_link_name) + "' class='ep-link-btn'>🏢 View Company Record</a>";
     sb += "<a href='/app/salary-structure-assignment?employee=" + encodeURIComponent(emp) + "' class='ep-link-btn'>💰 Salary Assignment</a>";
 
-    // ── NEW: Salary Statistics deep-link button ──
-    // Builds the company link name (same format salary-statistics uses: the Company Link name = emp or emp-N)
-    // We navigate to salary-statistics and pass the company_link name as the employee param
-    // The page will be pre-seeded via the URL hash so it opens the detail view directly.
     var cl_name = d.company_link_name || emp;
     var company_for_stats = (c && c.company) ? encodeURIComponent(c.company) : "";
     var stats_url = "/app/salary-statistics?ep_employee=" + encodeURIComponent(cl_name) +
@@ -743,7 +1087,7 @@ function render_profile($sidebar, $main, d, emp) {
           "<span class='ep-stats-btn-icon'>📊</span>" +
           "<span class='ep-stats-btn-text'>" +
           "<span class='ep-stats-btn-label'>View Salary Statistics</span>" +
-          "<span class='ep-stats-btn-sub'>Month-wise slip & attendance</span>" +
+          "<span class='ep-stats-btn-sub'>Month-wise slip &amp; attendance</span>" +
           "</span>" +
           "</a>";
 
