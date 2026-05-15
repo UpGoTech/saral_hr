@@ -1,7 +1,7 @@
 {
  "charts": [],
- "content": "[{\"id\":\"quLY2RmqsK\",\"type\":\"header\",\"data\":{\"text\":\"<span class=\\\"h4\\\">Saral HR</span>\",\"col\":12}},{\"id\":\"vX7k3MjFpF\",\"type\":\"card\",\"data\":{\"card_name\":\"Companies Master Data\",\"col\":4}},{\"id\":\"UXBG6dAVhA\",\"type\":\"card\",\"data\":{\"card_name\":\"Employees Master Data\",\"col\":4}},{\"id\":\"ONXHZ1p8Tv\",\"type\":\"card\",\"data\":{\"card_name\":\"Biometric\",\"col\":4}},{\"id\":\"tcNJEXnjQA\",\"type\":\"card\",\"data\":{\"card_name\":\"Salaries Master Data\",\"col\":4}},{\"id\":\"s7XR35vZsk\",\"type\":\"card\",\"data\":{\"card_name\":\"Monthly Transactions\",\"col\":4}},{\"id\":\"cLCTEGWswg\",\"type\":\"card\",\"data\":{\"card_name\":\"Leaves Process\",\"col\":4}},{\"id\":\"2AtGjch4al\",\"type\":\"card\",\"data\":{\"card_name\":\"Report\",\"col\":4}},{\"id\":\"ad8Ylo2JQq\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"View Salary Insight\",\"col\":3}},{\"id\":\"0meWuWmuDh\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Bulk Mark Attendance\",\"col\":3}},{\"id\":\"5CJdLnloTi\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"View Payroll Report\",\"col\":3}},{\"id\":\"DzpOy7QolO\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"View Salary Statistics\",\"col\":3}},{\"id\":\"I8XwI9v3a9\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"View Attendance Dashboard\",\"col\":3}},{\"id\":\"__uwwFAuhL\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Employee Loan Advance Ledger\",\"col\":3}},{\"id\":\"h0lo5909XG\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"HR Workforce & Payroll Overview\",\"col\":3}},{\"id\":\"0nabSA8nAP\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Daily Wage Attendance\",\"col\":3}},{\"id\":\"9q7-_C9IIg\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Daily Wage Calculation Report\",\"col\":3}},{\"id\":\"3QdfqOdCKN\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Company Enrollment Summary\",\"col\":3}}]",
- "creation": "2026-05-14 18:53:21.190981",
+ "content": "[{\"id\":\"quLY2RmqsK\",\"type\":\"header\",\"data\":{\"text\":\"<span class=\\\"h4\\\">Saral HR</span>\",\"col\":12}},{\"id\":\"vX7k3MjFpF\",\"type\":\"card\",\"data\":{\"card_name\":\"Companies Master Data\",\"col\":4}},{\"id\":\"UXBG6dAVhA\",\"type\":\"card\",\"data\":{\"card_name\":\"Employees Master Data\",\"col\":4}},{\"id\":\"ONXHZ1p8Tv\",\"type\":\"card\",\"data\":{\"card_name\":\"Biometric\",\"col\":4}},{\"id\":\"tcNJEXnjQA\",\"type\":\"card\",\"data\":{\"card_name\":\"Salaries Master Data\",\"col\":4}},{\"id\":\"s7XR35vZsk\",\"type\":\"card\",\"data\":{\"card_name\":\"Monthly Transactions\",\"col\":4}},{\"id\":\"cLCTEGWswg\",\"type\":\"card\",\"data\":{\"card_name\":\"Leaves Process\",\"col\":4}},{\"id\":\"ad8Ylo2JQq\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"View Salary Insight\",\"col\":3}},{\"id\":\"0meWuWmuDh\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Bulk Mark Attendance\",\"col\":3}},{\"id\":\"5CJdLnloTi\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"View Payroll Report\",\"col\":3}},{\"id\":\"DzpOy7QolO\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"View Salary Statistics\",\"col\":3}},{\"id\":\"I8XwI9v3a9\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"View Attendance Dashboard\",\"col\":3}},{\"id\":\"h0lo5909XG\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"HR Workforce & Payroll Overview\",\"col\":3}},{\"id\":\"0nabSA8nAP\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Daily Wage Attendance\",\"col\":3}},{\"id\":\"9q7-_C9IIg\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Daily Wage Calculation Report\",\"col\":3}},{\"id\":\"3QdfqOdCKN\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Company Enrollment Summary\",\"col\":3}},{\"id\":\"z438-OXDAN\",\"type\":\"header\",\"data\":{\"text\":\"<span class=\\\"h4\\\"><b>Loan</b></span>\",\"col\":12}},{\"id\":\"__uwwFAuhL\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Employee Loan Advance Ledger\",\"col\":3}},{\"id\":\"RZYfyfGT_p\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Loan Deduction For Month\",\"col\":3}},{\"id\":\"-4YhGslVjM\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Loan Register\",\"col\":3}},{\"id\":\"MEoIy75QHi\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Advance Register\",\"col\":3}}]",
+ "creation": "2026-05-15 14:42:46.814565",
  "custom_blocks": [],
  "docstatus": 0,
  "doctype": "Workspace",
@@ -271,35 +271,6 @@
   {
    "hidden": 0,
    "is_query_report": 0,
-   "label": "Report",
-   "link_count": 2,
-   "link_type": "DocType",
-   "onboard": 0,
-   "type": "Card Break"
-  },
-  {
-   "hidden": 0,
-   "is_query_report": 0,
-   "label": "Salary Slip",
-   "link_count": 0,
-   "link_to": "Salary Slip",
-   "link_type": "DocType",
-   "onboard": 0,
-   "type": "Link"
-  },
-  {
-   "hidden": 0,
-   "is_query_report": 0,
-   "label": "Employee Salary Hold",
-   "link_count": 0,
-   "link_to": "Employee Salary Hold",
-   "link_type": "DocType",
-   "onboard": 0,
-   "type": "Link"
-  },
-  {
-   "hidden": 0,
-   "is_query_report": 0,
    "label": "Biometric",
    "link_count": 4,
    "link_type": "DocType",
@@ -347,7 +318,7 @@
    "type": "Link"
   }
  ],
- "modified": "2026-05-15 12:40:43.606518",
+ "modified": "2026-05-15 15:59:11.668524",
  "modified_by": "Administrator",
  "module": "Saral Hr",
  "name": "Saral HR",
@@ -376,8 +347,22 @@
   {
    "color": "Grey",
    "doc_view": "List",
+   "label": "Loan Deduction For Month",
+   "link_to": "Loan Deduction For Month",
+   "type": "Report"
+  },
+  {
+   "color": "Grey",
+   "doc_view": "List",
    "label": "Employee Loan Advance Ledger",
    "link_to": "Employee Loan Advance Ledger",
+   "type": "Report"
+  },
+  {
+   "color": "Grey",
+   "doc_view": "List",
+   "label": "Loan Register",
+   "link_to": "Loan Register",
    "type": "Report"
   },
   {
@@ -386,6 +371,13 @@
    "label": "View Salary Insight",
    "type": "URL",
    "url": "/app/salary-insight"
+  },
+  {
+   "color": "Grey",
+   "doc_view": "List",
+   "label": "Advance Register",
+   "link_to": "Advance Register",
+   "type": "Report"
   },
   {
    "color": "Grey",
