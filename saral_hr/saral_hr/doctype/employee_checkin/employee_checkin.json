@@ -44,7 +44,8 @@
    "fieldtype": "Data",
    "label": "Employee Name",
    "read_only": 1,
-   "in_list_view": 1
+   "in_list_view": 1,
+   "fetch_if_empty": 1
   },
   {
    "fieldname": "column_break_1",
@@ -53,17 +54,21 @@
   {
    "fetch_from": "employee.company",
    "fieldname": "company",
-   "fieldtype": "Data",
+   "fieldtype": "Link",
+   "options": "Company",
    "label": "Company",
    "read_only": 1,
-   "in_standard_filter": 1
+   "in_standard_filter": 1,
+   "fetch_if_empty": 1
   },
   {
    "fetch_from": "employee.department",
    "fieldname": "department",
-   "fieldtype": "Data",
+   "fieldtype": "Link",
+   "options": "Department",
    "label": "Department",
-   "read_only": 1
+   "read_only": 1,
+   "fetch_if_empty": 1
   },
   {
    "fieldname": "details_section",
@@ -112,7 +117,7 @@
  ],
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-05-08 17:00:00.000000",
+ "modified": "2026-05-16 10:00:00.000000",
  "modified_by": "Administrator",
  "module": "Saral Hr",
  "name": "Employee Checkin",

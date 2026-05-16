@@ -58,22 +58,21 @@ def fetch_from_machine(machine_doc):
 
 # ─────────────────────────────────────────────
 # 3. FILTER NEW RECORDS
-#    IMPORTANT: uses original_sync_time (the value BEFORE this sync started)
-#    so all batches filter from the same cutoff point
 # ─────────────────────────────────────────────
 def filter_new_records(attendance_list, last_sync_time, fallback_days=3):
     if last_sync_time:
         cutoff = get_datetime(str(last_sync_time))
     else:
         cutoff = add_days(now_datetime(), -fallback_days)
-    return [a for a in attendance_list if a.timestamp and get_datetime(str(a.timestamp)) > cutoff]
+    return [a for a in attendance_list
+            if a.timestamp and get_datetime(str(a.timestamp)) > cutoff]
 
 
 # ─────────────────────────────────────────────
 # 4. PUNCH TYPE
 # ─────────────────────────────────────────────
 def get_punch_type(punch_code):
-    return {0: "IN", 1: "OUT", 4: "IN", 5: "OUT"}.get(punch_code, "Unknown")
+    return {0: "IN", 1: "OUT", 4: "IN", 5: "OUT"}.get(punch_code, "IN")
 
 
 # ─────────────────────────────────────────────
@@ -84,36 +83,101 @@ def map_employees():
         filters={"employee": ["is", "not set"], "is_processed": 0},
         fields=["name", "device_emp_id"])
     for log in unlinked:
-        emp = frappe.db.get_value("Employee", {"attendance_device_id": log.device_emp_id},
-                                  ["name", "employee_name"], as_dict=True)
+        emp = frappe.db.get_value("Employee",
+            {"attendance_device_id": log.device_emp_id},
+            ["name", "employee_name"], as_dict=True)
         if emp:
             frappe.db.set_value("Biometric attendance log", log.name,
-                                {"employee": emp.name, "employee_name": emp.employee_name})
+                {"employee": emp.name, "employee_name": emp.employee_name})
     frappe.db.commit()
 
 
 # ─────────────────────────────────────────────
 # 6. AUTO PROCESS TO CHECKIN
+# FIX: use frappe.db.sql to avoid field name issues,
+#      handle punch_type None/Unknown safely,
+#      log each failure clearly
 # ─────────────────────────────────────────────
 def push_to_employee_checkin():
-    settings = frappe.get_single("Biometric sync settings")
-    if not settings.auto_process_to_checkin:
-        return
-    logs = frappe.get_all("Biometric attendance log",
-        filters={"is_processed": 0, "employee": ["is", "set"]},
-        fields=["name", "employee", "punch_time", "punch_type"])
+    # Fetch unprocessed logs that have an employee mapped
+    # Also fetch employee_name from Biometric log so we can set it explicitly
+    # and avoid Frappe's fetch_from triggering a re-fetch + length validation error
+    logs = frappe.db.sql("""
+        SELECT
+            bal.name,
+            bal.employee,
+            bal.employee_name,
+            bal.punch_time,
+            bal.punch_type
+        FROM `tabBiometric attendance log` bal
+        WHERE bal.is_processed = 0
+          AND bal.employee IS NOT NULL
+          AND bal.employee != ''
+    """, as_dict=True)
+
+    frappe.log_error(
+        f"push_to_employee_checkin: found {len(logs)} unprocessed logs",
+        "Biometric Sync Debug"
+    )
+
+    created = 0
+    skipped = 0
+    failed  = 0
+
     for log in logs:
         try:
-            checkin = frappe.get_doc({"doctype": "Employee Checkin", "employee": log.employee,
-                "time": log.punch_time, "log_type": "IN" if log.punch_type == "IN" else "OUT",
-                "device_id": "Biometric"})
-            checkin.insert(ignore_permissions=True)
+            # Safely resolve log_type — default to IN if unknown
+            raw_type = (log.punch_type or "").strip().upper()
+            log_type = "IN" if raw_type == "IN" else ("OUT" if raw_type == "OUT" else "IN")
+
+            # Skip if Employee Checkin already exists for same employee+time+log_type
+            already = frappe.db.exists("Employee Checkin", {
+                "employee": log.employee,
+                "time":     log.punch_time,
+                "log_type": log_type,
+            })
+            if already:
+                frappe.db.set_value("Biometric attendance log", log.name, "is_processed", 1)
+                skipped += 1
+                continue
+
+            # Fetch employee_name fresh from Employee master (truncate to 140 chars as safety)
+            emp_name = frappe.db.get_value("Employee", log.employee, "employee_name") or log.employee_name or ""
+            emp_name = emp_name[:140]
+
+            checkin = frappe.get_doc({
+                "doctype":       "Employee Checkin",
+                "employee":      log.employee,
+                "employee_name": emp_name,   # set explicitly to bypass fetch_from validation
+                "time":          log.punch_time,
+                "log_type":      log_type,
+                "device_id":     "Biometric",
+            })
+            # ignore_links=True skips fetch_from re-evaluation during insert
+            checkin.insert(ignore_permissions=True, ignore_links=True)
             frappe.db.set_value("Biometric attendance log", log.name, "is_processed", 1)
+            created += 1
+
         except frappe.DuplicateEntryError:
+            frappe.db.rollback()
             frappe.db.set_value("Biometric attendance log", log.name, "is_processed", 1)
+            skipped += 1
+
         except Exception as e:
-            frappe.log_error(f"Checkin error {log.name}: {e}", "Biometric Sync")
+            frappe.db.rollback()
+            frappe.log_error(
+                f"Checkin error for log {log.name} | employee={log.employee} "
+                f"| time={log.punch_time} | punch_type={log.punch_type} | error: {e}",
+                "Biometric Sync"
+            )
+            failed += 1
+
     frappe.db.commit()
+    frappe.log_error(
+        f"push_to_employee_checkin done: created={created}, skipped={skipped}, failed={failed}",
+        "Biometric Sync Debug"
+    )
+    return {"created": created, "skipped": skipped, "failed": failed}
 
 
 # ─────────────────────────────────────────────
@@ -127,18 +191,34 @@ def process_single_log(log_name):
             return {"success": False, "message": "No employee mapped to this log"}
         if log.is_processed:
             return {"success": False, "message": "Already processed"}
-        checkin = frappe.get_doc({"doctype": "Employee Checkin", "employee": log.employee,
-            "time": log.punch_time, "log_type": "IN" if log.punch_type == "IN" else "OUT",
-            "device_id": "Biometric"})
-        checkin.insert(ignore_permissions=True)
+
+        raw_type = (log.punch_type or "").strip().upper()
+        log_type = "IN" if raw_type == "IN" else ("OUT" if raw_type == "OUT" else "IN")
+
+        emp_name = frappe.db.get_value("Employee", log.employee, "employee_name") or log.employee_name or ""
+        emp_name = emp_name[:140]
+
+        frappe.get_doc({
+            "doctype":       "Employee Checkin",
+            "employee":      log.employee,
+            "employee_name": emp_name,
+            "time":          log.punch_time,
+            "log_type":      log_type,
+            "device_id":     "Biometric",
+        }).insert(ignore_permissions=True, ignore_links=True)
+
         frappe.db.set_value("Biometric attendance log", log_name, "is_processed", 1)
         frappe.db.commit()
         return {"success": True, "message": "Checkin created"}
+
     except frappe.DuplicateEntryError:
+        frappe.db.rollback()
         frappe.db.set_value("Biometric attendance log", log_name, "is_processed", 1)
         frappe.db.commit()
         return {"success": True, "message": "Already exists, marked as processed"}
+
     except Exception as e:
+        frappe.db.rollback()
         return {"success": False, "message": str(e)}
 
 
@@ -148,59 +228,90 @@ def process_single_log(log_name):
 @frappe.whitelist()
 def process_logs_by_date(start_date, end_date, employee=None, punch_type=None):
     try:
-        filters = {"is_processed": 0, "employee": ["is", "set"],
-            "punch_time": ["between", [start_date + " 00:00:00", end_date + " 23:59:59"]]}
+        filters = {
+            "is_processed": 0,
+            "employee": ["is", "set"],
+            "punch_time": ["between", [start_date + " 00:00:00", end_date + " 23:59:59"]],
+        }
         if employee:   filters["employee"]   = employee
         if punch_type: filters["punch_type"] = punch_type
+
         logs = frappe.get_all("Biometric attendance log", filters=filters,
-            fields=["name", "employee", "punch_time", "punch_type"], limit=0)
+            fields=["name", "employee", "employee_name", "punch_time", "punch_type"], limit=0)
+
         processed = failed = skipped = 0
+
         for log in logs:
             try:
-                checkin = frappe.get_doc({"doctype": "Employee Checkin", "employee": log.employee,
-                    "time": log.punch_time, "log_type": "IN" if log.punch_type == "IN" else "OUT",
-                    "device_id": "Biometric"})
-                checkin.insert(ignore_permissions=True)
+                raw_type = (log.punch_type or "").strip().upper()
+                log_type = "IN" if raw_type == "IN" else ("OUT" if raw_type == "OUT" else "IN")
+
+                already = frappe.db.exists("Employee Checkin", {
+                    "employee": log.employee,
+                    "time":     log.punch_time,
+                    "log_type": log_type,
+                })
+                if already:
+                    frappe.db.set_value("Biometric attendance log", log.name, "is_processed", 1)
+                    skipped += 1
+                    continue
+
+                emp_name = frappe.db.get_value("Employee", log.employee, "employee_name") or log.employee_name or ""
+                emp_name = emp_name[:140]
+
+                frappe.get_doc({
+                    "doctype":       "Employee Checkin",
+                    "employee":      log.employee,
+                    "employee_name": emp_name,
+                    "time":          log.punch_time,
+                    "log_type":      log_type,
+                    "device_id":     "Biometric",
+                }).insert(ignore_permissions=True, ignore_links=True)
+
                 frappe.db.set_value("Biometric attendance log", log.name, "is_processed", 1)
                 processed += 1
+
             except frappe.DuplicateEntryError:
+                frappe.db.rollback()
                 frappe.db.set_value("Biometric attendance log", log.name, "is_processed", 1)
                 skipped += 1
+
             except Exception as e:
-                frappe.log_error(f"Checkin error {log.name}: {e}", "Biometric Sync")
+                frappe.db.rollback()
+                frappe.log_error(
+                    f"Checkin error {log.name}: {e}", "Biometric Sync"
+                )
                 failed += 1
+
         frappe.db.commit()
         return {"success": True, "processed": processed, "failed": failed, "skipped": skipped}
+
     except Exception as e:
         return {"success": False, "message": str(e)}
 
 
 # ─────────────────────────────────────────────
 # 9. SYNC SELECTED MACHINES
-#
-# KEY FIX:
-#   - `original_sync_time` is passed from JS (the last_sync_time BEFORE this sync run)
-#   - All 5 batches use the SAME original_sync_time for filtering
-#   - last_sync_time on the machine is only updated on the FINAL batch
-#   - This means batches 2-5 filter from the same cutoff as batch 1 ✓
+# FIX: properly cast auto_process to int from string
 # ─────────────────────────────────────────────
 @frappe.whitelist()
-def sync_selected_machines(machine_names, auto_process=0, offset=0,
-                            batch_num=1, total_batches=5, original_sync_time=None):
+def sync_selected_machines(machine_names, auto_process=0):
     import json
     if isinstance(machine_names, str):
         machine_names = json.loads(machine_names)
 
-    offset           = int(offset or 0)
-    batch_num        = int(batch_num or 1)
-    total_batches    = int(total_batches or 5)
-    is_final_batch   = (batch_num >= total_batches)
-    EMIT_EVERY       = 5
-    COMMIT_EVERY     = 50
+    # FIX: Frappe sends checkbox as string "0"/"1" — cast properly
+    try:
+        auto_process = int(auto_process)
+    except (ValueError, TypeError):
+        auto_process = 0
 
-    settings         = frappe.get_single("Biometric sync settings")
-    fallback_days    = settings.default_fetch_days or 3
-    sync_batch       = now_datetime().strftime("%Y-%m-%d %H:%M:%S")
+    NUM_BATCHES  = 5
+    COMMIT_EVERY = 50
+
+    settings      = frappe.get_single("Biometric sync settings")
+    fallback_days = settings.default_fetch_days or 3
+    sync_batch    = now_datetime().strftime("%Y-%m-%d %H:%M:%S")
 
     results = []
 
@@ -213,119 +324,93 @@ def sync_selected_machines(machine_names, auto_process=0, offset=0,
         machine_doc = frappe.get_doc("Biometric machine", machine_name)
 
         try:
-            # ── Use original_sync_time for filtering on ALL batches ──
-            # JS passes the last_sync_time it read BEFORE batch 1 started.
-            # This guarantees all 5 batches filter from the same cutoff.
-            filter_cutoff = original_sync_time if original_sync_time else machine_doc.last_sync_time
-
             raw      = fetch_from_machine(machine_doc)
-            filtered = filter_new_records(raw, filter_cutoff, fallback_days)
+            filtered = filter_new_records(raw, machine_doc.last_sync_time, fallback_days)
             total    = len(filtered)
 
-            # ── Equal batch slices ──
-            batch_size  = math.ceil(total / total_batches) if total > 0 else 0
-            batch_start = offset
-            batch_end   = min(offset + batch_size, total)
-            current     = filtered[batch_start:batch_end]
-            this_size   = len(current)
+            batch_size = math.ceil(total / NUM_BATCHES) if total > 0 else 0
 
-            saved          = 0
-            already_exists = 0
-            pending_commit = 0
-            invalid_ids    = []
+            all_invalid_ids = []
+            batches_result  = []
 
-            for idx, record in enumerate(current):
-                punch_time = get_datetime(str(record.timestamp))
-                emp_id     = str(record.user_id)
+            for bn in range(1, NUM_BATCHES + 1):
+                b_start = (bn - 1) * batch_size
+                b_end   = min(bn * batch_size, total)
+                batch   = filtered[b_start:b_end]
+                b_size  = len(batch)
 
-                emp = frappe.db.get_value("Employee", {"attendance_device_id": emp_id},
-                                          ["name", "employee_name"], as_dict=True)
-                if not emp:
-                    if emp_id not in invalid_ids:
-                        invalid_ids.append(emp_id)
-                else:
-                    exists = frappe.db.exists("Biometric attendance log", {
-                        "biometric_machine": machine_name,
-                        "device_emp_id":    emp_id,
-                        "punch_time":       punch_time,
-                    })
-                    if exists:
-                        already_exists += 1
+                saved          = 0
+                already_exists = 0
+                pending_commit = 0
+                invalid_ids    = []
+
+                for record in batch:
+                    punch_time = get_datetime(str(record.timestamp))
+                    emp_id     = str(record.user_id)
+
+                    emp = frappe.db.get_value("Employee",
+                        {"attendance_device_id": emp_id},
+                        ["name", "employee_name"], as_dict=True)
+
+                    if not emp:
+                        if emp_id not in invalid_ids:
+                            invalid_ids.append(emp_id)
+                        if emp_id not in all_invalid_ids:
+                            all_invalid_ids.append(emp_id)
                     else:
-                        frappe.get_doc({
-                            "doctype":           "Biometric attendance log",
+                        exists = frappe.db.exists("Biometric attendance log", {
                             "biometric_machine": machine_name,
-                            "device_emp_id":     emp_id,
-                            "employee":          emp.name,
-                            "employee_name":     emp.employee_name,
-                            "punch_time":        punch_time,
-                            "punch_type":        get_punch_type(record.punch),
-                            "is_processed":      0,
-                            "sync_batch":        sync_batch,
-                        }).insert(ignore_permissions=True)
-                        saved += 1
-                        pending_commit += 1
+                            "device_emp_id":    emp_id,
+                            "punch_time":       punch_time,
+                        })
+                        if exists:
+                            already_exists += 1
+                        else:
+                            frappe.get_doc({
+                                "doctype":           "Biometric attendance log",
+                                "biometric_machine": machine_name,
+                                "device_emp_id":     emp_id,
+                                "employee":          emp.name,
+                                "employee_name":     emp.employee_name,
+                                "punch_time":        punch_time,
+                                "punch_type":        get_punch_type(record.punch),
+                                "is_processed":      0,
+                                "sync_batch":        sync_batch,
+                            }).insert(ignore_permissions=True)
+                            saved += 1
+                            pending_commit += 1
 
-                if pending_commit >= COMMIT_EVERY:
+                    if pending_commit >= COMMIT_EVERY:
+                        frappe.db.commit()
+                        pending_commit = 0
+
+                if pending_commit > 0:
                     frappe.db.commit()
-                    pending_commit = 0
 
-                # Emit every EMIT_EVERY records for live counter
-                if (idx + 1) % EMIT_EVERY == 0 or (idx + 1) == this_size:
-                    frappe.publish_realtime(
-                        event="biometric_fetch_progress",
-                        message={
-                            "machine_id":    machine_name,
-                            "machine":       machine_doc.machine_name,
-                            "batch_num":     batch_num,
-                            "total_batches": total_batches,
-                            "fetched":       idx + 1,
-                            "batch_size":    this_size,
-                            "saved":         saved,
-                            "already_exists": already_exists,
-                            "invalid_count": len(invalid_ids),
-                            "status":        "running",
-                        },
-                        user=frappe.session.user
-                    )
-
-            if pending_commit > 0:
-                frappe.db.commit()
-
-            # ── Only update last_sync_time on the FINAL batch ──
-            if is_final_batch:
-                frappe.db.set_value("Biometric machine", machine_name, {
-                    "last_sync_time":    sync_batch,
-                    "connection_status": "Connected",
+                batches_result.append({
+                    "batch_num":      bn,
+                    "total_batches":  NUM_BATCHES,
+                    "batch_size":     b_size,
+                    "saved":          saved,
+                    "already_exists": already_exists,
+                    "invalid_count":  len(invalid_ids),
+                    "invalid_ids":    invalid_ids,
                 })
-                frappe.db.commit()
-            else:
-                # Still mark as connected
-                frappe.db.set_value("Biometric machine", machine_name, "connection_status", "Connected")
-                frappe.db.commit()
 
-            remaining_records = max(0, total - batch_end)
-            remaining_batches = max(0, total_batches - batch_num)
+            frappe.db.set_value("Biometric machine", machine_name, {
+                "last_sync_time":    sync_batch,
+                "connection_status": "Connected",
+            })
+            frappe.db.commit()
 
             results.append({
-                "machine":           machine_doc.machine_name,
-                "machine_id":        machine_name,
-                "status":            "ok",
-                "total":             total,
-                "batch_num":         batch_num,
-                "total_batches":     total_batches,
-                "batch_size":        this_size,
-                "fetched":           this_size,
-                "saved":             saved,
-                "already_exists":    already_exists,
-                "invalid_ids":       invalid_ids,
-                "invalid_count":     len(invalid_ids),
-                "remaining_records": remaining_records,
-                "remaining_batches": remaining_batches,
-                "next_offset":       batch_end   if remaining_records > 0 else None,
-                "next_batch_num":    batch_num+1 if remaining_batches > 0 else None,
-                # Return original_sync_time so JS can pass it back for next batch
-                "original_sync_time": str(filter_cutoff) if filter_cutoff else None,
+                "machine":         machine_doc.machine_name,
+                "machine_id":      machine_name,
+                "status":          "ok",
+                "total":           total,
+                "num_batches":     NUM_BATCHES,
+                "batches":         batches_result,
+                "all_invalid_ids": all_invalid_ids,
             })
 
         except Exception as e:
@@ -335,9 +420,16 @@ def sync_selected_machines(machine_names, auto_process=0, offset=0,
             results.append({"machine": machine_doc.machine_name, "machine_id": machine_name,
                             "status": "error", "error": str(e)})
 
+    # Always map employees first, then conditionally push to checkin
     map_employees()
-    if int(auto_process or 0):
-        push_to_employee_checkin()
+
+    checkin_result = None
+    if auto_process == 1:
+        checkin_result = push_to_employee_checkin()
+
+    # Attach checkin summary to results for JS to display
+    for r in results:
+        r["auto_process_result"] = checkin_result
 
     return results
 
@@ -353,6 +445,7 @@ def sync_all_machines():
     fallback_days = settings.default_fetch_days or 3
     sync_batch    = now_datetime().strftime("%Y-%m-%d %H:%M:%S")
     results = []
+
     for m in machines:
         machine_doc = frappe.get_doc("Biometric machine", m.name)
         try:
@@ -360,6 +453,7 @@ def sync_all_machines():
             filtered = filter_new_records(raw, m.last_sync_time, fallback_days)
             saved = already_exists = 0
             invalid_ids = []
+
             for record in filtered:
                 punch_time = get_datetime(str(record.timestamp))
                 emp_id     = str(record.user_id)
@@ -372,28 +466,52 @@ def sync_all_machines():
                         "device_emp_id": emp_id, "punch_time": punch_time}):
                     already_exists += 1
                     continue
-                frappe.get_doc({"doctype": "Biometric attendance log", "biometric_machine": m.name,
-                    "device_emp_id": emp_id, "employee": emp.name, "employee_name": emp.employee_name,
-                    "punch_time": punch_time, "punch_type": get_punch_type(record.punch),
-                    "is_processed": 0, "sync_batch": sync_batch}).insert(ignore_permissions=True)
+                frappe.get_doc({
+                    "doctype":           "Biometric attendance log",
+                    "biometric_machine": m.name,
+                    "device_emp_id":     emp_id,
+                    "employee":          emp.name,
+                    "employee_name":     emp.employee_name,
+                    "punch_time":        punch_time,
+                    "punch_type":        get_punch_type(record.punch),
+                    "is_processed":      0,
+                    "sync_batch":        sync_batch,
+                }).insert(ignore_permissions=True)
                 saved += 1
+
             frappe.db.set_value("Biometric machine", m.name,
                 {"last_sync_time": sync_batch, "connection_status": "Connected"})
             frappe.db.commit()
             results.append({"machine": m.machine_name, "total": len(filtered),
-                "saved": saved, "already_exists": already_exists, "invalid_ids": invalid_ids, "status": "ok"})
+                "saved": saved, "already_exists": already_exists,
+                "invalid_ids": invalid_ids, "status": "ok"})
+
         except Exception as e:
             frappe.db.set_value("Biometric machine", m.name, "connection_status", "Failed")
             frappe.db.commit()
             frappe.log_error(f"Machine {m.machine_name}: {e}", "Biometric Sync")
             results.append({"machine": m.machine_name, "status": "error", "error": str(e)})
+
     map_employees()
     push_to_employee_checkin()
     return results
 
 
 # ─────────────────────────────────────────────
-# 11. DEBUG
+# 11. MANUAL TRIGGER (whitelisted for testing)
+# ─────────────────────────────────────────────
+@frappe.whitelist()
+def manual_push_to_checkin():
+    """
+    Call this from browser console to test push independently:
+    frappe.call({method: 'saral_hr.utils.biometric_sync.manual_push_to_checkin', callback: r => console.log(r)})
+    """
+    result = push_to_employee_checkin()
+    return result
+
+
+# ─────────────────────────────────────────────
+# 12. DEBUG
 # ─────────────────────────────────────────────
 @frappe.whitelist()
 def debug_fetch(machine_name):
@@ -403,9 +521,48 @@ def debug_fetch(machine_name):
         settings      = frappe.get_single("Biometric sync settings")
         fallback_days = settings.default_fetch_days or 3
         filtered      = filter_new_records(raw, machine_doc.last_sync_time, fallback_days)
-        return {"total_raw": len(raw), "total_filtered": len(filtered),
-                "last_sync_time": str(machine_doc.last_sync_time), "fallback_days": fallback_days,
-                "sample": [{"user_id": str(r.user_id), "timestamp": str(r.timestamp), "punch": r.punch}
-                           for r in filtered[:5]]}
+        return {
+            "total_raw":      len(raw),
+            "total_filtered": len(filtered),
+            "last_sync_time": str(machine_doc.last_sync_time),
+            "fallback_days":  fallback_days,
+            "sample": [{"user_id": str(r.user_id), "timestamp": str(r.timestamp),
+                         "punch": r.punch} for r in filtered[:5]],
+        }
     except Exception as e:
         return {"error": str(e)}
+
+
+@frappe.whitelist()
+def debug_unprocessed_logs():
+    """
+    Check what unprocessed logs exist and why they may not be pushing.
+    frappe.call({method: 'saral_hr.utils.biometric_sync.debug_unprocessed_logs', callback: r => console.log(r)})
+    """
+    all_logs = frappe.db.sql("""
+        SELECT name, employee, employee_name, punch_time, punch_type, is_processed
+        FROM `tabBiometric attendance log`
+        ORDER BY punch_time DESC
+        LIMIT 20
+    """, as_dict=True)
+
+    unprocessed_with_emp = frappe.db.sql("""
+        SELECT COUNT(*) as cnt FROM `tabBiometric attendance log`
+        WHERE is_processed = 0 AND employee IS NOT NULL AND employee != ''
+    """, as_dict=True)
+
+    unprocessed_no_emp = frappe.db.sql("""
+        SELECT COUNT(*) as cnt FROM `tabBiometric attendance log`
+        WHERE is_processed = 0 AND (employee IS NULL OR employee = '')
+    """, as_dict=True)
+
+    checkin_count = frappe.db.sql("""
+        SELECT COUNT(*) as cnt FROM `tabEmployee Checkin`
+    """, as_dict=True)
+
+    return {
+        "recent_logs":               all_logs,
+        "unprocessed_with_employee": unprocessed_with_emp[0].cnt,
+        "unprocessed_no_employee":   unprocessed_no_emp[0].cnt,
+        "total_employee_checkins":   checkin_count[0].cnt,
+    }

@@ -10,16 +10,14 @@ frappe.ui.form.on("Employee Checkin", {
         }
     },
 
+    // NOTE: employee_name, company, and department are auto-fetched
+    // via fetch_from in the JSON definition. No manual fetch needed here.
     employee(frm) {
-        // Auto-fetch employee details when employee is selected
-        if (frm.doc.employee) {
-            frappe.db.get_value("Employee", frm.doc.employee, ["employee_name", "company", "department"], (r) => {
-                if (r) {
-                    frm.set_value("employee_name", r.employee_name);
-                    frm.set_value("company", r.company);
-                    frm.set_value("department", r.department);
-                }
-            });
+        // Clear dependent fields when employee is changed
+        if (!frm.doc.employee) {
+            frm.set_value("employee_name", "");
+            frm.set_value("company", "");
+            frm.set_value("department", "");
         }
     },
 

@@ -75,11 +75,6 @@ function show_fetch_dialog(listview) {
             let selected = {};
             machines.forEach(m => selected[m.name] = true);
 
-            // ── Store last_sync_time PER machine BEFORE any fetch starts ──
-            // This is passed to ALL batches so they filter from the same cutoff
-            let original_sync_times = {};
-            machines.forEach(m => { original_sync_times[m.name] = m.last_sync_time || null; });
-
             let d = new frappe.ui.Dialog({
                 title: __("Fetch Records from Biometric Machines"),
                 fields: [
@@ -94,7 +89,7 @@ function show_fetch_dialog(listview) {
                         return;
                     }
                     d.hide();
-                    start_live_fetch(selected_list, d.get_value("auto_process"), listview, original_sync_times);
+                    start_live_fetch(selected_list, d.get_value("auto_process"), listview);
                 }
             });
             d.show();
@@ -104,7 +99,8 @@ function show_fetch_dialog(listview) {
                 container.empty();
                 let cards = machines.map((m, idx) => {
                     let sync_label   = m.last_sync_time ? frappe.datetime.prettyDate(m.last_sync_time) : "Never synced";
-                    let status_color = m.connection_status === "Connected" ? "#2ecc71" : m.connection_status === "Failed" ? "#e74c3c" : "#95a5a6";
+                    let status_color = m.connection_status === "Connected" ? "#2ecc71"
+                                     : m.connection_status === "Failed"    ? "#e74c3c" : "#95a5a6";
                     return `
                         <div style="border:1px solid var(--border-color);border-radius:8px;padding:12px 14px;margin-bottom:10px;background:var(--fg-color);">
                             <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px;">
@@ -139,45 +135,22 @@ function show_fetch_dialog(listview) {
 // ─────────────────────────────────────────────────────────
 // LIVE FETCH
 //
-// Each batch shows a clear breakdown:
-//   Batch 1 of 5  →  40 records scanned
-//       ✓  3   — newly saved to database
-//       ⟳  6   — already existed (skipped)
-//       ✗  31  — device ID not mapped to any employee (not saved)
+// NO REALTIME — 100% reliable.
+// Python returns full batch results in the API response.
+// JS draws all batch lines from response data.
 //
-// FIX: original_sync_times is passed to every batch call so Python
-//      filters from the same cutoff for all 5 batches.
+// Display:
+//   Batch 1 of 5  →  40 records scanned
+//       ✓  9   — newly saved to database
+//       ⟳  0   — already existed in database (skipped)
+//       ✗  31  — device ID not mapped to any employee (not saved)
+//   ...
 // ─────────────────────────────────────────────────────────
-function start_live_fetch(machine_names, auto_process, listview, original_sync_times) {
+function start_live_fetch(machine_names, auto_process, listview) {
 
-    const NUM_BATCHES = 5;
+    function safe(str) { return str.replace(/[^a-z0-9]/gi, "_"); }
 
-    let state = {};
-    machine_names.forEach(mid => {
-        state[mid] = {
-            display_name:    mid,
-            total:           0,
-            all_invalid_ids: [],
-            grand_saved:     0,
-            grand_invalid:   0,
-            grand_existed:   0,
-            done:            false,
-            error:           null,
-        };
-    });
-
-    // Realtime: only updates the live counter on the running batch line
-    frappe.realtime.on("biometric_fetch_progress", function(data) {
-        let mid = data.machine_id;
-        if (!state[mid]) return;
-        state[mid].display_name = data.machine || state[mid].display_name;
-        let $hdr = $("#bp-batchhdr-" + safe(mid) + "-b" + data.batch_num);
-        if ($hdr.length && !$hdr.hasClass("finalised")) {
-            $hdr.html(hdr_running(data.batch_num, NUM_BATCHES, data.fetched, data.batch_size));
-        }
-    });
-
-    // ── Dialog ──
+    // ── Build progress dialog (shown immediately with "Fetching…" skeleton) ──
     let dlg = new frappe.ui.Dialog({
         title: __("Fetching Records — Live Progress"),
         fields: [{ fieldname: "log_html", fieldtype: "HTML" }],
@@ -194,6 +167,7 @@ function start_live_fetch(machine_names, auto_process, listview, original_sync_t
                         color:var(--text-color); border-bottom:1px solid var(--border-color);
                         padding:6px 0; margin-bottom:10px;
                         display:flex; justify-content:space-between; align-items:center; }
+            .bp-mhdr + div { margin-bottom:16px; }
             .bp-bhdr  { padding:3px 0; line-height:2; }
             .bp-bsub  { padding:1px 0 1px 20px; line-height:1.8; font-size:12.5px; }
             .bp-sep   { height:8px; }
@@ -206,272 +180,186 @@ function start_live_fetch(machine_names, auto_process, listview, original_sync_t
             @keyframes bp-blink { 0%,100%{opacity:1} 50%{opacity:0.2} }
             .bp-blink { animation:bp-blink 1.1s ease-in-out infinite; }
             .bp-grand { font-family:var(--font-stack); font-size:12px; color:var(--text-muted);
-                        border-top:1px solid var(--border-color); padding-top:10px; margin-top:6px; }
+                        border-top:1px solid var(--border-color); padding-top:10px; margin-top:4px; }
             .bp-inv-box   { margin-top:14px; background:#fff8f0; border:1px solid #f39c12;
-                            border-radius:6px; padding:10px 14px; font-family:var(--font-stack); font-size:12px; }
+                            border-radius:6px; padding:10px 14px;
+                            font-family:var(--font-stack); font-size:12px; }
             .bp-inv-title { font-weight:600; color:#c0392b; margin-bottom:4px; }
             .bp-inv-sub   { color:#7f4f00; font-size:11px; margin-bottom:8px; }
             .bp-chip      { display:inline-block; background:#fde8cc; border:1px solid #f39c12;
                             border-radius:4px; padding:1px 8px; margin:2px 3px;
                             font-family:'Courier New',monospace; font-size:11px; color:#c0392b; }
-            .bp-action    { margin-top:14px; display:flex; align-items:center; gap:12px; flex-wrap:wrap; }
+            .bp-action    { margin-top:14px; }
             .bp-done      { color:#27ae60; font-weight:600; font-size:13px; font-family:var(--font-stack); }
         </style>
         <div class="bp-log" id="bp-log">
             <div id="bp-machines"></div>
             <div class="bp-action" id="bp-action"></div>
-        </div>
-    `);
+        </div>`);
 
-    // Skeleton
+    // Skeleton — one block per machine showing "Fetching…"
     machine_names.forEach(mid => {
         $root.find("#bp-machines").append(`
             <div id="bp-block-${safe(mid)}" style="margin-bottom:18px;">
                 <div class="bp-mhdr">
                     <span class="bp-mname">${mid}</span>
-                    <span class="bp-mstatus t-blue"><span class="bp-blink">●</span> Connecting…</span>
+                    <span class="bp-mstatus t-blue">
+                        <span class="bp-blink">●</span> Connecting…
+                    </span>
                 </div>
                 <div id="bp-lines-${safe(mid)}">
-                    <div class="bp-bhdr t-muted" id="bp-waiting-${safe(mid)}" style="font-style:italic;">
-                        <span class="bp-blink t-blue">●</span> &nbsp;Fetching data from device…
+                    <div class="bp-bhdr t-muted" style="font-style:italic;">
+                        <span class="bp-blink t-blue">●</span>
+                        &nbsp;Fetching data from device…
                     </div>
                 </div>
                 <div id="bp-grand-${safe(mid)}" class="bp-grand" style="display:none;"></div>
             </div>`);
     });
 
-    // ── Helpers ──
-    function safe(str) { return str.replace(/[^a-z0-9]/gi, "_"); }
-
-    function hdr_running(bn, bt, fetched, batch_size) {
-        return `<span class="t-muted">Batch ${bn} of ${bt} &nbsp;→&nbsp;</span>` +
-               `<span class="t-blue bp-blink">fetching…</span>` +
-               (batch_size ? ` <span class="t-blue">${fetched}/${batch_size}</span> records` : "");
+    // ── Helper: render one batch block ──
+    function render_batch_block(mid, bn, bt, b_size, saved, existed, invalid) {
+        let hdr = `<span class="t-muted">Batch ${bn} of ${bt} &nbsp;→&nbsp;</span>` +
+                  `<span class="t-green">${b_size} records scanned</span>`;
+        let subs = `<div class="bp-bsub"><span class="t-green">✓ &nbsp;${saved}</span>` +
+                       `<span class="t-muted"> &nbsp;— newly saved to database</span></div>` +
+                   `<div class="bp-bsub"><span class="t-gray">⟳ &nbsp;${existed}</span>` +
+                       `<span class="t-muted"> &nbsp;— already existed in database (skipped)</span></div>` +
+                   `<div class="bp-bsub"><span class="t-orange">✗ &nbsp;${invalid}</span>` +
+                       `<span class="t-muted"> &nbsp;— device ID not mapped to any employee (not saved)</span></div>`;
+        return `<div><div class="bp-bhdr">${hdr}</div><div>${subs}</div><div class="bp-sep"></div></div>`;
     }
 
-    function hdr_done(bn, bt, scanned) {
-        return `<span class="t-muted">Batch ${bn} of ${bt} &nbsp;→&nbsp;</span>` +
-               `<span class="t-green">${scanned} records scanned</span>`;
+    // ── Helper: render grand total ──
+    function render_grand(total, grand_saved, grand_existed, grand_invalid) {
+        let scanned = grand_saved + grand_existed + grand_invalid;
+        let not_yet = Math.max(0, total - scanned);
+        return `<b>${total}</b> total on device &nbsp;=&nbsp; ` +
+               `<b style="color:#27ae60;">${grand_saved}</b> newly saved` +
+               ` &nbsp;+&nbsp; <b style="color:#7f8c8d;">${grand_existed}</b> already existed` +
+               ` &nbsp;+&nbsp; <b style="color:#e67e22;">${grand_invalid}</b> no employee mapping` +
+               (not_yet > 0
+                   ? ` &nbsp;+&nbsp; <b style="color:#e74c3c;">${not_yet}</b> not yet fetched`
+                   : ` &nbsp;<span style="color:#27ae60;">— all ${total} processed ✓</span>`);
     }
 
-    // Sub-lines: saved + existed + invalid always adds up to scanned
-    function sub_lines(saved, existed, invalid) {
-        return `<div class="bp-bsub"><span class="t-green">✓ &nbsp;${saved}</span>` +
-                   `<span class="t-muted"> &nbsp;— newly saved to database</span></div>` +
-               `<div class="bp-bsub"><span class="t-gray">⟳ &nbsp;${existed}</span>` +
-                   `<span class="t-muted"> &nbsp;— already existed in database (skipped)</span></div>` +
-               `<div class="bp-bsub"><span class="t-orange">✗ &nbsp;${invalid}</span>` +
-                   `<span class="t-muted"> &nbsp;— device ID not mapped to any employee (not saved)</span></div>`;
-    }
+    // ── Fire ONE API call per machine ──
+    let promises = machine_names.map(machine_id =>
+        new Promise(resolve => {
+            frappe.call({
+                method: "saral_hr.utils.biometric_sync.sync_selected_machines",
+                args: { machine_names: [machine_id], auto_process: auto_process },
+                freeze: false,
+                callback(r) { resolve({ machine_id, result: r.message || [] }); },
+                error()     { resolve({ machine_id, result: null }); }
+            });
+        })
+    );
 
-    // Render or replace a full batch block
-    function render_batch(mid, bn, bt, scanned, saved, existed, invalid) {
-        let blk_id = "bp-batchblk-" + safe(mid) + "-b" + bn;
-        let hdr_id = "bp-batchhdr-" + safe(mid) + "-b" + bn;
+    Promise.all(promises).then(all => {
+        // Draw all batch lines from the response
+        all.forEach(({ machine_id, result }) => {
+            let $lines  = $root.find("#bp-lines-" + safe(machine_id));
+            let $grand  = $root.find("#bp-grand-"  + safe(machine_id));
+            let $mstatus = $root.find("#bp-block-" + safe(machine_id) + " .bp-mstatus");
+            let $mname   = $root.find("#bp-block-" + safe(machine_id) + " .bp-mname");
 
-        let html = `
-            <div id="${blk_id}">
-                <div class="bp-bhdr finalised" id="${hdr_id}">${hdr_done(bn, bt, scanned)}</div>
-                <div>${sub_lines(saved, existed, invalid)}</div>
-                <div class="bp-sep"></div>
-            </div>`;
+            // Clear "Fetching…" placeholder
+            $lines.empty();
 
-        $("#bp-waiting-" + safe(mid)).remove();
-        let $existing = $("#" + blk_id);
-        if ($existing.length) {
-            $existing.replaceWith(html);
-        } else {
-            $("#bp-lines-" + safe(mid)).append(html);
-        }
-    }
+            if (!result) {
+                $mstatus.html(`<span class="t-red">✗ Request failed</span>`);
+                $lines.html(`<div class="bp-bhdr t-red">✗ Request timed out or failed</div>`);
+                return;
+            }
 
-    // Update grand total line
-    function update_grand(mid, total) {
-        let ms = state[mid];
-        let scanned = ms.grand_saved + ms.grand_existed + ms.grand_invalid;
-        let rem     = Math.max(0, total - scanned);
-        $("#bp-grand-" + safe(mid)).show().html(
-            `<b>${scanned}</b> scanned so far = ` +
-            `<b style="color:#27ae60;">${ms.grand_saved}</b> saved + ` +
-            `<b style="color:#7f8c8d;">${ms.grand_existed}</b> existed + ` +
-            `<b style="color:#e67e22;">${ms.grand_invalid}</b> unmapped` +
-            (rem > 0 ? ` &nbsp;|&nbsp; <b style="color:#e74c3c;">${rem}</b> remaining on device` : "") +
-            ` &nbsp;|&nbsp; Device total: <b>${total}</b>`
-        );
-    }
+            // Frappe can return array or object — handle both
+            // Also: machine_names=[machine_id] so result always has exactly 1 entry
+            let result_list = Array.isArray(result) ? result : [result];
+            let res = result_list.find(r => r.machine_id === machine_id)
+                   || result_list.find(r => r.machine_id !== undefined)
+                   || result_list.find(r => r.status !== undefined)
+                   || result_list[0]
+                   || {};
 
-    function update_mstatus(mid, status) {
-        let ms = state[mid];
-        $("#bp-block-" + safe(mid)).find(".bp-mname").text(ms.display_name);
-        let html = status === "done"  ? `<span class="t-green">✓ Complete</span>` :
-                   status === "error" ? `<span class="t-red">✗ Error</span>` :
-                                        `<span class="t-blue bp-blink">● Running</span>`;
-        $("#bp-block-" + safe(mid)).find(".bp-mstatus").html(html);
-    }
+            if (!res || res.status === "error") {
+                let err = res ? res.error : "Unknown error";
+                $mstatus.html(`<span class="t-red">✗ Error</span>`);
+                $lines.html(`<div class="bp-bhdr t-red">✗ ${err}</div>`);
+                return;
+            }
 
-    function show_invalid_chips(mid) {
-        let ms = state[mid];
-        if (!ms.all_invalid_ids.length) return;
-        let chips = ms.all_invalid_ids.map(id => `<span class="bp-chip">${id}</span>`).join("");
-        $("#bp-block-" + safe(mid)).append(`
-            <div class="bp-inv-box">
-                <div class="bp-inv-title">⚠ ${ms.all_invalid_ids.length} Device ID(s) not mapped to any Employee — not saved</div>
-                <div class="bp-inv-sub">Fix: open Employee → set <b>Attendance Device ID</b> to the value below → re-fetch</div>
-                ${chips}
-            </div>`);
-    }
+            // Update machine name if available
+            if (res.machine) $mname.text(res.machine);
 
-    function show_continue(next_machines, next_offsets, next_batches, next_sync_times, total_remaining) {
-        $root.find("#bp-action").html(`
-            <span style="font-size:12px;color:#e67e22;font-family:var(--font-stack);">
-                ⚠ ${total_remaining} records remaining
-            </span>
-            <button class="btn btn-sm btn-warning" id="bp-continue-btn" style="padding:5px 20px;font-weight:600;">
-                ▶ &nbsp;Continue &amp; Fetch
-            </button>`);
-        $("#bp-continue-btn").on("click", function () {
-            $root.find("#bp-action").empty();
-            run_fetch(next_machines, next_offsets, next_batches, next_sync_times);
+            let total         = res.total              || 0;
+            let batches       = res.batches            || [];
+            let all_inv_ids   = res.all_invalid_ids    || res.invalid_ids || [];
+
+            // Debug: log what we got
+            console.log("[Biometric Fetch] machine:", machine_id, "result:", res);
+            let grand_saved   = 0;
+            let grand_existed = 0;
+            let grand_invalid = 0;
+
+            if (total === 0) {
+                // Nothing new to fetch
+                $lines.html(`<div class="bp-bhdr t-muted">No new records found on device.</div>`);
+                $mstatus.html(`<span class="t-green">✓ Complete</span>`);
+                return;
+            }
+
+            // Draw each batch block
+            if (batches && batches.length > 0) {
+                batches.forEach(b => {
+                    grand_saved   += b.saved          || 0;
+                    grand_existed += b.already_exists || 0;
+                    grand_invalid += b.invalid_count  || 0;
+                    $lines.append(render_batch_block(
+                        machine_id,
+                        b.batch_num, b.total_batches || 5,
+                        b.batch_size,
+                        b.saved          || 0,
+                        b.already_exists || 0,
+                        b.invalid_count  || 0
+                    ));
+                });
+            } else {
+                // Fallback: no batch breakdown available, show single summary line
+                let total_saved   = res.saved          || 0;
+                let total_existed = res.already_exists || 0;
+                let total_invalid = (res.all_invalid_ids || res.invalid_ids || []).length;
+                grand_saved   = total_saved;
+                grand_existed = total_existed;
+                grand_invalid = total_invalid;
+                $lines.append(render_batch_block(machine_id, 1, 1, total, total_saved, total_existed, total_invalid));
+            }
+
+            // Grand total
+            $grand.show().html(render_grand(total, grand_saved, grand_existed, grand_invalid));
+
+            // Invalid chips
+            if (all_inv_ids.length) {
+                let chips = all_inv_ids.map(id => `<span class="bp-chip">${id}</span>`).join("");
+                $root.find("#bp-block-" + safe(machine_id)).append(`
+                    <div class="bp-inv-box">
+                        <div class="bp-inv-title">
+                            ⚠ ${all_inv_ids.length} Device ID(s) not mapped to any Employee — not saved
+                        </div>
+                        <div class="bp-inv-sub">
+                            Fix: open Employee → set <b>Attendance Device ID</b> to the value below → re-fetch
+                        </div>
+                        ${chips}
+                    </div>`);
+            }
+
+            $mstatus.html(`<span class="t-green">✓ Complete</span>`);
         });
-    }
 
-    function show_all_done() {
-        machine_names.forEach(mid => show_invalid_chips(mid));
+        // Done
         $root.find("#bp-action").html(
             `<div class="bp-done">✓ &nbsp;All machines fetched successfully</div>`);
         dlg.get_close_btn().show();
         if (listview) listview.refresh();
-    }
-
-    // ─────────────────────────────────────
-    // CORE RUNNER
-    // sync_times = { machine_id: original_sync_time_string }
-    // ─────────────────────────────────────
-    function run_fetch(machine_list, offsets, batch_nums, sync_times) {
-
-        // Show "Batch N → fetching…" immediately
-        machine_list.forEach(mid => {
-            let bn     = batch_nums[mid] || 1;
-            let blk_id = "bp-batchblk-" + safe(mid) + "-b" + bn;
-            let hdr_id = "bp-batchhdr-" + safe(mid) + "-b" + bn;
-            if (!$("#" + blk_id).length) {
-                $("#bp-waiting-" + safe(mid)).remove();
-                $("#bp-lines-" + safe(mid)).append(`
-                    <div id="${blk_id}">
-                        <div class="bp-bhdr" id="${hdr_id}">
-                            ${hdr_running(bn, NUM_BATCHES, 0, "?")}
-                        </div>
-                    </div>`);
-            }
-            update_mstatus(mid, "running");
-        });
-
-        let promises = machine_list.map(machine_id =>
-            new Promise(resolve => {
-                frappe.call({
-                    method: "saral_hr.utils.biometric_sync.sync_selected_machines",
-                    args: {
-                        machine_names:       [machine_id],
-                        auto_process:        auto_process,
-                        offset:              offsets[machine_id]    || 0,
-                        batch_num:           batch_nums[machine_id] || 1,
-                        total_batches:       NUM_BATCHES,
-                        // Pass original sync time so Python uses same filter cutoff
-                        original_sync_time:  sync_times[machine_id] || null,
-                    },
-                    freeze: false,
-                    callback(r) { resolve({ machine_id, results: r.message || [] }); },
-                    error() {
-                        resolve({ machine_id, results: [{
-                            machine_id, machine: state[machine_id].display_name,
-                            status: "error", error: "Request timed out",
-                            batch_num: batch_nums[machine_id] || 1,
-                            total_batches: NUM_BATCHES,
-                            fetched: 0, batch_size: 0,
-                            saved: 0, already_exists: 0,
-                            invalid_count: 0, invalid_ids: [],
-                            remaining_records: 0,
-                        }]});
-                    }
-                });
-            })
-        );
-
-        Promise.all(promises).then(all => {
-            let next_machines    = [];
-            let next_offsets     = {};
-            let next_batches     = {};
-            let next_sync_times  = {};
-            let total_remaining  = 0;
-
-            all.forEach(({ machine_id, results }) => {
-                (results || []).forEach(res => {
-                    let ms = state[res.machine_id || machine_id];
-                    if (!ms) return;
-
-                    ms.display_name = res.machine || ms.display_name;
-
-                    if (res.status === "ok") {
-                        let saved   = res.saved          || 0;
-                        let existed = res.already_exists || 0;
-                        let invalid = res.invalid_count  || 0;
-                        let scanned = res.batch_size     || 0;
-
-                        ms.grand_saved   += saved;
-                        ms.grand_existed += existed;
-                        ms.grand_invalid += invalid;
-                        ms.total          = res.total || ms.total;
-
-                        (res.invalid_ids || []).forEach(id => {
-                            if (!ms.all_invalid_ids.includes(id)) ms.all_invalid_ids.push(id);
-                        });
-
-                        // Render the finalised batch block
-                        render_batch(machine_id, res.batch_num, res.total_batches,
-                                     scanned, saved, existed, invalid);
-                        update_grand(machine_id, ms.total);
-
-                        if (res.remaining_records > 0 && res.next_offset !== null) {
-                            next_machines.push(machine_id);
-                            next_offsets[machine_id]    = res.next_offset;
-                            next_batches[machine_id]    = res.next_batch_num;
-                            // Keep the SAME original_sync_time for next batch
-                            next_sync_times[machine_id] = sync_times[machine_id] || res.original_sync_time || null;
-                            total_remaining += res.remaining_records;
-                            update_mstatus(machine_id, "running");
-                        } else {
-                            ms.done = true;
-                            update_mstatus(machine_id, "done");
-                        }
-
-                    } else {
-                        ms.error = res.error || "Unknown error";
-                        ms.done  = true;
-                        let blk_id = "bp-batchblk-" + safe(machine_id) + "-b" + (res.batch_num || 1);
-                        let hdr_id = "bp-batchhdr-" + safe(machine_id) + "-b" + (res.batch_num || 1);
-                        if (!$("#" + blk_id).length) {
-                            $("#bp-waiting-" + safe(machine_id)).remove();
-                            $("#bp-lines-" + safe(machine_id)).append(
-                                `<div id="${blk_id}"><div class="bp-bhdr finalised" id="${hdr_id}"></div></div>`);
-                        }
-                        $("#" + hdr_id).html(
-                            `<span class="t-muted">Batch ${res.batch_num || 1} of ${NUM_BATCHES} &nbsp;→&nbsp;</span>` +
-                            `<span class="t-red">✗ ${ms.error}</span>`);
-                        update_mstatus(machine_id, "error");
-                    }
-                });
-            });
-
-            if (next_machines.length > 0) {
-                show_continue(next_machines, next_offsets, next_batches, next_sync_times, total_remaining);
-            } else {
-                show_all_done();
-            }
-        });
-    }
-
-    // Kick off batch 1 with original_sync_times
-    let init_offsets = {}, init_batches = {};
-    machine_names.forEach(mid => { init_offsets[mid] = 0; init_batches[mid] = 1; });
-    run_fetch(machine_names, init_offsets, init_batches, original_sync_times);
+    });
 }
