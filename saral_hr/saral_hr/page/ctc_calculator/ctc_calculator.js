@@ -36,6 +36,10 @@ class CTCCalculator {
 
     refresh() { /* nothing needed on re-show */ }
 
+    // Scoped selector — always queries inside THIS page's wrapper, so duplicate
+    // IDs elsewhere in the DOM (Frappe sometimes double-renders) can't hijack it.
+    _$(sel) { return $(this.wrapper).find(sel); }
+
     _current_month() {
         return ['January','February','March','April','May','June',
                 'July','August','September','October','November','December'][new Date().getMonth()];
@@ -245,13 +249,13 @@ ${this._styles()}
             this._check_calc_ready();
         });
 
-        $('#ctc-pf').on('change', (e) => {
+        $(this.wrapper).on('change', '#ctc-pf', (e) => {
             this.state.include_pf = e.target.checked;
             $('#ctc-pf-label').text(e.target.checked ? 'Yes' : 'No');
             $('#ctc-pf-info').toggle(e.target.checked);
         });
 
-        $('#ctc-esic').on('change', (e) => {
+        $(this.wrapper).on('change', '#ctc-esic', (e) => {
             this.state.include_esic = e.target.checked;
             $('#ctc-esic-label').text(e.target.checked ? 'Yes' : 'No');
             $('#ctc-esic-info').toggle(e.target.checked);
@@ -304,22 +308,37 @@ ${this._styles()}
         btn.prop('disabled', true).html('<i class="ti ti-loader ctc-spin"></i> Calculating…');
         $('#ctc-error').hide();
 
+        // Read checkbox state directly from the DOM — scoped to this page's wrapper
+        // so a duplicate #ctc-pf elsewhere can't be read instead. Source of truth.
+        const pf_on   = this._$('#ctc-pf').is(':checked');
+        const esic_on = this._$('#ctc-esic').is(':checked');
+        this.state.include_pf   = pf_on;
+        this.state.include_esic = esic_on;
+
+        const _args = {
+            company:           this.state.company,
+            salary_structure:  this.state.salary_structure,
+            annual_ctc:        this.state.annual_ctc,
+            month:             this.state.month,
+            include_pf:        pf_on   ? "1" : "0",
+            include_esic:      esic_on ? "1" : "0",
+        };
+        console.log("CTC_CALC v4 sending args:", _args,
+                    "| pf checkbox =", pf_on,
+                    "| esic checkbox =", esic_on,
+                    "| #ctc-pf count in wrapper =", this._$('#ctc-pf').length,
+                    "| #ctc-pf count in document =", $('#ctc-pf').length);
+
         frappe.call({
             method:  'saral_hr.saral_hr.page.ctc_calculator.ctc_calculator.calculate_ctc_breakdown',
-            args: {
-                company:           this.state.company,
-                salary_structure:  this.state.salary_structure,
-                annual_ctc:        this.state.annual_ctc,
-                month:             this.state.month,
-                include_pf:        this.state.include_pf   ? 1 : 0,
-                include_esic:      this.state.include_esic ? 1 : 0,
-            },
+            args: _args,
             callback: (r) => {
                 btn.prop('disabled', false).html('Calculate Breakdown');
                 if (!r.message) {
                     this._show_error('No data returned from server.');
                     return;
                 }
+                console.log("CTC_CALC server _debug:", r.message._debug);
                 this.state.result = r.message;
                 this._render_results(r.message);
             },
@@ -447,8 +466,6 @@ ${this._styles()}
                 ${this._flag_pill('ESIC', d.flags.is_esic)}
                 ${this._flag_pill('PT',   d.flags.is_pt)}
                 ${this._flag_pill('LWF',  d.flags.is_lwf)}
-                ${this._flag_pill('PF',   this.state.include_pf)}
-                ${this._flag_pill('ESIC', this.state.include_esic)}
             </div>
         `);
 
