@@ -1,0 +1,12 @@
+{
+ "doctype": "Page",
+ "name": "ctc_calculator",
+ "page_name": "ctc_calculator",
+ "title": "CTC Calculator",
+ "module": "Saral HR",
+ "roles": [
+  {
+   "role": "HR User"
+  }
+ ]
+}
