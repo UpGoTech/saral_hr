@@ -25,19 +25,33 @@ class CTCCalculator {
             company:          '',
             salary_structure: '',
             annual_ctc:       0,
-            month:            this._current_month(),
-            include_pf: false,
-            include_esic: false,
+            include_pf:       false,
+            include_esic:     false,
+            include_pt:       false,
             result:           null,
         };
+
+        this._PF_COMPONENTS   = new Set([
+            'Employee PF',
+            'Employer PF (ERPF)',
+            'Employer EPS',
+            'Employer EDLI',
+            'PF Admin Charges',
+        ]);
+        this._ESIC_COMPONENTS = new Set([
+            'Employee ESIC',
+            'Employer ESIC',
+        ]);
+        this._PT_COMPONENTS   = new Set([
+            'Professional Tax',
+        ]);
+
         this._render_shell();
         this._load_companies();
     }
 
     refresh() { /* nothing needed on re-show */ }
 
-    // Scoped selector — always queries inside THIS page's wrapper, so duplicate
-    // IDs elsewhere in the DOM (Frappe sometimes double-renders) can't hijack it.
     _$(sel) { return $(this.wrapper).find(sel); }
 
     _current_month() {
@@ -51,22 +65,11 @@ class CTCCalculator {
         $(this.wrapper).find('.page-content').html(`
 <div class="ctc-page" id="ctc-root">
 
-  <!-- ── Header bar ── -->
-  <div class="ctc-header">
-    <div class="ctc-header-left">
-      <span class="ctc-header-icon">₹</span>
-      <div>
-        <div class="ctc-header-title">CTC Calculator</div>
-        <div class="ctc-header-sub">Salary structure breakdown tool</div>
-      </div>
-    </div>
-  </div>
-
   <!-- ── Input panel ── -->
   <div class="ctc-card ctc-input-panel">
-    <div class="ctc-section-title">Inputs</div>
-    <div class="ctc-grid-3">
+    <div class="ctc-grid-main">
 
+      <!-- Row 1: Company | Structure | Annual CTC -->
       <div class="ctc-field">
         <label class="ctc-label">Company <span class="ctc-req">*</span></label>
         <select id="ctc-company" class="ctc-select">
@@ -82,16 +85,6 @@ class CTCCalculator {
       </div>
 
       <div class="ctc-field">
-        <label class="ctc-label">Month</label>
-        <select id="ctc-month" class="ctc-select">
-          ${['January','February','March','April','May','June',
-             'July','August','September','October','November','December']
-            .map(m => `<option value="${m}"${m === this.state.month ? ' selected' : ''}>${m}</option>`)
-            .join('')}
-        </select>
-      </div>
-
-      <div class="ctc-field ctc-field--wide">
         <label class="ctc-label">Annual CTC (₹) <span class="ctc-req">*</span></label>
         <div class="ctc-input-wrap">
           <span class="ctc-input-prefix">₹</span>
@@ -101,8 +94,13 @@ class CTCCalculator {
         <div class="ctc-hint" id="ctc-monthly-hint"></div>
       </div>
 
-      <div class="ctc-field ctc-field--toggle">
-        <label class="ctc-label">Include PF</label>
+    </div>
+
+    <!-- Row 2: Toggles + Button in one compact bar -->
+    <div class="ctc-toggle-bar">
+
+      <div class="ctc-toggle-group">
+        <span class="ctc-label">Include PF</span>
         <label class="ctc-toggle">
           <input type="checkbox" id="ctc-pf" />
           <span class="ctc-toggle-track"><span class="ctc-toggle-knob"></span></span>
@@ -116,8 +114,8 @@ class CTCCalculator {
         </div>
       </div>
 
-      <div class="ctc-field ctc-field--toggle">
-        <label class="ctc-label">Include ESIC</label>
+      <div class="ctc-toggle-group">
+        <span class="ctc-label">Include ESIC</span>
         <label class="ctc-toggle">
           <input type="checkbox" id="ctc-esic" />
           <span class="ctc-toggle-track"><span class="ctc-toggle-knob"></span></span>
@@ -130,16 +128,26 @@ class CTCCalculator {
         </div>
       </div>
 
-      <div class="ctc-field ctc-field--action">
-        <label class="ctc-label">&nbsp;</label>
-        <button id="ctc-calc-btn" class="ctc-btn-primary" disabled>
-          Calculate Breakdown
-        </button>
+      <div class="ctc-toggle-group">
+        <span class="ctc-label">Include PT</span>
+        <label class="ctc-toggle">
+          <input type="checkbox" id="ctc-pt" />
+          <span class="ctc-toggle-track"><span class="ctc-toggle-knob"></span></span>
+          <span class="ctc-toggle-label" id="ctc-pt-label">No</span>
+        </label>
+        <div class="ctc-toggle-info" id="ctc-pt-info" style="display:none;">
+          <div class="ctc-info-line"><span class="ctc-info-dot ctc-dot-orange"></span>PT: ₹200/month (₹300 in February)</div>
+        </div>
+      </div>
+
+      <div class="ctc-bar-actions">
+        <button id="ctc-calc-btn" class="ctc-btn-primary" disabled>Calculate Breakdown</button>
         <button id="ctc-reset-btn" class="ctc-btn-ghost">Reset</button>
       </div>
 
     </div>
   </div>
+  <div class="ctc-spacer" id="ctc-spacer"></div>
 
   <!-- ── Error bar ── -->
   <div id="ctc-error" class="ctc-error-bar" style="display:none;"></div>
@@ -193,12 +201,6 @@ class CTCCalculator {
 
     </div>
 
-    <!-- CTC reconciliation -->
-    <div class="ctc-card ctc-recon-card" id="ctc-recon"></div>
-
-    <!-- Structure info footer -->
-    <div class="ctc-info-footer" id="ctc-info-footer"></div>
-
   </div>
 
   <!-- ── Empty state ── -->
@@ -214,6 +216,44 @@ ${this._styles()}
 `);
 
         this._bind_events();
+        this._init_sticky();
+    }
+
+    _init_sticky() {
+        const $panel   = this._$('.ctc-input-panel');
+        const $spacer  = this._$('#ctc-spacer');
+
+        // Frappe's main scrollable area
+        const $scroller = $(this.wrapper).closest('.page-content').first();
+        const scroller  = $scroller.length ? $scroller[0] : window;
+
+        // Frappe navbar is always 48px; read it dynamically in case theme changes
+        const navbarH = () => parseInt($('.navbar, .nav-bar, [class*="navbar"]').first().outerHeight()) || 48;
+
+        const onScroll = () => {
+            const panelH  = $panel.outerHeight(true);
+            const scrollTop = scroller === window ? window.scrollY : scroller.scrollTop;
+            const nh = navbarH();
+
+            if (scrollTop > 10) {
+                if (!$panel.hasClass('ctc-pinned')) {
+                    $panel.addClass('ctc-pinned');
+                    $panel.css('top', nh + 'px');
+                    $spacer.css({ display: 'block', height: panelH + 'px' });
+                }
+            } else {
+                $panel.removeClass('ctc-pinned');
+                $panel.css('top', '');
+                $spacer.css({ display: 'none' });
+            }
+        };
+
+        $(scroller).on('scroll.ctc', onScroll);
+        $(window).on('scroll.ctc', onScroll);   // catch window scroll too
+        $(this.wrapper).one('hide.ctc', () => {
+            $(scroller).off('scroll.ctc');
+            $(window).off('scroll.ctc');
+        });
     }
 
     // ── Events ────────────────────────────────────────────────────────────────
@@ -234,9 +274,7 @@ ${this._styles()}
             this._check_calc_ready();
         });
 
-        $('#ctc-month').on('change', (e) => {
-            this.state.month = e.target.value;
-        });
+
 
         $('#ctc-annual').on('input', (e) => {
             const v = parseFloat(e.target.value) || 0;
@@ -249,20 +287,31 @@ ${this._styles()}
             this._check_calc_ready();
         });
 
+        // ── PF toggle ──
         $(this.wrapper).on('change', '#ctc-pf', (e) => {
             this.state.include_pf = e.target.checked;
             $('#ctc-pf-label').text(e.target.checked ? 'Yes' : 'No');
             $('#ctc-pf-info').toggle(e.target.checked);
+            if (this.state.result) this._recalculate_and_render();
         });
 
+        // ── ESIC toggle ──
         $(this.wrapper).on('change', '#ctc-esic', (e) => {
             this.state.include_esic = e.target.checked;
             $('#ctc-esic-label').text(e.target.checked ? 'Yes' : 'No');
             $('#ctc-esic-info').toggle(e.target.checked);
+            if (this.state.result) this._recalculate_and_render();
+        });
+
+        // ── PT toggle ──
+        $(this.wrapper).on('change', '#ctc-pt', (e) => {
+            this.state.include_pt = e.target.checked;
+            $('#ctc-pt-label').text(e.target.checked ? 'Yes' : 'No');
+            $('#ctc-pt-info').toggle(e.target.checked);
+            if (this.state.result) this._recalculate_and_render();
         });
 
         $('#ctc-calc-btn').on('click', () => this._calculate());
-
         $('#ctc-reset-btn').on('click', () => this._reset());
     }
 
@@ -308,37 +357,30 @@ ${this._styles()}
         btn.prop('disabled', true).html('<i class="ti ti-loader ctc-spin"></i> Calculating…');
         $('#ctc-error').hide();
 
-        // Read checkbox state directly from the DOM — scoped to this page's wrapper
-        // so a duplicate #ctc-pf elsewhere can't be read instead. Source of truth.
         const pf_on   = this._$('#ctc-pf').is(':checked');
         const esic_on = this._$('#ctc-esic').is(':checked');
+        const pt_on   = this._$('#ctc-pt').is(':checked');
         this.state.include_pf   = pf_on;
         this.state.include_esic = esic_on;
-
-        const _args = {
-            company:           this.state.company,
-            salary_structure:  this.state.salary_structure,
-            annual_ctc:        this.state.annual_ctc,
-            month:             this.state.month,
-            include_pf:        pf_on   ? "1" : "0",
-            include_esic:      esic_on ? "1" : "0",
-        };
-        console.log("CTC_CALC v4 sending args:", _args,
-                    "| pf checkbox =", pf_on,
-                    "| esic checkbox =", esic_on,
-                    "| #ctc-pf count in wrapper =", this._$('#ctc-pf').length,
-                    "| #ctc-pf count in document =", $('#ctc-pf').length);
+        this.state.include_pt   = pt_on;
 
         frappe.call({
-            method:  'saral_hr.saral_hr.page.ctc_calculator.ctc_calculator.calculate_ctc_breakdown',
-            args: _args,
+            method: 'saral_hr.saral_hr.page.ctc_calculator.ctc_calculator.calculate_ctc_breakdown',
+            args: {
+                company:          this.state.company,
+                salary_structure: this.state.salary_structure,
+                annual_ctc:       this.state.annual_ctc,
+                month:            this._current_month(),
+                include_pf:       pf_on   ? "1" : "0",
+                include_esic:     esic_on ? "1" : "0",
+                include_pt:       pt_on   ? "1" : "0",
+            },
             callback: (r) => {
                 btn.prop('disabled', false).html('Calculate Breakdown');
                 if (!r.message) {
                     this._show_error('No data returned from server.');
                     return;
                 }
-                console.log("CTC_CALC server _debug:", r.message._debug);
                 this.state.result = r.message;
                 this._render_results(r.message);
             },
@@ -349,19 +391,65 @@ ${this._styles()}
         });
     }
 
+    // ── Toggle re-render (client-side, no server call) ────────────────────────
+
+    _recalculate_and_render() {
+        const raw = this.state.result;
+        if (!raw) return;
+
+        const pf_on   = this.state.include_pf;
+        const esic_on = this.state.include_esic;
+        const pt_on   = this.state.include_pt;
+
+        // Filter employee deductions
+        const deductions = raw.deductions.filter(row => {
+            if (this._PF_COMPONENTS.has(row.salary_component))   return pf_on;
+            if (this._ESIC_COMPONENTS.has(row.salary_component)) return esic_on;
+            if (this._PT_COMPONENTS.has(row.salary_component))   return pt_on;
+            return true;
+        });
+
+        // Filter employer share
+        const employer_share = raw.employer_share.filter(row => {
+            if (this._PF_COMPONENTS.has(row.salary_component))   return pf_on;
+            if (this._ESIC_COMPONENTS.has(row.salary_component)) return esic_on;
+            return true;
+        });
+
+        const total_deductions   = parseFloat((deductions.reduce((s, r) => s + r.amount, 0)).toFixed(2));
+        const net_salary         = Math.round(raw.gross - total_deductions);
+        const total_employer_ctc = parseFloat(
+            (employer_share.filter(e => e.in_ctc).reduce((s, r) => s + r.amount, 0)).toFixed(2)
+        );
+
+        this._render_results({
+            ...raw,
+            deductions,
+            employer_share,
+            total_deductions,
+            net_salary,
+            total_employer_ctc,
+            flags: { ...raw.flags, is_pf: pf_on, is_esic: esic_on, is_pt: pt_on },
+        });
+    }
+
     _reset() {
-        this.state.result           = null;
-        this.state.annual_ctc       = 0;
+        this.state.result       = null;
+        this.state.annual_ctc   = 0;
         this.state.include_pf   = false;
         this.state.include_esic = false;
+        this.state.include_pt   = false;
         $('#ctc-annual').val('');
         $('#ctc-monthly-hint').text('');
         $('#ctc-pf').prop('checked', false);
         $('#ctc-esic').prop('checked', false);
+        $('#ctc-pt').prop('checked', false);
         $('#ctc-pf-label').text('No');
         $('#ctc-esic-label').text('No');
+        $('#ctc-pt-label').text('No');
         $('#ctc-pf-info').hide();
         $('#ctc-esic-info').hide();
+        $('#ctc-pt-info').hide();
         $('#ctc-results').hide();
         $('#ctc-empty').show();
         $('#ctc-error').hide();
@@ -377,10 +465,10 @@ ${this._styles()}
         // KPI row
         const kpis = [
             { label: 'Annual CTC',    value: '₹ ' + this._fmt(d.annual_ctc),      color: 'purple' },
-            { label: 'Monthly CTC',   value: '₹ ' + this._fmt(d.monthly_ctc),     color: 'blue' },
-            { label: 'Monthly Gross', value: '₹ ' + this._fmt(d.gross),           color: 'teal' },
-            { label: 'Deductions',    value: '₹ ' + this._fmt(d.total_deductions), color: 'coral' },
-            { label: 'Net Salary',    value: '₹ ' + this._fmt(d.net_salary),       color: 'green' },
+            { label: 'Monthly CTC',   value: '₹ ' + this._fmt(d.monthly_ctc),     color: 'blue'   },
+            { label: 'Monthly Gross', value: '₹ ' + this._fmt(d.gross),           color: 'teal'   },
+            { label: 'Deductions',    value: '₹ ' + this._fmt(d.total_deductions), color: 'coral'  },
+            { label: 'Net Salary',    value: '₹ ' + this._fmt(d.net_salary),       color: 'green'  },
         ];
         $('#ctc-kpi-row').html(kpis.map(k => `
             <div class="ctc-kpi ctc-kpi-${k.color}">
@@ -429,57 +517,6 @@ ${this._styles()}
         ], d.total_employer_ctc, 'Total In CTC');
         $('#ctc-emp-total').text('₹ ' + this._fmt(d.total_employer_ctc));
 
-        // CTC Reconciliation
-        const recon_rows = [
-            { label: 'Monthly Gross',            value: d.gross,              color: '' },
-            { label: 'Gratuity (in CTC)',        value: this._emp_amount(d, 'Gratuity'),    color: '' },
-            { label: 'Employer PF / ERPF',       value: this._emp_amount(d, 'Employer PF (ERPF)'), color: '' },
-            { label: 'Employer EPS',             value: this._emp_amount(d, 'Employer EPS'), color: '' },
-        ].filter(r => r.value > 0);
-        const other_emp = d.employer_share.filter(e => e.in_ctc && !['Gratuity','Employer PF (ERPF)','Employer EPS'].includes(e.salary_component));
-        other_emp.forEach(e => recon_rows.push({ label: e.salary_component, value: e.amount }));
-        const recon_sum = recon_rows.reduce((s, r) => s + r.value, 0);
-
-        $('#ctc-recon').html(`
-            <div class="ctc-section-title"><i class="ti ti-receipt"></i> CTC Reconciliation</div>
-            <div class="ctc-recon-grid">
-                ${recon_rows.map(r => `
-                    <div class="ctc-recon-row">
-                        <span class="ctc-recon-lbl">${frappe.utils.escape_html(r.label)}</span>
-                        <span class="ctc-recon-dots"></span>
-                        <span class="ctc-recon-val ctc-mono">₹ ${this._fmt(r.value)}</span>
-                    </div>
-                `).join('')}
-                <div class="ctc-recon-row ctc-recon-total">
-                    <span class="ctc-recon-lbl">= Monthly CTC</span>
-                    <span class="ctc-recon-dots"></span>
-                    <span class="ctc-recon-val ctc-mono">₹ ${this._fmt(d.monthly_ctc)}</span>
-                </div>
-                <div class="ctc-recon-row ctc-recon-annual">
-                    <span class="ctc-recon-lbl">Annual CTC (×12)</span>
-                    <span class="ctc-recon-dots"></span>
-                    <span class="ctc-recon-val ctc-mono">₹ ${this._fmt(d.annual_ctc)}</span>
-                </div>
-            </div>
-            <div class="ctc-recon-flags">
-                ${this._flag_pill('PF',   d.flags.is_pf)}
-                ${this._flag_pill('ESIC', d.flags.is_esic)}
-                ${this._flag_pill('PT',   d.flags.is_pt)}
-                ${this._flag_pill('LWF',  d.flags.is_lwf)}
-            </div>
-        `);
-
-        // Info footer
-        const si = d.structure_info;
-        $('#ctc-info-footer').html(`
-            <i class="ti ti-info-circle"></i>
-            Based on SSA: <strong>${frappe.utils.escape_html(si.ssa_name)}</strong>
-            &nbsp;|&nbsp; Structure: <strong>${frappe.utils.escape_html(si.salary_structure)}</strong>
-            &nbsp;|&nbsp; Company: <strong>${frappe.utils.escape_html(si.company)}</strong>
-            &nbsp;|&nbsp; Month: <strong>${frappe.utils.escape_html(this.state.month)}</strong>
-            &nbsp;|&nbsp; PF wage cap: <strong>₹ 15,000</strong>
-        `);
-
         $('#ctc-results').show();
     }
 
@@ -487,7 +524,8 @@ ${this._styles()}
 
     _render_table(selector, rows, row_fn, total, total_label) {
         const $table = $(selector);
-        const tbody_html = (rows || []).map(row => `<tr>${row_fn(row).join('')}</tr>`).join('') || `<tr><td colspan="3" class="ctc-empty-row">No components</td></tr>`;
+        const tbody_html = (rows || []).map(row => `<tr>${row_fn(row).join('')}</tr>`).join('')
+            || `<tr><td colspan="3" class="ctc-empty-row">No components</td></tr>`;
         $table.find('tbody').html(tbody_html);
         $table.find('tfoot').html(`
             <tr class="ctc-tfoot-row">
@@ -495,15 +533,6 @@ ${this._styles()}
                 <td class="ctc-right ctc-mono"><strong>₹ ${this._fmt(total)}</strong></td>
             </tr>
         `);
-    }
-
-    _emp_amount(d, comp_name) {
-        const row = (d.employer_share || []).find(e => e.salary_component === comp_name);
-        return row ? flt(row.amount) : 0;
-    }
-
-    _flag_pill(label, active) {
-        return `<span class="ctc-flag-pill ${active ? 'ctc-flag-on' : 'ctc-flag-off'}">${frappe.utils.escape_html(label)}: ${active ? 'Yes' : 'No'}</span>`;
     }
 
     _fmt(n) {
@@ -523,17 +552,13 @@ ${this._styles()}
     _styles() {
         return `<style>
 /* ── Root ── */
-.ctc-page { font-family: var(--font-sans, sans-serif); padding: 20px 24px 48px; max-width: 1280px; margin: 0 auto; }
-
-/* ── Header ── */
-.ctc-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 20px; }
-.ctc-header-left { display: flex; align-items: center; gap: 14px; }
-.ctc-header-icon { width: 44px; height: 44px; border-radius: 12px; background: var(--primary, #5e64ff); color: #fff; display: flex; align-items: center; justify-content: center; font-size: 22px; font-weight: 700; flex-shrink: 0; }
-.ctc-header-title { font-size: 20px; font-weight: 600; color: var(--text-color); }
-.ctc-header-sub   { font-size: 12px; color: var(--text-muted); margin-top: 2px; }
+.ctc-page { font-family: var(--font-sans, sans-serif); padding: 16px 24px 48px; max-width: 1280px; margin: 0 auto; }
 
 /* ── Card ── */
-.ctc-card { background: var(--card-bg, #fff); border: 1px solid var(--border-color); border-radius: 10px; padding: 20px 22px; margin-bottom: 18px; }
+.ctc-card { background: var(--card-bg, #fff); border: 1px solid var(--border-color); border-radius: 10px; padding: 16px 20px; margin-bottom: 16px; }
+.ctc-input-panel { position: relative; z-index: 100; background: var(--card-bg, #fff); transition: box-shadow .2s; }
+.ctc-input-panel.ctc-pinned { position: fixed; top: 48px; left: 0; right: 0; border-radius: 0; border-left: none; border-right: none; border-top: none; box-shadow: 0 3px 12px rgba(0,0,0,0.12); margin-bottom: 0; padding-left: 24px; padding-right: 24px; }
+.ctc-spacer { display: none; }
 
 /* ── Section title ── */
 .ctc-section-title { font-size: 13px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em; color: var(--text-muted); margin-bottom: 16px; display: flex; align-items: center; gap: 7px; }
@@ -541,12 +566,15 @@ ${this._styles()}
 .ctc-title-ded  { color: #e03131; }
 .ctc-title-emp  { color: #1971c2; }
 
-/* ── Input grid ── */
-.ctc-grid-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 16px 20px; }
-.ctc-field { display: flex; flex-direction: column; gap: 6px; }
-.ctc-field--wide   { grid-column: span 2; }
-.ctc-field--toggle { }
-.ctc-field--action { display: flex; flex-direction: column; gap: 8px; justify-content: flex-end; }
+/* ── Input grid (3 cols: Company | Structure | Annual CTC) ── */
+.ctc-grid-main { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 14px 16px; margin-bottom: 14px; }
+.ctc-field { display: flex; flex-direction: column; gap: 5px; }
+
+/* ── Toggle bar (row 2: PF | ESIC | PT | Button) ── */
+.ctc-toggle-bar { display: flex; align-items: flex-start; gap: 0; border-top: 1px solid var(--border-color); padding-top: 14px; flex-wrap: wrap; }
+.ctc-toggle-group { display: flex; flex-direction: column; gap: 6px; padding: 0 20px 0 0; border-right: 1px solid var(--border-color); margin-right: 20px; min-width: 120px; }
+.ctc-toggle-group:last-of-type { border-right: none; }
+.ctc-bar-actions { display: flex; align-items: center; gap: 8px; margin-left: auto; padding-top: 18px; }
 
 .ctc-label { font-size: 12px; font-weight: 600; color: var(--text-muted); letter-spacing: 0.03em; }
 .ctc-req   { color: var(--red, #e03131); }
@@ -636,27 +664,6 @@ ${this._styles()}
 .ctc-net-result { border-top: 1px solid var(--border-color); margin-top: 4px; padding-top: 8px; }
 .ctc-net-big { font-size: 18px; font-weight: 700; color: #2b8a3e; }
 
-/* ── Reconciliation ── */
-.ctc-recon-card .ctc-section-title { color: var(--text-muted); }
-.ctc-recon-grid { max-width: 480px; }
-.ctc-recon-row { display: flex; align-items: baseline; gap: 6px; padding: 5px 0; font-size: 13px; }
-.ctc-recon-lbl  { white-space: nowrap; color: var(--text-muted); }
-.ctc-recon-dots { flex: 1; border-bottom: 1px dotted var(--border-color); margin-bottom: 3px; }
-.ctc-recon-val  { white-space: nowrap; font-weight: 600; }
-.ctc-recon-total { border-top: 1.5px solid var(--border-color); margin-top: 4px; padding-top: 8px; }
-.ctc-recon-total .ctc-recon-lbl, .ctc-recon-total .ctc-recon-val { font-weight: 700; color: var(--text-color); font-size: 14px; }
-.ctc-recon-annual .ctc-recon-lbl { color: var(--primary, #5e64ff); }
-.ctc-recon-annual .ctc-recon-val { color: var(--primary, #5e64ff); font-size: 15px; }
-
-.ctc-recon-flags { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 16px; }
-.ctc-flag-pill { padding: 3px 12px; border-radius: 20px; font-size: 11px; font-weight: 700; }
-.ctc-flag-on  { background: #ebfbee; color: #2b8a3e; border: 1px solid #b2f2bb; }
-.ctc-flag-off { background: var(--subtle-fg, #f3f4f6); color: var(--text-muted); border: 1px solid var(--border-color); }
-
-/* ── Info footer ── */
-.ctc-info-footer { font-size: 11px; color: var(--text-muted); padding: 6px 0; border-top: 1px solid var(--border-color); display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
-.ctc-info-footer strong { color: var(--text-color); }
-
 /* ── Empty state ── */
 .ctc-empty { text-align: center; padding: 64px 24px; }
 .ctc-empty-icon  { font-size: 52px; color: var(--border-color); margin-bottom: 12px; line-height: 1; }
@@ -667,20 +674,23 @@ ${this._styles()}
 .ctc-toggle-info { margin-top: 8px; background: var(--subtle-fg, #f3f4f6); border: 1px solid var(--border-color); border-radius: 6px; padding: 8px 10px; display: flex; flex-direction: column; gap: 4px; }
 .ctc-info-line { display: flex; align-items: center; gap: 7px; font-size: 11px; color: var(--text-muted); }
 .ctc-info-dot { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; }
-.ctc-dot-blue { background: #1971c2; }
-.ctc-dot-teal { background: #0f6e56; }
+.ctc-dot-blue   { background: #1971c2; }
+.ctc-dot-teal   { background: #0f6e56; }
+.ctc-dot-orange { background: #e67700; }
 .ctc-info-note { font-style: italic; color: var(--text-muted); padding-left: 13px; }
 
 /* ── Responsive ── */
 @media (max-width: 1024px) {
-    .ctc-grid-3        { grid-template-columns: 1fr 1fr; }
+    .ctc-grid-main     { grid-template-columns: 1fr 1fr; }
     .ctc-breakdown-row { grid-template-columns: 1fr; }
-    .ctc-field--wide   { grid-column: span 1; }
+    .ctc-bar-actions   { margin-left: 0; width: 100%; padding-top: 12px; }
 }
 @media (max-width: 640px) {
-    .ctc-grid-3  { grid-template-columns: 1fr; }
-    .ctc-kpi-row { flex-direction: column; }
-    .ctc-page    { padding: 12px; }
+    .ctc-grid-main     { grid-template-columns: 1fr; }
+    .ctc-kpi-row       { flex-direction: column; }
+    .ctc-page          { padding: 10px; }
+    .ctc-toggle-bar    { flex-direction: column; gap: 12px; }
+    .ctc-toggle-group  { border-right: none; padding-right: 0; margin-right: 0; }
 }
 </style>`;
     }
