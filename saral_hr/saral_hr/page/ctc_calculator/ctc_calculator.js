@@ -166,23 +166,25 @@ ${this._styles()}`);
     // Uses position:fixed (not sticky) because Frappe's .page-content has
     // overflow:auto which breaks sticky. We listen on the actual scroll element.
     _init_pin() {
-        // Force the page-content to be a tall flex container
-        // Panel stays at top, content scrolls below
-        const $pc = $(this.wrapper).find('.page-content');
-        $pc.css({ padding: '0', overflow: 'hidden', display: 'flex', flexDirection: 'column', height: '100%' });
-
-        const $panel  = this._$('#ctc-input-panel');
-        const $rest   = this._$('#ctc-root');
+        const $pc    = $(this.wrapper).find('.page-content');
+        const $panel = this._$('#ctc-input-panel');
+        const $rest  = this._$('#ctc-root');
         const $spacer = this._$('#ctc-spacer');
 
-        // Panel: fixed at top, never scrolls
+        $pc.css({ padding: '0', display: 'flex', flexDirection: 'column', overflow: 'visible' });
         $panel.css({ flexShrink: '0' });
-
-        // Rest of page: scrollable area below the panel
-        $rest.css({ flex: '1', overflowY: 'auto', padding: '16px 24px 48px' });
-
-        // Remove spacer — not needed in this layout
+        $rest.css({ padding: '12px 20px 40px' });
         $spacer.remove();
+    }
+
+    _activate_sticky() {
+        const $panel = this._$('#ctc-input-panel');
+        $panel.css({ position: 'sticky', top: '0', zIndex: '100' });
+    }
+
+    _deactivate_sticky() {
+        const $panel = this._$('#ctc-input-panel');
+        $panel.css({ position: '', top: '', zIndex: '' });
     }
 
     _bind_events() {
@@ -401,26 +403,26 @@ ${this._styles()}`);
     _styles() {
         return `<style>
 .ctc-page { font-family:var(--font-sans,sans-serif); padding:0; max-width:100%; margin:0; }
-.ctc-card { background:var(--card-bg,#fff); border:1px solid var(--border-color); border-radius:10px; padding:16px 20px; margin-bottom:16px; }
+.ctc-card { background:var(--card-bg,#fff); border:1px solid var(--border-color); border-radius:10px; padding:12px 16px; margin-bottom:12px; }
 .ctc-input-panel { border-radius:0 !important; border-left:none !important; border-right:none !important; border-top:none !important; margin-bottom:0 !important; box-shadow:0 2px 8px rgba(0,0,0,.08); }
 
 .ctc-section-title { font-size:13px; font-weight:600; text-transform:uppercase; letter-spacing:.06em; color:var(--text-muted); margin-bottom:16px; display:flex; align-items:center; gap:7px; }
 .ctc-title-earn { color:#2f9e44; } .ctc-title-ded { color:#e03131; } .ctc-title-emp { color:#1971c2; }
 
-.ctc-grid-main { display:grid; grid-template-columns:1fr 1fr 1fr; gap:14px 16px; margin-bottom:14px; }
-.ctc-field { display:flex; flex-direction:column; gap:5px; }
+.ctc-grid-main { display:grid; grid-template-columns:1fr 1fr 1fr; gap:10px 14px; margin-bottom:10px; }
+.ctc-field { display:flex; flex-direction:column; gap:3px; }
 
-.ctc-toggle-bar { display:flex; align-items:flex-start; border-top:1px solid var(--border-color); padding-top:14px; flex-wrap:wrap; }
-.ctc-toggle-group { display:flex; flex-direction:column; gap:6px; padding:0 20px 0 0; border-right:1px solid var(--border-color); margin-right:20px; min-width:120px; }
+.ctc-toggle-bar { display:flex; align-items:flex-start; border-top:1px solid var(--border-color); padding-top:10px; flex-wrap:wrap; }
+.ctc-toggle-group { display:flex; flex-direction:column; gap:5px; padding:0 16px 0 0; border-right:1px solid var(--border-color); margin-right:16px; min-width:110px; }
 .ctc-toggle-group:last-of-type { border-right:none; }
-.ctc-bar-actions { display:flex; align-items:center; gap:8px; margin-left:auto; padding-top:18px; }
+.ctc-bar-actions { display:flex; align-items:center; gap:8px; margin-left:auto; padding-top:14px; }
 
 .ctc-label { font-size:12px; font-weight:600; color:var(--text-muted); letter-spacing:.03em; }
 .ctc-req { color:var(--red,#e03131); }
 .ctc-hint { font-size:11px; color:var(--primary,#5e64ff); font-weight:500; min-height:16px; }
 .ctc-hint-inline { font-size:10px; color:var(--text-muted); font-style:italic; }
 
-.ctc-select,.ctc-input { width:100%; padding:8px 12px; border:1px solid var(--border-color); border-radius:6px; background:var(--control-bg,#f8f9fa); color:var(--text-color); font-size:13px; outline:none; transition:border-color .15s,box-shadow .15s; }
+.ctc-select,.ctc-input { width:100%; padding:6px 10px; border:1px solid var(--border-color); border-radius:6px; background:var(--control-bg,#f8f9fa); color:var(--text-color); font-size:13px; outline:none; transition:border-color .15s,box-shadow .15s; }
 .ctc-select:focus,.ctc-input:focus { border-color:var(--primary,#5e64ff); box-shadow:0 0 0 2px rgba(94,100,255,.12); }
 .ctc-select:disabled { opacity:.5; cursor:not-allowed; }
 .ctc-input-wrap { position:relative; display:flex; align-items:center; }
