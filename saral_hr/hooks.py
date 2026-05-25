@@ -104,15 +104,16 @@ fixtures = [
     },
 
     # Print Formats
-    {
-        "dt": "Print Format",
-        "filters": [
-            ["name", "in", [
-                "Variable Pay",
-                "Salary Slip Custom"
-            ]]
-        ]
-    },
+{
+    "dt": "Print Format",
+    "filters": [
+        ["name", "in", [
+            "Variable Pay",
+            "Salary Slip Custom",
+            "CTC Calculator Statement"
+        ]]
+    ]
+},
 
     # Reports
     {
@@ -142,11 +143,11 @@ before_install = "saral_hr.setup.before_install"
 # ----------
 
 # add methods and filters to jinja environment
-# jinja = {
-# 	"methods": "saral_hr.utils.jinja_methods",
-# 	"filters": "saral_hr.utils.jinja_filters"
-# }
-
+jinja = {
+    "methods": [
+        "saral_hr.utils.jinja_methods.parse_json"
+    ]
+}
 # Installation
 # ------------
 

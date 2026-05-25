@@ -1,38 +1,23 @@
 {
  "actions": [],
  "allow_rename": 1,
- "autoname": "field:title",
+ "autoname": "CTC-.####",
  "creation": "2026-05-23 17:49:00.753576",
  "doctype": "DocType",
  "engine": "InnoDB",
+ "default_print_format": "CTC Calculator Statement",
  "field_order": [
-  "title",
-  "company",
-  "salary_structure",
-  "month",
-  "column_break_1",
-  "include_pf",
-  "include_esic",
-  "include_pt",
-  "section_break_summary",
-  "annual_ctc",
-  "monthly_ctc",
-  "column_break_2",
-  "gross_salary",
-  "total_deductions",
-  "net_salary",
-  "section_break_earnings",
-  "earnings",
-  "section_break_deductions",
-  "deductions",
-  "section_break_employer",
-  "employer_share"
+  "employee_name","company","salary_structure",
+  "column_break_1","include_pf","pf_type","include_esic","include_pt",
+  "section_break_summary","annual_ctc",
+  "section_break_data","earnings_json","deductions_json","employer_share_json",
+  "monthly_ctc","gross_salary","total_deductions","net_salary"
  ],
  "fields": [
   {
-   "fieldname": "title",
+   "fieldname": "employee_name",
    "fieldtype": "Data",
-   "label": "Title",
+   "label": "Employee Name",
    "reqd": 1,
    "in_list_view": 1,
    "in_standard_filter": 1,
@@ -56,14 +41,6 @@
    "in_list_view": 1
   },
   {
-   "fieldname": "month",
-   "fieldtype": "Select",
-   "label": "Month",
-   "options": "\nJanuary\nFebruary\nMarch\nApril\nMay\nJune\nJuly\nAugust\nSeptember\nOctober\nNovember\nDecember",
-   "default": "January",
-   "in_list_view": 1
-  },
-  {
    "fieldname": "column_break_1",
    "fieldtype": "Column Break"
   },
@@ -72,6 +49,14 @@
    "fieldtype": "Check",
    "label": "Include PF",
    "default": "0"
+  },
+  {
+   "fieldname": "pf_type",
+   "fieldtype": "Select",
+   "label": "PF Type",
+   "options": "\nLimited PF\nFull PF",
+   "default": "Limited PF",
+   "depends_on": "eval:doc.include_pf==1"
   },
   {
    "fieldname": "include_esic",
@@ -92,114 +77,81 @@
   },
   {
    "fieldname": "annual_ctc",
-   "fieldtype": "Currency",
+   "fieldtype": "Float",
    "label": "Annual CTC",
    "reqd": 1,
    "in_list_view": 1,
-   "options": "currency"
+   "precision": "2"
+  },
+  {
+   "fieldname": "section_break_data",
+   "fieldtype": "Section Break",
+   "label": "Breakdown Data",
+   "hidden": 1
+  },
+  {
+   "fieldname": "earnings_json",
+   "fieldtype": "Long Text",
+   "label": "Earnings Data",
+   "hidden": 1
+  },
+  {
+   "fieldname": "deductions_json",
+   "fieldtype": "Long Text",
+   "label": "Deductions Data",
+   "hidden": 1
+  },
+  {
+   "fieldname": "employer_share_json",
+   "fieldtype": "Long Text",
+   "label": "Employer Share Data",
+   "hidden": 1
   },
   {
    "fieldname": "monthly_ctc",
-   "fieldtype": "Currency",
+   "fieldtype": "Float",
    "label": "Monthly CTC",
+   "hidden": 1,
    "read_only": 1,
-   "options": "currency"
-  },
-  {
-   "fieldname": "column_break_2",
-   "fieldtype": "Column Break"
+   "precision": "2"
   },
   {
    "fieldname": "gross_salary",
-   "fieldtype": "Currency",
+   "fieldtype": "Float",
    "label": "Monthly Gross",
+   "hidden": 1,
    "read_only": 1,
-   "options": "currency"
+   "precision": "2"
   },
   {
    "fieldname": "total_deductions",
-   "fieldtype": "Currency",
+   "fieldtype": "Float",
    "label": "Total Deductions",
+   "hidden": 1,
    "read_only": 1,
-   "options": "currency"
+   "precision": "2"
   },
   {
    "fieldname": "net_salary",
-   "fieldtype": "Currency",
+   "fieldtype": "Float",
    "label": "Net Salary",
+   "hidden": 1,
    "read_only": 1,
-   "options": "currency"
-  },
-  {
-   "fieldname": "section_break_earnings",
-   "fieldtype": "Section Break",
-   "label": "Earnings"
-  },
-  {
-   "fieldname": "earnings",
-   "fieldtype": "Table",
-   "label": "Earnings",
-   "options": "Salary Details"
-  },
-  {
-   "fieldname": "section_break_deductions",
-   "fieldtype": "Section Break",
-   "label": "Deductions"
-  },
-  {
-   "fieldname": "deductions",
-   "fieldtype": "Table",
-   "label": "Deductions",
-   "options": "Salary Details"
-  },
-  {
-   "fieldname": "section_break_employer",
-   "fieldtype": "Section Break",
-   "label": "Employer Share"
-  },
-  {
-   "fieldname": "employer_share",
-   "fieldtype": "Table",
-   "label": "Employer Share",
-   "options": "Salary Details"
+   "precision": "2"
   }
  ],
  "index_web_pages_for_search": 1,
  "is_submittable": 0,
  "links": [],
- "modified": "2026-05-23 17:49:00.753576",
+ "modified": "2026-05-25 13:00:00.000000",
  "modified_by": "Administrator",
  "module": "Saral Hr",
- "name": "Ctc calculator record",
- "naming_rule": "By fieldname",
+ "name": "Ctc Calculator Record",
+ "naming_rule": "Expression (old style)",
  "owner": "Administrator",
  "permissions": [
-  {
-   "create": 1,
-   "delete": 1,
-   "email": 1,
-   "export": 1,
-   "print": 1,
-   "read": 1,
-   "report": 1,
-   "role": "Saral HR Manager",
-   "select": 1,
-   "share": 1,
-   "write": 1
-  },
-  {
-   "create": 1,
-   "delete": 0,
-   "email": 1,
-   "export": 1,
-   "print": 1,
-   "read": 1,
-   "report": 1,
-   "role": "Saral HR User",
-   "select": 1,
-   "share": 1,
-   "write": 1
-  }
+  {"create":1,"delete":1,"email":1,"export":1,"print":1,"read":1,"report":1,"role":"Saral HR Manager","select":1,"share":1,"write":1},
+  {"create":1,"delete":0,"email":1,"export":1,"print":1,"read":1,"report":1,"role":"Saral HR User","select":1,"share":1,"write":1}
  ],
  "sort_field": "modified",
  "sort_order": "DESC",
