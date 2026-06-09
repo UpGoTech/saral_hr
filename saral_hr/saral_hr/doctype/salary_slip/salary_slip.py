@@ -1089,12 +1089,13 @@ def get_attendance_and_days(employee, start_date, working_days_calculation_metho
     #   + holidays_taken (explicitly marked Holiday in attendance)
     #   + eligible_holidays (sandwich-rule approved unattended holidays)
     payment_days = flt(
-        present_days + on_tour +
-        earned_leave + casual_leave + comp_off +
-        holidays_taken +           # ← NEW: directly marked Holiday status
-        eligible_holidays,         # sandwich-rule holidays (no attendance record)
-        2
-    )
+    present_days + on_tour +
+    earned_leave + casual_leave + comp_off +
+    holidays_taken +           
+    eligible_holidays +
+    (weekly_offs_taken if calculation_method == "Include Weekly Offs" else 0),
+    2
+)
     payment_days = max(payment_days, 0.0)
 
     # ── Physical Working Days ─────────────────────────────────────────────────
