@@ -566,3 +566,210 @@ def debug_unprocessed_logs():
         "unprocessed_no_employee":   unprocessed_no_emp[0].cnt,
         "total_employee_checkins":   checkin_count[0].cnt,
     }
+    
+    # ─────────────────────────────────────────────
+# 13. GET EMPLOYEES FROM DEVICE
+# Machine se registered users ki list lao
+# ─────────────────────────────────────────────
+@frappe.whitelist()
+def get_device_employees(machine_name):
+    try:
+        if not frappe.db.exists("Biometric machine", machine_name):
+            return {"success": False, "message": "Machine not found"}
+
+        machine_doc = frappe.get_doc("Biometric machine", machine_name)
+
+        import zk
+        z = zk.ZK(
+            machine_doc.ip_address,
+            port=machine_doc.port or 4370,
+            timeout=10,
+            password=get_machine_password(machine_name),
+            force_udp=False,
+            ommit_ping=True
+        )
+        conn = z.connect()
+        try:
+            conn.disable_device()
+            users = conn.get_users()
+        finally:
+            conn.enable_device()
+            conn.disconnect()
+
+        result = []
+        for u in users:
+            device_id = str(u.user_id)
+            emp = frappe.db.get_value(
+                "Employee",
+                {"attendance_device_id": device_id},
+                ["name", "employee_name"],
+                as_dict=True
+            )
+            result.append({
+                "device_id":     device_id,
+                "device_name":   u.name or "",           # naam jo machine pe set hai
+                "employee":      emp.name          if emp else None,
+                "employee_name": emp.employee_name if emp else None,
+                "is_mapped":     bool(emp),
+            })
+
+        # mapped pehle, unmapped baad mein
+        result.sort(key=lambda x: (not x["is_mapped"], x["device_id"]))
+
+        return {"success": True, "users": result, "total": len(result)}
+
+    except Exception as e:
+        return {"success": False, "message": str(e)}
+
+
+# ─────────────────────────────────────────────
+# 14. EMPLOYEE MONTHLY ATTENDANCE REPORT
+# Fetches directly from machine — does NOT save to DB
+# Only shows data in popup report
+# ─────────────────────────────────────────────
+@frappe.whitelist()
+def get_employee_monthly_report(employee, month, year):
+    try:
+        import calendar
+        import datetime
+        from collections import defaultdict
+
+        # Find employee
+        emp_doc = None
+        if frappe.db.exists("Employee", employee):
+            emp_doc = frappe.get_doc("Employee", employee)
+        else:
+            matches = frappe.get_all(
+                "Employee",
+                filters=[["employee_name", "like", f"%{employee}%"]],
+                fields=["name", "employee_name", "attendance_device_id"],
+                limit=5
+            )
+            if not matches:
+                return {"success": False, "message": f"Employee '{employee}' not found in system."}
+            if len(matches) > 1:
+                names = ", ".join([m.employee_name for m in matches])
+                return {"success": False, "message": f"Multiple employees found: {names}. Please be more specific.", "multiple": True}
+            emp_doc = frappe.get_doc("Employee", matches[0].name)
+
+        # Check device ID mapped
+        if not emp_doc.attendance_device_id:
+            return {
+                "success": False,
+                "message": f"Employee '{emp_doc.employee_name}' has no Attendance Device ID mapped.",
+                "no_device_id": True,
+                "employee_name": emp_doc.employee_name,
+                "employee": emp_doc.name,
+            }
+
+        month    = int(month)
+        year     = int(year)
+        _, last_day = calendar.monthrange(year, month)
+        month_start = datetime.datetime(year, month, 1, 0, 0, 0)
+        month_end   = datetime.datetime(year, month, last_day, 23, 59, 59)
+
+        # Step 1: Fetch directly from machine — no DB save, no sync time
+        machines = frappe.get_all("Biometric machine",
+            filters={"is_active": 1},
+            fields=["name", "ip_address", "port", "machine_name"]
+        )
+
+        if not machines:
+            return {"success": False, "message": "No active biometric machine found."}
+
+        # Collect raw punch records for this employee and month
+        punch_records = []
+
+        for machine in machines:
+            machine_doc = frappe.get_doc("Biometric machine", machine.name)
+            try:
+                raw = fetch_from_machine(machine_doc)
+
+                for record in raw:
+                    try:
+                        emp_id = str(record.user_id)
+
+                        # Only this employee
+                        if emp_id != str(emp_doc.attendance_device_id):
+                            continue
+
+                        # Parse timestamp
+                        pt_dt = datetime.datetime.strptime(
+                            str(record.timestamp)[:19], "%Y-%m-%d %H:%M:%S"
+                        )
+
+                        # Only requested month
+                        if not (month_start <= pt_dt <= month_end):
+                            continue
+
+                        punch_records.append({
+                            "date":       pt_dt.strftime("%Y-%m-%d"),
+                            "time":       pt_dt.strftime("%H:%M"),
+                            "punch_type": get_punch_type(record.punch),
+                        })
+
+                    except Exception:
+                        continue
+
+            except Exception as e:
+                frappe.log_error(
+                    f"Machine {machine.name} fetch error in monthly report: {e}",
+                    "Monthly Report Fetch"
+                )
+                continue
+
+        # Step 2: Group by date — separate IN and OUT
+        day_map = defaultdict(lambda: {"in_times": [], "out_times": []})
+        for rec in punch_records:
+            d  = rec["date"]
+            pt = rec["punch_type"]
+            t  = rec["time"]
+            if pt == "OUT":
+                day_map[d]["out_times"].append(t)
+            else:
+                day_map[d]["in_times"].append(t)
+
+        # Step 3: Build full month rows
+        rows = []
+        for day in range(1, last_day + 1):
+            d_str   = f"{year}-{month:02d}-{day:02d}"
+            d_obj   = datetime.date(year, month, day)
+            weekday = d_obj.strftime("%a")
+
+            if d_str in day_map:
+                entry  = day_map[d_str]
+                in_t   = ", ".join(sorted(entry["in_times"]))  if entry["in_times"]  else "—"
+                out_t  = ", ".join(sorted(entry["out_times"])) if entry["out_times"] else "—"
+                status = "present"
+            else:
+                in_t   = "—"
+                out_t  = "—"
+                status = "weekend" if weekday in ("Sat", "Sun") else "absent"
+
+            rows.append({
+                "date":     d_str,
+                "day":      f"{day} {weekday}",
+                "in_time":  in_t,
+                "out_time": out_t,
+                "status":   status,
+            })
+
+        present_days = sum(1 for r in rows if r["status"] == "present")
+        absent_days  = sum(1 for r in rows if r["status"] == "absent")
+
+        return {
+            "success":       True,
+            "employee":      emp_doc.name,
+            "employee_name": emp_doc.employee_name,
+            "device_id":     emp_doc.attendance_device_id,
+            "month_name":    calendar.month_name[month],
+            "year":          year,
+            "rows":          rows,
+            "present_days":  present_days,
+            "absent_days":   absent_days,
+            "total_days":    last_day,
+        }
+
+    except Exception as e:
+        frappe.log_error(str(e), "Employee Monthly Report")
+        return {"success": False, "message": str(e)}
