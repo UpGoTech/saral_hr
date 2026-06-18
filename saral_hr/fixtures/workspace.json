@@ -1,7 +1,7 @@
 [
  {
   "charts": [],
-  "content": "[{\"id\":\"quLY2RmqsK\",\"type\":\"header\",\"data\":{\"text\":\"<span class=\\\"h4\\\">Saral HR</span>\",\"col\":12}},{\"id\":\"vX7k3MjFpF\",\"type\":\"card\",\"data\":{\"card_name\":\"Companies Master Data\",\"col\":4}},{\"id\":\"UXBG6dAVhA\",\"type\":\"card\",\"data\":{\"card_name\":\"Employees Master Data\",\"col\":4}},{\"id\":\"ONXHZ1p8Tv\",\"type\":\"card\",\"data\":{\"card_name\":\"Biometric\",\"col\":4}},{\"id\":\"tcNJEXnjQA\",\"type\":\"card\",\"data\":{\"card_name\":\"Salaries Master Data\",\"col\":4}},{\"id\":\"s7XR35vZsk\",\"type\":\"card\",\"data\":{\"card_name\":\"Monthly Transactions\",\"col\":4}},{\"id\":\"cLCTEGWswg\",\"type\":\"card\",\"data\":{\"card_name\":\"Leaves Process\",\"col\":4}},{\"id\":\"uJkw6_L_mY\",\"type\":\"card\",\"data\":{\"card_name\":\"Calculator\",\"col\":4}},{\"id\":\"ad8Ylo2JQq\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"View Salary Insight\",\"col\":3}},{\"id\":\"0meWuWmuDh\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Bulk Mark Attendance\",\"col\":3}},{\"id\":\"5CJdLnloTi\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"View Payroll Report\",\"col\":3}},{\"id\":\"DzpOy7QolO\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"View Salary Statistics\",\"col\":3}},{\"id\":\"I8XwI9v3a9\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"View Attendance Dashboard\",\"col\":3}},{\"id\":\"h0lo5909XG\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"HR Workforce & Payroll Overview\",\"col\":3}},{\"id\":\"0nabSA8nAP\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Daily Wage Attendance\",\"col\":3}},{\"id\":\"9q7-_C9IIg\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Daily Wage Calculation Report\",\"col\":3}},{\"id\":\"3QdfqOdCKN\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Company Enrollment Summary\",\"col\":3}},{\"id\":\"z438-OXDAN\",\"type\":\"header\",\"data\":{\"text\":\"<span class=\\\"h4\\\"><b>Loan</b></span>\",\"col\":12}},{\"id\":\"__uwwFAuhL\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Employee Loan Advance Ledger\",\"col\":3}},{\"id\":\"RZYfyfGT_p\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Loan Deduction For Month\",\"col\":3}},{\"id\":\"-4YhGslVjM\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Loan Register\",\"col\":3}},{\"id\":\"MEoIy75QHi\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Advance Register\",\"col\":3}}]",
+  "content": "[{\"id\":\"quLY2RmqsK\",\"type\":\"header\",\"data\":{\"text\":\"<span class=\\\"h4\\\">Saral HR</span>\",\"col\":12}},{\"id\":\"vX7k3MjFpF\",\"type\":\"card\",\"data\":{\"card_name\":\"Companies Master Data\",\"col\":4}},{\"id\":\"UXBG6dAVhA\",\"type\":\"card\",\"data\":{\"card_name\":\"Employees Master Data\",\"col\":4}},{\"id\":\"ONXHZ1p8Tv\",\"type\":\"card\",\"data\":{\"card_name\":\"Biometric\",\"col\":4}},{\"id\":\"tcNJEXnjQA\",\"type\":\"card\",\"data\":{\"card_name\":\"Salaries Master Data\",\"col\":4}},{\"id\":\"s7XR35vZsk\",\"type\":\"card\",\"data\":{\"card_name\":\"Monthly Transactions\",\"col\":4}},{\"id\":\"cLCTEGWswg\",\"type\":\"card\",\"data\":{\"card_name\":\"Leaves Process\",\"col\":4}},{\"id\":\"uJkw6_L_mY\",\"type\":\"card\",\"data\":{\"card_name\":\"Calculator\",\"col\":4}},{\"id\":\"ad8Ylo2JQq\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"View Salary Insight\",\"col\":3}},{\"id\":\"0meWuWmuDh\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Bulk Mark Attendance\",\"col\":3}},{\"id\":\"5CJdLnloTi\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"View Payroll Report\",\"col\":3}},{\"id\":\"DzpOy7QolO\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"View Salary Statistics\",\"col\":3}},{\"id\":\"I8XwI9v3a9\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"View Attendance Dashboard\",\"col\":3}},{\"id\":\"h0lo5909XG\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"HR Workforce & Payroll Overview\",\"col\":3}},{\"id\":\"0nabSA8nAP\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Daily Wage Attendance\",\"col\":3}},{\"id\":\"9q7-_C9IIg\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Daily Wage Calculation Report\",\"col\":3}},{\"id\":\"3QdfqOdCKN\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Company Enrollment Summary\",\"col\":3}},{\"id\":\"c4ZuQ0jrGJ\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Employee Timeline Report\",\"col\":3}},{\"id\":\"z438-OXDAN\",\"type\":\"header\",\"data\":{\"text\":\"<span class=\\\"h4\\\"><b>Loan</b></span>\",\"col\":12}},{\"id\":\"__uwwFAuhL\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Employee Loan Advance Ledger\",\"col\":3}},{\"id\":\"RZYfyfGT_p\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Loan Deduction For Month\",\"col\":3}},{\"id\":\"-4YhGslVjM\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Loan Register\",\"col\":3}},{\"id\":\"MEoIy75QHi\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Advance Register\",\"col\":3}}]",
   "custom_blocks": [],
   "docstatus": 0,
   "doctype": "Workspace",
@@ -661,7 +661,7 @@
     "type": "Link"
    }
   ],
-  "modified": "2026-06-09 12:24:16.054509",
+  "modified": "2026-06-18 15:50:17.150386",
   "module": "Saral Hr",
   "name": "Saral HR",
   "number_cards": [],
@@ -693,6 +693,22 @@
     "kanban_board": null,
     "label": "Company Enrollment Summary",
     "link_to": "Company Enrollment Summary",
+    "parent": "Saral HR",
+    "parentfield": "shortcuts",
+    "parenttype": "Workspace",
+    "restrict_to_domain": null,
+    "stats_filter": null,
+    "type": "Report",
+    "url": null
+   },
+   {
+    "color": "Grey",
+    "doc_view": "List",
+    "format": null,
+    "icon": null,
+    "kanban_board": null,
+    "label": "Employee Timeline Report",
+    "link_to": "Employee Timeline Report",
     "parent": "Saral HR",
     "parentfield": "shortcuts",
     "parenttype": "Workspace",
