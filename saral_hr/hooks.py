@@ -119,11 +119,19 @@ fixtures = [
     ]
 },
 
-    # Reports
+   # Reports
     {
         "dt": "Report",
         "filters": [
             ["module", "=", "Saral HR"]
+        ]
+    },
+
+    # Custom Fields
+    {
+        "dt": "Custom Field",
+        "filters": [
+            ["dt", "=", "Salary Slip"]
         ]
     }
 
