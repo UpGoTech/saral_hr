@@ -1,6 +1,8 @@
-// ─── Debounce timer ───────────────────────────────────────────────────────────
-let _ctc_timer = null;
-let _ctc_frm_ref = null;  // keep frm reference to avoid reload
+// ─── Debounce timers ──────────────────────────────────────────────────────────
+let _ctc_timer        = null;
+let _ctc_monthly_timer = null;
+let _ctc_frm_ref      = null;   // keep frm reference to avoid reload
+let _ctc_syncing      = false;  // guard against infinite sync loops
 
 frappe.ui.form.on('Ctc Calculator Record', {
 
@@ -20,11 +22,36 @@ frappe.ui.form.on('Ctc Calculator Record', {
     include_pt(frm)   { _render_statutory_info(frm); _recalculate(frm); },
     pf_type(frm)      { if (frm.doc.include_pf) _recalculate(frm); },
 
+    // ── Annual CTC entered → sync Monthly CTC input field ──────────────────
     annual_ctc(frm) {
+        if (_ctc_syncing) return;
         clearTimeout(_ctc_timer);
         _ctc_timer = setTimeout(() => {
-            if (frm.doc.annual_ctc > 0 && frm.doc.company && frm.doc.salary_structure)
+            const annual = frm.doc.annual_ctc || 0;
+            if (annual > 0) {
+                _ctc_syncing = true;
+                frm.set_value('monthly_ctc_input', _r2(annual / 12));
+                _ctc_syncing = false;
+            }
+            if (annual > 0 && frm.doc.company && frm.doc.salary_structure)
                 _recalculate(frm);
+        }, 600);
+    },
+
+    // ── Monthly CTC input entered → multiply × 12 → set Annual CTC ─────────
+    monthly_ctc_input(frm) {
+        if (_ctc_syncing) return;
+        clearTimeout(_ctc_monthly_timer);
+        _ctc_monthly_timer = setTimeout(() => {
+            const monthly = frm.doc.monthly_ctc_input || 0;
+            if (monthly > 0) {
+                const annual = _r2(monthly * 12);
+                _ctc_syncing = true;
+                frm.set_value('annual_ctc', annual);
+                _ctc_syncing = false;
+                if (frm.doc.company && frm.doc.salary_structure)
+                    _recalculate(frm);
+            }
         }, 600);
     },
 
@@ -246,6 +273,13 @@ function _populate(frm, data) {
     frm.set_value('total_deductions', total_ded);
     frm.set_value('net_salary',       _r0(gross - total_ded));
 
+    // Keep monthly_ctc_input in sync with computed monthly_ctc
+    if (!_ctc_syncing) {
+        _ctc_syncing = true;
+        frm.set_value('monthly_ctc_input', _r2(data.monthly_ctc || 0));
+        _ctc_syncing = false;
+    }
+
     _render_ui(frm);
 }
 
@@ -255,11 +289,11 @@ function _render_ui(frm) {
     const earnings   = _get_data(frm, 'earnings_json');
     const deductions = _get_data(frm, 'deductions_json');
     const employer   = _get_data(frm, 'employer_share_json');
-    const annual     = d.annual_ctc       || 0;
-    const monthly    = d.monthly_ctc      || 0;
-    const gross      = d.gross_salary     || 0;
-    const total_ded  = d.total_deductions || 0;
-    const net        = d.net_salary       || 0;
+    const annual     = d.annual_ctc           || 0;
+    const monthly    = d.monthly_ctc_input    || _r2(annual / 12);
+    const gross      = d.gross_salary         || 0;
+    const total_ded  = d.total_deductions     || 0;
+    const net        = d.net_salary           || 0;
     const total_emp  = _r2(employer.filter(r=>r.in_ctc).reduce((s,r)=>s+r.amount, 0));
 
     if (!earnings.length && !deductions.length && !employer.length) {

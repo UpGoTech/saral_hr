@@ -7,17 +7,17 @@
  "engine": "InnoDB",
  "default_print_format": "CTC Calculator Statement",
  "field_order": [
-  "employee_name","company","salary_structure",
+  "applicant_name","company","salary_structure",
   "column_break_1","include_pf","pf_type","include_esic","include_pt",
-  "section_break_summary","annual_ctc",
+  "section_break_summary","annual_ctc","column_break_ctc","monthly_ctc_input",
   "section_break_data","earnings_json","deductions_json","employer_share_json",
   "monthly_ctc","gross_salary","total_deductions","net_salary"
  ],
  "fields": [
   {
-   "fieldname": "employee_name",
+   "fieldname": "applicant_name",
    "fieldtype": "Data",
-   "label": "Employee Name",
+   "label": "Applicant Name",
    "reqd": 1,
    "in_list_view": 1,
    "in_standard_filter": 1,
@@ -81,7 +81,19 @@
    "label": "Annual CTC",
    "reqd": 1,
    "in_list_view": 1,
-   "precision": "2"
+   "precision": "2",
+   "description": "Fill to auto-calculate monthly"
+  },
+  {
+   "fieldname": "column_break_ctc",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "monthly_ctc_input",
+   "fieldtype": "Float",
+   "label": "Monthly CTC",
+   "precision": "2",
+   "description": "Fill to auto-calculate annual"
   },
   {
    "fieldname": "section_break_data",
@@ -110,7 +122,7 @@
   {
    "fieldname": "monthly_ctc",
    "fieldtype": "Float",
-   "label": "Monthly CTC",
+   "label": "Monthly CTC (Computed)",
    "hidden": 1,
    "read_only": 1,
    "precision": "2"
@@ -143,7 +155,7 @@
  "index_web_pages_for_search": 1,
  "is_submittable": 0,
  "links": [],
- "modified": "2026-05-25 13:00:00.000000",
+ "modified": "2026-06-10 10:00:00.000000",
  "modified_by": "Administrator",
  "module": "Saral Hr",
  "name": "Ctc Calculator Record",
