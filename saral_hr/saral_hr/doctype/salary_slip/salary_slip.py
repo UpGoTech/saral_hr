@@ -1437,7 +1437,7 @@ def bulk_print_salary_slips(salary_slip_names):
     tag = hashlib.md5(f"{frappe.session.user}_{frappe.utils.now_datetime()}".encode()).hexdigest()[:8]
     try:
         for name in salary_slip_names:
-            pdf = frappe.get_print(doctype="Salary Slip", name=name, print_format=BULK_PRINT_FORMAT, as_pdf=True, letterhead=None)
+            pdf = frappe.get_print(doctype="Salary Slip", name=name, print_format=BULK_PRINT_FORMAT, as_pdf=True, letterhead=None, pdf_options={"load-error-handling": "ignore", "load-media-error-handling": "ignore"})
             tf = frappe.utils.get_files_path(f"temp_slip_{tag}_{name}.pdf", is_private=1)
             temp_files.append(tf)
             with open(tf, "wb") as f: f.write(pdf)
