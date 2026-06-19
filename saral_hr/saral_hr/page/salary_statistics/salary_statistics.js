@@ -244,10 +244,12 @@ frappe.pages["salary-statistics"].on_page_load = function (wrapper) {
 		.ss-right-inner { padding: 24px 28px 40px; max-width: 900px; }
 
 		.ss-month-heading {
-			display: flex; align-items: center; gap: 12px;
+			display: flex; align-items: center; justify-content: space-between; gap: 12px;
 			margin-bottom: 20px; padding-bottom: 14px;
 			border-bottom: 1px solid var(--border-color);
+			flex-wrap: wrap;
 		}
+		.ss-month-heading-left { display: flex; align-items: center; gap: 12px; }
 		.ss-month-heading-title { font-size: 20px; font-weight: 700; color: var(--text-color); }
 		.ss-slip-link {
 			font-size: 11px; color: var(--primary); cursor: pointer;
@@ -256,7 +258,72 @@ frappe.pages["salary-statistics"].on_page_load = function (wrapper) {
 		}
 		.ss-slip-link:hover { background: var(--primary-light); }
 
+		/* Header employee switcher (search bar beside month heading) */
+		.ss-hdr-switch-wrap { display: flex; align-items: center; gap: 10px; }
+		.ss-hdr-search-group { position: relative; width: 240px; flex-shrink: 0; }
+		.ss-hdr-switch-input-inner {
+			position: relative; display: flex; align-items: center;
+			width: 100%; height: 34px;
+			background: linear-gradient(135deg, #eef2ff 0%, #f3f4f6 100%);
+			border: 1px solid var(--border-color); border-radius: 999px;
+			overflow: hidden; transition: box-shadow .15s, border-color .15s;
+		}
+		.ss-hdr-switch-input-inner:focus-within {
+			border-color: #6366f1; box-shadow: 0 0 0 3px rgba(99,102,241,.15);
+		}
+		.ss-search-icon-badge {
+			display: flex; align-items: center; justify-content: center;
+			width: 24px; height: 24px; border-radius: 50%; flex-shrink: 0;
+			margin-left: 5px;
+			background: linear-gradient(135deg, #38bdf8 0%, #6366f1 100%);
+			box-shadow: 0 1px 4px rgba(99,102,241,.4);
+		}
+		.ss-hdr-switch-input {
+			flex: 1; min-width: 0; height: 100%; border: none;
+			background: transparent; padding: 0 14px 0 8px; font-size: 12px;
+			color: var(--text-color); outline: none;
+		}
+		.ss-hdr-switch-dropdown {
+			position: absolute; top: calc(100% + 4px); left: 0; width: 260px;
+			background: var(--card-bg); border: 1px solid var(--border-color);
+			border-radius: 6px; box-shadow: 0 4px 14px rgba(0,0,0,.12);
+			max-height: 260px; overflow-y: auto; z-index: 100; display: none;
+		}
+		.ss-hdr-switch-clear {
+			display: flex; align-items: center; justify-content: center;
+			width: 18px; height: 18px; border-radius: 50%; flex-shrink: 0;
+			margin-right: 8px; background: #1f2937; color: #fff; border: none;
+			cursor: pointer; font-size: 10px; line-height: 1; padding: 0;
+		}
+		.ss-hdr-switch-clear:hover { background: #111827; }
+		.ss-hdr-switch-item {
+			display: flex; align-items: center; gap: 10px; padding: 9px 12px;
+			cursor: pointer; font-size: 12px; border-bottom: 1px solid var(--border-color);
+		}
+		.ss-hdr-switch-item-avatar {
+			width: 30px; height: 30px; border-radius: 50%; flex-shrink: 0;
+			display: flex; align-items: center; justify-content: center;
+			font-size: 11px; font-weight: 700; color: #fff;
+			background: linear-gradient(135deg, var(--primary) 0%, #7c3aed 100%);
+		}
+		.ss-hdr-switch-item-body { min-width: 0; }
+		.ss-hdr-switch-item:last-child { border-bottom: none; }
+		.ss-hdr-switch-item:hover { background: var(--highlight-color); }
+		.ss-hdr-switch-item-name { font-weight: 600; color: var(--text-color); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+		.ss-hdr-switch-item-id { font-size: 10px; color: var(--text-muted); font-family: monospace; margin-top: 1px; }
+		.ss-hdr-switch-empty { padding: 14px; text-align: center; font-size: 12px; color: var(--text-muted); }
 
+		.ss-print-icon-btn {
+			display: flex; align-items: center; gap: 6px; flex-shrink: 0;
+			height: 30px; padding: 0 12px; border-radius: 999px;
+			border: 1px solid var(--border-color); background: var(--card-bg);
+			color: var(--text-color); cursor: pointer; white-space: nowrap;
+			transition: background .12s, color .12s, border-color .12s;
+		}
+		.ss-print-btn-label { font-size: 11px; font-weight: 600; }
+		.ss-print-icon-btn svg { flex-shrink: 0; }
+		.ss-print-icon-btn:hover { background: var(--highlight-color); color: var(--primary); border-color: var(--primary); }
+		.ss-print-icon-btn:disabled, .ss-print-icon-btn.ss-print-icon-disabled { opacity: .35; cursor: not-allowed; pointer-events: none; }
 
 		/* Section heading */
 		.ss-sec-heading {
@@ -425,6 +492,62 @@ frappe.pages["salary-statistics"].on_page_load = function (wrapper) {
 		} catch(e) {
 			return null;
 		}
+	}
+
+	// ─────────────────────────────────────────────────────────────────────────
+	// HELPER: build a proper, human-readable file name for the Salary Slip PDF
+	// e.g. "Salary Slip - Naina Khode - April 2026"
+	// ─────────────────────────────────────────────────────────────────────────
+	function buildSalarySlipFileName(employeeName, month, year) {
+		const safeName = (employeeName || "Employee").replace(/[\\/:*?"<>|]/g, "").trim();
+		return `Salary Slip - ${safeName} - ${month} ${year}`;
+	}
+
+	// ─────────────────────────────────────────────────────────────────────────
+	// HELPER: open the Salary Slip as a PDF (preview first — user decides to print)
+	// Uses the print format already configured as default on the Salary Slip doctype.
+	// ─────────────────────────────────────────────────────────────────────────
+	let _cachedSalarySlipPrintFormat = null;
+
+	function printSalarySlip(slipName, fileLabel) {
+		if (_cachedSalarySlipPrintFormat) {
+			openSalarySlipPdf(slipName, _cachedSalarySlipPrintFormat, fileLabel);
+			return;
+		}
+		frappe.db.get_value("DocType", "Salary Slip", "default_print_format").then(r => {
+			const fmt = (r && r.message && r.message.default_print_format) || "Standard";
+			_cachedSalarySlipPrintFormat = fmt;
+			openSalarySlipPdf(slipName, fmt, fileLabel);
+		});
+	}
+
+	function openSalarySlipPdf(slipName, printFormat, fileLabel) {
+		frappe.show_alert({ message: __("Preparing PDF…"), indicator: "blue" });
+
+		const url = frappe.urllib.get_full_url(
+			"/api/method/frappe.utils.print_format.download_pdf" +
+			"?doctype=" + encodeURIComponent("Salary Slip") +
+			"&name=" + encodeURIComponent(slipName) +
+			"&format=" + encodeURIComponent(printFormat) +
+			"&no_letterhead=0"
+		);
+
+		fetch(url, { credentials: "same-origin" })
+			.then(resp => {
+				if (!resp.ok) throw new Error("PDF generation failed");
+				return resp.blob();
+			})
+			.then(blob => {
+				// Name the file properly so the browser's PDF viewer / Save dialog shows it clearly
+				const namedFile = new File([blob], (fileLabel || "Salary Slip") + ".pdf", { type: "application/pdf" });
+				const blobUrl   = URL.createObjectURL(namedFile);
+				// Opens the PDF directly in a new tab using the browser's native PDF viewer —
+				// the person sees the document first and decides themselves whether to print it.
+				window.open(blobUrl, "_blank");
+			})
+			.catch(() => {
+				frappe.msgprint(__("Could not generate the salary slip PDF. Please try again."));
+			});
 	}
 
 	// ─────────────────────────────────────────────────────────────────────────
@@ -706,7 +829,7 @@ frappe.pages["salary-statistics"].on_page_load = function (wrapper) {
 						activeMonth = (state.year === String(CUR_YEAR)) ? MONTHS[CUR_MONTH_IDX] : "January";
 					}
 					buildMonthList();
-					loadMonthDetail(emp.employee, activeMonth, $right);
+					loadMonthDetail(emp, activeMonth, $right);
 				}
 			});
 		}
@@ -736,7 +859,7 @@ frappe.pages["salary-statistics"].on_page_load = function (wrapper) {
 						activeMonth = m;
 						$monthList.find(".ss-month-row").removeClass("ss-active");
 						$(this).addClass("ss-active");
-						loadMonthDetail(emp.employee, m, $right);
+						loadMonthDetail(emp, m, $right);
 					});
 				}
 				$monthList.append($row);
@@ -749,7 +872,8 @@ frappe.pages["salary-statistics"].on_page_load = function (wrapper) {
 	// ─────────────────────────────────────────────────────────────────────────
 	// LOAD MONTH DETAIL
 	// ─────────────────────────────────────────────────────────────────────────
-	function loadMonthDetail(employee, month, $right) {
+	function loadMonthDetail(emp, month, $right) {
+		const employee = emp.employee;
 		$right.html(`<div class="ss-right-inner">${skeletonDetail()}</div>`);
 		let detailData = null, pending = 1;
 
@@ -760,12 +884,108 @@ frappe.pages["salary-statistics"].on_page_load = function (wrapper) {
 			const $inner = $(`<div class="ss-right-inner"></div>`);
 
 			// Heading
-			$inner.append(`<div class="ss-month-heading">
-				<span class="ss-month-heading-title">${month} ${state.year}</span>
-				${detailData && detailData.salary
-					? `<a class="ss-slip-link" href="/app/salary-slip/${detailData.salary.slip_name}" target="_blank">${detailData.salary.slip_name} ↗</a>`
-					: `<span style="font-size:12px;color:var(--text-muted);font-style:italic;">No salary slip</span>`}
-			</div>`);
+			const $heading = $(`<div class="ss-month-heading">
+				<div class="ss-month-heading-left">
+					<span class="ss-month-heading-title">${month} ${state.year}</span>
+					${detailData && detailData.salary
+						? `<a class="ss-slip-link" href="/app/salary-slip/${detailData.salary.slip_name}" target="_blank">${detailData.salary.slip_name} ↗</a>`
+						: `<span style="font-size:12px;color:var(--text-muted);font-style:italic;">No salary slip</span>`}
+				</div>
+			</div>`).appendTo($inner);
+
+			// ── Employee Switcher (colorful search bar, right side of heading) ──
+			const $switchWrap = $(`<div class="ss-hdr-switch-wrap">
+				<div class="ss-hdr-search-group">
+					<div class="ss-hdr-switch-input-inner">
+						<span class="ss-search-icon-badge">
+							<svg width="12" height="12" fill="none" stroke="#fff" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
+						</span>
+						<input type="text" class="ss-hdr-switch-input" placeholder="Search employee by name or ID…">
+						<button type="button" class="ss-hdr-switch-clear" title="Clear" style="display:none;">✕</button>
+					</div>
+					<div class="ss-hdr-switch-dropdown"></div>
+				</div>
+				<button type="button" class="ss-print-icon-btn" title="View / Print Salary Slip">
+					<span class="ss-print-btn-label">Salary Slip</span>
+					<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 6 2 18 2 18 9"></polyline><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"></path><rect x="6" y="14" width="12" height="8"></rect></svg>
+				</button>
+			</div>`).appendTo($heading);
+
+			const $si    = $switchWrap.find(".ss-hdr-switch-input");
+			const $sd    = $switchWrap.find(".ss-hdr-switch-dropdown");
+			const $clear = $switchWrap.find(".ss-hdr-switch-clear");
+			const $printBtn = $switchWrap.find(".ss-print-icon-btn");
+
+			// ── Print Salary Slip (uses the same print format configured on the Salary Slip doctype) ──
+			if (detailData && detailData.salary && detailData.salary.slip_name) {
+				$printBtn.on("click", function () {
+					printSalarySlip(detailData.salary.slip_name, buildSalarySlipFileName(emp.employee_name, month, state.year));
+				});
+			} else {
+				$printBtn.prop("disabled", true).addClass("ss-print-icon-disabled").attr("title", "No salary slip to print");
+			}
+
+			function getOtherEmployees() {
+				return state.employees.filter(e => e.employee !== emp.employee);
+			}
+
+			function renderHdrSwitchResults(list) {
+				$sd.empty();
+				if (!list.length) {
+					$sd.append(`<div class="ss-hdr-switch-empty">No matching employee found.</div>`);
+				} else {
+					list.forEach(e => {
+						const initials = (e.employee_name||"?").split(" ").map(w=>w[0]).join("").toUpperCase().slice(0,2);
+						const $item = $(`<div class="ss-hdr-switch-item">
+							<div class="ss-hdr-switch-item-avatar">${initials}</div>
+							<div class="ss-hdr-switch-item-body">
+								<div class="ss-hdr-switch-item-name">${e.employee_name}</div>
+								<div class="ss-hdr-switch-item-id">${e.employee}</div>
+							</div>
+						</div>`);
+						$item.on("click", () => {
+							$sd.hide();
+							$si.val("");
+							$clear.hide();
+							renderDetailPage(e);
+						});
+						$sd.append($item);
+					});
+				}
+				$sd.show();
+			}
+
+			$si.on("input", function () {
+				const q = $(this).val().toLowerCase().trim();
+				$clear.toggle(!!q);
+				const pool = getOtherEmployees();
+				const matches = q
+					? pool.filter(e =>
+						(e.employee_name||"").toLowerCase().includes(q) || (e.employee||"").toLowerCase().includes(q)
+					  )
+					: pool; // empty query → show full alphabetical employee list
+				renderHdrSwitchResults(matches);
+			});
+
+			$si.on("focus", function () {
+				const q = $(this).val().toLowerCase().trim();
+				const pool = getOtherEmployees();
+				const matches = q
+					? pool.filter(e =>
+						(e.employee_name||"").toLowerCase().includes(q) || (e.employee||"").toLowerCase().includes(q)
+					  )
+					: pool;
+				renderHdrSwitchResults(matches);
+			});
+
+			$clear.on("click", function () {
+				$si.val("").trigger("focus");
+				$clear.hide();
+			});
+
+			$(document).off("click.ss-hdr-switch").on("click.ss-hdr-switch", function (e) {
+				if (!$(e.target).closest(".ss-hdr-switch-wrap").length) $sd.hide();
+			});
 
 			// No slip notice
 			if (!detailData || !detailData.salary) {
