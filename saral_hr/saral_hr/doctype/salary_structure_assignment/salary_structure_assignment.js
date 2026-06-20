@@ -30,18 +30,20 @@ function _debounced_recalc(frm, fn, delay = 120) {
 frappe.ui.form.on("Salary Structure Assignment", {
 
     refresh(frm) {
-        toggle_fields(frm);
-        render_statutory_controls(frm);
-        toggle_skill_type(frm);
-        if (frm.doc.salary_structure) {
-            toggle_salary_sections(frm);
-            setTimeout(() => {
+    toggle_fields(frm);
+    render_statutory_controls(frm);
+    toggle_skill_type(frm);
+    if (frm.doc.salary_structure) {
+        toggle_salary_sections(frm);
+        setTimeout(() => {
+            if (frm.doc.docstatus !== 1) {     // ← ye line add karo
                 calculate_salary(frm);
-                maybe_render_daily_wage_panel(frm);
-            }, 150);
-        }
-        _bind_live_amount_inputs(frm);
-    },
+            }
+            maybe_render_daily_wage_panel(frm);
+        }, 150);
+    }
+    _bind_live_amount_inputs(frm);
+},
 
     setup(frm) {
         frm.set_query("employee", () => ({ filters: { is_active: 1 } }));
