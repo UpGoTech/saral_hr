@@ -61,21 +61,87 @@ def _fn(prefix, abbr):
 
 
 # ---------------------------------------------------------------------------
+# Loan / Advance / Additional Salary — fetched directly from source doctypes
+# ---------------------------------------------------------------------------
+
+def _get_loan_advance_addl_maps(month, year, start_date, end_date):
+    """
+    Returns three dicts {employee: amount}:
+      - loan_map     : sum of all "Loan"-type schedule installments deducted
+                       in the given month, across ALL loans the employee has
+                       (handles multiple simultaneous loans correctly).
+      - advance_map  : sum of "Advance"-type amounts deducted within the
+                       given date range.
+      - addl_map     : sum of Additional Salary total_amount for the month.
+    """
+    loan_map = {}
+    if month and year:
+        month_str = "{0} {1}".format(month, year)
+        for r in frappe.db.sql(
+            """
+            SELECT ela.employee AS employee, SUM(elas.deduction_amount) AS amt
+            FROM `tabEmployee Loan Advance` ela
+            INNER JOIN `tabEmployee Loan Advance Schedule` elas ON elas.parent = ela.name
+            WHERE ela.docstatus = 1
+              AND ela.type = 'Loan'
+              AND elas.month = %(month_str)s
+              AND elas.is_deducted = 1
+            GROUP BY ela.employee
+            """,
+            {"month_str": month_str}, as_dict=1
+        ):
+            loan_map[r.employee] = flt(r.amt, 2)
+
+    advance_map = {}
+    if start_date and end_date:
+        for r in frappe.db.sql(
+            """
+            SELECT employee, SUM(amount) AS amt
+            FROM `tabEmployee Loan Advance`
+            WHERE docstatus = 1
+              AND type = 'Advance'
+              AND is_deducted = 1
+              AND date BETWEEN %(start_date)s AND %(end_date)s
+            GROUP BY employee
+            """,
+            {"start_date": start_date, "end_date": end_date}, as_dict=1
+        ):
+            advance_map[r.employee] = flt(r.amt, 2)
+
+    addl_map = {}
+    if month and year:
+        for r in frappe.db.sql(
+            """
+            SELECT employee, SUM(total_amount) AS amt
+            FROM `tabAdditional Salary`
+            WHERE docstatus = 1 AND month = %(month)s AND year = %(year)s
+            GROUP BY employee
+            """,
+            {"month": month, "year": str(year)}, as_dict=1
+        ):
+            addl_map[r.employee] = flt(r.amt, 2)
+
+    return loan_map, advance_map, addl_map
+
+
+# ---------------------------------------------------------------------------
 # Fetch dynamic components — employer contribution excluded
 # ---------------------------------------------------------------------------
 
-def _get_components(w, p):
+def _get_components(w, p, catj=""):
     rows = frappe.db.sql(
         """
-        SELECT DISTINCT sd.salary_component, sc.type, sc.employer_contribution,
-               COALESCE(sc.salary_component_abbr, sd.salary_component) AS abbr
-        FROM `tabSalary Slip` ss
+        SELECT sd.salary_component, sc.type, sc.employer_contribution,
+               COALESCE(sc.salary_component_abbr, sd.salary_component) AS abbr,
+               MIN(sd.idx) AS min_idx
+        FROM `tabSalary Slip` ss {catj}
         INNER JOIN `tabSalary Details` sd ON sd.parent=ss.name
             AND sd.parenttype='Salary Slip'
         INNER JOIN `tabSalary Component` sc ON sc.name=sd.salary_component
         WHERE {w}
-        ORDER BY sc.type, sc.employer_contribution, sd.salary_component
-        """.format(w=w),
+        GROUP BY sd.salary_component, sc.type, sc.employer_contribution, abbr
+        ORDER BY sc.type, sc.employer_contribution, min_idx
+        """.format(w=w, catj=catj),
         p, as_dict=1
     )
     earn_comps, emp_ded_comps = [], []
@@ -150,7 +216,11 @@ def _get_data(f):
         )
 
     w = " AND ".join(conds)
-    earn_comps, emp_ded_comps = _get_components(w, p)  # no empr_comps
+
+    earn_comps, emp_ded_comps = _get_components(w, p, catj)
+    loan_map, advance_map, addl_map = _get_loan_advance_addl_maps(
+        f.get("month"), f.get("year"), s, e
+    )
 
     cols = [
         _col("Employee",        "employee",              w=150),
@@ -168,9 +238,12 @@ def _get_data(f):
     for name, abbr in earn_comps:
         cols.append(_col("{0} ({1})".format(name, abbr), _fn("e", abbr), "Float", 190, precision=2))
     cols.append(_col("Gross Earnings",   "gross_earnings",   "Float", 190, precision=2))
+    cols.append(_col("Additional Salary", "additional_salary", "Float", 170, precision=2))
     for name, abbr in emp_ded_comps:
         cols.append(_col("{0} ({1})".format(name, abbr), _fn("d", abbr), "Float", 190, precision=2))
     cols.append(_col("Total Deductions", "total_deductions", "Float", 190, precision=2))
+    cols.append(_col("Loan",             "loan_amount",       "Float", 150, precision=2))
+    cols.append(_col("Advance",          "advance_amount",    "Float", 150, precision=2))
     # Employer contribution columns removed
     cols.append(_col("Net Salary",       "net_salary",       "Float", 190, precision=2))
 
@@ -197,15 +270,17 @@ def _get_data(f):
         "present_days": 0.0, "total_earned_leaves": 0.0,
         "total_casual_leaves": 0.0, "total_comp_off": 0.0,
         "gross_earnings": 0.0, "total_deductions": 0.0,
-        "net_salary": 0.0,
+        "net_salary": 0.0, "additional_salary": 0.0,
+        "loan_amount": 0.0, "advance_amount": 0.0,
     }
     for name, abbr in earn_comps:    grand[_fn("e", abbr)] = 0.0
     for name, abbr in emp_ded_comps: grand[_fn("d", abbr)] = 0.0
 
     for sl in slips:
         sc  = comp_map.get(sl["slip"], {})
+        emp = sl["employee"]
         row = {
-            "employee":            sl["employee"],
+            "employee":            emp,
             "employee_name":       sl["employee_name"],
             "designation":         sl.get("designation") or "",
             "department":          sl.get("department")  or "",
@@ -225,11 +300,22 @@ def _get_data(f):
             row[_fn("e", abbr)] = amt; ge += amt; grand[_fn("e", abbr)] += amt
         row["gross_earnings"] = flt(ge, 2); grand["gross_earnings"] += ge
 
+        addl_amt = flt(addl_map.get(emp, 0), 2)
+        row["additional_salary"] = addl_amt
+        grand["additional_salary"] += addl_amt
+
         td2 = 0.0
         for name, abbr in emp_ded_comps:
             amt = flt(sc.get(name), 2)
             row[_fn("d", abbr)] = amt; td2 += amt; grand[_fn("d", abbr)] += amt
         row["total_deductions"] = flt(td2, 2); grand["total_deductions"] += td2
+
+        loan_amt    = flt(loan_map.get(emp, 0), 2)
+        advance_amt = flt(advance_map.get(emp, 0), 2)
+        row["loan_amount"]    = loan_amt
+        row["advance_amount"] = advance_amt
+        grand["loan_amount"]    += loan_amt
+        grand["advance_amount"] += advance_amt
 
         # Employer contribution calculation removed
 
@@ -372,7 +458,7 @@ def _chip_r2(is_last, is_grand=False):
 
 
 # ---------------------------------------------------------------------------
-# HTML builder — employer contribution removed
+# HTML builder
 # ---------------------------------------------------------------------------
 
 def _build_html(cols, data, co, mo, yr,
@@ -385,6 +471,7 @@ def _build_html(cols, data, co, mo, yr,
             "payment_days","absent_days","total_lwp","present_days",
             "total_earned_leaves","total_casual_leaves","total_comp_off",
             "gross_earnings","total_deductions","net_salary",
+            "additional_salary","loan_amount","advance_amount",
         }
         for c in cols:
             fn = c["fieldname"]
@@ -421,7 +508,7 @@ def _build_html(cols, data, co, mo, yr,
             '</body></html>'.format(css=_CSS, hdr=first_hdr_html)
         )
 
-    # ── Build chip list — employer contribution chips removed ─────────────
+    # ── Build chip list ─────────────────────────────────────────────────
     all_chips = [
         ("payment_days",        "PD",  False, False),
         ("present_days",        "PR",  False, False),
@@ -433,11 +520,13 @@ def _build_html(cols, data, co, mo, yr,
     ]
     for name, abbr in earn_comps:
         all_chips.append((_fn("e", abbr), abbr, True, False))
-    all_chips.append(("gross_earnings",   "GE",  True, False))
+    all_chips.append(("gross_earnings",    "GE",  True, False))
+    all_chips.append(("additional_salary", "AS",  True, False))
     for name, abbr in emp_ded_comps:
         all_chips.append((_fn("d", abbr), abbr, True, False))
     all_chips.append(("total_deductions", "TD",  True, False))
-    # Employer contribution chips (empr_comps + employer_total) removed
+    all_chips.append(("loan_amount",      "LN",  True, False))
+    all_chips.append(("advance_amount",   "ADV", True, False))
     all_chips.append(("net_salary", "NS", True, True))
 
     row1_chips = [c for i, c in enumerate(all_chips) if i % 2 == 0]
@@ -539,13 +628,15 @@ def _build_html(cols, data, co, mo, yr,
         '</thead>'.format(n=n_cols)
     )
 
-    # ── Legend — employer contribution entries removed ─────────────────────
+    # ── Legend ───────────────────────────────────────────────────────────
     legend_map = [
         ("PD",  "Payment Days"),    ("PR",  "Present Days"),
         ("AB",  "Absent Days"),     ("EL",  "Earned Leaves"),
         ("CL",  "Casual Leaves"),   ("LWP", "Leave Without Pay"),
         ("CO",  "Comp Off"),        ("GE",  "Gross Earnings"),
+        ("AS",  "Additional Salary"),
         ("TD",  "Total Deductions"),
+        ("LN",  "Loan"),            ("ADV", "Advance"),
         ("NS",  "Net Salary"),
     ]
     for nm, ab in earn_comps:    legend_map.append((ab, nm))
@@ -693,12 +784,12 @@ def print_report(filters):
         )
 
     w = " AND ".join(conds)
-    earn_comps, emp_ded_comps = _get_components(w, p)  # no empr_comps
+    earn_comps, emp_ded_comps = _get_components(w, p, catj)
     cols, data = _get_data(filters)
 
     co_label = _company_label(filters)
     mo = filters.get("month", "")
     yr = filters.get("year",  "")
     html = _build_html(cols, data, co_label, mo, yr,
-                       earn_comps, emp_ded_comps)  # no empr_comps
+                       earn_comps, emp_ded_comps)
     return _save_pdf(html, "Salary_Summary_Individual")
