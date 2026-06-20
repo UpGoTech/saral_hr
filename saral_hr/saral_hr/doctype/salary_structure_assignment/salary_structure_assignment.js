@@ -88,6 +88,14 @@ frappe.ui.form.on("Salary Structure Assignment", {
     from_date(frm) {
         toggle_fields(frm);
         if (frm.doc.from_date && frm.doc.to_date) check_overlap(frm);
+
+        // Submitted doc: sirf date allow_on_submit hai, salary/statutory
+        // recalc nahi karna — warna total_employer_contribution jaise
+        // non-allow-on-submit fields floating-point drift se mismatch ho
+        // jaate hain (e.g. 2720.49 -> 2720.4900000000002) aur save fail
+        // hota hai "Not allowed to change ... after submission".
+        if (frm.doc.docstatus === 1) return;
+
         if (frm.doc.salary_structure) refresh_statutory_rows(frm);
         check_srr_and_apply(frm);
     },
@@ -846,7 +854,7 @@ function calculate_salary_silent() { _do_calculate(arguments[0], true);  }
 // ─────────────────────────────────────────────────────────────
 
 function _calculate_excluding_row(frm, deleted_cdn) {
-    const gross       = _sum_earnings_excluding(frm, deleted_cdn);
+    const gross       = flt(_sum_earnings_excluding(frm, deleted_cdn), 2);
     let emp_ded       = 0;
     let empr_cont     = 0;
     let empr_cont_ctc = 0;
@@ -861,13 +869,20 @@ function _calculate_excluding_row(frm, deleted_cdn) {
         }
     });
 
+    // Round the running totals once, after summation, instead of leaving
+    // raw JS floating-point sums (e.g. 2720.4900000000002) in the doc —
+    // those silently fail the "no change after submit" check elsewhere.
+    emp_ded       = flt(emp_ded, 2);
+    empr_cont     = flt(empr_cont, 2);
+    empr_cont_ctc = flt(empr_cont_ctc, 2);
+
     const values = {
         gross_salary:                gross,
         total_deductions:            emp_ded,
         total_employer_contribution: empr_cont,
-        net_salary:                  gross - emp_ded,
-        monthly_ctc:                 gross + empr_cont_ctc,
-        annual_ctc:                  (gross + empr_cont_ctc) * 12,
+        net_salary:                  flt(gross - emp_ded, 2),
+        monthly_ctc:                 flt(gross + empr_cont_ctc, 2),
+        annual_ctc:                  flt((gross + empr_cont_ctc) * 12, 2),
         total_basic_da:              _sum_basic_da_excluding(frm, deleted_cdn),
     };
 
@@ -900,7 +915,7 @@ function _sum_basic_da_excluding(frm, excluded_cdn) {
 }
 
 function _do_calculate(frm, silent) {
-    const gross       = _sum_earnings(frm);
+    const gross       = flt(_sum_earnings(frm), 2);
     let emp_ded       = 0;
     let empr_cont     = 0;
     let empr_cont_ctc = 0;
@@ -914,13 +929,21 @@ function _do_calculate(frm, silent) {
         if (!d.exclude_from_ctc) empr_cont_ctc += flt(d.amount);
     });
 
+    // Round the running totals once, after summation — JS floating-point
+    // addition over the employer_share rows otherwise leaves values like
+    // 2720.4900000000002 in total_employer_contribution, which then blocks
+    // saving a submitted doc even when nothing actually changed.
+    emp_ded       = flt(emp_ded, 2);
+    empr_cont     = flt(empr_cont, 2);
+    empr_cont_ctc = flt(empr_cont_ctc, 2);
+
     const values = {
         gross_salary:                gross,
         total_deductions:            emp_ded,
         total_employer_contribution: empr_cont,       // full cost — EDLI + admin included
-        net_salary:                  gross - emp_ded,
-        monthly_ctc:                 gross + empr_cont_ctc,   // excludes flagged components
-        annual_ctc:                  (gross + empr_cont_ctc) * 12,
+        net_salary:                  flt(gross - emp_ded, 2),
+        monthly_ctc:                 flt(gross + empr_cont_ctc, 2),   // excludes flagged components
+        annual_ctc:                  flt((gross + empr_cont_ctc) * 12, 2),
         total_basic_da:              _sum_basic_da(frm),
     };
 
