@@ -350,6 +350,7 @@
  "modified_by": "Administrator",
  "module": "Saral Hr",
  "name": "Salary Structure Assignment",
+  "default_print_format": "SSA Print Format",
  "naming_rule": "Expression (old style)",
  "owner": "Administrator",
  "permissions": [

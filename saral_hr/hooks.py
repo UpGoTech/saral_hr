@@ -114,7 +114,8 @@ fixtures = [
         ["name", "in", [
             "Variable Pay",
             "Salary Slip Custom",
-            "CTC Calculator Statement"
+            "CTC Calculator Statement",
+            "SSA Print Format"
         ]]
     ]
 },
