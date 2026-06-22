@@ -4,7 +4,7 @@
 import frappe
 from frappe import _
 from frappe.model.document import Document
-from frappe.utils import flt
+from frappe.utils import flt, getdate
 
 VIRTUAL_COMPONENTS = {"Gross", "Gross Including Additional Salary"}
 
@@ -58,9 +58,32 @@ class Company(Document):
     # Internal helpers
     # ──────────────────────────────────────────────
 
-    def _get_child_components(self, table_fieldname):
+    def _get_child_components(self, table_fieldname, period_date=None):
         rows = self.get(table_fieldname) or []
-        return [row.wage_components for row in rows if row.wage_components]
+        result = []
+
+        for row in rows:
+            if not row.wage_components:
+                continue
+
+            # period_date nahi diya (validate time) → sab rows return karo
+            if not period_date:
+                result.append(row.wage_components)
+                continue
+
+            # from_date aur to_date dono blank → always active
+            if not row.from_date and not row.to_date:
+                result.append(row.wage_components)
+                continue
+
+            # Date range check
+            from_ok = (not row.from_date) or (getdate(row.from_date) <= getdate(period_date))
+            to_ok   = (not row.to_date)   or (getdate(row.to_date)   >= getdate(period_date))
+
+            if from_ok and to_ok:
+                result.append(row.wage_components)
+
+        return result
 
     def _validate_components(self, components, label_prefix):
         for comp in components:
@@ -98,9 +121,9 @@ class Company(Document):
     # Wage basis calculators
     # ──────────────────────────────────────────────
 
-    def compute_esic_wage_basis(self, salary_components: dict) -> float:
-        """Sum ALL listed ESIC components — NO CAP (esic_wage_limit is display only)."""
-        components = self._get_child_components("esic_dependent_component")
+    def compute_esic_wage_basis(self, salary_components: dict, period_date=None) -> float:
+        """Sum ESIC components matching period_date range. No cap (esic_wage_limit is display only)."""
+        components = self._get_child_components("esic_dependent_component", period_date)
         if not components:
             return 0.0
         return max(
@@ -108,9 +131,9 @@ class Company(Document):
             0.0
         )
 
-    def compute_pf_wage_basis(self, salary_components: dict) -> float:
-        """Sum ALL listed PF components — cap applied by caller for Limited PF."""
-        components = self._get_child_components("pf_dependent_component")
+    def compute_pf_wage_basis(self, salary_components: dict, period_date=None) -> float:
+        """Sum PF components matching period_date range. Cap applied by caller for Limited PF."""
+        components = self._get_child_components("pf_dependent_component", period_date)
         if not components:
             return 0.0
         return max(
@@ -128,8 +151,8 @@ class Company(Document):
             return "Include Weekly Offs"
         return "Exclude Weekly Offs"
 
-    def get_esic_config(self):
-        components = self._get_child_components("esic_dependent_component")
+    def get_esic_config(self, period_date=None):
+        components = self._get_child_components("esic_dependent_component", period_date)
         if not components:
             return None
         return {
@@ -140,8 +163,8 @@ class Company(Document):
             "employer_percent": self.esic_employer_contribution or 0,
         }
 
-    def get_pf_config(self):
-        components = self._get_child_components("pf_dependent_component")
+    def get_pf_config(self, period_date=None):
+        components = self._get_child_components("pf_dependent_component", period_date)
         if not components:
             return None
         return {

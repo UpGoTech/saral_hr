@@ -75,10 +75,12 @@ def get_statutory_components(company, gross_salary, from_date,
 
     comp_doc = frappe.get_doc("Company", company) if company else None
 
+    # ── period_date: assignment ki from_date se matching config milegi ──
+    period_date = getdate(from_date) if from_date else None
+
     def abbr(name):
         return frappe.db.get_value("Salary Component", name, "salary_component_abbr") or ""
 
-    # ── CHANGED: now also fetches exclude_from_ctc from Salary Component ──
     def row(name, amount, employer=0):
         exclude = frappe.db.get_value("Salary Component", name, "exclude_from_ctc") or 0
         return {
@@ -89,11 +91,14 @@ def get_statutory_components(company, gross_salary, from_date,
             "exclude_from_ctc":      int(exclude),
         }
 
+    # ── ESIC: period_date pass karo ──
     if is_esic_applicable and comp_doc:
-        esic_cfg = comp_doc.get_esic_config()
+        esic_cfg = comp_doc.get_esic_config(period_date=period_date)
         if esic_cfg:
-            esic_components = comp_doc._get_child_components("esic_dependent_component")
-            wage = _sum_components(esic_components, gross_salary, earnings_map)
+            esic_components = comp_doc._get_child_components(
+                "esic_dependent_component", period_date=period_date
+            )
+            wage     = _sum_components(esic_components, gross_salary, earnings_map)
             emp_pct  = flt(esic_cfg.get("employee_percent", 0))
             empr_pct = flt(esic_cfg.get("employer_percent", 0))
             if emp_pct:
@@ -101,10 +106,13 @@ def get_statutory_components(company, gross_salary, from_date,
             if empr_pct:
                 employer_share.append(row(SC_EMPR_ESIC, wage * empr_pct / 100, employer=1))
 
+    # ── PF: period_date pass karo ──
     if is_pf_applicable and comp_doc:
-        pf_cfg = comp_doc.get_pf_config()
+        pf_cfg = comp_doc.get_pf_config(period_date=period_date)
         if pf_cfg:
-            pf_components = comp_doc._get_child_components("pf_dependent_component")
+            pf_components = comp_doc._get_child_components(
+                "pf_dependent_component", period_date=period_date
+            )
             raw_wage = _sum_components(pf_components, gross_salary, earnings_map)
             if pf_type == "Limited PF" and pf_cfg.get("wage_limit"):
                 wage = min(raw_wage, flt(pf_cfg["wage_limit"]))
@@ -138,8 +146,6 @@ def get_statutory_components(company, gross_salary, from_date,
         employer_share.append(row(SC_EMPR_LWF, empr_lwf_amt, employer=1))
 
     return {"deductions": deductions, "employer_share": employer_share}
-
-
 def _sum_components(components, gross_salary, earnings_map):
     VIRTUAL = {"Gross", "Gross Including Additional Salary"}
     total       = 0.0
