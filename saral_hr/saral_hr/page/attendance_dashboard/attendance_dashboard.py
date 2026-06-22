@@ -2,6 +2,7 @@ import frappe
 from frappe.utils import getdate, get_last_day, flt, nowdate
 import calendar
 from datetime import timedelta, date
+from saral_hr.utils.holiday_utils import get_holiday_list_for_date
 
 
 # ─── Status groupings ─────────────────────────────────────────────────────────
@@ -320,6 +321,9 @@ def get_monthly_summary(company, year, month, department=None):
 
 # ─── API: Holidays for month ──────────────────────────────────────────────────
 
+# Top pe add karo
+from saral_hr.utils.holiday_utils import get_holiday_list_for_date
+
 @frappe.whitelist()
 def get_holidays_for_month(company, year, month):
     MONTHS    = ["January","February","March","April","May","June",
@@ -328,15 +332,15 @@ def get_holidays_for_month(company, year, month):
     from_date  = date(int(year), month_num, 1)
     to_date    = get_last_day(from_date)
 
-    holiday_list_name = frappe.db.get_value("Company", company, "default_holiday_list")
+    # ✅ Period-wise list fetch karo
+    holiday_list_name = get_holiday_list_for_date(str(from_date), company)
     if not holiday_list_name:
         return {"holidays": [], "total": 0}
 
     holidays = frappe.db.sql("""
         SELECT h.holiday_date, h.description
         FROM `tabHoliday` h
-        JOIN `tabHoliday List` hl ON hl.name = h.parent
-        WHERE hl.name = %(hl)s
+        WHERE h.parent = %(hl)s
           AND h.holiday_date BETWEEN %(from_date)s AND %(to_date)s
         ORDER BY h.holiday_date
     """, {"hl": holiday_list_name, "from_date": str(from_date), "to_date": str(to_date)}, as_dict=True)
@@ -353,7 +357,6 @@ def get_holidays_for_month(company, year, month):
         ],
         "total": len(holidays),
     }
-
 
 # ─── API: Employee monthly detail ─────────────────────────────────────────────
 

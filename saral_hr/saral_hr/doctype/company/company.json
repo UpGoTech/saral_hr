@@ -13,7 +13,7 @@
   "column_break_opgj",
   "country",
   "default_currency",
-  "default_holiday_list",
+  "holiday_list_periods",    
   "addresscontact_tab",
   "address_and_contact_section",
   "company_logo",
@@ -88,11 +88,11 @@
    "reqd": 1
   },
   {
-   "fieldname": "default_holiday_list",
-   "fieldtype": "Link",
-   "label": "Default Holiday List",
-   "options": "Holiday List"
-  },
+  "fieldname": "holiday_list_periods",
+  "fieldtype": "Table",
+  "label": "Holiday List Periods",
+  "options": "Company Holiday List Period"
+},
   {
    "fieldname": "addresscontact_tab",
    "fieldtype": "Tab Break",

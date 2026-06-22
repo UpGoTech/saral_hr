@@ -9,6 +9,7 @@ from frappe.utils import (
 	nowdate,
 	format_date,
 )
+from saral_hr.utils.holiday_utils import get_holiday_list_for_date   # ✅ ADD
 
 
 class DuplicateAttendanceError(frappe.ValidationError):
@@ -22,7 +23,6 @@ VALID_HALF_STATUSES = {
 
 PRESENT_LIKE = {"Present", "On Tour", "Earned Comp Off"}
 
-# Statuses that require an active Leave Allocation to be used
 ALLOCATION_REQUIRED_STATUSES = {"Earned Leave", "Casual Leave", "Comp Off"}
 
 
@@ -32,9 +32,10 @@ class Attendance(Document):
 		self.validate_attendance_date()
 		self.validate_duplicate_record()
 		self.validate_employee_active()
+		self.check_and_set_holiday()           # ✅ ADD
 		self.validate_half_day_fields()
 		self.clear_half_day_fields_if_not_half_day()
-		self.validate_leave_allocation()   # ← new
+		self.validate_leave_allocation()
 
 	def validate_attendance_date(self):
 		if not self.employee or not self.attendance_date:
@@ -155,24 +156,14 @@ class Attendance(Document):
 			self.custom_second_half = ""
 
 	def validate_leave_allocation(self):
-		"""
-		Block saving if a leave type that requires an allocation
-		(Earned Leave, Casual Leave, Comp Off) is used but no active
-		Leave Allocation covers this employee on this attendance date.
-
-		Also checks the half-day fields for the same constraint.
-		"""
 		if not self.employee or not self.attendance_date:
 			return
 
-		# Collect all leave statuses being used in this record
 		statuses_used = set()
 
-		# Full-day status
 		if self.status in ALLOCATION_REQUIRED_STATUSES:
 			statuses_used.add(self.status)
 
-		# Half-day statuses
 		if self.status == "Half Day":
 			fh = (self.custom_first_half  or "").strip()
 			sh = (self.custom_second_half or "").strip()
@@ -182,9 +173,8 @@ class Attendance(Document):
 				statuses_used.add(sh)
 
 		if not statuses_used:
-			return  # Nothing to check
+			return
 
-		# Check whether an active Leave Allocation exists for this date
 		has_allocation = frappe.db.exists(
 			"Leave Allocation",
 			{
@@ -207,3 +197,33 @@ class Attendance(Document):
 				),
 				title=_("No Leave Allocation")
 			)
+
+	# ✅ NAYA METHOD — class ke end mein
+	def check_and_set_holiday(self):
+		if not self.employee or not self.attendance_date:
+			return
+
+		company = frappe.db.get_value("Company Link", self.employee, "company")
+		if not company:
+			return
+
+		holiday_list_name = get_holiday_list_for_date(self.attendance_date, company)
+		if not holiday_list_name:
+			return
+
+		self.holiday = holiday_list_name
+
+		holiday_list = frappe.get_doc("Holiday List", holiday_list_name)
+
+		for h in holiday_list.holidays:
+			if getdate(h.holiday_date) == getdate(self.attendance_date):
+				self.status = "Holiday"
+				frappe.msgprint(
+					_("Date {0} is a Holiday: <b>{1}</b>. Status automatically set to Holiday.").format(
+						frappe.bold(self.attendance_date),
+						h.description or holiday_list_name
+					),
+					indicator="orange",
+					alert=True
+				)
+				return

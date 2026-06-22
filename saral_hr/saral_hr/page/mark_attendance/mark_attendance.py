@@ -420,21 +420,45 @@ def get_holidays_between_dates(company, start_date, end_date):
     if not company:
         return []
 
-    holiday_list = frappe.db.get_value("Company", company, "default_holiday_list")
-    if not holiday_list:
+    from saral_hr.utils.holiday_utils import get_holiday_list_for_date
+
+    # ✅ Date range mein unique holiday lists dhundho
+    start = getdate(start_date)
+    end   = getdate(end_date)
+
+    # Sab dates ke liye holiday lists collect karo
+    holiday_lists = set()
+    current = start
+    while current <= end:
+        hl = get_holiday_list_for_date(str(current), company)
+        if hl:
+            holiday_lists.add(hl)
+        # Month jump karo — har date loop karna expensive hai
+        from datetime import timedelta
+        current = current.replace(day=1)
+        if current.month == 12:
+            current = current.replace(year=current.year+1, month=1)
+        else:
+            current = current.replace(month=current.month+1)
+
+    if not holiday_lists:
         return []
 
-    holidays = frappe.db.get_all(
-        "Holiday",
-        filters={
-            "parent":       holiday_list,
-            "holiday_date": ["between", [start_date, end_date]],
-        },
-        pluck="holiday_date"
-    )
+    # Sab lists se holidays fetch karo
+    all_holidays = []
+    for hl_name in holiday_lists:
+        holidays = frappe.db.get_all(
+            "Holiday",
+            filters={
+                "parent":       hl_name,
+                "holiday_date": ["between", [start_date, end_date]],
+            },
+            pluck="holiday_date"
+        )
+        all_holidays.extend(holidays)
 
-    return [str(h) for h in holidays]
-
+    # Duplicates remove karo
+    return list(set(str(h) for h in all_holidays))
 
 # ---------------------------------------------------------------------------
 # Leave Allocation check

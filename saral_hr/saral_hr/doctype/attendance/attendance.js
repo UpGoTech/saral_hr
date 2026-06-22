@@ -20,11 +20,13 @@ frappe.ui.form.on("Attendance", {
 	employee(frm) {
 		check_salary_slip_lock(frm);
 		check_leave_allocation(frm);
+		check_holiday_status(frm);        // ✅ ADD
 	},
 
 	attendance_date(frm) {
 		check_salary_slip_lock(frm);
 		check_leave_allocation(frm);
+		check_holiday_status(frm);        // ✅ ADD
 	},
 
 	status(frm) {
@@ -49,14 +51,8 @@ frappe.ui.form.on("Attendance", {
 
 var LEAVE_STATUSES = ["Earned Leave", "Casual Leave", "Comp Off"];
 
-/**
- * Checks whether the employee has an active Leave Allocation covering the
- * attendance_date. If not, removes EL / CL / Comp Off from the status
- * dropdown and the half-day dropdowns, and shows a subtle notice.
- */
 function check_leave_allocation(frm) {
 	if (!frm.doc.employee || !frm.doc.attendance_date) {
-		// No employee/date yet — restore full options
 		set_leave_options_enabled(frm, true);
 		return;
 	}
@@ -75,7 +71,6 @@ function check_leave_allocation(frm) {
 			set_leave_options_enabled(frm, has_alloc);
 
 			if (!has_alloc) {
-				// Clear the field if it's currently set to a leave status
 				if (LEAVE_STATUSES.includes(frm.doc.status)) {
 					frm.set_value("status", "");
 					frappe.show_alert({
@@ -83,7 +78,6 @@ function check_leave_allocation(frm) {
 						indicator: "orange"
 					});
 				}
-				// Clear half-day leave values too
 				if (LEAVE_STATUSES.includes(frm.doc.custom_first_half)) {
 					frm.set_value("custom_first_half", "");
 				}
@@ -95,14 +89,6 @@ function check_leave_allocation(frm) {
 	);
 }
 
-/**
- * Enable or disable the leave-type options in all three Select dropdowns:
- * status, custom_first_half, custom_second_half.
- *
- * Frappe Select fields don't natively support per-option disabling,
- * so we rebuild the options list — removing leave options when no
- * allocation exists, restoring them when one is found.
- */
 function set_leave_options_enabled(frm, enabled) {
 	var full_status_options = [
 		"",
@@ -281,6 +267,30 @@ function validate_half_combination(frm) {
 			indicator: "orange"
 		});
 	}
+}
+
+
+// ── Holiday Auto Check ────────────────────────────────────────────────────────  ✅ NEW
+
+function check_holiday_status(frm) {
+	if (!frm.doc.employee || !frm.doc.attendance_date) return;
+
+	frappe.call({
+		method: "saral_hr.utils.holiday_utils.check_is_holiday",
+		args: {
+			employee: frm.doc.employee,
+			attendance_date: frm.doc.attendance_date
+		},
+		callback: function(r) {
+			if (r.message) {
+				frm.set_value("status", "Holiday");
+				frappe.show_alert({
+					message: __("Holiday: ") + r.message,
+					indicator: "orange"
+				}, 5);
+			}
+		}
+	});
 }
 
 

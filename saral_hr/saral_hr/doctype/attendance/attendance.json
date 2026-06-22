@@ -156,12 +156,12 @@
    "fieldtype": "Column Break"
   },
   {
-   "fetch_from": "employee.holiday_list",
    "fieldname": "holiday",
    "fieldtype": "Data",
    "in_list_view": 1,
-   "label": "Holiday"
-  },
+   "label": "Holiday",
+   "read_only": 1
+},
   {
    "fieldname": "column_break_fxqu",
    "fieldtype": "Column Break"
