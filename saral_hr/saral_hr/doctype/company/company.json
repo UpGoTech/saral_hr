@@ -13,7 +13,7 @@
   "column_break_opgj",
   "country",
   "default_currency",
-  "holiday_list_periods",    
+  "holiday_list_periods",
   "addresscontact_tab",
   "address_and_contact_section",
   "company_logo",
@@ -36,21 +36,8 @@
   "statutory_settings_tab",
   "section_esic_components",
   "esic_dependent_component",
-  "section_esic_rates",
-  "esic_wage_limit",
-  "column_break_esic_rates",
-  "esic_employee_contribution",
-  "esic_employer_contribution",
   "section_pf_components",
-  "pf_dependent_component",
-  "section_pf_rates",
-  "pf_wage_limit",
-  "pf_employee_percent",
-  "column_break_pf_rates",
-  "pf_employer_epf",
-  "pf_employer_eps",
-  "pf_edli_insurance",
-  "pf_admin_charges"
+  "pf_dependent_component"
  ],
  "fields": [
   {
@@ -88,11 +75,11 @@
    "reqd": 1
   },
   {
-  "fieldname": "holiday_list_periods",
-  "fieldtype": "Table",
-  "label": "Holiday List Periods",
-  "options": "Company Holiday List Period"
-},
+   "fieldname": "holiday_list_periods",
+   "fieldtype": "Table",
+   "label": "Holiday List Periods",
+   "options": "Company Holiday List Period"
+  },
   {
    "fieldname": "addresscontact_tab",
    "fieldtype": "Tab Break",
@@ -189,7 +176,7 @@
   },
   {
    "default": "Exclude Weekly Offs (Working Days)",
-   "description": "<b>Exclude Weekly Offs (Working Days):</b> Payment days = Working days in month \u2212 Weekly offs \u2212 Absences. E.g. Jan 2026: 31 days, 4 Sundays \u2192 27 working days \u2212 1 absent = 26 payment days.<br><b>Include Weekly Offs (Calendar Days):</b> Payment days = Total calendar days \u2212 Absences. E.g. Jan 2026: 31 days \u2212 1 absent = 30 payment days.",
+   "description": "<b>Exclude Weekly Offs (Working Days):</b> Payment days = Working days in month − Weekly offs − Absences. E.g. Jan 2026: 31 days, 4 Sundays → 27 working days − 1 absent = 26 payment days.<br><b>Include Weekly Offs (Calendar Days):</b> Payment days = Total calendar days − Absences. E.g. Jan 2026: 31 days − 1 absent = 30 payment days.",
    "fieldname": "salary_calculation_based_on",
    "fieldtype": "Select",
    "label": "Salary Calculation Based On",
@@ -202,7 +189,6 @@
    "label": "Statutory Settings"
   },
   {
-   "description": "Add the Earning components used to compute the ESIC wage basis. Formula: sum of all listed components (e.g. Basic + DA + HRA). No cap is applied \u2014 esic_wage_limit is for reference only.",
    "fieldname": "section_esic_components",
    "fieldtype": "Section Break",
    "label": "ESIC Wage Components"
@@ -210,39 +196,10 @@
   {
    "fieldname": "esic_dependent_component",
    "fieldtype": "Table",
-   "label": "ESIC Dependent Component",
+   "label": "ESIC Periods",
    "options": "Statutory Wage Component"
   },
   {
-   "description": "Reference only \u2014 ESIC wage limit is NOT used in calculation. Contribution percentages below are applied to the full sum of listed components.",
-   "fieldname": "section_esic_rates",
-   "fieldtype": "Section Break",
-   "label": "ESIC Rates & Limit"
-  },
-  {
-   "description": "For reference only. Not used in ESIC calculation.",
-   "fieldname": "esic_wage_limit",
-   "fieldtype": "Currency",
-   "label": "ESIC Wage Limit (Reference Only)",
-   "precision": "2"
-  },
-  {
-   "fieldname": "column_break_esic_rates",
-   "fieldtype": "Column Break"
-  },
-  {
-   "fieldname": "esic_employee_contribution",
-   "fieldtype": "Float",
-   "label": "Employee Contribution %",
-   "precision": "2"
-  },
-  {
-   "fieldname": "esic_employer_contribution",
-   "fieldtype": "Float",
-   "label": "Employer Contribution %"
-  },
-  {
-   "description": "Add the Earning components used to compute the PF wage basis. Formula: sum of all listed components. For Limited PF employees the result is capped at the wage limit below.",
    "fieldname": "section_pf_components",
    "fieldtype": "Section Break",
    "label": "PF Wage Components"
@@ -250,59 +207,13 @@
   {
    "fieldname": "pf_dependent_component",
    "fieldtype": "Table",
-   "label": "PF Dependent Component",
+   "label": "PF Periods",
    "options": "Statutory Wage Component"
-  },
-  {
-   "description": "Wage limit applies only for Limited PF employees. Leave blank for no cap (Full PF).",
-   "fieldname": "section_pf_rates",
-   "fieldtype": "Section Break",
-   "label": "PF Rates & Limit"
-  },
-  {
-   "description": "Applicable only for Limited PF. The PF wage basis will be capped at this amount. Leave blank for Full PF (no cap).",
-   "fieldname": "pf_wage_limit",
-   "fieldtype": "Currency",
-   "label": "Limited PF Wage Limit"
-  },
-  {
-   "fieldname": "pf_employee_percent",
-   "fieldtype": "Float",
-   "label": "Employee Contribution %",
-   "precision": "2"
-  },
-  {
-   "fieldname": "column_break_pf_rates",
-   "fieldtype": "Column Break"
-  },
-  {
-   "fieldname": "pf_employer_epf",
-   "fieldtype": "Float",
-   "label": "Employer EPF %",
-   "precision": "2"
-  },
-  {
-   "fieldname": "pf_employer_eps",
-   "fieldtype": "Float",
-   "label": "Employer EPS %",
-   "precision": "2"
-  },
-  {
-   "fieldname": "pf_edli_insurance",
-   "fieldtype": "Float",
-   "label": "Employee EDLI Insurance %",
-   "precision": "2"
-  },
-  {
-   "fieldname": "pf_admin_charges",
-   "fieldtype": "Float",
-   "label": "Employer Admin Charges %",
-   "precision": "2"
   }
  ],
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-05-04 17:07:03.008642",
+ "modified": "2026-06-23 00:00:00.000000",
  "modified_by": "Administrator",
  "module": "Saral Hr",
  "name": "Company",

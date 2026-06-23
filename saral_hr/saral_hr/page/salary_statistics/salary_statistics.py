@@ -4,13 +4,36 @@ from frappe.utils import getdate, get_last_day, flt
 import calendar
 
 
-# ─── Permission helper ────────────────────────────────────────────────────────
+# ─── Permission helpers ───────────────────────────────────────────────────────
+
+def _get_permitted_companies():
+    """
+    Returns:
+        None  → no restriction (System Manager or Saral HR Manager)
+        [...] → list of permitted company names for this user
+        []    → no companies permitted
+    """
+    user  = frappe.session.user
+    roles = frappe.get_roles(user)
+
+    if "System Manager" in roles or "Saral HR Manager" in roles:
+        return None
+
+    user_permissions = frappe.permissions.get_user_permissions(user)
+
+    if "Company" in user_permissions and user_permissions["Company"]:
+        permitted = [p.get("doc") for p in user_permissions["Company"] if p.get("doc")]
+        return permitted if permitted else []
+
+    # Saral HR User with no Company user-permission set → no access
+    return []
+
 
 def _get_permitted_employees():
     """
     Returns:
         None  → no restriction
-        []    → 0 employees permitted (return empty everywhere)
+        []    → 0 employees permitted
         [...] → list of allowed Company Link name IDs
     """
     user = frappe.session.user
@@ -21,35 +44,44 @@ def _get_permitted_employees():
     user_permissions = frappe.permissions.get_user_permissions(user)
 
     if "Employee" in user_permissions and user_permissions["Employee"]:
-        permitted = [
-            p.get("doc")
-            for p in user_permissions["Employee"]
-            if p.get("doc")
-        ]
+        permitted = [p.get("doc") for p in user_permissions["Employee"] if p.get("doc")]
         return permitted if permitted else None
 
     return None
 
 
 @frappe.whitelist()
+def get_permitted_companies():
+    """
+    Returns the list of companies visible to the current user.
+    Saral HR Manager / System Manager → all companies.
+    Saral HR User → only companies set in their User Permissions.
+    """
+    companies = _get_permitted_companies()
+    if companies is None:
+        return frappe.db.get_all("Company", fields=["name"], order_by="name asc", pluck="name")
+    return companies
+
+
+@frappe.whitelist()
 def get_employees_for_company(company, year, month):
-    """
-    Returns all active employees the current user is permitted to see,
-    with their net pay for each month of the selected year.
-    """
     MONTHS = [
         "January", "February", "March", "April", "May", "June",
         "July", "August", "September", "October", "November", "December"
     ]
 
-    # ── Permission filter ─────────────────────────────────────────────────────
+    # ── Company permission check ──────────────────────────────────────────────
+    permitted_companies = _get_permitted_companies()
+    if permitted_companies is not None and company not in permitted_companies:
+        return []
+
+    # ── Employee permission filter ────────────────────────────────────────────
     permitted = _get_permitted_employees()
     if permitted is not None and len(permitted) == 0:
         return []
 
-    # Build optional IN clause for SQL
-    emp_clause  = ""
-    emp_params  = {"company": company}
+    emp_clause = ""
+    emp_params = {"company": company}
     if permitted is not None:
         placeholders = ", ".join([f"%(pe_{i})s" for i in range(len(permitted))])
         emp_clause   = f"AND cl.name IN ({placeholders})"
@@ -108,14 +140,14 @@ def get_employees_for_company(company, year, month):
     result = []
     for emp in employees:
         emp_data = {
-            "employee":        emp.employee,
-            "employee_name":   emp.employee_name or emp.employee,
-            "department":      emp.department or "",
-            "designation":     emp.designation or "",
-            "date_of_birth":   str(emp.date_of_birth) if emp.date_of_birth else "",
-            "image":           emp.image or "",
-            "ctc_net_salary":  flt(emp.ctc_net_salary, 2) if emp.ctc_net_salary else None,
-            "monthly_net":     {}
+            "employee":       emp.employee,
+            "employee_name":  emp.employee_name or emp.employee,
+            "department":     emp.department or "",
+            "designation":    emp.designation or "",
+            "date_of_birth":  str(emp.date_of_birth) if emp.date_of_birth else "",
+            "image":          emp.image or "",
+            "ctc_net_salary": flt(emp.ctc_net_salary, 2) if emp.ctc_net_salary else None,
+            "monthly_net":    {}
         }
         for m in MONTHS:
             emp_data["monthly_net"][m] = slip_map.get(emp.employee, {}).get(m, None)
@@ -126,9 +158,6 @@ def get_employees_for_company(company, year, month):
 
 @frappe.whitelist()
 def get_employee_month_details(employee, year, month):
-    """
-    Returns full salary slip details + attendance heatmap for a given employee/month.
-    """
     # ── Security check ────────────────────────────────────────────────────────
     permitted = _get_permitted_employees()
     if permitted is not None and employee not in permitted:
@@ -145,7 +174,6 @@ def get_employee_month_details(employee, year, month):
 
     start_date = f"{year}-{month_num:02d}-01"
 
-    # ── Salary Slip ────────────────────────────────────────────────────────────
     slip = frappe.db.get_value(
         "Salary Slip",
         {"employee": employee, "start_date": start_date, "docstatus": 1},
@@ -236,22 +264,21 @@ def get_employee_month_details(employee, year, month):
             "additional_salary_components":    additional_salary_components,
             "additional_deduction_total":      flt(additional_deduction_total, 2),
             "additional_deduction_components": additional_deduction_components,
-            "payment_days":           flt(slip.payment_days, 2),
-            "total_working_days":     flt(slip.total_working_days, 2),
-            "physical_working_days":  flt(slip.physical_working_days, 2),
-            "present_days":           flt(slip.present_days, 2),
-            "absent_days":            flt(slip.absent_days, 2),
-            "total_half_days":        flt(slip.total_half_days, 2),
-            "total_lwp":              flt(slip.total_lwp, 2),
-            "total_holidays":         flt(slip.total_holidays, 2),
-            "total_earned_leaves":    flt(slip.total_earned_leaves, 2),
-            "total_casual_leaves":    flt(slip.total_casual_leaves, 2),
-            "total_on_tour":          flt(slip.total_on_tour, 2),
-            "total_comp_off":         flt(slip.total_comp_off, 2),
-            "weekly_offs_count":      flt(slip.weekly_offs_count, 2),
+            "payment_days":          flt(slip.payment_days, 2),
+            "total_working_days":    flt(slip.total_working_days, 2),
+            "physical_working_days": flt(slip.physical_working_days, 2),
+            "present_days":          flt(slip.present_days, 2),
+            "absent_days":           flt(slip.absent_days, 2),
+            "total_half_days":       flt(slip.total_half_days, 2),
+            "total_lwp":             flt(slip.total_lwp, 2),
+            "total_holidays":        flt(slip.total_holidays, 2),
+            "total_earned_leaves":   flt(slip.total_earned_leaves, 2),
+            "total_casual_leaves":   flt(slip.total_casual_leaves, 2),
+            "total_on_tour":         flt(slip.total_on_tour, 2),
+            "total_comp_off":        flt(slip.total_comp_off, 2),
+            "weekly_offs_count":     flt(slip.weekly_offs_count, 2),
         }
 
-    # ── Attendance Heatmap ─────────────────────────────────────────────────────
     start_dt   = getdate(start_date)
     end_dt     = get_last_day(start_dt)
     total_days = calendar.monthrange(start_dt.year, start_dt.month)[1]
@@ -269,11 +296,11 @@ def get_employee_month_details(employee, year, month):
     for rec in attendance_records:
         day = getdate(rec.attendance_date).day
         att_map[day] = {
-            "status":      rec.status,
-            "in_time":     str(rec.in_time)  if rec.in_time  else "",
-            "out_time":    str(rec.out_time) if rec.out_time else "",
-            "late_entry":  rec.late_entry,
-            "early_exit":  rec.early_exit,
+            "status":     rec.status,
+            "in_time":    str(rec.in_time)  if rec.in_time  else "",
+            "out_time":   str(rec.out_time) if rec.out_time else "",
+            "late_entry": rec.late_entry,
+            "early_exit": rec.early_exit,
         }
 
     heatmap = []
@@ -288,9 +315,7 @@ def get_employee_month_details(employee, year, month):
             "early_exit": att_map.get(day, {}).get("early_exit", 0),
         })
 
-    # ── Live attendance counts ─────────────────────────────────────────────────
     from datetime import timedelta
-
     company_name       = frappe.db.get_value("Company Link", employee, "company")
     salary_calc_method = ""
     weekly_off_day     = frappe.db.get_value("Company Link", employee, "weekly_off") or ""
@@ -312,19 +337,18 @@ def get_employee_month_details(employee, year, month):
     def count_status(st):
         return sum(1 for v in att_map.values() if v["status"] == st)
 
-    present          = count_status("Present")
-    absent           = count_status("Absent")
-    half_day         = count_status("Half Day")
-    lwp              = count_status("LWP")
-    holiday          = count_status("Holiday")
-    on_tour          = count_status("On Tour")
-    earned_leave     = count_status("Earned Leave")
-    casual_leave     = count_status("Casual Leave")
-    comp_off         = count_status("Comp Off")
-    earned_comp_off  = count_status("Earned Comp Off")
-    weekly_off_taken = count_status("Weekly Off")
-    physical_present = present
-    combined_absent  = flt(absent + lwp, 2)
+    present         = count_status("Present")
+    absent          = count_status("Absent")
+    half_day        = count_status("Half Day")
+    lwp             = count_status("LWP")
+    holiday         = count_status("Holiday")
+    on_tour         = count_status("On Tour")
+    earned_leave    = count_status("Earned Leave")
+    casual_leave    = count_status("Casual Leave")
+    comp_off        = count_status("Comp Off")
+    earned_comp_off = count_status("Earned Comp Off")
+    weekly_off_taken= count_status("Weekly Off")
+    combined_absent = flt(absent + lwp, 2)
 
     if use_calendar_days:
         working_days = total_days
@@ -337,7 +361,7 @@ def get_employee_month_details(employee, year, month):
         "total_days":            total_days,
         "working_days":          working_days,
         "payment_days":          flt(payment_days, 2),
-        "physical_present":      physical_present,
+        "physical_present":      present,
         "present":               present + earned_leave + casual_leave + comp_off + earned_comp_off + on_tour,
         "absent":                combined_absent,
         "half_days":             half_day,
@@ -367,8 +391,6 @@ def get_employee_month_details(employee, year, month):
 
 @frappe.whitelist()
 def get_ytd_summary(employee, year):
-    """Returns year-to-date net pay and total earnings for the employee."""
-    # ── Security check ────────────────────────────────────────────────────────
     permitted = _get_permitted_employees()
     if permitted is not None and employee not in permitted:
         return {"ytd_net": 0.0, "ytd_earn": 0.0}

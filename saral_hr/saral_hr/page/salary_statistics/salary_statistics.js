@@ -553,25 +553,17 @@ frappe.pages["salary-statistics"].on_page_load = function (wrapper) {
 	// ─────────────────────────────────────────────────────────────────────────
 	// PAGE 1 — SEARCH
 	// ─────────────────────────────────────────────────────────────────────────
+// ─────────────────────────────────────────────────────────────────────────
+	// PAGE 1 — SEARCH
+	// ─────────────────────────────────────────────────────────────────────────
 	function renderSearchPage() {
 		$wrap.empty();
 		page.set_title("Salary Statistics");
 
-		const $pg = $(`<div class="ss-search-page"></div>`).appendTo($wrap);
-		const $fc = $(`<div class="ss-filter-card"></div>`).appendTo($pg);
-		const $fr = $(`<div class="ss-filter-row"></div>`).appendTo($fc);
-
-		// Company
-		const $cw = $(`<div class="ss-filter-item" style="flex:1;min-width:200px;">
-			<span class="ss-filter-label">Company</span>
-			<select class="ss-select ss-company-sel"><option value="">Loading…</option></select>
-		</div>`).appendTo($fr);
-		const $csel = $cw.find(".ss-company-sel");
-		frappe.db.get_list("Company", { fields:["name"], limit:200, order_by:"name asc" }).then(rows => {
-			$csel.empty().append(`<option value="">— Select Company —</option>`);
-			rows.forEach(r => $csel.append(`<option value="${r.name}" ${r.name === state.company ? "selected":""}>${r.name}</option>`));
-		});
-		$csel.on("change", () => { state.company = $csel.val(); });
+		const $pg      = $(`<div class="ss-search-page"></div>`).appendTo($wrap);
+		const $fc      = $(`<div class="ss-filter-card"></div>`).appendTo($pg);
+		const $fr      = $(`<div class="ss-filter-row"></div>`).appendTo($fc);
+		const $results = $(`<div class="ss-results"></div>`).appendTo($pg);
 
 		// Year
 		const $yw = $(`<div class="ss-filter-item"><span class="ss-filter-label">Year</span></div>`).appendTo($fr);
@@ -585,61 +577,91 @@ frappe.pages["salary-statistics"].on_page_load = function (wrapper) {
 		MONTHS.forEach(m => $mn.append(`<option ${m === state.month ? "selected":""}>${m}</option>`));
 		$mn.on("change", () => { state.month = $mn.val(); });
 
-		$fr.append(`<button class="ss-btn-search">Search</button>`);
+		// Search button (only shown for multi-company users)
+		const $searchBtn = $(`<button class="ss-btn-search" style="display:none">Search</button>`).appendTo($fr);
 
-		const $results = $(`<div class="ss-results"></div>`).appendTo($pg);
-
-		$fr.find(".ss-btn-search").on("click", () => {
-			state.company = $csel.val();
+		$searchBtn.on("click", () => {
 			if (!state.company) { frappe.show_alert({ message:"Please select a company.", indicator:"orange" }); return; }
 			state.year  = $yr.val();
 			state.month = $mn.val();
 			fetchEmployees($results);
 		});
 
-		if (state.employees.length) renderTable($results, state.employees);
+		// ── Load permitted companies ──────────────────────────────────────────
+		frappe.call({
+			method: "saral_hr.saral_hr.page.salary_statistics.salary_statistics.get_permitted_companies",
+			callback(r) {
+				const companies = r.message || [];
 
-		// ── Direction 1: Deep-link from Employee Profile ──────────────────────
-		// If URL has ?ep_employee=..., auto-fetch and jump directly to detail view.
+				if (companies.length === 1) {
+					// Single company user — no dropdown, auto-load
+					state.company = companies[0];
+
+					// Show company name as a plain label (not a dropdown)
+					$fr.prepend(`
+						<div class="ss-filter-item">
+							<span class="ss-filter-label">Company</span>
+							<div style="height:34px;display:flex;align-items:center;
+								font-size:13px;font-weight:600;color:var(--text-color);
+								padding:0 10px;background:var(--subtle-fg);
+								border:1px solid var(--border-color);border-radius:6px;
+								min-width:200px;">
+								${frappe.utils.escape_html(companies[0])}
+							</div>
+						</div>`);
+
+					// Auto-fetch on load
+					fetchEmployees($results);
+
+					// Year/Month change → auto re-fetch (no search button needed)
+					$yr.off("change").on("change", () => { state.year = $yr.val(); fetchEmployees($results); });
+					$mn.off("change").on("change", () => { state.month = $mn.val(); fetchEmployees($results); });
+
+				} else {
+					// Multiple companies — show dropdown + Search button
+					const $cw = $(`<div class="ss-filter-item" style="flex:1;min-width:200px;">
+						<span class="ss-filter-label">Company</span>
+						<select class="ss-select ss-company-sel">
+							<option value="">— Select Company —</option>
+						</select>
+					</div>`);
+					$fr.prepend($cw);
+					const $csel = $cw.find(".ss-company-sel");
+
+					companies.forEach(c => $csel.append(
+						`<option value="${c}" ${c === state.company ? "selected":""}>${c}</option>`
+					));
+					$csel.on("change", () => { state.company = $csel.val(); });
+					$searchBtn.show();
+
+					if (state.employees.length) renderTable($results, state.employees);
+				}
+			}
+		});
+
+		// ── Deep-link from Employee Profile ──────────────────────────────────
 		var deepEmpId   = getUrlParam("ep_employee");
 		var deepCompany = getUrlParam("ep_company");
 		var deepName    = getUrlParam("ep_name");
 
 		if (deepEmpId && deepCompany) {
 			state.company = deepCompany;
-			// Pre-select the company dropdown once options are loaded
-			frappe.db.get_list("Company", { fields:["name"], limit:200, order_by:"name asc" }).then(() => {
-				$csel.val(deepCompany);
-			});
-
-			// Fetch the employee list, then find and open the right employee
 			frappe.call({
 				method: "saral_hr.saral_hr.page.salary_statistics.salary_statistics.get_employees_for_company",
 				args: { company: deepCompany, year: state.year, month: state.month },
 				callback(r) {
 					var employees = r.message || [];
 					state.employees = employees;
-
-					// Find the matching employee record
-					var matched = employees.find(function(e) {
-						return e.employee === deepEmpId;
-					});
-
+					var matched = employees.find(e => e.employee === deepEmpId);
 					if (matched) {
 						renderDetailPage(matched);
 					} else if (deepEmpId && deepName) {
-						// Construct a minimal stub so the detail view can open
 						renderDetailPage({
-							employee:      deepEmpId,
-							employee_name: deepName,
-							department:    "",
-							designation:   "",
-							image:         "",
-							ctc_net_salary: null,
-							monthly_net:    {}
+							employee: deepEmpId, employee_name: deepName,
+							department: "", designation: "", image: "",
+							ctc_net_salary: null, monthly_net: {}
 						});
 					} else {
-						// Fallback: just show the table
 						renderTable($results, employees);
 					}
 				}

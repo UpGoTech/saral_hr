@@ -73,9 +73,7 @@ def get_statutory_components(company, gross_salary, from_date,
     deductions     = []
     employer_share = []
 
-    comp_doc = frappe.get_doc("Company", company) if company else None
-
-    # ── period_date: assignment ki from_date se matching config milegi ──
+    comp_doc    = frappe.get_doc("Company", company) if company else None
     period_date = getdate(from_date) if from_date else None
 
     def abbr(name):
@@ -91,13 +89,11 @@ def get_statutory_components(company, gross_salary, from_date,
             "exclude_from_ctc":      int(exclude),
         }
 
-    # ── ESIC: period_date pass karo ──
+    # ── ESIC ──
     if is_esic_applicable and comp_doc:
         esic_cfg = comp_doc.get_esic_config(period_date=period_date)
         if esic_cfg:
-            esic_components = comp_doc._get_child_components(
-                "esic_dependent_component", period_date=period_date
-            )
+            esic_components = esic_cfg.get("wage_components", [])   # ← fixed
             wage     = _sum_components(esic_components, gross_salary, earnings_map)
             emp_pct  = flt(esic_cfg.get("employee_percent", 0))
             empr_pct = flt(esic_cfg.get("employer_percent", 0))
@@ -106,13 +102,11 @@ def get_statutory_components(company, gross_salary, from_date,
             if empr_pct:
                 employer_share.append(row(SC_EMPR_ESIC, wage * empr_pct / 100, employer=1))
 
-    # ── PF: period_date pass karo ──
+    # ── PF ──
     if is_pf_applicable and comp_doc:
         pf_cfg = comp_doc.get_pf_config(period_date=period_date)
         if pf_cfg:
-            pf_components = comp_doc._get_child_components(
-                "pf_dependent_component", period_date=period_date
-            )
+            pf_components = pf_cfg.get("wage_components", [])       # ← fixed
             raw_wage = _sum_components(pf_components, gross_salary, earnings_map)
             if pf_type == "Limited PF" and pf_cfg.get("wage_limit"):
                 wage = min(raw_wage, flt(pf_cfg["wage_limit"]))
@@ -134,20 +128,22 @@ def get_statutory_components(company, gross_salary, from_date,
             if adm_pct:
                 employer_share.append(row(SC_EMPR_PFADM, wage * adm_pct  / 100, employer=1))
 
+    # ── PT ──
     if is_pt_applicable and from_date:
         month_name = MONTHS[getdate(from_date).month - 1]
         pt_amt     = _special_component_amount(SC_PT, month_name)
         deductions.append(row(SC_PT, pt_amt))
 
+    # ── LWF ──
     if is_lwf_applicable:
-        emp_lwf_amt  = _special_component_constant_amount(SC_EMP_LWF)
-        empr_lwf_amt = _special_component_constant_amount(SC_EMPR_LWF)
-        deductions.append(row(SC_EMP_LWF,  emp_lwf_amt))
-        employer_share.append(row(SC_EMPR_LWF, empr_lwf_amt, employer=1))
+        deductions.append(row(SC_EMP_LWF,  _special_component_constant_amount(SC_EMP_LWF)))
+        employer_share.append(row(SC_EMPR_LWF, _special_component_constant_amount(SC_EMPR_LWF), employer=1))
 
     return {"deductions": deductions, "employer_share": employer_share}
+
+
 def _sum_components(components, gross_salary, earnings_map):
-    VIRTUAL = {"Gross", "Gross Including Additional Salary"}
+    VIRTUAL     = {"Gross", "Gross Including Additional Salary"}
     total       = 0.0
     matched_any = False
 
@@ -159,10 +155,7 @@ def _sum_components(components, gross_salary, earnings_map):
             total += flt(earnings_map[comp])
             matched_any = True
 
-    if not matched_any:
-        return flt(gross_salary)
-
-    return max(total, 0.0)
+    return flt(gross_salary) if not matched_any else max(total, 0.0)
 
 
 def _special_component_amount(component_name, month_name):
@@ -200,41 +193,26 @@ def get_srr_for_ssa(start_date, skill_type):
         "May": 5,     "June": 6,     "July": 7,    "August": 8,
         "September": 9, "October": 10, "November": 11, "December": 12,
     }
-
     SKILL_FIELD_MAP = {
-        "Skilled":      ("vbasic_skilled",      "vda_skilled"),
-        "Semi-skilled": ("vbasic_semi_skilled",  "vda_semi_skilled"),
-        "Unskilled":    ("vbasic_unskilled",     "vda_unskilled"),
+        "Skilled":      ("vbasic_skilled",     "vda_skilled"),
+        "Semi-skilled": ("vbasic_semi_skilled", "vda_semi_skilled"),
+        "Unskilled":    ("vbasic_unskilled",    "vda_unskilled"),
     }
-
     fields = SKILL_FIELD_MAP.get(skill_type)
     if not fields:
         return None
 
     vbasic_field, vda_field = fields
+    d      = getdate(start_date)
+    target = d.year * 100 + MONTH_NUM[MONTHS[d.month - 1]]
 
-    d          = getdate(start_date)
-    month_name = MONTHS[d.month - 1]
-    target     = d.year * 100 + MONTH_NUM[month_name]
-
-    records = frappe.db.get_all(
-        "Skill Rate Revision",
-        filters={"docstatus": 1},
-        fields=["from_month", "from_year", "to_month", "to_year",
-                vbasic_field, vda_field]
-    )
-
-    for r in records:
+    for r in frappe.db.get_all("Skill Rate Revision",
+            filters={"docstatus": 1},
+            fields=["from_month", "from_year", "to_month", "to_year", vbasic_field, vda_field]):
         if not all([r.from_month, r.from_year, r.to_month, r.to_year]):
             continue
-        from_val = int(r.from_year) * 100 + MONTH_NUM[r.from_month]
-        to_val   = int(r.to_year)   * 100 + MONTH_NUM[r.to_month]
-        if from_val <= target <= to_val:
-            return {
-                "vbasic": flt(r[vbasic_field], 2),
-                "vda":    flt(r[vda_field],    2),
-            }
-
+        if int(r.from_year)*100 + MONTH_NUM[r.from_month] <= target <= int(r.to_year)*100 + MONTH_NUM[r.to_month]:
+            return {"vbasic": flt(r[vbasic_field], 2), "vda": flt(r[vda_field], 2)}
     return None
 
 
@@ -245,25 +223,16 @@ def get_daily_wage_multiplier(start_date, skill_type):
         "May": 5,     "June": 6,     "July": 7,    "August": 8,
         "September": 9, "October": 10, "November": 11, "December": 12,
     }
+    d      = getdate(start_date)
+    target = d.year * 100 + MONTH_NUM[MONTHS[d.month - 1]]
 
-    d          = getdate(start_date)
-    month_name = MONTHS[d.month - 1]
-    target     = d.year * 100 + MONTH_NUM[month_name]
-
-    records = frappe.db.get_all(
-        "Skill Rate Revision",
-        filters={"docstatus": 1},
-        fields=["from_month", "from_year", "to_month", "to_year", "daily_wage_multiplier"]
-    )
-
-    for r in records:
+    for r in frappe.db.get_all("Skill Rate Revision",
+            filters={"docstatus": 1},
+            fields=["from_month", "from_year", "to_month", "to_year", "daily_wage_multiplier"]):
         if not all([r.from_month, r.from_year, r.to_month, r.to_year]):
             continue
-        from_val = int(r.from_year) * 100 + MONTH_NUM[r.from_month]
-        to_val   = int(r.to_year)   * 100 + MONTH_NUM[r.to_month]
-        if from_val <= target <= to_val:
+        if int(r.from_year)*100 + MONTH_NUM[r.from_month] <= target <= int(r.to_year)*100 + MONTH_NUM[r.to_month]:
             return {"multiplier": flt(r.daily_wage_multiplier) or 26}
-
     return {"multiplier": 26}
 
 
@@ -286,16 +255,11 @@ def _check_overlap(employee, from_date, to_date=None, employee_name=None,
     if current_name:
         filters["name"] = ["!=", current_name]
 
-    records = frappe.db.get_all(
-        "Salary Structure Assignment",
-        filters=filters,
-        fields=["name", "from_date", "to_date"],
-    )
-
     a_start = getdate(from_date)
     a_end   = getdate(to_date) if to_date else None
 
-    for rec in records:
+    for rec in frappe.db.get_all("Salary Structure Assignment",
+            filters=filters, fields=["name", "from_date", "to_date"]):
         b_start = getdate(rec.from_date)
         b_end   = getdate(rec.to_date) if rec.to_date else FAR_FUTURE
 
@@ -318,7 +282,6 @@ def _check_overlap(employee, from_date, to_date=None, employee_name=None,
                     "from_date": str(rec.from_date),
                     "to_date":   str(rec.to_date) if rec.to_date else None,
                 }
-
     return None
 
 
