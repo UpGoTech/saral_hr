@@ -30,20 +30,26 @@ function _debounced_recalc(frm, fn, delay = 120) {
 frappe.ui.form.on("Salary Structure Assignment", {
 
     refresh(frm) {
-    toggle_fields(frm);
-    render_statutory_controls(frm);
-    toggle_skill_type(frm);
-    if (frm.doc.salary_structure) {
-        toggle_salary_sections(frm);
-        setTimeout(() => {
-            if (frm.doc.docstatus !== 1) {     // ← ye line add karo
-                calculate_salary(frm);
+        toggle_fields(frm);
+        render_statutory_controls(frm);
+        toggle_skill_type(frm);
+        if (frm.doc.salary_structure) {
+            toggle_salary_sections(frm);
+            if (frm.doc.docstatus !== 1) {
+                // refresh ke waqt statutory rows already DB mein saved hain
+                // add_child se dirty mark hoga — suppress karo
+                frm._suppress_statutory_refresh = true;
+                setTimeout(() => {
+                    calculate_salary(frm);
+                    maybe_render_daily_wage_panel(frm);
+                }, 150);
+            } else {
+                // submitted doc — sirf daily wage panel render karo, koi recalc/reload nahi
+                setTimeout(() => maybe_render_daily_wage_panel(frm), 150);
             }
-            maybe_render_daily_wage_panel(frm);
-        }, 150);
-    }
-    _bind_live_amount_inputs(frm);
-},
+        }
+        _bind_live_amount_inputs(frm);
+    },
 
     setup(frm) {
         frm.set_query("employee", () => ({ filters: { is_active: 1 } }));
@@ -57,25 +63,17 @@ frappe.ui.form.on("Salary Structure Assignment", {
             toggle_fields(frm);
             return;
         }
+        // submitted doc pe employee trigger se load/reset nahi karna
+        if (frm.doc.docstatus === 1) return;
         frm._checking_employee = frm.doc.employee;
 
         frappe.call({
             method: "saral_hr.saral_hr.doctype.salary_structure_assignment.salary_structure_assignment.get_existing_assignments",
             args: { employee: frm.doc.employee },
             callback(r) {
-                frm._has_existing = !!(r.message && r.message.length);
-                if (frm._has_existing) {
-                    const lines = r.message.map(rec =>
-                        `<a href="/app/salary-structure-assignment/${rec.name}" target="_blank">${rec.name}</a>`
-                        + ` (${rec.from_date} to ${rec.to_date || "Ongoing"})`
-                    ).join("<br>");
-                    frappe.msgprint({
-                        title: __("Assignment Already Exists"),
-                        indicator: "orange",
-                        message: `An active Salary Structure Assignment already exists for this employee.`
-                            + ` Please cancel it before creating a new one.<br><br>${lines}`
-                    });
-                }
+                // ── CHANGED: store assignments but don't show error yet — wait for dates ──
+                frm._existing_assignments = (r.message && r.message.length) ? r.message : [];
+                frm._has_existing = false;
                 toggle_fields(frm);
                 render_statutory_controls(frm);
                 toggle_skill_type(frm);
@@ -87,26 +85,32 @@ frappe.ui.form.on("Salary Structure Assignment", {
 
     from_date(frm) {
         toggle_fields(frm);
+
+        // Submitted doc: overlap check nahi — amend ke baad original cancel ho chuka hota hai
+        // sirf SRR validate karo, salary recalc nahi (float drift avoid)
+        if (frm.doc.docstatus === 1) {
+            check_srr_and_apply_validate_only(frm);
+            return;
+        }
+
         if (frm.doc.from_date && frm.doc.to_date) check_overlap(frm);
-
-        // Submitted doc: sirf date allow_on_submit hai, salary/statutory
-        // recalc nahi karna — warna total_employer_contribution jaise
-        // non-allow-on-submit fields floating-point drift se mismatch ho
-        // jaate hain (e.g. 2720.49 -> 2720.4900000000002) aur save fail
-        // hota hai "Not allowed to change ... after submission".
-        if (frm.doc.docstatus === 1) return;
-
-        if (frm.doc.salary_structure) refresh_statutory_rows(frm);
-        check_srr_and_apply(frm);
+        // refresh ke baad statutory rows already DB mein hain — double load avoid karo
+        if (frm.doc.salary_structure) {
+            frm._suppress_statutory_refresh = false;  // allow fresh recalc on date change
+            refresh_statutory_rows(frm);
+        }
+        check_srr_and_apply_validate_only(frm);
     },
 
     to_date(frm) {
         toggle_fields(frm);
+        if (frm.doc.docstatus === 1) return;  // submitted doc pe overlap check nahi
         if (frm.doc.from_date && frm.doc.to_date) check_overlap(frm);
     },
 
     salary_structure(frm) {
         toggle_salary_sections(frm);
+        if (frm.doc.docstatus === 1) return;  // submitted pe reload nahi karna
         if (!frm.doc.salary_structure) {
             clear_all_tables(frm);
             render_statutory_controls(frm);
@@ -144,13 +148,22 @@ frappe.ui.form.on("Salary Details", {
 
         if (frm._computing_daily_wage) return;
 
-        setTimeout(() => {
-            if (row && row.parentfield === "earnings") {
-                refresh_statutory_rows(frm);
-            } else {
-                calculate_salary(frm);
+        // frappe.model se latest value seedha frm.doc row mein sync karo
+        // taaki grid re-render se dw amounts na jayein
+        if (row) {
+            const all = [
+                ...(frm.doc.earnings       || []),
+                ...(frm.doc.deductions     || []),
+                ...(frm.doc.employer_share || []),
+            ];
+            const doc_row = all.find(r => r.name === row.name);
+            if (doc_row && !parseInt(doc_row.daily_wage_component)) {
+                doc_row.amount      = flt(row.amount);
+                doc_row.base_amount = flt(row.amount);
             }
-        }, 50);
+        }
+
+        setTimeout(() => calculate_salary(frm), 50);
     },
     salary_details_remove(frm, cdt, cdn) {
         _calculate_excluding_row(frm, cdn);
@@ -163,8 +176,36 @@ frappe.ui.form.on("Salary Details", {
 
 function _bind_live_amount_inputs(frm) {
     $(frm.wrapper).off(".live_amount");
+    if (frm.doc.docstatus === 1) return;  // submitted pe live recalc bind nahi karna
 
     const AMOUNT_SEL = ".grid-row input[data-fieldname='amount']";
+
+    // Enter/ArrowDown dabane pe grid row re-render hoti hai — block karo aur next row pe jaao
+    $(frm.wrapper).on("keydown.live_amount", AMOUNT_SEL, function (e) {
+        if (e.key === "Enter" || e.key === "ArrowDown" || e.key === "ArrowUp") {
+            e.stopPropagation();
+
+            // value frm.doc mein set karo directly
+            const rowname = $(this).closest("[data-name]").attr("data-name");
+            const val     = flt($(this).val());
+            if (rowname) {
+                const all = [...(frm.doc.earnings||[]), ...(frm.doc.deductions||[]), ...(frm.doc.employer_share||[])];
+                const row = all.find(r => r.name === rowname);
+                if (row) { row.amount = val; row.base_amount = val; }
+            }
+
+            // next/prev amount input pe focus karo
+            const $all_inputs = $(frm.wrapper).find(AMOUNT_SEL + ":visible");
+            const idx = $all_inputs.index(this);
+            if (e.key === "ArrowUp") {
+                if (idx > 0) $all_inputs.eq(idx - 1).focus();
+            } else {
+                if (idx < $all_inputs.length - 1) $all_inputs.eq(idx + 1).focus();
+            }
+
+            setTimeout(() => calculate_salary(frm), 50);
+        }
+    });
 
     $(frm.wrapper).on("change.live_amount", AMOUNT_SEL, function () {
         if (frm._computing_daily_wage) return;
@@ -172,7 +213,7 @@ function _bind_live_amount_inputs(frm) {
         if (!rowname) return;
         const in_earnings = !!(frm.doc.earnings || []).find(r => r.name === rowname);
         if (!in_earnings) return;
-        _debounced_recalc(frm, refresh_statutory_rows, 150);
+        _debounced_recalc(frm, calculate_salary, 150);
     });
 }
 
@@ -181,6 +222,9 @@ function _bind_live_amount_inputs(frm) {
 // ─────────────────────────────────────────────────────────────
 
 function maybe_render_daily_wage_panel(frm) {
+    // submitted doc pe panel already rendered hai — per_day_rate saved values se dikhega
+    // dobara rebuild karne se dw amounts 0 ho jaate hain
+    if (frm.doc.docstatus === 1 && $(frm.wrapper).find(".dw-panel").length) return;
     _remove_daily_wage_panel(frm);
     if (!frm.doc.salary_structure) return;
 
@@ -407,6 +451,22 @@ function _build_daily_wage_panel(frm, dw_rows, multiplier) {
         }
     });
 
+    // Enter → next row focus, ArrowDown/ArrowUp → navigate rows, prevent form submit
+    $panel.on("keydown", ".dw-rate-input", function (e) {
+        if (e.key === "Enter" || e.key === "ArrowDown" || e.key === "ArrowUp") {
+            e.preventDefault();
+            e.stopPropagation();
+            const $inputs = $panel.find(".dw-rate-input:not([disabled])");
+            const idx     = $inputs.index(this);
+            if (e.key === "ArrowUp") {
+                if (idx > 0) $inputs.eq(idx - 1).focus();
+            } else {
+                // Enter or ArrowDown → next input
+                if (idx < $inputs.length - 1) $inputs.eq(idx + 1).focus();
+            }
+        }
+    });
+
     $panel.find(".dw-compute-btn").on("click", function () {
         let any_missing = false;
         $panel.find(".dw-rate-input").each(function () {
@@ -426,18 +486,30 @@ function _build_daily_wage_panel(frm, dw_rows, multiplier) {
         frm._computing_daily_wage = true;
 
         $panel.find(".dw-rate-input").each(function () {
-            const per_day = flt($(this).val());
-            const monthly = flt(per_day * multiplier, 2);
-            const rname   = $(this).data("rowname");
-            const pfield  = $(this).closest("tr").data("parentfield");
+            const per_day   = flt($(this).val());
+            const monthly   = flt(per_day * multiplier, 2);
+            const rname     = $(this).data("rowname");
+            const pfield    = $(this).closest("tr").data("parentfield");
 
-            const table = frm.doc[pfield] || [];
-            const match = (table.filter ? table.filter(r => r.name === rname) : [])[0];
-            if (match) match._dw_per_day = per_day;
+            // salary_component se match karo — rname amend ke baad stale ho sakta hai
+            const all_rows  = [
+                ...(frm.doc.earnings || []),
+                ...(frm.doc.deductions || []),
+                ...(frm.doc.employer_share || [])
+            ];
+            // pehle rname se try karo, phir salary_component fallback
+            let match = all_rows.find(r => r.name === rname);
+            if (!match) {
+                const panel_comp = $(this).closest("tr").find(".dw-comp-name").text().trim();
+                match = all_rows.find(r => r.salary_component === panel_comp && parseInt(r.daily_wage_component));
+            }
 
-            frappe.model.set_value("Salary Details", rname, "amount",       monthly);
-            frappe.model.set_value("Salary Details", rname, "base_amount",  monthly);
-            frappe.model.set_value("Salary Details", rname, "per_day_rate", per_day);
+            if (match) {
+                match.amount       = monthly;
+                match.base_amount  = monthly;
+                match.per_day_rate = per_day;
+                match._dw_per_day  = per_day;
+            }
 
             const $val = $panel.find(`.dw-computed-val[data-rowname="${rname}"]`);
             $val.text(monthly.toLocaleString("en-IN", {minimumFractionDigits:2, maximumFractionDigits:2}));
@@ -447,7 +519,7 @@ function _build_daily_wage_panel(frm, dw_rows, multiplier) {
         frm._computing_daily_wage = false;
 
         frm.refresh_fields(["earnings", "deductions", "employer_share"]);
-        refresh_statutory_rows(frm);
+        calculate_salary(frm);
         frappe.show_alert({ message: __("Monthly amounts applied."), indicator: "green" });
     });
 
@@ -465,7 +537,7 @@ function _build_daily_wage_panel(frm, dw_rows, multiplier) {
         frm._computing_daily_wage = false;
 
         frm.refresh_fields(["earnings", "deductions", "employer_share"]);
-        refresh_statutory_rows(frm);
+        calculate_salary(frm);
         frappe.show_alert({ message: __("Daily wage amounts reset."), indicator: "blue" });
     });
 }
@@ -553,13 +625,13 @@ function render_statutory_controls(frm) {
 
 function toggle_skill_type(frm) {
     if (!frm.doc.category) {
-        frm.set_df_property("skill_type", "hidden", 1);
+        frm.get_field("skill_type").df.hidden = 1;
         frm.refresh_field("skill_type");
         return;
     }
     frappe.db.get_value("Category", frm.doc.category, "has_subtype", (r) => {
         const show = r && !!r.has_subtype;
-        frm.set_df_property("skill_type", "hidden", show ? 0 : 1);
+        frm.get_field("skill_type").df.hidden = show ? 0 : 1;
         frm.refresh_field("skill_type");
     });
 }
@@ -567,6 +639,48 @@ function toggle_skill_type(frm) {
 // ─────────────────────────────────────────────────────────────
 //  SRR check and apply
 // ─────────────────────────────────────────────────────────────
+
+// ─────────────────────────────────────────────────────────────
+//  SRR validate only — for submitted docs date edit
+//  Only checks if SRR exists for new from_date, no amount apply
+// ─────────────────────────────────────────────────────────────
+
+function check_srr_and_apply_validate_only(frm) {
+    if (!frm.doc.employee || !frm.doc.from_date) return;
+
+    frappe.db.get_value("Company Link", frm.doc.employee, ["category", "skill_type"], (emp) => {
+        const category   = (emp && emp.category)   || frm.doc.category;
+        const skill_type = (emp && emp.skill_type) || frm.doc.skill_type;
+        if (!category || !skill_type) return;
+
+        frappe.db.get_value("Category", category, "has_subtype", (r) => {
+            if (!r || !r.has_subtype) return;  // non-worker category — no SRR needed
+
+            frappe.call({
+                method: "saral_hr.saral_hr.doctype.salary_structure_assignment.salary_structure_assignment.get_srr_for_ssa",
+                args: { start_date: frm.doc.from_date, skill_type: skill_type },
+                callback(res) {
+                    if (!res.message) {
+                        frappe.msgprint({
+                            title:     __("Skill Rate Revision Not Found"),
+                            message:   __(
+                                `Employee <strong>${frm.doc.employee_name || frm.doc.employee}</strong> `
+                                + `belongs to category <strong>${category}</strong> `
+                                + `with skill type <strong>${skill_type}</strong>.<br><br>`
+                                + `No submitted Skill Rate Revision found covering <strong>${frm.doc.from_date}</strong>. `
+                                + `Please create and submit a Skill Rate Revision for this period `
+                                + `before updating this assignment.`
+                            ),
+                            indicator: "red"
+                        });
+                        // date clear nahi karo — user khud sahi date dalega
+                    }
+                    // SRR exists — allow date change, no amount recalc on submitted doc
+                }
+            });
+        });
+    });
+}
 
 function check_srr_and_apply(frm) {
     if (!frm.doc.employee || !frm.doc.from_date) return;
@@ -596,7 +710,7 @@ function check_srr_and_apply(frm) {
                             ),
                             indicator: "red"
                         });
-                        frm.set_value("from_date", "");
+                        // date clear nahi karo — user khud sahi date dalega
                         return;
                     }
                     apply_srr_to_earnings(frm, res.message);
@@ -607,7 +721,14 @@ function check_srr_and_apply(frm) {
 }
 
 function apply_srr_to_earnings(frm, srr) {
+    if (frm.doc.docstatus === 1) return;  // submitted pe amounts apply nahi karna
     if (!frm.doc.earnings || !frm.doc.earnings.length) return;
+
+    // daily wage amounts save karo — SRR apply ke baad restore karenge
+    const dw_saved = {};
+    (frm.doc.earnings || [])
+        .filter(r => parseInt(r.daily_wage_component))
+        .forEach(r => { dw_saved[r.salary_component] = { amount: r.amount, base_amount: r.base_amount, per_day_rate: r.per_day_rate }; });
 
     const has_basic = frm.doc.earnings.some(row => {
         const comp = (row.salary_component || "").toLowerCase();
@@ -642,9 +763,20 @@ function apply_srr_to_earnings(frm, srr) {
         }
     });
 
+    // daily wage amounts restore karo — SRR ne sirf Basic/VDA change kiya
+    (frm.doc.earnings || [])
+        .filter(r => parseInt(r.daily_wage_component) && dw_saved[r.salary_component])
+        .forEach(r => {
+            r.amount       = dw_saved[r.salary_component].amount;
+            r.base_amount  = dw_saved[r.salary_component].base_amount;
+            r.per_day_rate = dw_saved[r.salary_component].per_day_rate;
+        });
+
     frm.refresh_field("earnings");
     if (vda_row_name) frm._locked_vda_row = vda_row_name;
-    refresh_statutory_rows(frm);
+    // refresh_statutory_rows nahi — already load_salary_structure ne call kiya hai
+    // double call se rows 2 baar add ho jaate hain
+    calculate_salary(frm);
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -690,6 +822,18 @@ function load_salary_structure(frm) {
 // ─────────────────────────────────────────────────────────────
 
 function _remove_statutory_rows(frm) {
+    if (frm.doc.docstatus === 1) return;  // submitted pe clear nahi karna
+
+    // daily wage amounts save karo — clear_table ke baad restore karenge
+    // key: salary_component (name nahi — clear ke baad new name milta hai)
+    const dw_amounts = {};
+    [...(frm.doc.earnings || []), ...(frm.doc.deductions || []), ...(frm.doc.employer_share || [])]
+        .filter(r => parseInt(r.daily_wage_component))
+        .forEach(r => { dw_amounts[r.salary_component] = { amount: flt(r.amount), base_amount: flt(r.base_amount), per_day_rate: flt(r.per_day_rate) }; });
+
+    // earnings snapshot bhi lo — clear nahi hoti but name change ho sakta hai
+    const earn_snap = (frm.doc.earnings || []).map(r => ({ ...r }));
+
     const keep_ded  = (frm.doc.deductions    || []).filter(r => !ALL_STATUTORY.includes((r.salary_component || "").trim()));
     const keep_empr = (frm.doc.employer_share || []).filter(r => !ALL_STATUTORY.includes((r.salary_component || "").trim()));
 
@@ -708,11 +852,34 @@ function _remove_statutory_rows(frm) {
         copy_row(child, snap);
     });
 
+    // earnings amounts restore — clear nahi ki but dw amounts preserve karo
+    (frm.doc.earnings || []).forEach(r => {
+        const saved = earn_snap.find(s => s.salary_component === r.salary_component);
+        if (saved) {
+            r.amount       = saved.amount;
+            r.base_amount  = saved.base_amount;
+            r.per_day_rate = saved.per_day_rate;
+        }
+    });
+
+    // deductions/employer_share daily wage amounts restore
+    [...(frm.doc.deductions || []), ...(frm.doc.employer_share || [])]
+        .filter(r => parseInt(r.daily_wage_component) && dw_amounts[r.salary_component])
+        .forEach(r => {
+            r.amount       = dw_amounts[r.salary_component].amount;
+            r.base_amount  = dw_amounts[r.salary_component].base_amount;
+            r.per_day_rate = dw_amounts[r.salary_component].per_day_rate;
+        });
+
     frm.refresh_fields(["deductions", "employer_share"]);
 }
 
 function refresh_statutory_rows(frm) {
     if (!frm.doc.salary_structure || !frm.doc.company) return;
+    // submitted doc pe statutory recalc nahi — amounts zero ho jaate hain
+    if (frm.doc.docstatus === 1) return;
+    // save ke turant baad refresh fire hoti hai — statutory rows already saved hain, skip karo
+    if (frm._suppress_statutory_refresh) { frm._suppress_statutory_refresh = false; return; }
 
     if (_statutory_inflight) {
         _statutory_pending = true;
@@ -794,31 +961,63 @@ function refresh_statutory_rows(frm) {
 //  Field visibility
 // ─────────────────────────────────────────────────────────────
 
+function _set_hidden(frm, fieldname, hidden) {
+    const f = frm.get_field(fieldname);
+    if (!f) return;
+    f.df.hidden = hidden ? 1 : 0;
+    frm.refresh_field(fieldname);
+}
+
 function toggle_fields(frm) {
     const ok = !frm._has_existing;
-    frm.toggle_display("assignment_section", ok);
-    frm.toggle_display("from_date",          ok);
-    frm.toggle_display("to_date",            ok);
-    frm.toggle_display("salary_structure",   ok);
+    _set_hidden(frm, "assignment_section", !ok);
+    _set_hidden(frm, "from_date",          !ok);
+    _set_hidden(frm, "to_date",            !ok);
+    _set_hidden(frm, "salary_structure",   !ok);
     toggle_salary_sections(frm);
 }
 
 function toggle_salary_sections(frm) {
     const s = !!frm.doc.salary_structure;
-    frm.toggle_display("earnings_and_deductions_section", s);
-    frm.toggle_display("employer_share_section",          s);
-    frm.toggle_display("calculations_section",            s);
+    _set_hidden(frm, "earnings_and_deductions_section", !s);
+    _set_hidden(frm, "employer_share_section",          !s);
+    _set_hidden(frm, "calculations_section",            !s);
     if (frm.fields_dict["daily_wage_html"]) {
-        frm.toggle_display("daily_wage_html", s);
+        _set_hidden(frm, "daily_wage_html", !s);
     }
 }
 
 // ─────────────────────────────────────────────────────────────
-//  Overlap check
+//  Overlap check — called after both from_date and to_date are set
 // ─────────────────────────────────────────────────────────────
 
 function check_overlap(frm) {
     if (!frm.doc.employee || !frm.doc.from_date || !frm.doc.to_date) return;
+
+    // ── CHANGED: first check against cached existing assignments before calling server ──
+    const existing = frm._existing_assignments || [];
+    if (existing.length) {
+        const FAR_FUTURE = "9999-12-31";
+        const a_start = frm.doc.from_date;
+        const a_end   = frm.doc.to_date;
+
+        for (const rec of existing) {
+            if (rec.name === frm.doc.name) continue;  // exclude current doc (e.g. amended doc)
+            const b_start = rec.from_date;
+            const b_end   = rec.to_date || FAR_FUTURE;
+            if (a_start <= b_end && b_start <= a_end) {
+                frappe.msgprint({
+                    title:     __("Date Range Overlap"),
+                    indicator: "red",
+                    message:   `This date range overlaps with an existing assignment: `
+                        + `<a href="/app/salary-structure-assignment/${rec.name}" target="_blank">${rec.name}</a>`
+                        + ` (${rec.from_date} to ${rec.to_date || "Ongoing"})`
+                });
+                return;
+            }
+        }
+    }
+
     frappe.call({
         method: "saral_hr.saral_hr.doctype.salary_structure_assignment.salary_structure_assignment.check_overlap",
         args: {
@@ -886,7 +1085,7 @@ function _calculate_excluding_row(frm, deleted_cdn) {
         total_basic_da:              _sum_basic_da_excluding(frm, deleted_cdn),
     };
 
-    frm.set_value(values);
+    Object.assign(frm.doc, values);
     frm.refresh_fields(["gross_salary", "total_deductions",
         "total_employer_contribution", "net_salary", "monthly_ctc", "annual_ctc", "total_basic_da"]);
 }
@@ -915,6 +1114,8 @@ function _sum_basic_da_excluding(frm, excluded_cdn) {
 }
 
 function _do_calculate(frm, silent) {
+    // submitted doc pe set_value nahi karna — form dirty ho jaata hai
+    if (frm.doc.docstatus === 1) return;
     const gross       = flt(_sum_earnings(frm), 2);
     let emp_ded       = 0;
     let empr_cont     = 0;
@@ -956,7 +1157,8 @@ function _do_calculate(frm, silent) {
             if (el) el.val ? el.val(format_number(values[fn], null, 2)) : el.text(format_number(values[fn], null, 2));
         });
     } else {
-        frm.set_value(values);
+        // frm.set_value dirty mark karta hai — seedha doc mein set karo
+        Object.assign(frm.doc, values);
         frm.refresh_fields(["gross_salary", "total_deductions",
             "total_employer_contribution", "net_salary", "monthly_ctc", "annual_ctc", "total_basic_da"]);
     }
