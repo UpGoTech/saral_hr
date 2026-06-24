@@ -15,6 +15,7 @@ class Company(Document):
     def validate(self):
         self.validate_esic_settings()
         self.validate_pf_settings()
+        # ── CHANGED: to_date removed from protected_fields so it stays editable on locked rows ──
         self._validate_locked_periods(
             "esic_dependent_component", "ESIC",
             ["wage_components", "esic_wage_limit", "employee_contribution", "employer_contribution"]
@@ -67,7 +68,9 @@ class Company(Document):
 
     def _validate_locked_periods(self, table_fieldname, label, protected_fields):
         """If a submitted Salary Structure Assignment exists for a period,
-        block edits to components and rate fields."""
+        block edits to components and rate fields.
+        Note: to_date is intentionally excluded from protected_fields so it
+        remains editable even when the period is locked."""
         old_doc = self.get_doc_before_save()
         if not old_doc:
             return  # new doc — nothing to compare

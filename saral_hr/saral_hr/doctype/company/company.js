@@ -173,8 +173,13 @@ function render_period_ui(frm, cfg, ssa_dates = []) {
                 ${frappe.utils.escape_html(c)}</span>`
         ).join("") || `<span style="color:#ccc;font-size:11px">—</span>`;
 
+        // ── CHANGED: locked rows show 🔒 + a pencil to edit To Date only ──
         const action_html = locked
-            ? `<span style="color:#f59e0b;font-size:14px" title="Locked — Salary Structure Assignment exists">🔒</span>`
+            ? `<span style="color:#f59e0b;font-size:14px;margin-right:4px"
+                   title="Locked — Salary Structure Assignment exists">🔒</span>
+               <span class="edit-todate" data-idx="${i}"
+                   style="cursor:pointer;color:${border_color};font-size:13px"
+                   title="Edit To Date only">✏</span>`
             : `<span class="edit-period" data-idx="${i}"
                    style="cursor:pointer;color:${border_color};font-size:13px;margin-right:6px"
                    title="Edit">✏</span>
@@ -402,6 +407,30 @@ function render_period_ui(frm, cfg, ssa_dates = []) {
 
         $ui.find(".add-period-btn").hide();
         $ui.find(".add-period-form").slideDown(150);
+    });
+
+    // ── ADDED: Edit To Date only (for locked rows) ──
+    $ui.find(".edit-todate").on("click", function () {
+        const idx = parseInt($(this).data("idx"));
+        const row = (frm.doc[fieldname] || [])[idx];
+        if (!row) return;
+
+        frappe.prompt(
+            [{
+                label: __("To Date"),
+                fieldname: "to_date",
+                fieldtype: "Date",
+                default: row.to_date || ""
+            }],
+            (values) => {
+                row.to_date = values.to_date || null;
+                frm.dirty();
+                frm.refresh_field(fieldname);
+                render_period_ui(frm, cfg, ssa_dates);
+            },
+            __("Edit To Date — {0} Period", [label]),
+            __("Update")
+        );
     });
 }
 
