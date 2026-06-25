@@ -1,6 +1,36 @@
 // Copyright (c) 2026, sj and contributors
 // For license information, please see license.txt
 
+// ─────────────────────────────────────────────────────────────
+//  CSS injection — permanently hides the native Frappe grid
+//  Production-safe: works whether rows exist or not
+//  Injected once per page-change event, persists until browser reload
+// ─────────────────────────────────────────────────────────────
+$(document).on("page-change", function () {
+    if ($("#esic-pf-grid-hide-style").length) return; // Style already injected — skip
+    var css = [
+        // Hide all native grid elements for both child table fields
+        '[data-fieldname="esic_dependent_component"] .grid-row,',
+        '[data-fieldname="esic_dependent_component"] .grid-heading-row,',
+        '[data-fieldname="esic_dependent_component"] .grid-footer,',
+        '[data-fieldname="esic_dependent_component"] .grid-add-row,',
+        '[data-fieldname="esic_dependent_component"] .form-grid-container,',
+        '[data-fieldname="esic_dependent_component"] .frappe-control,',
+        '[data-fieldname="esic_dependent_component"] .grid-body,',
+        '[data-fieldname="esic_dependent_component"] .no-data-message,',
+        '[data-fieldname="pf_dependent_component"] .grid-row,',
+        '[data-fieldname="pf_dependent_component"] .grid-heading-row,',
+        '[data-fieldname="pf_dependent_component"] .grid-footer,',
+        '[data-fieldname="pf_dependent_component"] .grid-add-row,',
+        '[data-fieldname="pf_dependent_component"] .form-grid-container,',
+        '[data-fieldname="pf_dependent_component"] .frappe-control,',
+        '[data-fieldname="pf_dependent_component"] .grid-body,',
+        '[data-fieldname="pf_dependent_component"] .no-data-message',
+        '{ display: none !important; }'
+    ].join(" ");
+    $("head").append('<style id="esic-pf-grid-hide-style">' + css + '</style>');
+});
+
 frappe.ui.form.on("Company", {
     refresh(frm) {
         render_esic_period_ui(frm);
@@ -47,7 +77,7 @@ function _fetch_ssa_dates(frm) {
 
 function _is_period_locked(row, ssa_dates) {
     if (!ssa_dates || !ssa_dates.length) return false;
-    // locked if any SSA from_date falls within this period's date range
+    // Period is locked if any submitted SSA from_date falls within this period's date range
     return ssa_dates.some(d => {
         const from_ok = !row.from_date || d >= row.from_date;
         const to_ok   = !row.to_date   || d <= row.to_date;
@@ -132,18 +162,20 @@ function render_period_ui(frm, cfg, ssa_dates = []) {
     const field = frm.fields_dict[fieldname];
     if (!field) return;
 
+    // Always hide the native Frappe grid wrapper — regardless of whether rows exist
+    field.grid.wrapper.hide();
+
     const $wrapper = field.$wrapper;
-    $(field.grid.wrapper).hide();
 
     const uid = `${fieldname}-period-ui`;
     $wrapper.find(`#${uid}`).remove();
 
     const rows = frm.doc[fieldname] || [];
 
-    // All rate fields flat list (for reading/writing)
+    // Flat list of all rate fields across all rate groups
     const all_rate_fields = rate_groups.flatMap(g => g.fields);
 
-    // ── Rate summary for table cell ──
+    // Build rate summary HTML for display in the table cell
     function rate_summary(row) {
         const parts = all_rate_fields
             .filter(f => row[f.key])
@@ -160,7 +192,7 @@ function render_period_ui(frm, cfg, ssa_dates = []) {
             : `<span style="color:#ccc;font-size:11px">—</span>`;
     }
 
-    // ── Table rows ──
+    // Build table row HTML for each period
     let tbody_html = "";
     rows.forEach((row, i) => {
         const components = parse_components(row);
@@ -173,7 +205,6 @@ function render_period_ui(frm, cfg, ssa_dates = []) {
                 ${frappe.utils.escape_html(c)}</span>`
         ).join("") || `<span style="color:#ccc;font-size:11px">—</span>`;
 
-        // ── CHANGED: locked rows show 🔒 + a pencil to edit To Date only ──
         const action_html = locked
             ? `<span style="color:#f59e0b;font-size:14px;margin-right:4px"
                    title="Locked — Salary Structure Assignment exists">🔒</span>
@@ -222,7 +253,7 @@ function render_period_ui(frm, cfg, ssa_dates = []) {
            </table>`
         : `<div style="font-size:12px;color:#999;margin-bottom:8px">No periods configured yet.</div>`;
 
-    // ── Rate fields HTML for form — flat 3-column grid ──
+    // Build rate input fields HTML — flat 3-column grid layout
     const all_flat_fields = rate_groups.flatMap(g => g.fields);
     const rates_html = `
         <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px 12px">
@@ -238,7 +269,7 @@ function render_period_ui(frm, cfg, ssa_dates = []) {
                 </div>`).join("")}
         </div>`;
 
-    // ── Full UI ──
+    // Render the complete custom period UI
     const $ui = $(`
     <div id="${uid}" style="margin:8px 0 12px 0">
         ${description ? `<div style="font-size:12px;color:#6c757d;margin-bottom:8px">${description}</div>` : ""}
@@ -307,14 +338,14 @@ function render_period_ui(frm, cfg, ssa_dates = []) {
 
     $wrapper.append($ui);
 
-    // Datepicker
+    // Initialize datepicker on date input fields
     $ui.find(".period-from-date, .period-to-date").datepicker({
         language: frappe.boot.lang || "en",
         autoClose: true,
         dateFormat: "dd-mm-yyyy"
     });
 
-    // Load components
+    // Load all Earning type Salary Components into the checkbox list
     frappe.db.get_list("Salary Component", {
         filters: { type: "Earning" }, fields: ["name"], limit: 0
     }).then(results => {
@@ -332,16 +363,16 @@ function render_period_ui(frm, cfg, ssa_dates = []) {
         });
     });
 
-    // Add button
+    // Show the add period form when the button is clicked
     $ui.find(".add-period-btn").on("click", function () {
         $(this).hide();
         $ui.find(".add-period-form").slideDown(150);
     });
 
-    // Cancel
+    // Hide the form and reset all inputs on cancel
     $ui.find(".cancel-period-btn").on("click", () => _reset_form($ui));
 
-    // Save
+    // Collect form values and add a new child row to the document
     $ui.find(".save-period-btn").on("click", function () {
         const selected = [];
         $ui.find(".checkbox-list input:checked").each(function () {
@@ -366,21 +397,21 @@ function render_period_ui(frm, cfg, ssa_dates = []) {
 
         frm.dirty();
         frm.refresh_field(fieldname);
-        render_period_ui(frm, cfg);
+        render_period_ui(frm, cfg, ssa_dates);
     });
 
-    // Delete
+    // Remove the period row at the given index
     $ui.find(".delete-period").on("click", function () {
         const idx = parseInt($(this).data("idx"));
         frappe.confirm(__("Delete this {0} period?", [label]), () => {
             frm.doc[fieldname].splice(idx, 1);
             frm.dirty();
             frm.refresh_field(fieldname);
-            render_period_ui(frm, cfg);
+            render_period_ui(frm, cfg, ssa_dates);
         });
     });
 
-    // Edit
+    // Populate form with existing row data for editing
     $ui.find(".edit-period").on("click", function () {
         const idx = parseInt($(this).data("idx"));
         const row = (frm.doc[fieldname] || [])[idx];
@@ -409,7 +440,7 @@ function render_period_ui(frm, cfg, ssa_dates = []) {
         $ui.find(".add-period-form").slideDown(150);
     });
 
-    // ── ADDED: Edit To Date only (for locked rows) ──
+    // For locked rows: allow editing only the To Date field via a prompt dialog
     $ui.find(".edit-todate").on("click", function () {
         const idx = parseInt($(this).data("idx"));
         const row = (frm.doc[fieldname] || [])[idx];
