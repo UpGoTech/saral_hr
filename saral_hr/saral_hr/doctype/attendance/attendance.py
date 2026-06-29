@@ -9,7 +9,7 @@ from frappe.utils import (
 	nowdate,
 	format_date,
 )
-from saral_hr.utils.holiday_utils import get_holiday_list_for_date   # ✅ ADD
+from saral_hr.utils.holiday_utils import get_holiday_list_for_date
 
 
 class DuplicateAttendanceError(frappe.ValidationError):
@@ -32,7 +32,7 @@ class Attendance(Document):
 		self.validate_attendance_date()
 		self.validate_duplicate_record()
 		self.validate_employee_active()
-		self.check_and_set_holiday()           # ✅ ADD
+		self.check_and_set_holiday()
 		self.validate_half_day_fields()
 		self.clear_half_day_fields_if_not_half_day()
 		self.validate_leave_allocation()
@@ -198,7 +198,6 @@ class Attendance(Document):
 				title=_("No Leave Allocation")
 			)
 
-	# ✅ NAYA METHOD — class ke end mein
 	def check_and_set_holiday(self):
 		if not self.employee or not self.attendance_date:
 			return
@@ -227,3 +226,59 @@ class Attendance(Document):
 					alert=True
 				)
 				return
+
+
+# ── Bulk Date Range Attendance ────────────────────────────────────────────────
+
+@frappe.whitelist()
+def bulk_apply_attendance(employee, from_date, to_date, status):
+	from frappe.utils import add_days, getdate
+	from saral_hr.utils.holiday_utils import get_holiday_list_for_date
+
+	company = frappe.db.get_value("Company Link", employee, "company")
+
+	current = getdate(from_date)
+	end     = getdate(to_date)
+	created = 0
+	skipped = 0
+
+	while current <= end:
+		date_str = str(current)
+
+		# Skip Sunday (weekly off)
+		if current.weekday() == 6:
+			current = add_days(current, 1)
+			skipped += 1
+			continue
+
+		# Skip holidays
+		if company:
+			hl_name = get_holiday_list_for_date(date_str, company)
+			if hl_name:
+				hl = frappe.get_doc("Holiday List", hl_name)
+				if any(getdate(h.holiday_date) == current for h in hl.holidays):
+					current = add_days(current, 1)
+					skipped += 1
+					continue
+
+		# Skip if already exists
+		if frappe.db.exists("Attendance", {
+			"employee": employee,
+			"attendance_date": date_str,
+			"docstatus": ["<", 2]
+		}):
+			current = add_days(current, 1)
+			skipped += 1
+			continue
+
+		doc = frappe.new_doc("Attendance")
+		doc.employee        = employee
+		doc.attendance_date = date_str
+		doc.status          = status
+		doc.insert(ignore_permissions=True)
+		doc.submit()
+
+		created += 1
+		current = add_days(current, 1)
+
+	return f"{created} record(s) created, {skipped} skipped."
