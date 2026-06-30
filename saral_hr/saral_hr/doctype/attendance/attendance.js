@@ -20,13 +20,13 @@ frappe.ui.form.on("Attendance", {
 	employee(frm) {
 		check_salary_slip_lock(frm);
 		check_leave_allocation(frm);
-		check_holiday_status(frm);        // ✅ ADD
+		check_holiday_status(frm);
 	},
 
 	attendance_date(frm) {
 		check_salary_slip_lock(frm);
 		check_leave_allocation(frm);
-		check_holiday_status(frm);        // ✅ ADD
+		check_holiday_status(frm);
 	},
 
 	status(frm) {
@@ -270,7 +270,7 @@ function validate_half_combination(frm) {
 }
 
 
-// ── Holiday Auto Check ────────────────────────────────────────────────────────  ✅ NEW
+// ── Holiday Auto Check ────────────────────────────────────────────────────────
 
 function check_holiday_status(frm) {
 	if (!frm.doc.employee || !frm.doc.attendance_date) return;
@@ -292,33 +292,3 @@ function check_holiday_status(frm) {
 		}
 	});
 }
-
-
-// ── List view indicators ──────────────────────────────────────────────────────
-frappe.listview_settings["Attendance"] = {
-
-	onload(list_view) {
-		list_view.page.add_inner_button(__("Mark Attendance"), function () {
-			window.location.href = frappe.urllib.get_full_url("app/mark-attendance");
-		});
-	},
-
-	get_indicator: function (doc) {
-		const map = {
-			"Present":          [__("Present"),          "green",       "status,=,Present"],
-			"Earned Comp Off":  [__("Earned Comp Off"),  "green",       "status,=,Earned Comp Off"],
-			"On Tour":          [__("On Tour"),          "green",       "status,=,On Tour"],
-			"Absent":           [__("Absent"),           "red",         "status,=,Absent"],
-			"Half Day":         [__("Half Day"),         "yellow",      "status,=,Half Day"],
-			"Holiday":          [__("Holiday"),          "orange",      "status,=,Holiday"],
-			"Weekly Off":       [__("Weekly Off"),       "blue",        "status,=,Weekly Off"],
-			"LWP":              [__("LWP"),              "purple",      "status,=,LWP"],
-			"Earned Leave":     [__("Earned Leave"),     "light-blue",  "status,=,Earned Leave"],
-			"Casual Leave":     [__("Casual Leave"),     "cyan",        "status,=,Casual Leave"],
-			"Comp Off":         [__("Comp Off"),         "purple",      "status,=,Comp Off"],
-			"On Leave":         [__("On Leave"),         "grey",        "status,=,On Leave"],
-			"Work From Home":   [__("WFH"),              "green",       "status,=,Work From Home"],
-		};
-		return map[doc.status] || [doc.status, "grey", "status,=," + doc.status];
-	}
-};
