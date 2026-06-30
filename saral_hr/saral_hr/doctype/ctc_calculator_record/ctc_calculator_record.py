@@ -4,12 +4,10 @@ from frappe.utils import flt
 from decimal import Decimal, ROUND_HALF_UP
 
 
-# ─── Document class (required by Frappe) ─────────────────────────────────────
 class CtcCalculatorRecord(Document):
     pass
 
 
-# ─── Rounding helpers ─────────────────────────────────────────────────────────
 def _round2(value):
     return float(Decimal(str(flt(value, 4))).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP))
 
@@ -17,11 +15,10 @@ def _round0(value):
     return int(Decimal(str(flt(value, 2))).quantize(Decimal("1"), rounding=ROUND_HALF_UP))
 
 
-# ─── Constants — TRULY STATIC (govt fixed, not in Company DocType) ────────────
-GRATUITY_RATE  = 4.81 / 100   # Payment of Gratuity Act — govt fixed
-RETENTION_RATE = 2.00 / 100   # company policy — not in Company DocType
-PT_NORMAL      = 200.0         # Professional Tax — govt fixed
-PT_FEBRUARY    = 300.0         # Professional Tax February — govt fixed
+GRATUITY_RATE  = 4.81 / 100
+RETENTION_RATE = 2.00 / 100   # Basic+DA × 2%
+PT_NORMAL      = 200.0
+PT_FEBRUARY    = 300.0
 
 STATUTORY_NAMES = {
     "Employee ESIC", "Employer ESIC",
@@ -33,7 +30,6 @@ STATUTORY_NAMES = {
     "Gratuity", "Employer Gratuity",
 }
 
-# ─── Earning formulas — STATIC (formula-based, not in Company DocType) ────────
 EARNING_FORMULAS = {
     "basic":                lambda mc, b, da, bda, g: _round2(0.60 * mc - 6000.0),
     "dearness allowance":   lambda mc, b, da, bda, g: 6000.0,
@@ -51,7 +47,6 @@ EARNING_FORMULAS = {
     "variable":             lambda mc, b, da, bda, g: _round2(0.075 * mc),
 }
 
-# ─── Deduction formulas — STATIC (not in Company DocType) ─────────────────────
 DEDUCTION_FORMULAS = {
     "retention": lambda mc, b, da, bda, g: _round2(bda * RETENTION_RATE),
     "ret":       lambda mc, b, da, bda, g: _round2(bda * RETENTION_RATE),
@@ -60,14 +55,12 @@ DEDUCTION_FORMULAS = {
 REMAINDER_KEYWORDS = ["other allowance", "others", "other", "oa", "remainder", "balance"]
 
 
-# ─── 1. Get companies ─────────────────────────────────────────────────────────
 @frappe.whitelist()
 def get_companies():
     companies = frappe.db.get_all("Company", fields=["name"], order_by="name asc")
     return [c.name for c in companies]
 
 
-# ─── 2. Get salary structures ─────────────────────────────────────────────────
 @frappe.whitelist()
 def get_salary_structures(company):
     if not company:
@@ -80,7 +73,6 @@ def get_salary_structures(company):
     return [r.name for r in rows]
 
 
-# ─── 3. Get company statutory config for UI display ──────────────────────────
 @frappe.whitelist()
 def get_company_statutory_config(company):
     if not company:
@@ -91,7 +83,6 @@ def get_company_statutory_config(company):
         return {}
 
     return {
-        # ── ALL DYNAMIC — fetched directly from Company DocType ─────────────
         "pf_wage_limit":              flt(getattr(comp, "pf_wage_limit",              0) or 0),
         "pf_employee_percent":        flt(getattr(comp, "pf_employee_percent",        0) or 0),
         "pf_employer_epf":            flt(getattr(comp, "pf_employer_epf",            0) or 0),
@@ -104,7 +95,6 @@ def get_company_statutory_config(company):
     }
 
 
-# ─── 4. Internal: full statutory settings ────────────────────────────────────
 def _get_company_statutory(company):
     cfg = get_company_statutory_config(company)
     try:
@@ -116,7 +106,6 @@ def _get_company_statutory(company):
         return int(bool(getattr(comp, attr, 0) or 0))
 
     cfg.update({
-        # ── DYNAMIC — applicability flags from Company DocType ───────────────
         "is_pf_applicable":   _flag("is_pf_applicable"),
         "is_esic_applicable": _flag("is_esic_applicable"),
         "is_pt_applicable":   _flag("is_pt_applicable"),
@@ -125,12 +114,7 @@ def _get_company_statutory(company):
     return cfg
 
 
-# ─── 5. Validate Company statutory config is fully filled ─────────────────────
 def _validate_company_statutory(company_stat, is_pf, is_esic):
-    """
-    Raise error if required Company DocType fields are empty.
-    No hardcoded fallbacks — user must fill Company settings.
-    """
     if is_pf:
         missing = []
         if not company_stat.get("pf_wage_limit"):        missing.append("Limited PF Wage Limit")
@@ -160,7 +144,6 @@ def _validate_company_statutory(company_stat, is_pf, is_esic):
             )
 
 
-# ─── 6. Component helpers ─────────────────────────────────────────────────────
 def _get_abbr(comp_name):
     return frappe.db.get_value("Salary Component", comp_name, "salary_component_abbr") or comp_name
 
@@ -181,7 +164,6 @@ def _is_remainder(comp_name, abbr):
            any(k == key_abbr  for k in REMAINDER_KEYWORDS)
 
 
-# ─── 7. Load structure components ────────────────────────────────────────────
 def _load_structure_components(salary_structure):
     ss = frappe.get_doc("Salary Structure", salary_structure)
     earning_rows   = []
@@ -222,10 +204,10 @@ def _load_structure_components(salary_structure):
     }
 
 
-# ─── 8. Main CTC breakdown API ───────────────────────────────────────────────
 @frappe.whitelist()
 def calculate_ctc_breakdown(company, salary_structure, annual_ctc, month=None,
                              include_pf=None, include_esic=None, include_pt=None,
+                             include_retention=None,   # ✅ NEW
                              pf_type=None):
     if not company or not salary_structure or not annual_ctc:
         frappe.throw("Company, Salary Structure and Annual CTC are required")
@@ -237,19 +219,19 @@ def calculate_ctc_breakdown(company, salary_structure, annual_ctc, month=None,
 
     company_stat = _get_company_statutory(company)
 
-    override_pf   = frappe.utils.cint(include_pf)   if include_pf   not in (None, "") else None
-    override_esic = frappe.utils.cint(include_esic) if include_esic not in (None, "") else None
-    override_pt   = frappe.utils.cint(include_pt)   if include_pt   not in (None, "") else None
+    override_pf        = frappe.utils.cint(include_pf)        if include_pf        not in (None, "") else None
+    override_esic      = frappe.utils.cint(include_esic)      if include_esic      not in (None, "") else None
+    override_pt        = frappe.utils.cint(include_pt)        if include_pt        not in (None, "") else None
+    override_retention = frappe.utils.cint(include_retention) if include_retention not in (None, "") else 0  # ✅ default 0
 
-    is_pf   = override_pf   if override_pf   is not None else company_stat.get("is_pf_applicable",  0)
-    is_esic = override_esic if override_esic is not None else company_stat.get("is_esic_applicable", 0)
-    is_pt   = override_pt   if override_pt   is not None else company_stat.get("is_pt_applicable",   0)
-    is_lwf  = company_stat.get("is_lwf_applicable", 0)
+    is_pf        = override_pf   if override_pf   is not None else company_stat.get("is_pf_applicable",  0)
+    is_esic      = override_esic if override_esic is not None else company_stat.get("is_esic_applicable", 0)
+    is_pt        = override_pt   if override_pt   is not None else company_stat.get("is_pt_applicable",   0)
+    is_lwf       = company_stat.get("is_lwf_applicable", 0)
+    is_retention = override_retention  # ✅ purely user-controlled, no company default
 
-    # ── Validate — no hardcoded fallbacks, must be in Company DocType ─────────
     _validate_company_statutory(company_stat, is_pf, is_esic)
 
-    # ── ALL DYNAMIC — directly from Company DocType, no fallback ─────────────
     pf_wage_limit = flt(company_stat.get("pf_wage_limit"))
     pf_emp_pct    = flt(company_stat.get("pf_employee_percent"))  / 100
     pf_epf_pct    = flt(company_stat.get("pf_employer_epf"))      / 100
@@ -263,7 +245,6 @@ def calculate_ctc_breakdown(company, salary_structure, annual_ctc, month=None,
 
     struct = _load_structure_components(salary_structure)
 
-    # ── STATIC formula — Basic+DA = 60% of Monthly CTC ───────────────────────
     def _calc_basic_da(mc):
         basic = _round2(0.60 * mc - 6000.0)
         da    = 6000.0
@@ -315,15 +296,24 @@ def calculate_ctc_breakdown(company, salary_structure, annual_ctc, month=None,
     esic_emp_amt = _round2(total_gross * esic_emp_pct / 100) if is_esic else 0.0
     pt_amount    = (PT_FEBRUARY if is_february else PT_NORMAL) if is_pt  else 0.0
 
+    # ✅ Retention — only if checkbox checked, using same RETENTION_RATE formula
+    retention_amt = _round2(basic_da * RETENTION_RATE) if is_retention else 0.0
+
     deductions_out = []
     if is_pf   and emp_pf:
-        deductions_out.append({"salary_component": "Employee PF",      "abbr": "EPF",  "amount": emp_pf,       "statutory": True})
+        deductions_out.append({"salary_component": "Employee PF",      "abbr": "EPF",  "amount": emp_pf,        "statutory": True})
     if is_esic and esic_emp_amt:
-        deductions_out.append({"salary_component": "Employee ESIC",    "abbr": "ESIC", "amount": esic_emp_amt, "statutory": True})
+        deductions_out.append({"salary_component": "Employee ESIC",    "abbr": "ESIC", "amount": esic_emp_amt,  "statutory": True})
     if is_pt   and pt_amount:
-        deductions_out.append({"salary_component": "Professional Tax", "abbr": "PT",   "amount": pt_amount,    "statutory": True})
+        deductions_out.append({"salary_component": "Professional Tax", "abbr": "PT",   "amount": pt_amount,     "statutory": True})
+    if is_retention and retention_amt:
+        deductions_out.append({"salary_component": "Retention",        "abbr": "RET",  "amount": retention_amt, "statutory": False})
 
+    # ✅ Skip retention from structure deductions since we handle it above
     for row in struct["deduction_rows"]:
+        key = (row["salary_component"] or "").lower().strip()
+        if key in ("retention", "ret"):
+            continue
         formula = _resolve_deduction_formula(row["salary_component"], row["abbr"])
         amount  = formula(monthly_ctc, basic, da, basic_da, gross) if formula else 0.0
         if amount:
@@ -372,10 +362,11 @@ def calculate_ctc_breakdown(company, salary_structure, annual_ctc, month=None,
         "deductions":           deductions_out,
         "employer_share":       employer_share_out,
         "flags": {
-            "is_pf":   bool(is_pf),
-            "is_esic": bool(is_esic),
-            "is_pt":   bool(is_pt),
-            "is_lwf":  bool(is_lwf),
-            "pf_type": pf_type or "Limited PF",
+            "is_pf":        bool(is_pf),
+            "is_esic":      bool(is_esic),
+            "is_pt":        bool(is_pt),
+            "is_lwf":       bool(is_lwf),
+            "is_retention": bool(is_retention),
+            "pf_type":      pf_type or "Limited PF",
         },
     }
