@@ -169,7 +169,8 @@ def get_kpi_data(companies, from_date, to_date):
         else:
             agg["ssa_count"] += frappe.db.count("Salary Structure Assignment", filters=ssa_filters)
 
-        holiday_list_name = frappe.db.get_value("Company", company, "default_holiday_list")
+        from saral_hr.utils.holiday_utils import get_holiday_list_for_date
+        holiday_list_name = get_holiday_list_for_date(frappe.utils.today(), company)
         if holiday_list_name and holiday_list_name not in _seen_holiday_lists:
             _seen_holiday_lists.add(holiday_list_name)
             agg["holiday_count"] += frappe.db.count("Holiday", filters={
@@ -1126,7 +1127,8 @@ def get_holiday_list(companies, from_date, to_date):
     all_rows   = []
 
     for company in company_list:
-        holiday_list_name = frappe.db.get_value("Company", company, "default_holiday_list")
+        from saral_hr.utils.holiday_utils import get_holiday_list_for_date
+        holiday_list_name = get_holiday_list_for_date(frappe.utils.today(), company)
         if not holiday_list_name or holiday_list_name in seen_lists:
             continue
         seen_lists.add(holiday_list_name)

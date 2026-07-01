@@ -358,7 +358,8 @@ def get_special_monthly_amounts(ssa_map):
 
 def get_holiday_dates(company, start_date, end_date):
     try:
-        hl = frappe.db.get_value("Company", company, "default_holiday_list")
+        from saral_hr.utils.holiday_utils import get_holiday_list_for_date
+        hl = get_holiday_list_for_date(frappe.utils.today(), company)
         if not hl:
             return set()
         rows = frappe.db.sql(

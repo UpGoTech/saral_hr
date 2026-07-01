@@ -979,7 +979,8 @@ def get_attendance_and_days(employee, start_date, working_days_calculation_metho
     holiday_date_set = set()
 
     if company:
-        holiday_list = frappe.db.get_value("Company", company, "default_holiday_list")
+        from saral_hr.utils.holiday_utils import get_holiday_list_for_date
+        holiday_list = get_holiday_list_for_date(effective_start, company)
         if holiday_list:
             holidays = frappe.db.get_all(
                 "Holiday",
