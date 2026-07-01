@@ -15,7 +15,6 @@ class CompanyLink(Document):
 
     def validate(self):
         self.validate_skill_type_if_required()
-        self.sync_holiday_list_from_company()
         self.validate_left_date()
 
     def validate_skill_type_if_required(self):
@@ -132,20 +131,6 @@ class CompanyLink(Document):
                     pass
 
         return max(suffixes) + 1 if suffixes else 1
-
-    def sync_holiday_list_from_company(self):
-        if not self.company:
-            return
-
-        company_values = frappe.db.get_value(
-            "Company",
-            self.company,
-            ["default_holiday_list"],
-            as_dict=True
-        )
-
-        if company_values and company_values.default_holiday_list:
-            self.holiday_list = company_values.default_holiday_list
 
     def validate_left_date(self):
         if self.left_date and self.is_active:
