@@ -30,11 +30,12 @@ SC_EMPR_LWF   = "Employer Labour Welfare Fund"
 class SalaryStructureAssignment(Document):
 
     def before_save(self):
+        if self.docstatus == 1:
+            return
         self.status = "Draft"
-
-    def on_submit(self):
-        self.status = "Submitted"
-        self.db_set("status", "Submitted")
+        # amended_from set hai matlab yeh amend ka draft hai
+        # cancelled original se overlap hoga — sirf submitted check karo
+        submitted_only = bool(self.amended_from)
         _check_overlap(
             employee=self.employee,
             from_date=self.from_date,
@@ -42,6 +43,27 @@ class SalaryStructureAssignment(Document):
             employee_name=self.employee_name,
             current_name=self.name,
             throw_if_overlap=True,
+            submitted_only=submitted_only,
+        )
+
+    def on_update_after_submit(self):
+        # amend ke baad submitted doc mein date edit — overlap check nahi karna
+        # (original cancel ho chuka hai, us period pe koi submitted record nahi hoga)
+        # sirf SRR check Python side pe nahi hota — JS check_srr_and_apply_validate_only handle karta hai
+        pass
+
+    def on_submit(self):
+        self.status = "Submitted"
+        self.db_set("status", "Submitted")
+        # ── CHANGED: check only against other submitted SSAs on submit ──
+        _check_overlap(
+            employee=self.employee,
+            from_date=self.from_date,
+            to_date=self.to_date,
+            employee_name=self.employee_name,
+            current_name=self.name,
+            throw_if_overlap=True,
+            submitted_only=True,
         )
 
     def on_cancel(self):
@@ -93,7 +115,7 @@ def get_statutory_components(company, gross_salary, from_date,
     if is_esic_applicable and comp_doc:
         esic_cfg = comp_doc.get_esic_config(period_date=period_date)
         if esic_cfg:
-            esic_components = esic_cfg.get("wage_components", [])   # ← fixed
+            esic_components = esic_cfg.get("wage_components", [])
             wage     = _sum_components(esic_components, gross_salary, earnings_map)
             emp_pct  = flt(esic_cfg.get("employee_percent", 0))
             empr_pct = flt(esic_cfg.get("employer_percent", 0))
@@ -106,7 +128,7 @@ def get_statutory_components(company, gross_salary, from_date,
     if is_pf_applicable and comp_doc:
         pf_cfg = comp_doc.get_pf_config(period_date=period_date)
         if pf_cfg:
-            pf_components = pf_cfg.get("wage_components", [])       # ← fixed
+            pf_components = pf_cfg.get("wage_components", [])
             raw_wage = _sum_components(pf_components, gross_salary, earnings_map)
             if pf_type == "Limited PF" and pf_cfg.get("wage_limit"):
                 wage = min(raw_wage, flt(pf_cfg["wage_limit"]))
@@ -239,10 +261,11 @@ def get_daily_wage_multiplier(start_date, skill_type):
 @frappe.whitelist()
 def check_overlap(employee, from_date, to_date=None, employee_name=None,
                   current_name=None, throw_if_overlap=False):
+    # ── CHANGED: always check submitted only — drafts should not block new drafts ──
     return _check_overlap(
         employee=employee, from_date=from_date, to_date=to_date,
         employee_name=employee_name, current_name=current_name,
-        throw_if_overlap=throw_if_overlap, submitted_only=False,
+        throw_if_overlap=throw_if_overlap, submitted_only=True,
     )
 
 
@@ -251,19 +274,24 @@ def _check_overlap(employee, from_date, to_date=None, employee_name=None,
     if not employee or not from_date:
         return None
 
-    filters = {"employee": employee, "docstatus": 1 if submitted_only else ["!=", 2]}
+    # submitted_only=True → only submitted; False → Draft+Submitted+Cancelled (all)
+    filters = {
+        "employee": employee,
+        "docstatus": 1 if submitted_only else ["in", [0, 1, 2]],
+    }
     if current_name:
         filters["name"] = ["!=", current_name]
 
     a_start = getdate(from_date)
-    a_end   = getdate(to_date) if to_date else None
+    a_end   = getdate(to_date) if to_date else FAR_FUTURE
 
     for rec in frappe.db.get_all("Salary Structure Assignment",
             filters=filters, fields=["name", "from_date", "to_date"]):
         b_start = getdate(rec.from_date)
         b_end   = getdate(rec.to_date) if rec.to_date else FAR_FUTURE
 
-        if (b_start <= a_start <= b_end) or (a_end and b_start <= a_end <= b_end):
+        # overlap: the two ranges intersect
+        if a_start <= b_end and b_start <= a_end:
             if throw_if_overlap:
                 frappe.throw(
                     title=_("Duplicate Salary Structure Assignment"),

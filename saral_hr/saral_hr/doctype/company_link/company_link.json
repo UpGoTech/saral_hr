@@ -18,7 +18,6 @@
   "date_of_joining",
   "left_date",
   "weekly_off",
-  "holiday_list",
   "tab_classification",
   "section_break_class",
   "department",
@@ -107,12 +106,6 @@
    "fieldtype": "Select",
    "label": "Weekly Off",
    "options": "\nMonday\nTuesday\nWednesday\nThursday\nFriday\nSaturday\nSunday"
-  },
-  {
-   "fetch_from": "company.default_holiday_list",
-   "fieldname": "holiday_list",
-   "fieldtype": "Data",
-   "label": "Holiday List"
   },
   {
    "fieldname": "tab_classification",

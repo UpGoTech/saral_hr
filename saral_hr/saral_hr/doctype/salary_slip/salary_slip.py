@@ -278,10 +278,13 @@ def get_salary_structure_for_employee(
     statutory_needs_recompute = False
     if has_att_data:
         statutory_needs_recompute = True
+    # AFTER
     elif additional_total_for_check > 0 and ssa_doc.company:
         comp_doc   = frappe.get_doc("Company", ssa_doc.company)
-        esic_comps = set(comp_doc._get_child_components("esic_dependent_component"))
-        pf_comps   = set(comp_doc._get_child_components("pf_dependent_component"))
+        esic_cfg   = comp_doc.get_esic_config(start_date)
+        pf_cfg     = comp_doc.get_pf_config(start_date)
+        esic_comps = set(esic_cfg.get("wage_components", []) if esic_cfg else [])
+        pf_comps   = set(pf_cfg.get("wage_components", []) if pf_cfg else [])
         if (esic_comps & _ADDITIONAL_SALARY_ALIASES) or (pf_comps & _ADDITIONAL_SALARY_ALIASES):
             statutory_needs_recompute = True
 
@@ -555,19 +558,20 @@ def get_statutory_components_internal(
     comp_doc   = frappe.get_doc("Company", company) if company else None
     month_name = MONTHS_LIST[getdate(from_date).month - 1] if from_date else None
 
+    # AFTER
     if is_esic_applicable and comp_doc:
-        cfg = comp_doc.get_esic_config()
+        cfg = comp_doc.get_esic_config(from_date)
         if cfg:
-            wage = _sum(comp_doc._get_child_components("esic_dependent_component"), gross_salary, earnings_map)
+            wage = _sum(cfg["wage_components"], gross_salary, earnings_map)
             ep  = flt(cfg.get("employee_percent", 0))
             erp = flt(cfg.get("employer_percent", 0))
             if ep:  deductions.append(row(SC_EMP_ESIC, wage * ep / 100))
             if erp: employer_share.append(row(SC_EMPR_ESIC, wage * erp / 100, emp=1))
 
     if is_pf_applicable and comp_doc:
-        cfg = comp_doc.get_pf_config()
+        cfg = comp_doc.get_pf_config(from_date)
         if cfg:
-            raw  = _sum(comp_doc._get_child_components("pf_dependent_component"), gross_salary, earnings_map)
+            raw  = _sum(cfg["wage_components"], gross_salary, earnings_map)
             wage = min(raw, flt(cfg["wage_limit"])) if pf_type == "Limited PF" and cfg.get("wage_limit") else raw
             ep   = flt(cfg.get("employee_percent", 0))
             epf  = flt(cfg.get("employer_epf", 0))

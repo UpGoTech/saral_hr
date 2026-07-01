@@ -1,8 +1,8 @@
 // ─── Debounce timers ──────────────────────────────────────────────────────────
 let _ctc_timer        = null;
 let _ctc_monthly_timer = null;
-let _ctc_frm_ref      = null;   // keep frm reference to avoid reload
-let _ctc_syncing      = false;  // guard against infinite sync loops
+let _ctc_frm_ref      = null;
+let _ctc_syncing      = false;
 
 frappe.ui.form.on('Ctc Calculator Record', {
 
@@ -10,19 +10,19 @@ frappe.ui.form.on('Ctc Calculator Record', {
         _ctc_frm_ref = frm;
         _apply_styles(frm);
         _render_statutory_info(frm);
-        // Only render UI if saved data already exists
         const has_data = frm.doc.earnings_json && frm.doc.earnings_json !== '[]';
         if (has_data) {
             setTimeout(() => _render_ui(frm), 150);
         }
     },
 
-    include_pf(frm)   { _render_statutory_info(frm); _recalculate(frm); },
-    include_esic(frm) { _render_statutory_info(frm); _recalculate(frm); },
-    include_pt(frm)   { _render_statutory_info(frm); _recalculate(frm); },
-    pf_type(frm)      { if (frm.doc.include_pf) _recalculate(frm); },
+    include_pf(frm)        { _render_statutory_info(frm); _recalculate(frm); },
+    include_esic(frm)      { _render_statutory_info(frm); _recalculate(frm); },
+    include_pt(frm)        { _render_statutory_info(frm); _recalculate(frm); },
+    include_retention(frm) { _render_statutory_info(frm); _recalculate(frm); },
+    pf_type(frm)           { if (frm.doc.include_pf) _recalculate(frm); },
+    month(frm)             { if (frm.doc.include_pt) _recalculate(frm); }, // ✅ NEW
 
-    // ── Annual CTC entered → sync Monthly CTC input field ──────────────────
     annual_ctc(frm) {
         if (_ctc_syncing) return;
         clearTimeout(_ctc_timer);
@@ -38,7 +38,6 @@ frappe.ui.form.on('Ctc Calculator Record', {
         }, 600);
     },
 
-    // ── Monthly CTC input entered → multiply × 12 → set Annual CTC ─────────
     monthly_ctc_input(frm) {
         if (_ctc_syncing) return;
         clearTimeout(_ctc_monthly_timer);
@@ -64,7 +63,6 @@ frappe.ui.form.on('Ctc Calculator Record', {
     },
 });
 
-// ─── Prevent Frappe auto-save/reload from clearing the UI ────────────────────
 $(document).on('frappe.form.refresh', function() {
     if (_ctc_frm_ref) {
         const has_data = _ctc_frm_ref.doc.earnings_json &&
@@ -73,7 +71,6 @@ $(document).on('frappe.form.refresh', function() {
     }
 });
 
-// ─── Get the correct container ────────────────────────────────────────────────
 function _get_container(frm) {
     const inner_selectors = ['.form-layout', '.form-page', '.layout-main-section', '.page-content'];
     for (const sel of inner_selectors) {
@@ -88,7 +85,6 @@ function _get_container(frm) {
     return $(frm.wrapper);
 }
 
-// ─── Helpers ──────────────────────────────────────────────────────────────────
 function _r2(v)  { return Math.round((parseFloat(v)||0)*100)/100; }
 function _r0(v)  { return Math.round(parseFloat(v)||0); }
 function _fmt(n) {
@@ -106,13 +102,13 @@ function _save_data(frm, field, data) {
     frappe.model.set_value(frm.doctype, frm.docname, field, JSON.stringify(data));
 }
 
-// ─── Fetch company config then show info boxes ────────────────────────────────
+// ─── Statutory info boxes ─────────────────────────────────────────────────────
 function _render_statutory_info(frm) {
     $(frm.wrapper).find('.ctc-stat-wrap').remove();
     $('.ctc-stat-wrap').remove();
 
     const d = frm.doc;
-    if (!d.include_pf && !d.include_esic && !d.include_pt) return;
+    if (!d.include_pf && !d.include_esic && !d.include_pt && !d.include_retention) return;
     if (!d.company) return;
 
     frappe.call({
@@ -140,6 +136,8 @@ function _build_statutory_boxes(frm, cfg) {
     const esic_emp   = cfg.esic_employee_contribution || 0.75;
     const esic_emr   = cfg.esic_employer_contribution || 3.25;
     const cur_pf_type = d.pf_type || '';
+    const sel_month  = d.month || _current_month();
+    const pt_amt     = sel_month === 'February' ? '₹300' : '₹200';
 
     let boxes = '';
 
@@ -184,7 +182,22 @@ function _build_statutory_boxes(frm, cfg) {
                 <strong>INCLUDE PT</strong>
             </div>
             <div class="ctc-stat-lines">
-                <div>\u20B9200/month (\u20B9300 in February)</div>
+                <div>${pt_amt}/month for <b>${sel_month}</b></div>
+                <div class="ctc-stat-note">\u20B9200/month (\u20B9300 in February)</div>
+            </div>
+        </div>`;
+    }
+
+    if (d.include_retention) {
+        boxes += `
+        <div class="ctc-stat-box ctc-stat-ret">
+            <div class="ctc-stat-hdr">
+                <span class="ctc-dot ctc-dot-purple"></span>
+                <strong>INCLUDE RETENTION</strong>
+            </div>
+            <div class="ctc-stat-lines">
+                <div>Basic+DA &times; 2%</div>
+                <div class="ctc-stat-note">Deducted from employee salary</div>
             </div>
         </div>`;
     }
@@ -198,7 +211,7 @@ function _build_statutory_boxes(frm, cfg) {
     }
 }
 
-// ─── Recalculate via API ──────────────────────────────────────────────────────
+// ─── Recalculate ──────────────────────────────────────────────────────────────
 function _recalculate(frm) {
     const d = frm.doc;
     if (!d.company || !d.salary_structure || !d.annual_ctc) return;
@@ -216,14 +229,15 @@ function _recalculate(frm) {
     frappe.call({
         method: 'saral_hr.saral_hr.doctype.ctc_calculator_record.ctc_calculator_record.calculate_ctc_breakdown',
         args: {
-            company:          d.company,
-            salary_structure: d.salary_structure,
-            annual_ctc:       d.annual_ctc,
-            month:            _current_month(),
-            include_pf:       d.include_pf   ? "1" : "0",
-            include_esic:     d.include_esic ? "1" : "0",
-            include_pt:       d.include_pt   ? "1" : "0",
-            pf_type:          d.pf_type      || "",
+            company:           d.company,
+            salary_structure:  d.salary_structure,
+            annual_ctc:        d.annual_ctc,
+            month:             d.month || _current_month(), // ✅ from form field
+            include_pf:        d.include_pf        ? "1" : "0",
+            include_esic:      d.include_esic      ? "1" : "0",
+            include_pt:        d.include_pt        ? "1" : "0",
+            include_retention: d.include_retention ? "1" : "0",
+            pf_type:           d.pf_type           || "",
         },
         callback(r) {
             if (r.message) _populate(frm, r.message);
@@ -236,7 +250,7 @@ function _recalculate(frm) {
     });
 }
 
-// ─── Populate from API result ─────────────────────────────────────────────────
+// ─── Populate ─────────────────────────────────────────────────────────────────
 function _populate(frm, data) {
     const gross = data.gross || 0;
 
@@ -273,7 +287,6 @@ function _populate(frm, data) {
     frm.set_value('total_deductions', total_ded);
     frm.set_value('net_salary',       _r0(gross - total_ded));
 
-    // Keep monthly_ctc_input in sync with computed monthly_ctc
     if (!_ctc_syncing) {
         _ctc_syncing = true;
         frm.set_value('monthly_ctc_input', _r2(data.monthly_ctc || 0));
@@ -283,7 +296,7 @@ function _populate(frm, data) {
     _render_ui(frm);
 }
 
-// ─── Render breakdown UI ──────────────────────────────────────────────────────
+// ─── Render UI ────────────────────────────────────────────────────────────────
 function _render_ui(frm) {
     const d          = frm.doc;
     const earnings   = _get_data(frm, 'earnings_json');
@@ -377,7 +390,7 @@ function _render_ui(frm) {
             <span class="ctc-ded-total ctc-upd-ded ctc-sum-val">${_fmt(total_ded)}</span>
         </div>
         <div class="ctc-sum-item">
-            <span class="ctc-sum-lbl">Total In CTC</span>
+            <span class="ctc-sum-lbl">Employer Share</span>
             <span class="ctc-emp-total ctc-sum-val">${_fmt(total_emp)}</span>
         </div>
     </div>`;
@@ -460,22 +473,19 @@ function _totals(frm) {
 function _apply_styles(frm) {
     if ($('#ctc-sty').length) return;
     $('head').append(`<style id="ctc-sty">
-/* Loading state */
 .ctc-loading{display:flex;align-items:center;gap:12px;padding:32px 16px;color:var(--text-muted);font-size:13px;}
 .ctc-spinner{width:18px;height:18px;border:2px solid var(--border-color);border-top-color:var(--primary,#5e64ff);border-radius:50%;animation:ctc-spin .7s linear infinite;flex-shrink:0;}
 @keyframes ctc-spin{to{transform:rotate(360deg);}}
 .ctc-error{padding:16px;color:#c92a2a;font-size:13px;background:#fff5f5;border-radius:8px;border:1px solid #ffc9c9;}
 
-/* Statutory info boxes */
 .ctc-stat-wrap{display:flex;gap:14px;flex-wrap:wrap;margin:10px 0 16px;padding:0 15px;}
 .ctc-stat-box{flex:1;min-width:200px;border:1px solid var(--border-color);border-radius:8px;padding:10px 14px;background:var(--card-bg,#fff);}
 .ctc-stat-hdr{display:flex;align-items:center;gap:8px;margin-bottom:8px;font-size:12px;font-weight:700;color:var(--text-color);}
 .ctc-dot{width:8px;height:8px;border-radius:50%;flex-shrink:0;}
-.ctc-dot-blue{background:#1971c2;} .ctc-dot-teal{background:#0f6e56;} .ctc-dot-orange{background:#e67700;}
+.ctc-dot-blue{background:#1971c2;} .ctc-dot-teal{background:#0f6e56;} .ctc-dot-orange{background:#e67700;} .ctc-dot-purple{background:#6741d9;}
 .ctc-stat-lines{font-size:12px;color:var(--text-muted);display:flex;flex-direction:column;gap:3px;}
 .ctc-stat-note{font-size:11px;font-style:italic;margin-top:2px;}
 
-/* KPI */
 .ctc-kpi-row{display:flex;gap:12px;margin:14px 0 18px;flex-wrap:wrap;}
 .ctc-kpi{flex:1;min-width:120px;border-radius:10px;padding:14px 16px;border:1px solid transparent;}
 .ctc-kpi-val{font-size:18px;font-weight:700;margin-bottom:4px;}
@@ -486,7 +496,6 @@ function _apply_styles(frm) {
 .ctc-kpi-coral {background:#fff5f5;border-color:#ffc9c9;color:#c92a2a;}
 .ctc-kpi-green {background:#ebfbee;border-color:#b2f2bb;color:#2b8a3e;}
 
-/* 3-col layout */
 .ctc-cols{display:grid;grid-template-columns:1fr 1fr 1fr;gap:14px;margin-bottom:12px;}
 .ctc-card{background:var(--card-bg,#fff);border:1px solid var(--border-color);border-radius:10px;overflow:hidden;}
 .ctc-card-hdr{display:flex;align-items:center;justify-content:space-between;padding:12px 14px 10px;border-bottom:2px solid var(--border-color);}
@@ -496,7 +505,6 @@ function _apply_styles(frm) {
 .ctc-ttl-ded {color:#e03131;} .ctc-card-ded  .ctc-card-sum{color:#e03131;}
 .ctc-ttl-emp {color:#1971c2;} .ctc-card-emp  .ctc-card-sum{color:#1971c2;}
 
-/* Table */
 .ctc-tbl{width:100%;border-collapse:collapse;font-size:13px;}
 .ctc-tbl thead th{padding:7px 10px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:var(--text-muted);border-bottom:1px solid var(--border-color);background:var(--subtle-fg,#f8f9fa);}
 .ctc-th-n{text-align:left;width:48%;} .ctc-th-p{text-align:center;width:22%;} .ctc-th-a{text-align:right;width:30%;}
@@ -507,7 +515,6 @@ function _apply_styles(frm) {
 .ctc-td-pct{padding:4px 6px;text-align:center;vertical-align:middle;}
 .ctc-td-amt{padding:4px 10px;text-align:right;vertical-align:middle;}
 
-/* Inputs */
 .ctc-inp-grp{display:inline-flex;align-items:center;gap:2px;}
 .ctc-pct{width:48px;text-align:right;padding:3px 4px;font-size:12px;color:var(--text-muted);border:1px solid transparent;border-radius:4px;background:transparent;outline:none;transition:border-color .15s,background .15s;}
 .ctc-pct:hover{border-color:var(--border-color);} .ctc-pct:focus{border-color:var(--primary,#5e64ff);background:#fff;}
@@ -518,40 +525,16 @@ function _apply_styles(frm) {
 .ctc-amt:hover{border-color:var(--border-color);} .ctc-amt:focus{border-color:var(--primary,#5e64ff);background:#fff;color:var(--text-color);}
 .ctc-amt[readonly]{pointer-events:none;}
 
-/* Tags */
 .ctc-tag{display:inline-block;padding:1px 6px;border-radius:8px;font-size:10px;font-weight:700;text-transform:uppercase;margin-left:4px;}
 .ctc-tag-var{background:#fff9db;color:#864e00;} .ctc-tag-oth{background:#f3f0ff;color:#6741d9;} .ctc-tag-excl{background:#fff5f5;color:#c92a2a;}
 
 .ctc-nil{text-align:center;color:var(--text-muted);padding:18px;font-size:12px;}
 
-/* ── Unified summary bar ── */
-.ctc-summary-bar{
-    display:grid;
-    grid-template-columns:1fr 1fr 1fr;
-    border:1px solid var(--border-color,#d1d8dd);
-    border-radius:6px;
-    overflow:hidden;
-    margin-bottom:24px;
-    background:var(--card-bg,#fff);
-}
-.ctc-sum-item{
-    display:flex;
-    flex-direction:row;
-    align-items:center;
-    justify-content:space-between;
-    padding:10px 16px;
-    border-right:1px solid var(--border-color,#d1d8dd);
-    gap:12px;
-}
+.ctc-summary-bar{display:grid;grid-template-columns:1fr 1fr 1fr;border:1px solid var(--border-color,#d1d8dd);border-radius:6px;overflow:hidden;margin-bottom:24px;background:var(--card-bg,#fff);}
+.ctc-sum-item{display:flex;flex-direction:row;align-items:center;justify-content:space-between;padding:10px 16px;border-right:1px solid var(--border-color,#d1d8dd);gap:12px;}
 .ctc-sum-item:last-child{border-right:none;}
 .ctc-sum-lbl{font-size:13px;font-weight:600;color:var(--text-color,#36414c);}
-.ctc-sum-val{
-    font-size:13px;
-    font-weight:400;
-    color:var(--text-muted,#8d99a6);
-    text-align:right;
-    white-space:nowrap;
-}
+.ctc-sum-val{font-size:13px;font-weight:400;color:var(--text-muted,#8d99a6);text-align:right;white-space:nowrap;}
 
 @media(max-width:1024px){.ctc-cols{grid-template-columns:1fr;}.ctc-summary-bar{grid-template-columns:1fr;}}
 </style>`);
