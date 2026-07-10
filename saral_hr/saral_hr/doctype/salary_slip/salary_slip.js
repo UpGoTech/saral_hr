@@ -96,6 +96,20 @@ function is_pt(comp_name) {
     return (comp_name || "").trim() === "Professional Tax";
 }
 
+// Calculate PT amount based on gender and gross wage slab
+function calc_pt_slab(gender, wages, is_february) {
+    wages  = flt(wages);
+    gender = (gender || "").trim().toLowerCase();
+
+    if (gender === "female") {
+        if (wages <= 25000) return 0;
+        return is_february ? 300 : 200;
+    }
+    if (wages <= 7500) return 0;
+    if (wages <= 10000) return 175;
+    return is_february ? 300 : 200;
+}
+
 // ─── Net salary rounding ──────────────────────────────────────────────────────
 
 function round_net_salary(value) {
@@ -421,7 +435,8 @@ function recalculate_salary(frm, wd_override, pd_override, phd_override) {
         let amount;
 
         if (pt) {
-            amount = slip_month === 2 ? 300 : 200;
+            // Calculate PT based on employee gender and total earnings gross wage slab
+            amount = calc_pt_slab(frm.doc.gender, total_earnings, slip_month === 2);
         } else if (statutory) {
             amount = base;
         } else if (is_daily_wage && per_day_rate > 0) {

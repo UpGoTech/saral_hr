@@ -870,6 +870,7 @@ function refresh_statutory_rows(frm) {
         args: {
             company:            frm.doc.company,
             gross_salary:       _sum_earnings(frm),
+            employee:           frm.doc.employee,   // pass employee for PT gender slab
             earnings_map:       JSON.stringify(earnings_map),
             from_date:          frm.doc.from_date || "",
             is_esic_applicable: frm.doc.is_esic_applicable ? 1 : 0,

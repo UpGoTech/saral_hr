@@ -7,6 +7,9 @@ from frappe.model.document import Document
 from frappe.utils import flt, getdate
 from datetime import date
 
+# Import PT slab calculation logic from Salary Slip module
+from saral_hr.saral_hr.doctype.salary_slip.salary_slip import get_pt_slab_amount
+
 FAR_FUTURE = date(9999, 12, 31)
 
 MONTHS = [
@@ -72,7 +75,7 @@ class SalaryStructureAssignment(Document):
 
 
 @frappe.whitelist()
-def get_statutory_components(company, gross_salary, from_date,
+def get_statutory_components(company, gross_salary, from_date, employee=None,
                               is_esic_applicable=0, is_pf_applicable=0,
                               pf_type=None, is_pt_applicable=0,
                               is_lwf_applicable=0,
@@ -153,7 +156,14 @@ def get_statutory_components(company, gross_salary, from_date,
     # ── PT ──
     if is_pt_applicable and from_date:
         month_name = MONTHS[getdate(from_date).month - 1]
-        pt_amt     = _special_component_amount(SC_PT, month_name)
+        # Get employee gender for PT slab calculation
+        emp_gender = None
+        if employee:
+            emp_link = frappe.db.get_value("Company Link", employee, "employee")
+            if emp_link:
+                emp_gender = frappe.db.get_value("Employee", emp_link, "gender")
+        # Calculate PT based on gender and gross wage slab
+        pt_amt = get_pt_slab_amount(emp_gender, gross_salary, month_name == "February")
         deductions.append(row(SC_PT, pt_amt))
 
     # ── LWF ──

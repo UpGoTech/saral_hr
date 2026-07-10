@@ -17,6 +17,33 @@ def _round_net_salary(value):
     return int(Decimal(str(flt(value, 2))).quantize(Decimal("1"), rounding=ROUND_HALF_UP))
 
 
+# Professional Tax slab calculation based on gender and gross wages
+def get_pt_slab_amount(gender, wages, is_february=False):
+    """
+    Male:   1 - 7500     => 0
+            7501 - 10000 => 175   (same in Feb)
+            10001+       => 200   (300 in February)
+
+    Female: 1 - 25000    => 0
+            25001+       => 200   (300 in February)
+    """
+    wages  = flt(wages)
+    gender = (gender or "").strip().lower()
+
+    if gender == "female":
+        if wages <= 25000:
+            return 0.0
+        return 300.0 if is_february else 200.0
+
+    # Male / default
+    if wages <= 7500:
+        return 0.0
+    elif wages <= 10000:
+        return 175.0
+    else:
+        return 300.0 if is_february else 200.0
+
+
 class SalarySlip(Document):
     def validate(self):
         if self.start_date:
@@ -297,8 +324,14 @@ def get_salary_structure_for_employee(
         is_daily_wage = int(meta.get("daily_wage_component") or getattr(row, "daily_wage_component", 0) or 0)
         per_day_rate  = flt(getattr(row, "per_day_rate", None) or 0)
         amount        = flt(row.amount, 2)
+
         if _is_pt_component(row.salary_component):
-            amount = 300.0 if current_month == "February" else 200.0
+            # Include additional salary in gross for PT slab calculation
+            gross_for_pt = sum(actual_earnings_map.values()) + additional_total_for_check
+            emp_link   = frappe.db.get_value("Company Link", employee, "employee")
+            emp_gender = frappe.db.get_value("Employee", emp_link, "gender") if emp_link else None
+            amount = get_pt_slab_amount(emp_gender, gross_for_pt, current_month == "February")
+
         deductions.append({
             "salary_component":                 row.salary_component,
             "abbr":                             meta.get("salary_component_abbr") or getattr(row, "abbr", "") or "",
@@ -344,13 +377,12 @@ def get_salary_structure_for_employee(
             pf_type=ssa_doc.pf_applicable or "",
             is_pt_applicable=int(ssa_doc.is_pt_applicable or 0),
             is_lwf_applicable=int(ssa_doc.is_lwf_applicable or 0),
+            employee=employee,
         )
         for d in (recomputed.get("deductions") or []):
             if _is_pt_component(d["salary_component"]) and _is_pt_exempt(employee, start_date):
                 continue
             amount = flt(d["amount"], 2)
-            if _is_pt_component(d["salary_component"]):
-                amount = 300.0 if current_month == "February" else 200.0
             deductions.append({
                 "salary_component": d["salary_component"], "abbr": d.get("abbr") or "",
                 "amount": amount, "base_amount": amount,
@@ -470,7 +502,10 @@ def calculate_salary_slip_amounts_exact(
             continue
 
         if is_pt:
-            amount = 300.0 if start_month == 2 else 200.0
+            # Calculate PT based on gender and total earnings gross wage slab
+            emp_link   = frappe.db.get_value("Company Link", salary_slip.employee, "employee")
+            emp_gender = frappe.db.get_value("Employee", emp_link, "gender") if emp_link else None
+            amount = get_pt_slab_amount(emp_gender, total_earnings, start_month == 2)
         elif _is_statutory_component(row.salary_component):
             amount = base
         elif is_daily_wage and per_day_rate > 0:
@@ -537,7 +572,7 @@ SC_EMPR_LWF   = "Employer Labour Welfare Fund"
 def get_statutory_components_internal(
     company, gross_salary, earnings_map, from_date,
     is_esic_applicable, is_pf_applicable, pf_type,
-    is_pt_applicable, is_lwf_applicable
+    is_pt_applicable, is_lwf_applicable, employee=None
 ):
     VIRTUAL = {"Gross", "Gross Including Additional Salary"}
 
@@ -585,7 +620,13 @@ def get_statutory_components_internal(
             if adm:  employer_share.append(row(SC_EMPR_PFADM, wage * adm  / 100, emp=1))
 
     if is_pt_applicable and month_name:
-        deductions.append(row(SC_PT, _sa_local(SC_PT, month_name)))
+        # Get employee gender for PT slab calculation
+        emp_gender = None
+        if employee:
+            emp_link = frappe.db.get_value("Company Link", employee, "employee")
+            if emp_link:
+                emp_gender = frappe.db.get_value("Employee", emp_link, "gender")
+        deductions.append(row(SC_PT, get_pt_slab_amount(emp_gender, gross_salary, month_name == "February")))
 
     if is_lwf_applicable and month_name:
         deductions.append(row(SC_EMP_LWF, _sa_local(SC_EMP_LWF, month_name)))
