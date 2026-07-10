@@ -1,6 +1,6 @@
 import frappe
 from frappe.model.document import Document
-from frappe.utils import flt
+from frappe.utils import flt, today
 from decimal import Decimal, ROUND_HALF_UP
 
 
@@ -82,16 +82,22 @@ def get_company_statutory_config(company):
     except Exception:
         return {}
 
+    # Read PF/ESIC config from the period-based tables (pf_dependent_component /
+    # esic_dependent_component) instead of the old flat Company fields, which
+    # are no longer being filled and caused "missing fields" errors on live.
+    pf_cfg   = comp.get_pf_config(period_date=today())
+    esic_cfg = comp.get_esic_config(period_date=today())
+
     return {
-        "pf_wage_limit":              flt(getattr(comp, "pf_wage_limit",              0) or 0),
-        "pf_employee_percent":        flt(getattr(comp, "pf_employee_percent",        0) or 0),
-        "pf_employer_epf":            flt(getattr(comp, "pf_employer_epf",            0) or 0),
-        "pf_employer_eps":            flt(getattr(comp, "pf_employer_eps",            0) or 0),
-        "pf_edli_insurance":          flt(getattr(comp, "pf_edli_insurance",          0) or 0),
-        "pf_admin_charges":           flt(getattr(comp, "pf_admin_charges",           0) or 0),
-        "esic_wage_limit":            flt(getattr(comp, "esic_wage_limit",            0) or 0),
-        "esic_employee_contribution": flt(getattr(comp, "esic_employee_contribution", 0) or 0),
-        "esic_employer_contribution": flt(getattr(comp, "esic_employer_contribution", 0) or 0),
+        "pf_wage_limit":              flt((pf_cfg or {}).get("wage_limit")              or 0),
+        "pf_employee_percent":        flt((pf_cfg or {}).get("employee_percent")        or 0),
+        "pf_employer_epf":            flt((pf_cfg or {}).get("employer_epf")            or 0),
+        "pf_employer_eps":            flt((pf_cfg or {}).get("employer_eps")            or 0),
+        "pf_edli_insurance":          flt((pf_cfg or {}).get("edli_insurance")          or 0),
+        "pf_admin_charges":           flt((pf_cfg or {}).get("admin_charges")           or 0),
+        "esic_wage_limit":            flt((esic_cfg or {}).get("wage_limit")            or 0),
+        "esic_employee_contribution": flt((esic_cfg or {}).get("employee_percent")      or 0),
+        "esic_employer_contribution": flt((esic_cfg or {}).get("employer_percent")      or 0),
     }
 
 
