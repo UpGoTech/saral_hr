@@ -5,7 +5,6 @@
 tags
 node_modules
 __pycache__
-.github/
 .cursor/
 .agents/
 skills-lock.json
