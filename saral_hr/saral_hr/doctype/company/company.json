@@ -111,7 +111,7 @@
    "fieldname": "no_of_staff",
    "fieldtype": "Int",
    "in_list_view": 1,
-   "label": "No of Staff",
+   "label": "Staff",
    "non_negative": 1,
    "read_only": 1
   },
@@ -120,7 +120,7 @@
    "fieldname": "no_of_workers",
    "fieldtype": "Int",
    "in_list_view": 1,
-   "label": "No of Workers",
+   "label": "Worker",
    "non_negative": 1,
    "read_only": 1
   },
@@ -133,7 +133,7 @@
    "fieldname": "total_no_of_employees",
    "fieldtype": "Int",
    "in_list_view": 1,
-   "label": "Total No of Employees",
+   "label": "Total",
    "non_negative": 1,
    "read_only": 1
   },

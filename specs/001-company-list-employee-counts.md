@@ -14,9 +14,9 @@ Company list view should show headcount at a glance (staff, workers, total) with
 
 On the **Company** Desk list (and a small read-only section on the Company form), show three columns/fields:
 
-1. **No of Staff**
-2. **No of Workers**
-3. **Total No of Employees** (= Staff + Workers)
+1. **Staff**
+2. **Worker**
+3. **Total** (= Staff + Workers)
 
 Also fix the duplicate company name on the list (ID + Company field both showing the same value).
 
@@ -28,9 +28,9 @@ Add three **Int** fields, read-only:
 
 | Fieldname | Label | Notes |
 |-----------|-------|--------|
-| `no_of_staff` | No of Staff | `in_list_view` |
-| `no_of_workers` | No of Workers | `in_list_view` |
-| `total_no_of_employees` | Total No of Employees | `in_list_view` |
+| `no_of_staff` | Staff | `in_list_view` |
+| `no_of_workers` | Worker | `in_list_view` |
+| `total_no_of_employees` | Total | `in_list_view` |
 
 Place them in a read-only **Headcount** section on the Company **Details** tab (near company / country).
 
@@ -85,7 +85,7 @@ No Playwright for this spec.
 ## Acceptance criteria
 
 - [x] Company list shows company name once (not ID + Company duplicate)
-- [x] List shows No of Staff, No of Workers, Total No of Employees
+- [x] List shows Staff, Worker, Total
 - [x] Country is not a list column (still on form)
 - [x] Form shows the three fields read-only in a Headcount section
 - [x] Creating / updating / deleting active Company Links updates counts live
