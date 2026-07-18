@@ -38,8 +38,9 @@ Place them in a read-only **Headcount** section on the Company **Details** tab (
 
 - Show: primary company title + the three count columns
 - **Remove** `in_list_view` from `country` (still on form)
-- **Remove** `in_list_view` from the `company` Data field (avoids double name)
-- Set `title_field` to `company` so the list/title uses the company name once
+- **Remove** `in_list_view` from the `company` Data field (avoids a second Company field column)
+- Set `title_field` to `company` so the subject column uses the company name
+- Set `frappe.listview_settings["Company"].hide_name_column = true` in `company_list.js` — required because with `title_field` set, Frappe still appends an **ID** column, and for `autoname: field:company` that ID equals the title (double name)
 
 ### Count rules
 
