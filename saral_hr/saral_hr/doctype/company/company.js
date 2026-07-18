@@ -35,9 +35,11 @@ frappe.ui.form.on("Company", {
     refresh(frm) {
         render_esic_period_ui(frm);
         render_pf_period_ui(frm);
+        render_salary_calc_description(frm);
         render_salary_calc_preview(frm);
     },
     salary_calculation_based_on(frm) {
+        render_salary_calc_description(frm);
         render_salary_calc_preview(frm);
     }
 });
@@ -479,14 +481,60 @@ function _reset_form($ui) {
 }
 
 // ─────────────────────────────────────────────────────────────
+//  Salary Calculation description (highlight selected option)
+// ─────────────────────────────────────────────────────────────
+
+const SALARY_CALC_DESCRIPTIONS = {
+    exclude: {
+        title: "Exclude Weekly Offs (Working Days)",
+        body: "Payment days = Working days in month − Weekly offs − Absences. E.g. Jan 2026: 31 days, 4 Sundays → 27 working days − 1 absent = 26 payment days.",
+    },
+    include: {
+        title: "Include Weekly Offs (Calendar Days)",
+        body: "Payment days = Total calendar days − Absences. E.g. Jan 2026: 31 days − 1 absent = 30 payment days.",
+    },
+};
+
+function render_salary_calc_description(frm) {
+    const f = frm.fields_dict["salary_calculation_based_on"];
+    if (!f || !f.$wrapper) return;
+
+    const val = frm.doc.salary_calculation_based_on || "";
+    const selected = val.includes("Include") ? "include" : "exclude";
+
+    const blocks = ["exclude", "include"].map((key) => {
+        const d = SALARY_CALC_DESCRIPTIONS[key];
+        const active = key === selected;
+        return `
+            <div data-salary-desc="${key}" style="
+                margin: 4px 0;
+                padding: 8px 10px;
+                border-radius: 4px;
+                font-size: 12px;
+                line-height: 1.55;
+                background: ${active ? 'var(--bg-light-gray, #f3f3f3)' : 'transparent'};
+                color: ${active ? 'var(--text-color, #1f272e)' : 'var(--text-muted, #6c757d)'};
+                opacity: ${active ? 1 : 0.75};
+            ">
+                <b>${d.title}:</b> ${d.body}
+            </div>`;
+    }).join("");
+
+    let $host = f.$wrapper.find("#salary-calc-description");
+    if (!$host.length) {
+        $host = $('<div id="salary-calc-description" style="margin-top:6px;"></div>');
+        f.$wrapper.append($host);
+    }
+    $host.html(blocks);
+}
+
+// ─────────────────────────────────────────────────────────────
 //  Salary Calculation preview banner
 // ─────────────────────────────────────────────────────────────
 
 function render_salary_calc_preview(frm) {
-    const f = frm.fields_dict["salary_calculation_based_on"];
+    const f = frm.fields_dict["salary_calculation_example"];
     if (!f || !f.$wrapper) return;
-
-    f.$wrapper.find("#salary-calc-preview").remove();
 
     const val     = frm.doc.salary_calculation_based_on || "";
     const include = val.includes("Include");
@@ -498,7 +546,7 @@ function render_salary_calc_preview(frm) {
         ? `Jan 2026 (31 days, 4 Sundays, 1 absent):<br>Payment days = 31 − 1 absent = <b>30</b>`
         : `Jan 2026 (31 days, 4 Sundays, 1 absent):<br>Working days = 31 − 4 Sundays = 27<br>Payment days = 27 − 1 absent = <b>26</b>`;
 
-    f.$wrapper.append(`
+    f.$wrapper.html(`
         <div id="salary-calc-preview" style="margin:6px 0 10px 0;padding:9px 13px;
             background:${color};border-left:3px solid ${border};border-radius:4px;
             font-size:12px;color:${tcol};line-height:1.7;">
