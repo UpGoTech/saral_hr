@@ -32,7 +32,7 @@ Add three **Int** fields, read-only:
 | `no_of_workers` | Worker | `in_list_view` |
 | `total_no_of_employees` | Total | `in_list_view` |
 
-Place them in a read-only **Headcount** section on the Company **Details** tab (near company / country).
+Place them on a read-only **Headcount** tab — last tab on the Company form (after Payroll & Statutory).
 
 ### List view layout
 
@@ -87,7 +87,7 @@ No Playwright for this spec.
 - [x] Company list shows company name once (not ID + Company duplicate)
 - [x] List shows Staff, Worker, Total
 - [x] Country is not a list column (still on form)
-- [x] Form shows the three fields read-only in a Headcount section
+- [x] Form shows the three fields read-only on a last **Headcount** tab
 - [x] Creating / updating / deleting active Company Links updates counts live
 - [x] Inactive links do not count
 - [x] Backfill sets correct counts for existing companies after migrate
@@ -100,3 +100,4 @@ No Playwright for this spec.
 | 2026-07-18 | Spec written after grilling; status `planned` |
 | 2026-07-18 | Implemented on `feat/company-list-employee-counts`: Company fields, recount helper, Company Link hooks (`after_delete` used instead of recount-in-`on_trash` so the deleted row is excluded), transfer SQL path recounts old company, backfill patch, unit tests (7) green |
 | 2026-07-18 | Fix double name: `title_field` + no `in_list_view` on `company` were not enough — Frappe still appends an ID column when title_field ≠ name; added `company_list.js` with `hide_name_column: true` |
+| 2026-07-18 | Moved Headcount to its own last form tab (`headcount_tab`) |
