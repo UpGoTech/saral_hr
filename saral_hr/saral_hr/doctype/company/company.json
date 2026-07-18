@@ -16,6 +16,11 @@
   "column_break_opgj",
   "country",
   "default_currency",
+  "headcount_section",
+  "no_of_staff",
+  "no_of_workers",
+  "column_break_headcount",
+  "total_no_of_employees",
   "contact_address_section",
   "phone_no",
   "email",
@@ -62,7 +67,6 @@
   {
    "fieldname": "company",
    "fieldtype": "Data",
-   "in_list_view": 1,
    "label": "Company",
    "reqd": 1,
    "unique": 1
@@ -85,7 +89,6 @@
   {
    "fieldname": "country",
    "fieldtype": "Link",
-   "in_list_view": 1,
    "label": "Country",
    "options": "Country",
    "reqd": 1
@@ -97,6 +100,42 @@
    "label": "Default Currency",
    "options": "Currency",
    "reqd": 1
+  },
+  {
+   "fieldname": "headcount_section",
+   "fieldtype": "Section Break",
+   "label": "Headcount"
+  },
+  {
+   "default": "0",
+   "fieldname": "no_of_staff",
+   "fieldtype": "Int",
+   "in_list_view": 1,
+   "label": "No of Staff",
+   "non_negative": 1,
+   "read_only": 1
+  },
+  {
+   "default": "0",
+   "fieldname": "no_of_workers",
+   "fieldtype": "Int",
+   "in_list_view": 1,
+   "label": "No of Workers",
+   "non_negative": 1,
+   "read_only": 1
+  },
+  {
+   "fieldname": "column_break_headcount",
+   "fieldtype": "Column Break"
+  },
+  {
+   "default": "0",
+   "fieldname": "total_no_of_employees",
+   "fieldtype": "Int",
+   "in_list_view": 1,
+   "label": "Total No of Employees",
+   "non_negative": 1,
+   "read_only": 1
   },
   {
    "fieldname": "contact_address_section",
@@ -294,5 +333,6 @@
  ],
  "sort_field": "modified",
  "sort_order": "DESC",
- "states": []
+ "states": [],
+ "title_field": "company"
 }

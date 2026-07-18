@@ -10,6 +10,42 @@ from frappe.utils import flt, getdate
 VIRTUAL_COMPONENTS = {"Gross", "Gross Including Additional Salary"}
 
 
+def update_company_employee_counts(company: str | None) -> None:
+	"""Recount active Staff/Worker Company Links onto Company headcount fields."""
+	if not company or not frappe.db.exists("Company", company):
+		return
+
+	rows = frappe.db.sql(
+		"""
+		SELECT category, COUNT(*) AS cnt
+		FROM `tabCompany Link`
+		WHERE company = %s AND IFNULL(is_active, 0) = 1
+		GROUP BY category
+		""",
+		company,
+		as_dict=True,
+	)
+	by_cat = {r.category: int(r.cnt) for r in rows}
+	staff = by_cat.get("Staff", 0)
+	workers = by_cat.get("Worker", 0)
+
+	frappe.db.set_value(
+		"Company",
+		company,
+		{
+			"no_of_staff": staff,
+			"no_of_workers": workers,
+			"total_no_of_employees": staff + workers,
+		},
+		update_modified=False,
+	)
+
+
+def backfill_all_company_employee_counts() -> None:
+	for name in frappe.get_all("Company", pluck="name"):
+		update_company_employee_counts(name)
+
+
 class Company(Document):
 
     def validate(self):

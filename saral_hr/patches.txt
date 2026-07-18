@@ -5,3 +5,4 @@
 [post_model_sync]
 # Patches added in this section will be executed after doctypes are migrated
 saral_hr.patches.set_pdf_options
+saral_hr.patches.backfill_company_employee_counts
