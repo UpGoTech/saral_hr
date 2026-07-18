@@ -166,6 +166,7 @@ jinja = {
 
 # before_install = "saral_hr.install.before_install"
 after_install = "saral_hr.install.after_install"
+after_migrate = "saral_hr.install.after_migrate"
 
 # Uninstallation
 # ------------

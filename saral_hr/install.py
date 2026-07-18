@@ -1,8 +1,38 @@
 import frappe
 
+
 def after_install():
     create_roles()
     create_salary_components()
+    ensure_desk_home_consistent()
+
+
+def after_migrate():
+    ensure_desk_home_consistent()
+
+
+def ensure_desk_home_consistent():
+    """Avoid Setup Wizard ↔ /app redirect loop after install.
+
+    Frappe can mark setup complete (System Settings / Installed Application)
+    while `desktop:home_page` is still `setup-wizard`. Desk then loads the
+    wizard, which redirects to `/app`, which loads the wizard again.
+    """
+    if not frappe.is_setup_complete():
+        return
+
+    changed = False
+    if frappe.db.get_default("desktop:home_page") == "setup-wizard":
+        frappe.db.set_default("desktop:home_page", "workspace")
+        changed = True
+
+    if str(frappe.db.get_default("setup_complete") or "0") in ("0", "None"):
+        frappe.db.set_default("setup_complete", 1)
+        changed = True
+
+    if changed:
+        frappe.clear_cache()
+        print("✅ Desk home defaults synced (setup complete).")
 
 def create_roles():
     roles = ["Saral HR Manager", "Saral HR User"]
