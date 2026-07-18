@@ -98,3 +98,4 @@ No Playwright for this spec.
 |------|------|
 | 2026-07-18 | Spec written after grilling; status `planned` |
 | 2026-07-18 | Implemented on `feat/company-list-employee-counts`: Company fields, recount helper, Company Link hooks (`after_delete` used instead of recount-in-`on_trash` so the deleted row is excluded), transfer SQL path recounts old company, backfill patch, unit tests (7) green |
+| 2026-07-18 | Fix double name: `title_field` + no `in_list_view` on `company` were not enough — Frappe still appends an ID column when title_field ≠ name; added `company_list.js` with `hide_name_column: true` |
