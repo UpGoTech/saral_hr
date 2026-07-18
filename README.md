@@ -40,3 +40,17 @@ if frappe.is_setup_complete():
 Then hard-refresh the browser (or clear site data) and log in again.
 
 **Install tip:** Prefer completing the Frappe Setup Wizard (or confirming Desk opens) before installing `saral_hr` on a brand-new site.
+
+## Contributing
+
+1. Branch from `develop` using `feat/` or `fix/` prefixes.
+2. Add/update tests for the change.
+3. Open a PR against `develop` (direct pushes to `develop` are blocked).
+4. Merge only after CI (`CI / Success`) passes.
+
+Local check for the install guard:
+
+```bash
+bench --site saral.localhost set-config allow_tests true
+bench --site saral.localhost run-tests --app saral_hr --module saral_hr.tests.test_install
+```
