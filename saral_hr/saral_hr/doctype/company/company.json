@@ -8,38 +8,57 @@
  "editable_grid": 1,
  "engine": "InnoDB",
  "field_order": [
+  "details_tab",
+  "company_section",
   "company",
   "abbr",
+  "company_logo",
   "column_break_opgj",
   "country",
   "default_currency",
-  "holiday_list_periods",
-  "addresscontact_tab",
-  "address_and_contact_section",
-  "company_logo",
-  "date_of_incorporation",
+  "contact_address_section",
   "phone_no",
   "email",
-  "company_description",
-  "column_break_wtbl",
-  "date_of_establishment",
-  "date_of_commencement",
-  "fax",
   "website",
   "address",
-  "bank_details_tab",
+  "column_break_wtbl",
+  "fax",
+  "date_of_incorporation",
+  "date_of_establishment",
+  "date_of_commencement",
+  "about_section",
+  "company_description",
+  "bank_account_tab",
   "bank_name",
+  "column_break_bank",
+  "bank_branch",
+  "bank_account_details_section",
   "ifcs_code",
+  "column_break_bank_2",
   "bank_account_number",
-  "payroll_settings_tab",
+  "holidays_tab",
+  "holiday_list_periods",
+  "payroll_statutory_tab",
+  "payroll_section",
   "salary_calculation_based_on",
-  "statutory_settings_tab",
+  "column_break_payroll",
+  "salary_calculation_example",
   "section_esic_components",
   "esic_dependent_component",
   "section_pf_components",
   "pf_dependent_component"
  ],
  "fields": [
+  {
+   "fieldname": "details_tab",
+   "fieldtype": "Tab Break",
+   "label": "Details"
+  },
+  {
+   "fieldname": "company_section",
+   "fieldtype": "Section Break",
+   "label": "Company"
+  },
   {
    "fieldname": "company",
    "fieldtype": "Data",
@@ -53,6 +72,11 @@
    "fieldtype": "Data",
    "label": "Abbr",
    "reqd": 1
+  },
+  {
+   "fieldname": "company_logo",
+   "fieldtype": "Attach Image",
+   "label": "Company Logo"
   },
   {
    "fieldname": "column_break_opgj",
@@ -75,30 +99,9 @@
    "reqd": 1
   },
   {
-   "fieldname": "holiday_list_periods",
-   "fieldtype": "Table",
-   "label": "Holiday List Periods",
-   "options": "Company Holiday List Period"
-  },
-  {
-   "fieldname": "addresscontact_tab",
-   "fieldtype": "Tab Break",
-   "label": "Address & Contact"
-  },
-  {
-   "fieldname": "address_and_contact_section",
+   "fieldname": "contact_address_section",
    "fieldtype": "Section Break",
-   "label": "Address and Contact"
-  },
-  {
-   "fieldname": "company_logo",
-   "fieldtype": "Attach Image",
-   "label": "Company Logo"
-  },
-  {
-   "fieldname": "date_of_incorporation",
-   "fieldtype": "Date",
-   "label": "Date of Incorporation"
+   "label": "Contact & Address"
   },
   {
    "fieldname": "phone_no",
@@ -113,13 +116,29 @@
    "options": "Email"
   },
   {
-   "fieldname": "company_description",
-   "fieldtype": "Text Editor",
-   "label": "Company Description"
+   "fieldname": "website",
+   "fieldtype": "Data",
+   "label": "Website"
+  },
+  {
+   "fieldname": "address",
+   "fieldtype": "Small Text",
+   "label": "Address"
   },
   {
    "fieldname": "column_break_wtbl",
    "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "fax",
+   "fieldtype": "Data",
+   "label": "Fax",
+   "options": "Phone"
+  },
+  {
+   "fieldname": "date_of_incorporation",
+   "fieldtype": "Date",
+   "label": "Date of Incorporation"
   },
   {
    "fieldname": "date_of_establishment",
@@ -133,25 +152,19 @@
    "label": "Date of Commencement"
   },
   {
-   "fieldname": "fax",
-   "fieldtype": "Data",
-   "label": "Fax",
-   "options": "Phone"
+   "fieldname": "about_section",
+   "fieldtype": "Section Break",
+   "label": "About"
   },
   {
-   "fieldname": "website",
-   "fieldtype": "Data",
-   "label": "Website"
+   "fieldname": "company_description",
+   "fieldtype": "Text Editor",
+   "label": "Company Description"
   },
   {
-   "fieldname": "address",
-   "fieldtype": "Small Text",
-   "label": "Address"
-  },
-  {
-   "fieldname": "bank_details_tab",
+   "fieldname": "bank_account_tab",
    "fieldtype": "Tab Break",
-   "label": "Bank Details"
+   "label": "Bank Account"
   },
   {
    "fieldname": "bank_name",
@@ -160,9 +173,26 @@
    "options": "Bank Name"
   },
   {
+   "fieldname": "column_break_bank",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "bank_branch",
+   "fieldtype": "Data",
+   "label": "Branch"
+  },
+  {
+   "fieldname": "bank_account_details_section",
+   "fieldtype": "Section Break"
+  },
+  {
    "fieldname": "ifcs_code",
    "fieldtype": "Data",
-   "label": "IFCS Code"
+   "label": "IFSC Code"
+  },
+  {
+   "fieldname": "column_break_bank_2",
+   "fieldtype": "Column Break"
   },
   {
    "fieldname": "bank_account_number",
@@ -170,13 +200,28 @@
    "label": "Bank Account Number"
   },
   {
-   "fieldname": "payroll_settings_tab",
+   "fieldname": "holidays_tab",
    "fieldtype": "Tab Break",
-   "label": "Payroll Settings"
+   "label": "Holidays"
+  },
+  {
+   "fieldname": "holiday_list_periods",
+   "fieldtype": "Table",
+   "label": "Holiday List Periods",
+   "options": "Company Holiday List Period"
+  },
+  {
+   "fieldname": "payroll_statutory_tab",
+   "fieldtype": "Tab Break",
+   "label": "Payroll & Statutory"
+  },
+  {
+   "fieldname": "payroll_section",
+   "fieldtype": "Section Break",
+   "label": "Payroll"
   },
   {
    "default": "Exclude Weekly Offs (Working Days)",
-   "description": "<b>Exclude Weekly Offs (Working Days):</b> Payment days = Working days in month − Weekly offs − Absences. E.g. Jan 2026: 31 days, 4 Sundays → 27 working days − 1 absent = 26 payment days.<br><b>Include Weekly Offs (Calendar Days):</b> Payment days = Total calendar days − Absences. E.g. Jan 2026: 31 days − 1 absent = 30 payment days.",
    "fieldname": "salary_calculation_based_on",
    "fieldtype": "Select",
    "label": "Salary Calculation Based On",
@@ -184,9 +229,13 @@
    "reqd": 1
   },
   {
-   "fieldname": "statutory_settings_tab",
-   "fieldtype": "Tab Break",
-   "label": "Statutory Settings"
+   "fieldname": "column_break_payroll",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "salary_calculation_example",
+   "fieldtype": "HTML",
+   "label": "Example"
   },
   {
    "fieldname": "section_esic_components",
@@ -213,7 +262,7 @@
  ],
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-06-23 00:00:00.000000",
+ "modified": "2026-07-18 07:00:00.000000",
  "modified_by": "Administrator",
  "module": "Saral Hr",
  "name": "Company",
