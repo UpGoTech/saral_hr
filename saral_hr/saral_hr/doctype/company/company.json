@@ -46,7 +46,12 @@
   "section_esic_components",
   "esic_dependent_component",
   "section_pf_components",
-  "pf_dependent_component"
+  "pf_dependent_component",
+  "headcount_tab",
+  "no_of_staff",
+  "no_of_workers",
+  "column_break_headcount",
+  "total_no_of_employees"
  ],
  "fields": [
   {
@@ -62,7 +67,6 @@
   {
    "fieldname": "company",
    "fieldtype": "Data",
-   "in_list_view": 1,
    "label": "Company",
    "reqd": 1,
    "unique": 1
@@ -85,7 +89,6 @@
   {
    "fieldname": "country",
    "fieldtype": "Link",
-   "in_list_view": 1,
    "label": "Country",
    "options": "Country",
    "reqd": 1
@@ -258,6 +261,42 @@
    "fieldtype": "Table",
    "label": "PF Periods",
    "options": "Statutory Wage Component"
+  },
+  {
+   "fieldname": "headcount_tab",
+   "fieldtype": "Tab Break",
+   "label": "Headcount"
+  },
+  {
+   "default": "0",
+   "fieldname": "no_of_staff",
+   "fieldtype": "Int",
+   "in_list_view": 1,
+   "label": "Staff",
+   "non_negative": 1,
+   "read_only": 1
+  },
+  {
+   "default": "0",
+   "fieldname": "no_of_workers",
+   "fieldtype": "Int",
+   "in_list_view": 1,
+   "label": "Worker",
+   "non_negative": 1,
+   "read_only": 1
+  },
+  {
+   "fieldname": "column_break_headcount",
+   "fieldtype": "Column Break"
+  },
+  {
+   "default": "0",
+   "fieldname": "total_no_of_employees",
+   "fieldtype": "Int",
+   "in_list_view": 1,
+   "label": "Total",
+   "non_negative": 1,
+   "read_only": 1
   }
  ],
  "index_web_pages_for_search": 1,
@@ -294,5 +333,6 @@
  ],
  "sort_field": "modified",
  "sort_order": "DESC",
- "states": []
+ "states": [],
+ "title_field": "company"
 }
