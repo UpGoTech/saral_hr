@@ -26,7 +26,7 @@ frappe.pages["mark-attendance"].on_page_show = function (wrapper) {
 function get_year_options() {
     var current = new Date().getFullYear();
     var html = '<option value="">Select Year</option>';
-    for (var y = current - 1; y <= current + 1; y++) {
+    for (var y = current - 3; y <= current + 1; y++) {
         html += '<option value="' + y + '"' + (y === current ? ' selected' : '') + '>' + y + '</option>';
     }
     return html;
