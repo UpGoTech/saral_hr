@@ -23,13 +23,19 @@ frappe.pages["mark-attendance"].on_page_show = function (wrapper) {
     init_mark_attendance($main);
 };
 
-function get_year_options() {
-    var current = new Date().getFullYear();
-    var html = '<option value="">Select Year</option>';
-    for (var y = current - 1; y <= current + 1; y++) {
-        html += '<option value="' + y + '"' + (y === current ? ' selected' : '') + '>' + y + '</option>';
-    }
-    return html;
+var MA_YEAR_MIN = 1950;
+var MA_YEAR_MAX = 2099;
+
+function get_default_year() {
+    return new Date().getFullYear();
+}
+
+function clamp_year(value) {
+    var year = parseInt(value, 10);
+    if (isNaN(year)) return get_default_year();
+    if (year < MA_YEAR_MIN) return MA_YEAR_MIN;
+    if (year > MA_YEAR_MAX) return MA_YEAR_MAX;
+    return year;
 }
 
 function get_ma_html() {
@@ -65,9 +71,8 @@ function get_ma_html() {
             <div class="ma-row2">
                 <div class="ma-r2-year">
                     <label class="ma-label">Year</label>
-                    <select id="ma_year" class="ma-input">
-                        ${get_year_options()}
-                    </select>
+                    <input type="number" id="ma_year" class="ma-input" min="${MA_YEAR_MIN}" max="${MA_YEAR_MAX}"
+                        step="1" value="${get_default_year()}" placeholder="YYYY" />
                 </div>
                 <div class="ma-r2-month">
                     <label class="ma-label">Month</label>
@@ -926,9 +931,17 @@ function init_mark_attendance($main) {
     // ════════════════════════════════════════════════════════════════════════
     //  DATE HELPERS
     // ════════════════════════════════════════════════════════════════════════
+    function normalizeYearInput() {
+        var clamped = clamp_year(yearSel.value);
+        if (String(clamped) !== String(yearSel.value).trim()) {
+            yearSel.value = clamped;
+        }
+        return clamped;
+    }
+
     function updateDatesFromMonthYear() {
         if (!yearSel.value || monthSel.value === "") return;
-        var year = yearSel.value, month = Number(monthSel.value);
+        var year = normalizeYearInput(), month = Number(monthSel.value);
         var lastDay = new Date(year, month + 1, 0);
         startDateInput.value = year + "-" + String(month + 1).padStart(2, "0") + "-01";
         endDateInput.value   = year + "-" + String(month + 1).padStart(2, "0") + "-" +
@@ -942,6 +955,10 @@ function init_mark_attendance($main) {
         if (emp) loadLeaveBalance(emp);
     }
     yearSel.addEventListener("change",  updateDatesFromMonthYear);
+    yearSel.addEventListener("blur",    function () {
+        normalizeYearInput();
+        updateDatesFromMonthYear();
+    });
     monthSel.addEventListener("change", updateDatesFromMonthYear);
 
     function parseDateLocal(str) {
@@ -2194,7 +2211,7 @@ function init_mark_attendance($main) {
         });
     }
     function selectMonth(monthIndex) {
-        yearSel.value = currentCalendarYear; monthSel.value = monthIndex;
+        yearSel.value = clamp_year(currentCalendarYear); monthSel.value = monthIndex;
         monthSel.dispatchEvent(new Event("change")); closeCalendarModal();
     }
 
