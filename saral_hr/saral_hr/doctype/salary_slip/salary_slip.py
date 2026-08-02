@@ -944,11 +944,17 @@ def get_attendance_and_days(employee, start_date, working_days_calculation_metho
     joining_date = getdate(cl_data.get("date_of_joining")) if cl_data.get("date_of_joining") else None
     left_date    = getdate(cl_data.get("left_date"))        if cl_data.get("left_date")        else None
 
-    effective_start = max(start_date, joining_date) if joining_date else start_date
-    effective_end   = min(month_end,  left_date)    if left_date    else month_end
-
-    if effective_start > effective_end:
+    # Use the full calendar month as working-days denominator.
+    # Days before joining / after left are marked Absent in attendance
+    # (Mark Attendance), so payment_days shrinks — do not shrink working_days
+    # from the joining date (that overstates pay for mid-month joiners).
+    if joining_date and joining_date > month_end:
         return _empty_attendance_result(start_date, month_end, calculation_method)
+    if left_date and left_date < start_date:
+        return _empty_attendance_result(start_date, month_end, calculation_method)
+
+    effective_start = start_date
+    effective_end = month_end
 
     total_days = (effective_end - effective_start).days + 1
 
