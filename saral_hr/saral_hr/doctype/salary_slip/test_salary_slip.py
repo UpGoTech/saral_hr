@@ -5,7 +5,12 @@ import frappe
 from frappe.tests.utils import FrappeTestCase
 from frappe.utils import add_days, get_first_day, get_last_day, getdate
 
-from saral_hr.saral_hr.doctype.salary_slip.salary_slip import get_attendance_and_days
+from saral_hr.saral_hr.doctype.salary_slip.salary_slip import (
+	calculate_salary_slip_amounts_exact,
+	get_attendance_and_days,
+	get_salary_amount_rounding_digits,
+	round_salary_amount,
+)
 
 
 def _uid() -> str:
@@ -111,3 +116,51 @@ class TestSalarySlipWorkingDays(FrappeTestCase):
 		self.assertEqual(att["present_days"], float(post_join_days))
 		self.assertEqual(att["absent_days"], float(month_days - post_join_days))
 		self.assertEqual(att["payment_days"], float(post_join_days))
+
+
+class TestSalaryAmountRounding(FrappeTestCase):
+	def test_rounding_digits_helper(self):
+		company = _make_company()
+		frappe.db.set_value("Company", company, "salary_amount_rounding_digits", "0")
+		self.assertEqual(get_salary_amount_rounding_digits(company), 0)
+		self.assertEqual(round_salary_amount(10.6, company), 11.0)
+		self.assertEqual(round_salary_amount(10.4, company), 10.0)
+
+		frappe.db.set_value("Company", company, "salary_amount_rounding_digits", "2")
+		self.assertEqual(get_salary_amount_rounding_digits(company), 2)
+		self.assertEqual(round_salary_amount(10.456, company), 10.46)
+
+		self.assertEqual(get_salary_amount_rounding_digits(None), 2)
+
+	def test_calculate_uses_company_rounding_digits(self):
+		company = _make_company()
+		frappe.db.set_value("Company", company, "salary_amount_rounding_digits", "0")
+		employee = _make_employee()
+		cl = _make_company_link(employee, company, "2024-01-01", weekly_off="")
+
+		ss = frappe.new_doc("Salary Slip")
+		ss.employee = cl
+		ss.company = company
+		ss.start_date = "2024-01-01"
+		ss.end_date = "2024-01-31"
+		ss.total_working_days = 30
+		ss.payment_days = 15
+		ss.physical_working_days = 15
+		row = ss.append("earnings", {})
+		row.salary_component = "Basic"
+		row.abbr = "BASIC"
+		row.base_amount = 10000
+		row.amount = 10000
+		row.depends_on_payment_days = 1
+		row.depends_on_physical_working_days = 0
+
+		calculate_salary_slip_amounts_exact(ss, 0, "2024-01-01")
+		# 10000 * 15/30 = 5000 exactly; use a non-integer case via payment_days
+		ss.payment_days = 10
+		calculate_salary_slip_amounts_exact(ss, 0, "2024-01-01")
+		# 10000 * 10/30 = 3333.333... → rounds to 3333 with digits=0
+		self.assertEqual(ss.earnings[0].amount, 3333.0)
+
+		frappe.db.set_value("Company", company, "salary_amount_rounding_digits", "2")
+		calculate_salary_slip_amounts_exact(ss, 0, "2024-01-01")
+		self.assertEqual(ss.earnings[0].amount, 3333.33)

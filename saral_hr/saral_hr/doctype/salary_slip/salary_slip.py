@@ -17,6 +17,31 @@ def _round_net_salary(value):
     return int(Decimal(str(flt(value, 2))).quantize(Decimal("1"), rounding=ROUND_HALF_UP))
 
 
+def get_salary_amount_rounding_digits(company=None):
+    """Company Misc Setting: 0 = whole rupees, 2 = paise. Default 2."""
+    digits = 2
+    if company:
+        raw = frappe.db.get_value("Company", company, "salary_amount_rounding_digits")
+        if raw is not None and raw != "":
+            try:
+                digits = int(raw)
+            except (TypeError, ValueError):
+                digits = 2
+    return 0 if digits == 0 else 2
+
+
+def _company_for_employee(employee):
+    if not employee:
+        return None
+    return frappe.db.get_value("Company Link", employee, "company")
+
+
+def round_salary_amount(value, company=None, digits=None):
+    if digits is None:
+        digits = get_salary_amount_rounding_digits(company)
+    return flt(value, digits)
+
+
 class SalarySlip(Document):
     def validate(self):
         if self.start_date:
@@ -212,6 +237,7 @@ def get_salary_structure_for_employee(
     phd    = flt(physical_working_days)   if physical_working_days   is not None else None
     vp_pct = flt(variable_pay_percentage) / 100.0 if variable_pay_percentage is not None else None
     has_att_data = (wd is not None and pd is not None and phd is not None and vp_pct is not None)
+    amount_digits = get_salary_amount_rounding_digits(ssa_doc.company)
 
     def _comp_meta(comp_name):
         return frappe.db.get_value(
@@ -259,12 +285,12 @@ def get_salary_structure_for_employee(
         else:
             actual = _prorate(base, dep_pd, dep_phd, is_daily_wage, per_day_rate, row.salary_component)
 
-        actual_earnings_map[row.salary_component] = flt(actual, 2)
+        actual_earnings_map[row.salary_component] = flt(actual, amount_digits)
         earnings.append({
             "salary_component":                 row.salary_component,
             "abbr":                             meta.get("salary_component_abbr") or getattr(row, "abbr", "") or "",
-            "amount":                           base,
-            "base_amount":                      base,
+            "amount":                           flt(base, amount_digits),
+            "base_amount":                      flt(base, amount_digits),
             "per_day_rate":                     per_day_rate,
             "daily_wage_component":             is_daily_wage,
             "depends_on_payment_days":          dep_pd,
@@ -296,7 +322,7 @@ def get_salary_structure_for_employee(
         meta          = _comp_meta(row.salary_component)
         is_daily_wage = int(meta.get("daily_wage_component") or getattr(row, "daily_wage_component", 0) or 0)
         per_day_rate  = flt(getattr(row, "per_day_rate", None) or 0)
-        amount        = flt(row.amount, 2)
+        amount        = flt(row.amount, amount_digits)
         if _is_pt_component(row.salary_component):
             amount = 300.0 if current_month == "February" else 200.0
         deductions.append({
@@ -320,8 +346,8 @@ def get_salary_structure_for_employee(
         employer_share.append({
             "salary_component":                 row.salary_component,
             "abbr":                             meta.get("salary_component_abbr") or getattr(row, "abbr", "") or "",
-            "amount":                           flt(row.amount, 2),
-            "base_amount":                      flt(row.amount, 2),
+            "amount":                           flt(row.amount, amount_digits),
+            "base_amount":                      flt(row.amount, amount_digits),
             "per_day_rate":                     per_day_rate,
             "daily_wage_component":             is_daily_wage,
             "employer_contribution":            1,
@@ -348,7 +374,7 @@ def get_salary_structure_for_employee(
         for d in (recomputed.get("deductions") or []):
             if _is_pt_component(d["salary_component"]) and _is_pt_exempt(employee, start_date):
                 continue
-            amount = flt(d["amount"], 2)
+            amount = flt(d["amount"], amount_digits)
             if _is_pt_component(d["salary_component"]):
                 amount = 300.0 if current_month == "February" else 200.0
             deductions.append({
@@ -361,7 +387,7 @@ def get_salary_structure_for_employee(
         for d in (recomputed.get("employer_share") or []):
             employer_share.append({
                 "salary_component": d["salary_component"], "abbr": d.get("abbr") or "",
-                "amount": flt(d["amount"], 2), "base_amount": flt(d["amount"], 2),
+                "amount": flt(d["amount"], amount_digits), "base_amount": flt(d["amount"], amount_digits),
                 "per_day_rate": 0, "daily_wage_component": 0, "employer_contribution": 1,
                 "depends_on_payment_days": 0, "depends_on_physical_working_days": 0,
             })
@@ -422,6 +448,11 @@ def calculate_salary_slip_amounts_exact(
     pd           = flt(salary_slip.payment_days)
     phd          = flt(salary_slip.physical_working_days)
     variable_pct = flt(variable_pay_percentage)
+    company = (
+        getattr(salary_slip, "company", None)
+        or _company_for_employee(getattr(salary_slip, "employee", None))
+    )
+    digits = get_salary_amount_rounding_digits(company)
 
     total_earnings = total_deductions = total_employer_contribution = 0.0
     basic_amount = da_amount = retention = 0.0
@@ -451,7 +482,7 @@ def calculate_salary_slip_amounts_exact(
         else:
             amount = base
 
-        row.amount      = flt(amount, 2)
+        row.amount      = flt(amount, digits)
         total_earnings += row.amount
         if "basic" in comp:
             basic_amount = row.amount
@@ -482,7 +513,7 @@ def calculate_salary_slip_amounts_exact(
         else:
             amount = base
 
-        row.amount        = flt(amount, 2)
+        row.amount        = flt(amount, digits)
         total_deductions += row.amount
         if "retention" in (row.salary_component or "").lower():
             retention += row.amount
@@ -495,19 +526,20 @@ def calculate_salary_slip_amounts_exact(
 
         if is_daily_wage and per_day_rate > 0:
             row.amount = flt(
-                per_day_rate * phd if row.depends_on_physical_working_days else per_day_rate * pd, 2
+                per_day_rate * phd if row.depends_on_physical_working_days else per_day_rate * pd,
+                digits,
             )
         else:
-            row.amount = flt(base, 2)
+            row.amount = flt(base, digits)
 
         total_employer_contribution += row.amount
 
-    salary_slip.total_earnings              = flt(total_earnings, 2)
-    salary_slip.total_deductions            = flt(total_deductions, 2)
+    salary_slip.total_earnings              = flt(total_earnings, digits)
+    salary_slip.total_deductions            = flt(total_deductions, digits)
     salary_slip.net_salary                  = _round_net_salary(total_earnings - total_deductions)
-    salary_slip.total_basic_da              = flt(basic_amount + da_amount, 2)
-    salary_slip.total_employer_contribution = flt(total_employer_contribution, 2)
-    salary_slip.retention                   = flt(retention, 2)
+    salary_slip.total_basic_da              = flt(basic_amount + da_amount, digits)
+    salary_slip.total_employer_contribution = flt(total_employer_contribution, digits)
+    salary_slip.retention                   = flt(retention, digits)
 
 
 def _is_da_component(comp_name, abbr):
@@ -1337,6 +1369,7 @@ def bulk_generate_salary_slips(employees, year, month):
             ss = frappe.new_doc("Salary Slip")
             ss.employee = employee; ss.start_date = start_date
             ss.end_date = get_last_day(getdate(start_date)); ss.currency = "INR"
+            ss.company = company_name
             ss.salary_structure = sd.get('salary_structure'); ss.working_days_calculation_method = wdcm
 
             ss.month_days              = att.get('total_days', 0)

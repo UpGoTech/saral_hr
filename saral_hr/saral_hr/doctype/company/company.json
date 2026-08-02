@@ -51,7 +51,9 @@
   "no_of_staff",
   "no_of_workers",
   "column_break_headcount",
-  "total_no_of_employees"
+  "total_no_of_employees",
+  "misc_settings_tab",
+  "salary_amount_rounding_digits"
  ],
  "fields": [
   {
@@ -297,11 +299,25 @@
    "label": "Total",
    "non_negative": 1,
    "read_only": 1
+  },
+  {
+   "fieldname": "misc_settings_tab",
+   "fieldtype": "Tab Break",
+   "label": "Misc Settings"
+  },
+  {
+   "default": "2",
+   "description": "Decimal places for salary component amounts. 0 = round to whole rupees (no paise). 2 = keep paise.",
+   "fieldname": "salary_amount_rounding_digits",
+   "fieldtype": "Select",
+   "label": "Salary Amount Rounding Digits",
+   "options": "0\n2",
+   "reqd": 1
   }
  ],
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-07-18 07:00:00.000000",
+ "modified": "2026-08-02 08:00:00.000000",
  "modified_by": "Administrator",
  "module": "Saral Hr",
  "name": "Company",
