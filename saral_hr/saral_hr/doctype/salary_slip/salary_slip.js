@@ -6,6 +6,17 @@ frappe.ui.form.on("Salary Slip", {
     refresh(frm) {
         if (!frm.doc.currency) frm.set_value("currency", "INR");
         frm.set_query("employee", () => ({ filters: { is_active: 1 } }));
+        if (frm.doc.company && frm._salary_rounding_digits === undefined) {
+            frappe.db.get_value(
+                "Company",
+                frm.doc.company,
+                "salary_amount_rounding_digits",
+                (comp) => {
+                    frm._salary_rounding_digits =
+                        parseInt(comp && comp.salary_amount_rounding_digits, 10) === 0 ? 0 : 2;
+                }
+            );
+        }
     },
 
     employee(frm) {
@@ -13,12 +24,20 @@ frappe.ui.form.on("Salary Slip", {
         reset_form(frm);
         frappe.db.get_value("Company Link", frm.doc.employee, "company", (r) => {
             if (r && r.company) {
-                frappe.db.get_value("Company", r.company, "salary_calculation_based_on", (comp) => {
-                    if (comp && comp.salary_calculation_based_on)
-                        frm.set_value("working_days_calculation_method", comp.salary_calculation_based_on);
-                    if (frm.doc.start_date) check_duplicate_and_fetch(frm);
-                });
+                frappe.db.get_value(
+                    "Company",
+                    r.company,
+                    ["salary_calculation_based_on", "salary_amount_rounding_digits"],
+                    (comp) => {
+                        if (comp && comp.salary_calculation_based_on)
+                            frm.set_value("working_days_calculation_method", comp.salary_calculation_based_on);
+                        frm._salary_rounding_digits =
+                            parseInt(comp && comp.salary_amount_rounding_digits, 10) === 0 ? 0 : 2;
+                        if (frm.doc.start_date) check_duplicate_and_fetch(frm);
+                    }
+                );
             } else {
+                frm._salary_rounding_digits = 2;
                 if (frm.doc.start_date) check_duplicate_and_fetch(frm);
             }
         });
@@ -100,6 +119,14 @@ function is_pt(comp_name) {
 
 function round_net_salary(value) {
     return Math.floor(value + 0.5);
+}
+
+function salary_amount_digits(frm) {
+    return frm && frm._salary_rounding_digits === 0 ? 0 : 2;
+}
+
+function round_salary_amount(frm, value) {
+    return flt(value, salary_amount_digits(frm));
 }
 
 // ─── Duplicate check + full fetch ─────────────────────────────────────────────
@@ -403,7 +430,7 @@ function recalculate_salary(frm, wd_override, pd_override, phd_override) {
             amount = base;
         }
 
-        row.amount = flt(amount, 2);
+        row.amount = round_salary_amount(frm, amount);
         total_earnings += row.amount;
 
         if (comp.includes("basic")) basic_amount = row.amount;
@@ -438,7 +465,7 @@ function recalculate_salary(frm, wd_override, pd_override, phd_override) {
             amount = base;
         }
 
-        row.amount = flt(amount, 2);
+        row.amount = round_salary_amount(frm, amount);
         total_deductions += row.amount;
 
         if ((row.salary_component || "").toLowerCase().includes("retention")) retention += row.amount;
@@ -462,20 +489,21 @@ function recalculate_salary(frm, wd_override, pd_override, phd_override) {
             amount = base;
         }
 
-        row.amount = flt(amount, 2);
+        row.amount = round_salary_amount(frm, amount);
         total_employer_contribution += row.amount;
     });
 
     const raw_net = total_earnings - total_deductions;
     const net = round_net_salary(raw_net);
+    const digits = salary_amount_digits(frm);
 
     frm.set_value({
-        total_earnings: flt(total_earnings, 2),
-        total_deductions: flt(total_deductions, 2),
+        total_earnings: flt(total_earnings, digits),
+        total_deductions: flt(total_deductions, digits),
         net_salary: net,
-        total_basic_da: flt(basic_amount + da_amount, 2),
-        total_employer_contribution: flt(total_employer_contribution, 2),
-        retention: flt(retention, 2)
+        total_basic_da: flt(basic_amount + da_amount, digits),
+        total_employer_contribution: flt(total_employer_contribution, digits),
+        retention: flt(retention, digits)
     });
 
     frm.refresh_fields(["earnings", "deductions", "employer_share"]);
