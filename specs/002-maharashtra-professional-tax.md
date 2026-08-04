@@ -178,12 +178,12 @@ No Playwright for v1.
 
 ### Remaining (this amendment)
 
-- [ ] Period-level `february_amount` removed; February only on slabs
-- [ ] MH seed: Male 175→Feb 275, Male 200→Feb 300; Female taxable Feb null
-- [ ] Female taxable stays ₹200 in February (₹2400 annual)
-- [ ] Validation rejects `february_amount` on zero-tax slabs
-- [ ] Migrate patch maps existing Male 175/200 slabs to Feb amounts
-- [ ] Unit tests for Female Feb + Male mid/top Feb amounts pass
+- [x] Period-level `february_amount` removed; February only on slabs
+- [x] MH seed: Male 175→Feb 275, Male 200→Feb 300; Female taxable Feb null
+- [x] Female taxable stays ₹200 in February (₹2400 annual)
+- [x] Validation rejects `february_amount` on zero-tax slabs
+- [x] Migrate patch maps existing Male 175/200 slabs to Feb amounts
+- [x] Unit tests for Female Feb + Male mid/top Feb amounts pass
 
 ## Progress log
 
@@ -193,3 +193,4 @@ No Playwright for v1.
 | 2026-08-04 | Build started on `feat/maharashtra-professional-tax` |
 | 2026-08-04 | Implemented: PT Period child + Company slabs UI/helpers; purged 200/300 hardcodes; patches + unit tests green |
 | 2026-08-04 | Re-grilled: Female ₹2400/year (no Feb); per-slab `february_amount`; multi-state deferred; amend spec on same branch |
+| 2026-08-04 | Implemented per-slab February; migrate + tests |

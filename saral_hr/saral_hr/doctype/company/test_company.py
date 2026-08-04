@@ -174,7 +174,7 @@ class TestCompanyEmployeeCounts(FrappeTestCase):
 
 
 class TestCompanyProfessionalTax(FrappeTestCase):
-	def _make_pt_company(self, slabs=None, february_amount=300, age_exempt_years=65):
+	def _make_pt_company(self, slabs=None, age_exempt_years=65):
 		from saral_hr.saral_hr.doctype.company.company import maharashtra_pt_slabs_json
 		import json
 
@@ -191,7 +191,6 @@ class TestCompanyProfessionalTax(FrappeTestCase):
 					{
 						"from_date": None,
 						"to_date": None,
-						"february_amount": february_amount,
 						"age_exempt_years": age_exempt_years,
 						"slabs": json.dumps(slabs) if slabs is not None else maharashtra_pt_slabs_json(),
 					}
@@ -215,12 +214,52 @@ class TestCompanyProfessionalTax(FrappeTestCase):
 		self.assertEqual(comp.calculate_pt(25000, "Female", "2026-01-15"), 0.0)
 		self.assertEqual(comp.calculate_pt(25001, "Female", "2026-01-15"), 200.0)
 
-	def test_february_override_only_when_tax_positive(self):
-		comp = self._make_pt_company(february_amount=300)
+	def test_february_male_mid_and_top_slabs(self):
+		comp = self._make_pt_company()
 		self.assertEqual(comp.calculate_pt(5000, "Male", "2026-02-10"), 0.0)
+		self.assertEqual(comp.calculate_pt(8000, "Male", "2026-02-10"), 275.0)
 		self.assertEqual(comp.calculate_pt(12000, "Male", "2026-02-10"), 300.0)
-		self.assertEqual(comp.calculate_pt(30000, "Female", "2026-02-10"), 300.0)
+		self.assertEqual(comp.calculate_pt(8000, "Male", "2026-01-10"), 175.0)
 		self.assertEqual(comp.calculate_pt(12000, "Male", "2026-01-10"), 200.0)
+
+	def test_february_female_stays_at_tax_amount(self):
+		comp = self._make_pt_company()
+		self.assertEqual(comp.calculate_pt(30000, "Female", "2026-02-10"), 200.0)
+		self.assertEqual(comp.calculate_pt(30000, "Female", "2026-01-10"), 200.0)
+		self.assertEqual(comp.calculate_pt(20000, "Female", "2026-02-10"), 0.0)
+
+	def test_february_amount_on_zero_tax_slab_rejected(self):
+		import json
+
+		uid = _uid()
+		doc = frappe.get_doc(
+			{
+				"doctype": "Company",
+				"company": f"_Test Co PT BadFeb {uid}",
+				"abbr": f"B{uid}"[:8],
+				"country": "India",
+				"default_currency": "INR",
+				"salary_calculation_based_on": "Exclude Weekly Offs (Working Days)",
+				"pt_periods": [
+					{
+						"age_exempt_years": 65,
+						"slabs": json.dumps(
+							[
+								{
+									"gender": "Male",
+									"from_amount": 0,
+									"to_amount": 7500,
+									"tax_amount": 0,
+									"february_amount": 300,
+								}
+							]
+						),
+					}
+				],
+			}
+		)
+		with self.assertRaises(frappe.ValidationError):
+			doc.insert(ignore_permissions=True)
 
 	def test_age_exemption(self):
 		comp = self._make_pt_company(age_exempt_years=65)
@@ -269,14 +308,12 @@ class TestCompanyProfessionalTax(FrappeTestCase):
 					{
 						"from_date": "2026-01-01",
 						"to_date": "2026-06-30",
-						"february_amount": 300,
 						"age_exempt_years": 65,
 						"slabs": maharashtra_pt_slabs_json(),
 					},
 					{
 						"from_date": "2026-06-01",
 						"to_date": "2026-12-31",
-						"february_amount": 300,
 						"age_exempt_years": 65,
 						"slabs": maharashtra_pt_slabs_json(),
 					},

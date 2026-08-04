@@ -494,11 +494,11 @@ function _reset_form($ui) {
 // ─────────────────────────────────────────────────────────────
 
 const MAHARASHTRA_PT_SLABS = [
-    { gender: "Male", from_amount: 0, to_amount: 7500, tax_amount: 0 },
-    { gender: "Male", from_amount: 7501, to_amount: 10000, tax_amount: 175 },
-    { gender: "Male", from_amount: 10001, to_amount: null, tax_amount: 200 },
-    { gender: "Female", from_amount: 0, to_amount: 25000, tax_amount: 0 },
-    { gender: "Female", from_amount: 25001, to_amount: null, tax_amount: 200 },
+    { gender: "Male", from_amount: 0, to_amount: 7500, tax_amount: 0, february_amount: null },
+    { gender: "Male", from_amount: 7501, to_amount: 10000, tax_amount: 175, february_amount: 275 },
+    { gender: "Male", from_amount: 10001, to_amount: null, tax_amount: 200, february_amount: 300 },
+    { gender: "Female", from_amount: 0, to_amount: 25000, tax_amount: 0, february_amount: null },
+    { gender: "Female", from_amount: 25001, to_amount: null, tax_amount: 200, february_amount: null },
 ];
 
 function parse_pt_slabs(row) {
@@ -516,9 +516,12 @@ function _pt_slab_summary(slabs) {
     }
     return slabs.map(s => {
         const to = s.to_amount == null || s.to_amount === "" ? "∞" : s.to_amount;
+        const feb = s.february_amount == null || s.february_amount === ""
+            ? ""
+            : ` (Feb ₹${s.february_amount})`;
         return `<span style="display:inline-block;background:#f3e5f5;border:0.5px solid #7b1fa255;
             color:#4a148c;border-radius:3px;padding:2px 8px;font-size:11px;margin:1px 2px 1px 0">
-            ${frappe.utils.escape_html(s.gender)}: ₹${s.from_amount}–${to} → ₹${s.tax_amount}
+            ${frappe.utils.escape_html(s.gender)}: ₹${s.from_amount}–${to} → ₹${s.tax_amount}${feb}
         </span>`;
     }).join("");
 }
@@ -545,6 +548,11 @@ function _pt_slab_editor_html(slabs) {
                 <input type="number" class="pt-slab-tax" value="${s.tax_amount ?? ""}"
                     style="width:100%;font-size:12px;padding:4px;border:0.5px solid #ccc;border-radius:4px;box-sizing:border-box">
             </td>
+            <td style="padding:4px">
+                <input type="number" class="pt-slab-feb" value="${s.february_amount == null ? "" : s.february_amount}"
+                    placeholder="—"
+                    style="width:100%;font-size:12px;padding:4px;border:0.5px solid #ccc;border-radius:4px;box-sizing:border-box">
+            </td>
             <td style="padding:4px;text-align:center">
                 <span class="pt-remove-slab" style="cursor:pointer;color:#e53935;font-size:13px" title="Remove">✕</span>
             </td>
@@ -557,6 +565,7 @@ function _pt_slab_editor_html(slabs) {
                 <th style="padding:4px 6px;font-size:11px;color:#666;text-align:left">From (₹)</th>
                 <th style="padding:4px 6px;font-size:11px;color:#666;text-align:left">To (₹)</th>
                 <th style="padding:4px 6px;font-size:11px;color:#666;text-align:left">Tax (₹)</th>
+                <th style="padding:4px 6px;font-size:11px;color:#666;text-align:left">Feb (₹)</th>
                 <th style="width:28px"></th>
             </tr></thead>
             <tbody class="pt-slab-tbody">${rows}</tbody>
@@ -571,11 +580,13 @@ function _collect_pt_slabs($form) {
     $form.find(".pt-slab-tbody tr").each(function () {
         const $tr = $(this);
         const toVal = $tr.find(".pt-slab-to").val().trim();
+        const febVal = $tr.find(".pt-slab-feb").val().trim();
         slabs.push({
             gender: $tr.find(".pt-slab-gender").val() || "Male",
             from_amount: parseFloat($tr.find(".pt-slab-from").val()) || 0,
             to_amount: toVal === "" ? null : parseFloat(toVal),
             tax_amount: parseFloat($tr.find(".pt-slab-tax").val()) || 0,
+            february_amount: febVal === "" ? null : parseFloat(febVal),
         });
     });
     return slabs;
@@ -619,7 +630,6 @@ function render_pt_period_ui(frm) {
                 <td style="padding:6px 8px;border:0.5px solid #e0e0e0;color:#999;font-size:12px;vertical-align:top">${i + 1}</td>
                 <td style="padding:6px 8px;border:0.5px solid #e0e0e0;font-size:12px;white-space:nowrap;vertical-align:top">${to_display(row.from_date) || "—"}</td>
                 <td style="padding:6px 8px;border:0.5px solid #e0e0e0;font-size:12px;white-space:nowrap;vertical-align:top">${to_display(row.to_date) || "—"}</td>
-                <td style="padding:6px 8px;border:0.5px solid #e0e0e0;font-size:12px;vertical-align:top">₹${parseFloat(row.february_amount || 0).toLocaleString("en-IN")}</td>
                 <td style="padding:6px 8px;border:0.5px solid #e0e0e0;font-size:12px;vertical-align:top">${row.age_exempt_years || 65}</td>
                 <td style="padding:6px 8px;border:0.5px solid #e0e0e0;vertical-align:top">${_pt_slab_summary(slabs)}</td>
                 <td style="padding:6px 8px;border:0.5px solid #e0e0e0;text-align:center;white-space:nowrap;vertical-align:top">${action_html}</td>
@@ -632,7 +642,6 @@ function render_pt_period_ui(frm) {
                     <th style="padding:6px 8px;border:0.5px solid #e0e0e0;font-size:11px;font-weight:500;color:#666;width:36px">No.</th>
                     <th style="padding:6px 8px;border:0.5px solid #e0e0e0;font-size:11px;font-weight:500;color:#666;width:100px">From</th>
                     <th style="padding:6px 8px;border:0.5px solid #e0e0e0;font-size:11px;font-weight:500;color:#666;width:100px">To</th>
-                    <th style="padding:6px 8px;border:0.5px solid #e0e0e0;font-size:11px;font-weight:500;color:#666;width:90px">Feb Amt</th>
                     <th style="padding:6px 8px;border:0.5px solid #e0e0e0;font-size:11px;font-weight:500;color:#666;width:70px">Age Exempt</th>
                     <th style="padding:6px 8px;border:0.5px solid #e0e0e0;font-size:11px;font-weight:500;color:#666">Slabs</th>
                     <th style="padding:6px 8px;border:0.5px solid #e0e0e0;width:55px"></th>
@@ -644,7 +653,7 @@ function render_pt_period_ui(frm) {
         const $ui = $(`
         <div id="${uid}" style="margin:8px 0 12px 0">
             <div style="font-size:12px;color:#6c757d;margin-bottom:8px">
-                Configure Maharashtra (or custom) Professional Tax slabs by period. Tax is computed from final gross, employee gender, and age.
+                Configure Maharashtra (or custom) Professional Tax slabs by period. Optional February amount is per slab (Female taxable has none).
             </div>
             <div class="period-table-wrap">${table_html}</div>
 
@@ -669,7 +678,7 @@ function render_pt_period_ui(frm) {
                     </button>
                 </div>
 
-                <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px">
+                <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin-bottom:12px">
                     <div>
                         <div style="font-size:11px;color:#888;margin-bottom:3px">From Date</div>
                         <input type="text" class="period-from-date" placeholder="DD-MM-YYYY"
@@ -679,15 +688,6 @@ function render_pt_period_ui(frm) {
                     <div>
                         <div style="font-size:11px;color:#888;margin-bottom:3px">To Date</div>
                         <input type="text" class="period-to-date" placeholder="DD-MM-YYYY"
-                            style="width:100%;border:0.5px solid #ccc;border-radius:4px;
-                                   padding:5px 8px;font-size:12px;box-sizing:border-box">
-                    </div>
-                </div>
-
-                <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px">
-                    <div>
-                        <div style="font-size:11px;color:#888;margin-bottom:3px">February Amount (₹)</div>
-                        <input type="number" class="pt-february-amount" value="300"
                             style="width:100%;border:0.5px solid #ccc;border-radius:4px;
                                    padding:5px 8px;font-size:12px;box-sizing:border-box">
                     </div>
@@ -735,7 +735,7 @@ function render_pt_period_ui(frm) {
         function bind_slab_editor() {
             $ui.find(".pt-add-slab").off("click").on("click", function () {
                 const slabs = _collect_pt_slabs($ui);
-                slabs.push({ gender: "Male", from_amount: 0, to_amount: null, tax_amount: 0 });
+                slabs.push({ gender: "Male", from_amount: 0, to_amount: null, tax_amount: 0, february_amount: null });
                 refresh_slab_editor(slabs);
             });
             $ui.find(".pt-remove-slab").off("click").on("click", function () {
@@ -756,14 +756,12 @@ function render_pt_period_ui(frm) {
             $ui.find(".add-period-form").slideUp(150, function () {
                 $ui.find(".add-period-btn").show();
                 $ui.find(".period-from-date, .period-to-date").val("");
-                $ui.find(".pt-february-amount").val(300);
                 $ui.find(".pt-age-exempt").val(65);
                 refresh_slab_editor(MAHARASHTRA_PT_SLABS);
             });
         });
 
         $ui.find(".pt-load-defaults").on("click", function () {
-            $ui.find(".pt-february-amount").val(300);
             $ui.find(".pt-age-exempt").val(65);
             refresh_slab_editor(MAHARASHTRA_PT_SLABS);
             frappe.show_alert({ message: __("Maharashtra defaults loaded"), indicator: "green" });
@@ -778,7 +776,6 @@ function render_pt_period_ui(frm) {
             const row = frappe.model.add_child(frm.doc, "Professional Tax Period", fieldname);
             row.from_date = to_backend($ui.find(".period-from-date").val().trim()) || null;
             row.to_date = to_backend($ui.find(".period-to-date").val().trim()) || null;
-            row.february_amount = parseFloat($ui.find(".pt-february-amount").val()) || 0;
             row.age_exempt_years = parseInt($ui.find(".pt-age-exempt").val(), 10) || 65;
             row.slabs = JSON.stringify(slabs);
             frm.dirty();
@@ -806,7 +803,6 @@ function render_pt_period_ui(frm) {
 
             $ui.find(".period-from-date").val(to_display(row.from_date));
             $ui.find(".period-to-date").val(to_display(row.to_date));
-            $ui.find(".pt-february-amount").val(row.february_amount != null ? row.february_amount : 300);
             $ui.find(".pt-age-exempt").val(row.age_exempt_years != null ? row.age_exempt_years : 65);
             refresh_slab_editor(slabs.length ? slabs : MAHARASHTRA_PT_SLABS);
 

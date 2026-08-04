@@ -10,14 +10,13 @@ from frappe.utils import cint, flt, getdate
 VIRTUAL_COMPONENTS = {"Gross", "Gross Including Additional Salary"}
 
 MAHARASHTRA_PT_SLABS = [
-	{"gender": "Male", "from_amount": 0, "to_amount": 7500, "tax_amount": 0},
-	{"gender": "Male", "from_amount": 7501, "to_amount": 10000, "tax_amount": 175},
-	{"gender": "Male", "from_amount": 10001, "to_amount": None, "tax_amount": 200},
-	{"gender": "Female", "from_amount": 0, "to_amount": 25000, "tax_amount": 0},
-	{"gender": "Female", "from_amount": 25001, "to_amount": None, "tax_amount": 200},
+	{"gender": "Male", "from_amount": 0, "to_amount": 7500, "tax_amount": 0, "february_amount": None},
+	{"gender": "Male", "from_amount": 7501, "to_amount": 10000, "tax_amount": 175, "february_amount": 275},
+	{"gender": "Male", "from_amount": 10001, "to_amount": None, "tax_amount": 200, "february_amount": 300},
+	{"gender": "Female", "from_amount": 0, "to_amount": 25000, "tax_amount": 0, "february_amount": None},
+	{"gender": "Female", "from_amount": 25001, "to_amount": None, "tax_amount": 200, "february_amount": None},
 ]
 
-DEFAULT_PT_FEBRUARY_AMOUNT = 300.0
 DEFAULT_PT_AGE_EXEMPT_YEARS = 65
 
 
@@ -73,7 +72,6 @@ def seed_pt_period_on_company(company_name: str) -> bool:
 		{
 			"from_date": None,
 			"to_date": None,
-			"february_amount": DEFAULT_PT_FEBRUARY_AMOUNT,
 			"age_exempt_years": DEFAULT_PT_AGE_EXEMPT_YEARS,
 			"slabs": maharashtra_pt_slabs_json(),
 		},
@@ -100,7 +98,7 @@ class Company(Document):
 		)
 		self._validate_locked_periods(
 			"pt_periods", "Professional Tax",
-			["slabs", "february_amount", "age_exempt_years", "from_date"]
+			["slabs", "age_exempt_years", "from_date"]
 		)
 
 	def on_update(self):
@@ -143,10 +141,6 @@ class Company(Document):
 		rows = list(self.get("pt_periods") or [])
 		self._validate_pt_period_overlap(rows)
 		for row in rows:
-			if flt(row.get("february_amount")) < 0:
-				frappe.throw(
-					_("Professional Tax February Amount cannot be negative (row {0}).").format(row.idx)
-				)
 			if cint(row.get("age_exempt_years")) < 0:
 				frappe.throw(
 					_("Professional Tax Age Exempt Years cannot be negative (row {0}).").format(row.idx)
@@ -188,11 +182,23 @@ class Company(Document):
 			from_amount = flt(slab.get("from_amount"))
 			to_raw = slab.get("to_amount")
 			tax_amount = flt(slab.get("tax_amount"))
+			feb_raw = slab.get("february_amount")
 			if from_amount < 0 or tax_amount < 0:
 				frappe.throw(
 					_("Professional Tax slab {0} in period row {1}: amounts cannot be negative.")
 					.format(i + 1, row_idx)
 				)
+			if feb_raw is not None and feb_raw != "":
+				if flt(feb_raw) < 0:
+					frappe.throw(
+						_("Professional Tax slab {0} in period row {1}: February Amount cannot be negative.")
+						.format(i + 1, row_idx)
+					)
+				if tax_amount == 0:
+					frappe.throw(
+						_("Professional Tax slab {0} in period row {1}: February Amount is not allowed when Tax is 0.")
+						.format(i + 1, row_idx)
+					)
 			if to_raw is not None and to_raw != "":
 				to_amount = flt(to_raw)
 				if to_amount < 0:
@@ -415,7 +421,6 @@ class Company(Document):
 		if not row:
 			return None
 		return {
-			"february_amount": flt(row.february_amount) if row.february_amount is not None else DEFAULT_PT_FEBRUARY_AMOUNT,
 			"age_exempt_years": cint(row.age_exempt_years) if row.age_exempt_years is not None else DEFAULT_PT_AGE_EXEMPT_YEARS,
 			"slabs": self._parse_slabs(row),
 			"from_date": row.from_date,
@@ -436,8 +441,7 @@ class Company(Document):
 
 		resolved_gender = gender if gender in ("Male", "Female") else "Male"
 		gross_amt = flt(gross)
-		tax = 0.0
-		matched = False
+		matched_slab = None
 		for slab in cfg.get("slabs") or []:
 			if slab.get("gender") != resolved_gender:
 				continue
@@ -447,13 +451,17 @@ class Company(Document):
 				to_raw is None or to_raw == "" or gross_amt <= flt(to_raw)
 			)
 			if in_range:
-				tax = flt(slab.get("tax_amount"))
-				matched = True
+				matched_slab = slab
 				break
 
-		if not matched:
+		if not matched_slab:
 			return 0.0
 
-		if period_date and getdate(period_date).month == 2 and tax > 0:
-			return flt(cfg.get("february_amount"))
+		tax = flt(matched_slab.get("tax_amount"))
+		if tax == 0:
+			return 0.0
+
+		feb_raw = matched_slab.get("february_amount")
+		if period_date and getdate(period_date).month == 2 and feb_raw is not None and feb_raw != "":
+			return flt(feb_raw)
 		return tax

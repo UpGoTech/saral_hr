@@ -35,7 +35,6 @@ def _make_pt_company() -> str:
 				{
 					"from_date": None,
 					"to_date": None,
-					"february_amount": 300,
 					"age_exempt_years": 65,
 					"slabs": maharashtra_pt_slabs_json(),
 				}
@@ -66,6 +65,12 @@ class TestProfessionalTaxCalculationPaths(FrappeTestCase):
 		employee = _make_employee("Male")
 		self.assertEqual(_company_pt_amount(company, 12000, employee, "2026-01-15"), 200.0)
 		self.assertEqual(_company_pt_amount(company, 12000, employee, "2026-02-15"), 300.0)
+		self.assertEqual(_company_pt_amount(company, 8000, employee, "2026-02-15"), 275.0)
+
+	def test_female_february_no_surcharge(self):
+		company = _make_pt_company()
+		employee = _make_employee("Female")
+		self.assertEqual(_company_pt_amount(company, 30000, employee, "2026-02-15"), 200.0)
 
 	def test_ssa_statutory_uses_slabs_not_flat(self):
 		company = _make_pt_company()
