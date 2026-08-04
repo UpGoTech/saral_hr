@@ -156,14 +156,14 @@ No Playwright for v1.
 
 ## Acceptance criteria
 
-- [ ] Company form shows Professional Tax section with period + male/female slabs
-- [ ] New/empty companies can load (or are seeded with) Maharashtra defaults
-- [ ] Salary slip PT uses final gross + gender + age + February rules from Company
-- [ ] Flat ₹200 / ₹300 hardcodes removed from slip, CTC calculator, CTC record
-- [ ] SSA only toggles PT; preview amount comes from slabs + SSA gross
-- [ ] PT Salary Component is not a special monthly component after migrate
-- [ ] SSA-locked periods block slab/rate edits (to_date still editable)
-- [ ] Unit tests above pass on the test site
+- [x] Company form shows Professional Tax section with period + male/female slabs
+- [x] New/empty companies can load (or are seeded with) Maharashtra defaults
+- [x] Salary slip PT uses final gross + gender + age + February rules from Company
+- [x] Flat ₹200 / ₹300 hardcodes removed from slip, CTC calculator, CTC record
+- [x] SSA only toggles PT; preview amount comes from slabs + SSA gross
+- [x] PT Salary Component is not a special monthly component after migrate
+- [x] SSA-locked periods block slab/rate edits (to_date still editable)
+- [x] Unit tests above pass on the test site
 
 ## Progress log
 
@@ -171,3 +171,4 @@ No Playwright for v1.
 |------|------|
 | 2026-08-04 | Spec written after grilling; status `planned` — await review before build |
 | 2026-08-04 | Build started on `feat/maharashtra-professional-tax` |
+| 2026-08-04 | Implemented: PT Period child + Company slabs UI/helpers; purged 200/300 hardcodes; patches + unit tests green |

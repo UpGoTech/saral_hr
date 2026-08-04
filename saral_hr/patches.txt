@@ -6,3 +6,5 @@
 # Patches added in this section will be executed after doctypes are migrated
 saral_hr.patches.set_pdf_options
 saral_hr.patches.backfill_company_employee_counts
+saral_hr.patches.seed_maharashtra_pt_periods
+saral_hr.patches.clear_pt_special_component

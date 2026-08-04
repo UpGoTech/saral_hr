@@ -76,7 +76,7 @@ def get_statutory_components(company, gross_salary, from_date,
                               is_esic_applicable=0, is_pf_applicable=0,
                               pf_type=None, is_pt_applicable=0,
                               is_lwf_applicable=0,
-                              earnings_map=None):
+                              earnings_map=None, employee=None):
     import json as _json
 
     gross_salary       = flt(gross_salary)
@@ -150,10 +150,10 @@ def get_statutory_components(company, gross_salary, from_date,
             if adm_pct:
                 employer_share.append(row(SC_EMPR_PFADM, wage * adm_pct  / 100, employer=1))
 
-    # ── PT ──
-    if is_pt_applicable and from_date:
-        month_name = MONTHS[getdate(from_date).month - 1]
-        pt_amt     = _special_component_amount(SC_PT, month_name)
+    # ── PT (preview from SSA gross + employee gender/DOB) ──
+    if is_pt_applicable and from_date and comp_doc:
+        gender, dob = _employee_gender_dob(employee)
+        pt_amt = flt(comp_doc.calculate_pt(gross_salary, gender, period_date, dob))
         deductions.append(row(SC_PT, pt_amt))
 
     # ── LWF ──
@@ -162,6 +162,31 @@ def get_statutory_components(company, gross_salary, from_date,
         employer_share.append(row(SC_EMPR_LWF, _special_component_constant_amount(SC_EMPR_LWF), employer=1))
 
     return {"deductions": deductions, "employer_share": employer_share}
+
+
+def _employee_gender_dob(employee):
+    gender = None
+    dob = None
+    if not employee:
+        return gender, dob
+    if frappe.db.exists("Employee", employee):
+        row = frappe.db.get_value("Employee", employee, ["gender", "date_of_birth"], as_dict=True)
+        if row:
+            gender, dob = row.gender, row.date_of_birth
+    if (not dob or not gender) and frappe.db.exists("Company Link", employee):
+        link = frappe.db.get_value(
+            "Company Link", employee, ["employee", "date_of_birth"], as_dict=True
+        )
+        if link:
+            dob = dob or link.date_of_birth
+            if link.employee and (not dob or not gender):
+                emp = frappe.db.get_value(
+                    "Employee", link.employee, ["gender", "date_of_birth"], as_dict=True
+                )
+                if emp:
+                    gender = gender or emp.gender
+                    dob = dob or emp.date_of_birth
+    return gender, dob
 
 
 def _sum_components(components, gross_salary, earnings_map):
