@@ -5,6 +5,7 @@ Single board for all specs in this folder. New specs get the next number (`002-â
 | # | Spec | Status | Notes |
 |---|------|--------|-------|
 | 001 | [Company list employee counts](./001-company-list-employee-counts.md) | done | List + form headcount from Company Link; tests passing |
+| 002 | [Maharashtra Professional Tax](./002-maharashtra-professional-tax.md) | in progress | Per-slab Feb amounts; Female no Feb surcharge; multi-state deferred |
 
 ## Status legend
 

@@ -36,6 +36,46 @@ def _company_for_employee(employee):
     return frappe.db.get_value("Company Link", employee, "company")
 
 
+def _employee_gender_dob(employee):
+    """Resolve gender and DOB from Employee / Company Link."""
+    gender = None
+    dob = None
+    if not employee:
+        return gender, dob
+    if frappe.db.exists("Employee", employee):
+        row = frappe.db.get_value("Employee", employee, ["gender", "date_of_birth"], as_dict=True)
+        if row:
+            gender, dob = row.gender, row.date_of_birth
+    if not dob or not gender:
+        link = frappe.db.get_value(
+            "Company Link", employee, ["employee", "date_of_birth", "gender"], as_dict=True
+        )
+        if link:
+            dob = dob or link.date_of_birth
+            gender = gender or getattr(link, "gender", None)
+            if link.employee and (not dob or not gender):
+                emp = frappe.db.get_value(
+                    "Employee", link.employee, ["gender", "date_of_birth"], as_dict=True
+                )
+                if emp:
+                    gender = gender or emp.gender
+                    dob = dob or emp.date_of_birth
+    return gender, dob
+
+
+def _company_pt_amount(company, gross, employee, period_date):
+    if not company or not period_date:
+        return 0.0
+    try:
+        comp_doc = frappe.get_doc("Company", company)
+    except frappe.DoesNotExistError:
+        return 0.0
+    if not hasattr(comp_doc, "calculate_pt"):
+        return 0.0
+    gender, dob = _employee_gender_dob(employee)
+    return flt(comp_doc.calculate_pt(gross, gender, period_date, dob))
+
+
 def round_salary_amount(value, company=None, digits=None):
     if digits is None:
         digits = get_salary_amount_rounding_digits(company)
@@ -317,14 +357,17 @@ def get_salary_structure_for_employee(
     for row in (ssa_doc.deductions or []):
         if statutory_needs_recompute and _is_statutory_component(row.salary_component):
             continue
-        if _is_pt_component(row.salary_component) and _is_pt_exempt(employee, start_date):
-            continue
         meta          = _comp_meta(row.salary_component)
         is_daily_wage = int(meta.get("daily_wage_component") or getattr(row, "daily_wage_component", 0) or 0)
         per_day_rate  = flt(getattr(row, "per_day_rate", None) or 0)
         amount        = flt(row.amount, amount_digits)
         if _is_pt_component(row.salary_component):
-            amount = 300.0 if current_month == "February" else 200.0
+            # Preview only — final PT is applied after gross in calculate_salary_slip_amounts_exact
+            ssa_gross_est = sum(flt(r.amount) for r in (ssa_doc.earnings or []))
+            amount = flt(
+                _company_pt_amount(ssa_doc.company, ssa_gross_est, employee, start_date),
+                amount_digits,
+            )
         deductions.append({
             "salary_component":                 row.salary_component,
             "abbr":                             meta.get("salary_component_abbr") or getattr(row, "abbr", "") or "",
@@ -370,13 +413,10 @@ def get_salary_structure_for_employee(
             pf_type=ssa_doc.pf_applicable or "",
             is_pt_applicable=int(ssa_doc.is_pt_applicable or 0),
             is_lwf_applicable=int(ssa_doc.is_lwf_applicable or 0),
+            employee=employee,
         )
         for d in (recomputed.get("deductions") or []):
-            if _is_pt_component(d["salary_component"]) and _is_pt_exempt(employee, start_date):
-                continue
             amount = flt(d["amount"], amount_digits)
-            if _is_pt_component(d["salary_component"]):
-                amount = 300.0 if current_month == "February" else 200.0
             deductions.append({
                 "salary_component": d["salary_component"], "abbr": d.get("abbr") or "",
                 "amount": amount, "base_amount": amount,
@@ -416,28 +456,6 @@ def _is_statutory_component(comp_name):
 
 def _is_pt_component(comp_name):
     return (comp_name or "").strip() == PT_COMPONENT_NAME
-
-
-def _is_pt_exempt(employee, start_date):
-    if not employee or not start_date:
-        return False
-    try:
-        dob = frappe.db.get_value("Employee", employee, "date_of_birth")
-        if not dob:
-            dob = (
-                frappe.db.get_value("Company Link", employee, "date_of_birth") or
-                frappe.db.get_value(
-                    "Employee",
-                    frappe.db.get_value("Company Link", employee, "employee"),
-                    "date_of_birth"
-                )
-            )
-        if not dob:
-            return False
-        from dateutil.relativedelta import relativedelta
-        return relativedelta(getdate(start_date), getdate(dob)).years >= 65
-    except Exception:
-        return False
 
 
 def calculate_salary_slip_amounts_exact(
@@ -496,12 +514,8 @@ def calculate_salary_slip_amounts_exact(
         per_day_rate  = flt(getattr(row, "per_day_rate", 0) or 0)
         is_pt         = _is_pt_component(row.salary_component)
 
-        if is_pt and _is_pt_exempt(salary_slip.employee, start_date):
-            row.amount = 0.0
-            continue
-
         if is_pt:
-            amount = 300.0 if start_month == 2 else 200.0
+            amount = _company_pt_amount(company, total_earnings, salary_slip.employee, start_date)
         elif _is_statutory_component(row.salary_component):
             amount = base
         elif is_daily_wage and per_day_rate > 0:
@@ -569,7 +583,7 @@ SC_EMPR_LWF   = "Employer Labour Welfare Fund"
 def get_statutory_components_internal(
     company, gross_salary, earnings_map, from_date,
     is_esic_applicable, is_pf_applicable, pf_type,
-    is_pt_applicable, is_lwf_applicable
+    is_pt_applicable, is_lwf_applicable, employee=None
 ):
     VIRTUAL = {"Gross", "Gross Including Additional Salary"}
 
@@ -616,8 +630,10 @@ def get_statutory_components_internal(
             if edli: employer_share.append(row(SC_EMPR_EDLI,  wage * edli / 100, emp=1))
             if adm:  employer_share.append(row(SC_EMPR_PFADM, wage * adm  / 100, emp=1))
 
-    if is_pt_applicable and month_name:
-        deductions.append(row(SC_PT, _sa_local(SC_PT, month_name)))
+    if is_pt_applicable and from_date and comp_doc:
+        gender, dob = _employee_gender_dob(employee)
+        pt_amt = flt(comp_doc.calculate_pt(gross_salary, gender, from_date, dob))
+        deductions.append(row(SC_PT, pt_amt))
 
     if is_lwf_applicable and month_name:
         deductions.append(row(SC_EMP_LWF, _sa_local(SC_EMP_LWF, month_name)))

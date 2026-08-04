@@ -877,6 +877,7 @@ function refresh_statutory_rows(frm) {
             pf_type:            frm.doc.pf_applicable       || "",
             is_pt_applicable:   frm.doc.is_pt_applicable   ? 1 : 0,
             is_lwf_applicable:  frm.doc.is_lwf_applicable  ? 1 : 0,
+            employee:           frm.doc.employee           || "",
         },
         callback(r) {
             _statutory_inflight = false;

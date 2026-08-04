@@ -17,8 +17,6 @@ def _round0(value):
 
 GRATUITY_RATE  = 4.81 / 100
 RETENTION_RATE = 2.00 / 100   # Basic+DA × 2%
-PT_NORMAL      = 200.0
-PT_FEBRUARY    = 300.0
 
 STATUTORY_NAMES = {
     "Employee ESIC", "Employer ESIC",
@@ -53,6 +51,47 @@ DEDUCTION_FORMULAS = {
 }
 
 REMAINDER_KEYWORDS = ["other allowance", "others", "other", "oa", "remainder", "balance"]
+
+_MONTH_TO_NUM = {
+    "January": 1, "February": 2, "March": 3, "April": 4,
+    "May": 5, "June": 6, "July": 7, "August": 8,
+    "September": 9, "October": 10, "November": 11, "December": 12,
+}
+
+
+def _company_pt_amount(company, gross, month_name, gender="Male"):
+    if not company:
+        return 0.0
+    try:
+        from datetime import date
+        from frappe.utils import getdate
+        comp = frappe.get_doc("Company", company)
+        month_num = _MONTH_TO_NUM.get(month_name or "January", 1)
+        period_date = date(date.today().year, month_num, 1)
+        return flt(comp.calculate_pt(gross, gender, period_date, None))
+    except Exception:
+        return 0.0
+
+REMAINDER_KEYWORDS = ["other allowance", "others", "other", "oa", "remainder", "balance"]
+
+_MONTH_TO_NUM = {
+    "January": 1, "February": 2, "March": 3, "April": 4,
+    "May": 5, "June": 6, "July": 7, "August": 8,
+    "September": 9, "October": 10, "November": 11, "December": 12,
+}
+
+
+def _company_pt_amount(company, gross, month_name, gender="Male"):
+    if not company:
+        return 0.0
+    try:
+        from datetime import date
+        comp = frappe.get_doc("Company", company)
+        month_num = _MONTH_TO_NUM.get(month_name or "January", 1)
+        period_date = date(date.today().year, month_num, 1)
+        return flt(comp.calculate_pt(gross, gender, period_date, None))
+    except Exception:
+        return 0.0
 
 
 @frappe.whitelist()
@@ -215,7 +254,6 @@ def calculate_ctc_breakdown(company, salary_structure, annual_ctc, month=None,
     annual_ctc  = flt(annual_ctc)
     monthly_ctc = _round2(annual_ctc / 12)
     month_name  = month or "January"
-    is_february = (month_name == "February")
 
     company_stat = _get_company_statutory(company)
 
@@ -294,7 +332,7 @@ def calculate_ctc_breakdown(company, salary_structure, annual_ctc, month=None,
 
     emp_pf       = _round2(pf_wage * pf_emp_pct)             if is_pf   else 0.0
     esic_emp_amt = _round2(total_gross * esic_emp_pct / 100) if is_esic else 0.0
-    pt_amount    = (PT_FEBRUARY if is_february else PT_NORMAL) if is_pt  else 0.0
+    pt_amount    = _company_pt_amount(company, total_gross, month_name) if is_pt else 0.0
 
     # ✅ Retention — only if checkbox checked, using same RETENTION_RATE formula
     retention_amt = _round2(basic_da * RETENTION_RATE) if is_retention else 0.0
