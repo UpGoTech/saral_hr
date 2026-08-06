@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| **Status** | planned |
+| **Status** | in progress |
 | **Branch** | `feat/monthly-salary-register` (proposed) |
 | **Surface** | New Frappe Script Report (+ PDF & Excel export) |
 | **Primary sources** | Salary Slip (submitted), Salary Structure Assignment, Company Link, Employee |
@@ -211,3 +211,4 @@ Company + one past month with ≥2 submitted Staff slips → Desk rows → PDF d
 | Date | Note |
 |------|------|
 | 2026-08-06 | Grilled from sample screenshot; spec written (planned) |
+| 2026-08-06 | Implemented Script Report + PDF/Excel; unit tests passing |
