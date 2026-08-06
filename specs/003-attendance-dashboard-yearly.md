@@ -130,3 +130,4 @@ Unit/integration tests for:
 | Date | Note |
 |------|------|
 | 2026-08-06 | Spec grilled and written |
+| 2026-08-06 | Implemented yearly API + UI; unit tests passing |

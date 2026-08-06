@@ -251,10 +251,19 @@ frappe.pages["attendance-dashboard"].on_page_load = function (wrapper) {
 			background:var(--subtle-fg); border-bottom:1px solid var(--border-color);
 		}
 		.ap-yr-tbl thead th:not(:first-child) { text-align:center; }
-		.ap-yr-tbl tbody tr { border-bottom:1px solid var(--border-color); cursor:pointer; transition:background .1s; }
+		.ap-yr-tbl tbody tr { border-bottom:1px solid var(--border-color); transition:background .1s; }
 		.ap-yr-tbl tbody tr:hover { background:var(--highlight-color); }
 		.ap-yr-tbl tbody td { padding:10px 14px; }
-		.ap-yr-tbl tbody td:not(:first-child):not(:last-child) { text-align:center; }
+		.ap-yr-tbl tbody td:not(:first-child) { text-align:center; }
+		.ap-yr-link {
+			cursor:pointer; font-weight:700; color:var(--primary);
+			border-bottom:1px dashed var(--primary); padding:0 2px;
+		}
+		.ap-yr-link:hover { opacity:.8; }
+		.ap-yr-miss {
+			font-size:11px; color:var(--text-muted); margin-top:2px;
+			max-width:280px; white-space:normal; line-height:1.35;
+		}
 
 		/* ── Employee detail drawer ── */
 		.ap-overlay {
@@ -823,94 +832,155 @@ frappe.pages["attendance-dashboard"].on_page_load = function (wrapper) {
 	// ═══════════════════════════════════════════════════════════════════════════
 	function loadYearly(){
 		$main.html(skelCards(4)+skelPanel());
-		let p=12, res={};
-		MONTHS.forEach(m=>{
-			frappe.call({
-				method:"saral_hr.saral_hr.page.attendance_dashboard.attendance_dashboard.get_monthly_summary",
-				args:{company:state.company, year:state.year, month:m, department:state.department},
-				callback(r){ res[m]=r.message; if(--p===0) renderYearly(res); },
-				error(){ res[m]=null; if(--p===0) renderYearly(res); }
-			});
+		frappe.call({
+			method:"saral_hr.saral_hr.page.attendance_dashboard.attendance_dashboard.get_yearly_summary",
+			args:{company:state.company, year:state.year, department:state.department},
+			callback(r){ renderYearly(r.message||{}); },
+			error(){ $main.html(`<div class="ap-empty">Failed to load yearly summary.</div>`); }
 		});
 	}
 
-	function renderYearly(res){
+	function yrLink(val, month, listType){
+		const n = val||0;
+		return `<span class="ap-yr-link" data-month="${frappe.utils.escape_html(month)}" data-type="${listType}">${n}</span>`;
+	}
+
+	function renderYearly(data){
 		$main.empty();
 		setInfo(`<strong>${state.company}</strong> &nbsp;·&nbsp; Year ${state.year}`);
-		let tp=0, ta=0, tl=0, thd=0;
-		MONTHS.forEach(m=>{
-			const d=res[m]; if(!d) return;
-			const ov=d.overall||{};
-			tp  += ["Present","On Tour","Earned Comp Off"].reduce((s,k)=>s+(ov[k]||0),0);
-			ta  += (ov["Absent"]||0)+(ov["LWP"]||0);
-			tl  += ["Earned Leave","Casual Leave","Comp Off"].reduce((s,k)=>s+(ov[k]||0),0);
-			thd += (ov["Half Day"]||0);
-		});
-		const fd = res[MONTHS[0]];
+		const cards = data.cards||{};
+		const months = data.months||[];
 		const $cards = $(`<div class="ap-cards"></div>`).appendTo($main);
 		[
-			{icon:"👥", val:fd?fd.total_active:0, label:"Active",         bg:"#1e40af"},
-			{icon:"🏢", val:tp,                   label:"Phys. Present",  bg:"#15803d"},
-			{icon:"🌴", val:tl,                   label:"Leaves Taken",   bg:"#7c3aed"},
-			{icon:"🌗", val:thd,                  label:"Half Days",      bg:"#b45309"},
-			{icon:"❌", val:ta,                   label:"Absent / LWP",   bg:"#b91c1c"},
-		].forEach(c=>$(`<div class="ap-card" style="background:${c.bg};">
-			<div class="ap-card-icon">${c.icon}</div>
-			<div class="ap-card-num" data-t="${c.val}">0</div>
-			<div class="ap-card-label">${c.label}</div>
-		</div>`).appendTo($cards));
+			{icon:"➕", val:cards.joined||0, label:"Joined", bg:"#15803d"},
+			{icon:"➖", val:cards.left||0, label:"Left", bg:"#b91c1c"},
+			{icon:"👥", val:cards.avg_closing||0, label:"Avg Closing", bg:"#1e40af", raw:true},
+			{icon:"✅", val:cards.marked_coverage_pct||0, label:"Marked Coverage %", bg:"#0e7490", raw:true, suffix:"%"},
+		].forEach(c=>{
+			const display = c.raw ? c.val : 0;
+			const $card = $(`<div class="ap-card" style="background:${c.bg};">
+				<div class="ap-card-icon">${c.icon}</div>
+				<div class="ap-card-num" ${c.raw?"":`data-t="${c.val}"`}>${c.raw?`${c.val}${c.suffix||""}`:"0"}</div>
+				<div class="ap-card-label">${c.label}</div>
+			</div>`);
+			$cards.append($card);
+		});
 		animNums($cards);
 
 		const $p = $(`<div class="ap-panel"></div>`).appendTo($main);
-		$(`<div class="ap-panel-hd"><span class="ap-panel-title">📅 ${state.year} — Month-wise Summary</span></div>`).appendTo($p);
+		$(`<div class="ap-panel-hd"><span class="ap-panel-title">${state.year} — Month-wise Headcount &amp; Marking</span></div>`).appendTo($p);
+
+		if(!months.length){
+			$p.append(`<div class="ap-empty" style="padding:28px;">No completed months for this year yet.</div>`);
+			return;
+		}
+
 		const $tbl = $(`<table class="ap-yr-tbl">
 			<thead><tr>
 				<th>Month</th>
-				<th>Present</th>
-				<th>On Leave</th>
-				<th>Half Day</th>
-				<th>Absent/LWP</th>
-				<th>Holidays</th>
-				<th>Attendance %</th>
+				<th>Opening</th>
+				<th>Joined</th>
+				<th>Left</th>
+				<th>Closing</th>
+				<th>Total Strength</th>
+				<th>Marked</th>
+				<th>Not Marked</th>
 			</tr></thead>
 			<tbody></tbody>
 		</table>`).appendTo($p);
 		const $tb = $tbl.find("tbody");
 
-		MONTHS.forEach(m=>{
-			const d=res[m]; const ov=d?d.overall||{}:{};
-			const pres  = ["Present","On Tour","Earned Comp Off"].reduce((s,k)=>s+(ov[k]||0),0);
-			const leave = ["Earned Leave","Casual Leave","Comp Off"].reduce((s,k)=>s+(ov[k]||0),0);
-			const hday  = ov["Half Day"]||0;
-			const abs   = (ov["Absent"]||0)+(ov["LWP"]||0);
-			const hol   = ov["Holiday"]||0;
-			const mp    = d?d.total_days*(d.total_active||1):0;
-			const pct   = mp>0 ? Math.round((pres/mp)*100) : 0;
-			const bc    = pct>=80?"#22c55e":pct>=60?"#f59e0b":"#ef4444";
-			const isCur = m===MONTHS[TODAY.getMonth()] && state.year===String(TODAY.getFullYear());
-			const $tr   = $(`<tr ${isCur?'style="background:var(--primary-light);"':""}>
-				<td style="font-weight:${isCur?"700":"600"};">${m}${isCur?` <span style="font-size:9px;background:var(--primary);color:#fff;padding:1px 6px;border-radius:6px;margin-left:4px;">Now</span>`:""}</td>
-				<td style="color:#16a34a;font-weight:700;">${pres}</td>
-				<td style="color:#7c3aed;font-weight:700;">${leave}</td>
-				<td style="color:#b45309;font-weight:700;">${hday}</td>
-				<td style="color:#dc2626;font-weight:700;">${abs}</td>
-				<td style="color:#0e7490;font-weight:600;">${hol}</td>
-				<td>
-					<div style="display:flex;align-items:center;gap:7px;">
-						<div class="ap-pct-bg" style="flex:1;">
-							<div class="ap-pct-fill" style="width:${pct}%;background:${bc};"></div>
-						</div>
-						<span style="font-size:11px;font-weight:700;color:${bc};min-width:32px;">${pct}%</span>
-					</div>
-				</td>
+		months.forEach(m=>{
+			const $tr = $(`<tr>
+				<td style="font-weight:600;">${m.month}</td>
+				<td>${yrLink(m.opening, m.month, "opening")}</td>
+				<td>${yrLink(m.joined, m.month, "joined")}</td>
+				<td>${yrLink(m.left, m.month, "left")}</td>
+				<td>${yrLink(m.closing, m.month, "closing")}</td>
+				<td style="font-weight:700;">${m.total_strength||0}</td>
+				<td>${yrLink(m.marked, m.month, "marked")}</td>
+				<td>${yrLink(m.not_marked, m.month, "not_marked")}</td>
 			</tr>`);
-			$tr.on("click",()=>{
-				state.month=m; state.view="monthly";
-				$vFi.find(".ap-vtab").removeClass("active");
-				$vFi.find("[data-v='monthly']").addClass("active");
-				renderPeriodFields(); loadMonthly();
+			$tr.find(".ap-yr-link").on("click", function(e){
+				e.stopPropagation();
+				openYearlyList($(this).data("month"), $(this).data("type"));
 			});
 			$tb.append($tr);
+		});
+	}
+
+	const YR_LIST_TITLES = {
+		opening: "Opening Headcount",
+		joined: "Employees Who Joined",
+		left: "Employees Who Left",
+		closing: "Closing Headcount",
+		marked: "Attendance Marked",
+		not_marked: "Attendance Not Marked",
+	};
+
+	function openYearlyList(month, listType){
+		const title = YR_LIST_TITLES[listType] || listType;
+		const $ov = $(`<div class="ap-overlay"></div>`).appendTo("body");
+		const $dr = $(`<div class="ap-drawer"></div>`).appendTo($ov);
+		$dr.html(`<div class="ap-drawer-hd">
+			<div>
+				<div class="ap-drawer-title">${title}</div>
+				<div class="ap-drawer-sub">${month} ${state.year}</div>
+			</div>
+			<div class="ap-drawer-close">×</div>
+		</div><div class="ap-drawer-body">${skelPanel()}</div>`);
+		$dr.find(".ap-drawer-close").on("click",()=>$ov.remove());
+		$ov.on("click",e=>{ if($(e.target).is($ov)) $ov.remove(); });
+
+		frappe.call({
+			method:"saral_hr.saral_hr.page.attendance_dashboard.attendance_dashboard.get_yearly_employee_list",
+			args:{
+				company: state.company,
+				year: state.year,
+				month,
+				list_type: listType,
+				department: state.department,
+			},
+			callback(r){
+				const d = r.message || {};
+				const emps = d.employees || [];
+				const $b = $dr.find(".ap-drawer-body").empty();
+				$dr.find(".ap-drawer-sub").text(`${month} ${state.year} · ${emps.length} employee${emps.length===1?"":"s"}`);
+
+				if(listType==="not_marked"){
+					const url = d.mark_attendance_url || "/app/mark-attendance";
+					$(`<div style="margin-bottom:12px;">
+						<a class="btn btn-primary btn-sm" href="${url}" target="_blank" rel="noopener">Open Mark Attendance</a>
+					</div>`).appendTo($b);
+				}
+
+				if(!emps.length){
+					$b.append(`<div class="ap-empty">No employees in this list.</div>`);
+					return;
+				}
+
+				buildSearch($b).find("input").on("input", function(){
+					const q = $(this).val().toLowerCase();
+					$b.find(".ap-emp-row").each(function(){
+						$(this).toggle($(this).data("name").toLowerCase().includes(q));
+					});
+				});
+
+				emps.forEach(e=>{
+					const miss = listType==="not_marked"
+						? `<div class="ap-yr-miss"><strong>${e.missing_count||0} missing</strong>${(e.missing_dates||[]).length?`: ${(e.missing_dates||[]).slice(0,8).map(x=>frappe.datetime.str_to_user(x)).join(", ")}${(e.missing_dates||[]).length>8?"…":""}`:""}</div>`
+						: "";
+					const $row = $(`<div class="ap-emp-row" data-name="${frappe.utils.escape_html(e.name||"")}">
+						<div class="ap-av" style="background:hsl(${hueFor(e.name)},55%,42%);">${initials(e.name)}</div>
+						<div class="ap-emp-info">
+							<div class="ap-emp-name">${frappe.utils.escape_html(e.name||e.employee)}</div>
+							<div class="ap-emp-meta">${frappe.utils.escape_html(e.department||"—")} · ${frappe.utils.escape_html(e.designation||"—")}</div>
+							${miss}
+						</div>
+					</div>`);
+					$b.append($row);
+				});
+			}
 		});
 	}
 
