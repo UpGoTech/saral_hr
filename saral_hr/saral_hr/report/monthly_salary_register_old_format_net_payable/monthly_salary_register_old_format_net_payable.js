@@ -1,4 +1,4 @@
-frappe.query_reports["Monthly Salary Register (Old Format) Net Payable"] = {
+frappe.query_reports["Monthly Salary Register Old Format Net Payable"] = {
 	filters: [
 		{
 			fieldname: "company",
@@ -89,7 +89,7 @@ function _export(report, method, freeze_msg) {
 	}
 	frappe.dom.freeze(freeze_msg);
 	frappe.call({
-		method: `saral_hr.saral_hr.report.monthly_salary_register_old_format.monthly_salary_register_old_format.${method}`,
+		method: `saral_hr.saral_hr.report.monthly_salary_register_old_format_net_payable.monthly_salary_register_old_format_net_payable.${method}`,
 		args: { filters: JSON.stringify(f) },
 		callback(r) {
 			frappe.dom.unfreeze();

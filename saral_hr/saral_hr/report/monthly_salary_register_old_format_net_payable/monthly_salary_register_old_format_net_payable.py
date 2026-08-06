@@ -1,7 +1,7 @@
 # Copyright (c) 2026, sj and Contributors
 # See license.txt
 
-"""Monthly Salary Register (Old Format) Net Payable — Desk + PDF + Excel."""
+"""Monthly Salary Register Old Format Net Payable — Desk + PDF + Excel."""
 
 from __future__ import annotations
 
