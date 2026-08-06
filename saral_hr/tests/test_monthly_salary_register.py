@@ -5,7 +5,7 @@ import frappe
 from frappe.tests.utils import FrappeTestCase
 from frappe.utils import getdate
 
-from saral_hr.saral_hr.report.monthly_salary_register_old_format.monthly_salary_register_old_format import (
+from saral_hr.saral_hr.report.monthly_salary_register_old_format_net_payable.monthly_salary_register_old_format_net_payable import (
 	build_register,
 	_act_fn,
 	_earn_fn,

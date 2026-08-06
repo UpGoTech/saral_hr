@@ -14,7 +14,9 @@ Payroll ops still use a wide “Employee Salary Sheet” (one row per employee) 
 
 ## What?
 
-New report: **Monthly Salary Register (Old Format) Net Payable**
+New report: **Monthly Salary Register Old Format Net Payable**
+
+> Desk report name cannot include parentheses — Frappe `scrub()` would produce an invalid Python module (`monthly_salary_register_(old_format)_net_payable`).
 
 - One row per employee for a selected company + month
 - PDF + Excel with the same column model, color bands, totals row, and signature block
@@ -147,7 +149,7 @@ Reuse patterns from `salary_summary` PDF helpers where practical; keep this repo
 
 ## How? (implementation sketch)
 
-1. New Script Report under Saral HR: `Monthly Salary Register (Old Format) Net Payable`
+1. New Script Report under Saral HR: `Monthly Salary Register Old Format Net Payable`
 2. `execute(filters)` → columns + data for Desk
 3. Whitelisted export methods (or report-js buttons) for PDF / Excel
 4. Data pipeline per month:
@@ -172,7 +174,7 @@ Company + one past month with ≥2 submitted Staff slips → Desk rows → PDF d
 
 ## Acceptance
 
-1. Report appears as **Monthly Salary Register (Old Format) Net Payable**
+1. Report appears as **Monthly Salary Register Old Format Net Payable**
 2. Filters: Company, Year, Month, Population (All/Staff/Worker/Consultant)
 3. Only submitted slips; one row per slip/employee
 4. Day columns match mapping above; OD & I blank; HD/ECO/LWP not shown
@@ -204,7 +206,7 @@ Company + one past month with ≥2 submitted Staff slips → Desk rows → PDF d
 | Excel | Same columns + totals |
 | Colors | PDF + Excel |
 | Signatures | Yes |
-| Name | Monthly Salary Register (Old Format) Net Payable |
+| Name | Monthly Salary Register Old Format Net Payable (no parentheses — scrub must be a valid module) |
 
 ## Progress log
 
@@ -212,3 +214,4 @@ Company + one past month with ≥2 submitted Staff slips → Desk rows → PDF d
 |------|------|
 | 2026-08-06 | Grilled from sample screenshot; spec written (planned) |
 | 2026-08-06 | Implemented Script Report + PDF/Excel; unit tests passing |
+| 2026-08-06 | Fix: drop parentheses from report name so scrub() matches module path |

@@ -12,11 +12,11 @@
  "modified": "2026-08-06 13:30:00.000000",
  "modified_by": "Administrator",
  "module": "Saral Hr",
- "name": "Monthly Salary Register (Old Format) Net Payable",
+ "name": "Monthly Salary Register Old Format Net Payable",
  "owner": "Administrator",
  "prepared_report": 0,
  "ref_doctype": "Salary Slip",
- "report_name": "Monthly Salary Register (Old Format) Net Payable",
+ "report_name": "Monthly Salary Register Old Format Net Payable",
  "report_type": "Script Report",
  "roles": [
   {
