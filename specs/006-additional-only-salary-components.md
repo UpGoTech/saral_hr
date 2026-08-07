@@ -2,13 +2,13 @@
 
 | | |
 |---|---|
-| **Status** | in progress |
-| **Branch** | `feat/additional-only-salary-components` (proposed) |
+| **Status** | done |
+| **Branch** | `feat/additional-only-salary-components` |
 | **Primary DocTypes** | Salary Component, Additional Salary, Additional Salary Component, Additional Deductions, Additional Deduction Component, Company, Salary Slip, Salary Structure Assignment |
 
 ## Why?
 
-Additional Salary amounts are added to slip **Total Gross**, but ESIC (and PF when component-wise) is computed from Company-listed wage components only. Today Additional Salary / Additional Deduction use **free-text** `component_type`, so those amounts never reliably enter the ESIC/PF wage map. Component-wise statutory math is therefore wrong whenever Production Incentive, Arrears, etc. are paid via Additional Salary.
+Additional Salary amounts are added to slip **Total Gross**, but ESIC (and PF when component-wise) is computed from Company-listed wage components only. Previously Additional Salary / Additional Deduction used **free-text** `component_type`, so those amounts never reliably entered the ESIC/PF wage map. Component-wise statutory math was wrong whenever Production Incentive, Arrears, etc. were paid via Additional Salary.
 
 ## What?
 
@@ -17,6 +17,8 @@ Additional Salary amounts are added to slip **Total Gross**, but ESIC (and PF wh
 3. These components are **excluded from SSA** (structure / assignment earnings & deductions pickers).
 4. Additional-only **earnings** appear in Company **ESIC / PF** wage-component settings and participate in wage-basis `_sum` when selected.
 5. Fix slip statutory recompute so Additional Salary lines enter `earnings_map` **by component name** (not a synthetic lump key alone).
+6. Slip print lists Additional Salary earnings as line items (not only in the total).
+7. Company ESIC / PF / PT period lock is based on **submitted Salary Slips** so periods can be unlocked for data correction.
 
 Out of scope for this spec:
 
@@ -39,12 +41,18 @@ Out of scope for this spec:
 | 9 | Deduction penalties | Additional-only **deductions** never enter ESIC/PF wage components |
 | 10 | Slip earnings_map | When recomputing statutory, merge Additional Salary rows into `earnings_map[component_name] += amount` (same names as wage list) |
 | 11 | Legacy lump key | Drop reliance on synthetic `"Additional Salary"` / `"Arrears"` alias inject for wage math once named merge works |
-| 12 | Existing free-text rows | Migrate: if text matches a Salary Component name, convert to Link; else create additional-only component **or** fail migrate with report — prefer match-or-create for known seed names |
-| 13 | Seed examples (earnings) | Production Incentive; keep existing Arrears / Arrears - without PF and mark additional-only where appropriate |
-| 14 | Seed examples (deductions) | Safety Gadget Penalty (or similar); type Deduction, `is_additional_only = 1` |
+| 12 | Existing free-text rows | Migrate: if text matches a Salary Component name, convert to Link; else create additional-only component — prefer match-or-create |
+| 13 | Seed examples (earnings) | Production Incentive; mark Arrears / Arrears - without PF as additional-only (confirmed unused on SSA) |
+| 14 | Seed examples (deductions) | Safety Gadget Penalty; type Deduction, `is_additional_only = 1` |
 | 15 | Abbr on slip | Resolve abbr from Salary Component when appending additional rows to slip |
-| 16 | Tests | Unit: Additional Salary earning in Company ESIC wage list → Employee/Employer ESIC includes that amount; free-text rejected; SSA cannot add additional-only component |
-| 17 | Delivery | Spec commit first; then tracer: flag + Link fields + earnings_map fix + one ESIC test |
+| 16 | Tests | Unit: Additional Salary earning in Company ESIC wage list → Employee/Employer ESIC includes that amount; free-text rejected; SSA cannot add additional-only component; period lock unlocks when slips cleared |
+| 17 | Delivery | Spec commit first; then tracer: flag + Link fields + earnings_map fix + ESIC test |
+| 18 | Slip print | Salary Slip Custom must append Additional Salary earnings into print rows (fixture + module JSON kept in sync). Totals alone are not enough |
+| 19 | Period lock purpose | Protect wage components / rates **after payroll has used them** |
+| 20 | Period lock rule | Lock when a **submitted** Salary Slip `start_date` falls in the period. **SSA alone does not lock** |
+| 21 | Period unlock / correction | Cancel (or cancel then delete) all submitted slips in that period → period unlocks for data correction; SSAs may remain |
+| 22 | Period close workflow | `to_date` stays editable on locked rows; close period + add new period for future rate changes without canceling history |
+| 23 | Draft slips | Draft (`docstatus = 0`) and cancelled (`docstatus = 2`) slips do **not** lock |
 
 ## Statutory matrix
 
@@ -58,74 +66,70 @@ Out of scope for this spec:
 
 ### 1. Salary Component
 
-Add field:
-
 | Fieldname | Type | Default | Notes |
 |-----------|------|---------|--------|
 | `is_additional_only` | Check | 0 | If 1: usable only on Additional Salary / Additional Deductions; hidden from SSA |
 
-Validation:
+Validation: `is_additional_only` and `is_special_component` are **mutually exclusive**.
 
-- `is_additional_only` and `is_special_component` are **mutually exclusive** (forbid both on). Special = SSA/statutory monthly fixed; additional-only = ad-hoc docs.
+### 2. Additional Salary / Deduction children
 
-### 2. Additional Salary Component / Additional Deduction Component
+- `component_type` → Link to Salary Component
+- Filters + server validate: type + `is_additional_only = 1`
 
-| Field | Change |
-|-------|--------|
-| `component_type` | Fieldtype **Link**, options **Salary Component** |
-| Filters (JS `set_query` + server validate) | Salary: Earning + `is_additional_only=1`; Deduction: Deduction + `is_additional_only=1` |
+### 3. SSA / Salary Structure
 
-Parent controllers (`additional_salary.py`, `additional_deductions.py`):
-
-- On validate, for each child row assert Link target exists and passes filters.
-- Reject blank / unknown / wrong type / non-additional-only.
-
-### 3. SSA / Salary Structure UI
-
-- `set_query` on earnings / deductions / employer_share: `is_additional_only = 0` (and existing type filters).
-- Server-side SSA validate: throw if any row references `is_additional_only` component.
+- `set_query` excludes `is_additional_only = 1`
+- Server reject if inserted
 
 ### 4. Salary Slip statutory path
 
-In `get_salary_structure_for_employee` (and bulk path equivalent):
+1. Build `actual_earnings_map` from SSA earnings
+2. Merge Additional Salary by component name into `earnings_map`
+3. Recompute statutory when attendance data exists **or** additional names intersect wage lists / Gross virtuals
+4. Set `abbr` from Salary Component on additional rows
 
-1. Build `actual_earnings_map` from SSA earnings (as today).
-2. Load Additional Salary for employee/month; for each child:
-   `earnings_map[component_type] = earnings_map.get(component_type, 0) + amount`
-3. `gross_salary = sum(earnings_map.values())` (keep consistent with current gross definition used by PT/ESIC).
-4. Call `get_statutory_components_internal` with that map.
-5. When appending additional rows to the slip, set `abbr` from Salary Component.
+### 5. Company ESIC / PF / PT period lock
 
-Remove / stop depending on synthetic `"Additional Salary"` / `"Arrears"` alias inject for wage inclusion once named merge works (may keep a temporary total helper only if still needed for UX totals).
+```
+locked ⇔ exists submitted Salary Slip
+         where company matches
+           and start_date ∈ [period.from_date, period.to_date]
+```
 
-### 5. Company ESIC / PF
+- UI + server (`_period_is_locked` / `_validate_locked_periods`) share this rule
+- Protected fields: wage components and rates (`to_date` excluded)
+- Hint on Company form explains cancel/delete slips to unlock, or close + new period
 
-No schema change required if UI already loads all Earning components. Optional UX: group or badge “Additional-only” in the checkbox list.
+**Rejected alternatives (documented during review):**
 
-Locked periods: same SSA-lock rules as today — wage list changes still blocked when locked.
+| Rule | Why rejected |
+|------|----------------|
+| SSA `from_date` in period only | Misses coverage months (Jul unlocked while Apr SSA still applies) |
+| SSA date-range overlap | Locks every future period while open-ended SSAs exist; blocks close+new |
+| SSA start **or** submitted slip | Keeps Apr–Jun locked after all slips cleared; blocks data correction |
 
 ### 6. Install / migrate
 
-- Seed Production Incentive (Earning, `is_additional_only=1`).
-- Seed Safety Gadget Penalty (Deduction, `is_additional_only=1`) — name can be adjusted at implement time.
-- Mark existing **Arrears** / **Arrears - without PF** as `is_additional_only=1` if they should never sit on SSA (confirm against current SSA usage before flipping).
-- Patch: convert historical Additional Salary / Deduction child `component_type` strings to Links where possible.
+- Seed Production Incentive, Safety Gadget Penalty
+- Mark Arrears / Arrears - without PF as additional-only
+- Patch `seed_additional_only_salary_components`: match-or-create free-text child values (e.g. Production Incentives, I-Tax)
 
-### 7. Frontend / Desk sync
+### 7. Slip print
 
-- Additional Salary / Deduction forms: Link + `set_query`.
-- SSA: exclude additional-only.
-- Company wage UI: no mandatory change; verify additional-only earnings show up.
+- Ensure `Salary Slip Custom` HTML includes Additional Salary earnings in the Earnings / Computed Earnings row list
+- Keep `fixtures/print_format.json` and module print format JSON in sync (stale fixture previously hid Production Incentive on print while totals included it)
 
-## Tracer bullet (build order)
+## Tracer bullet (build order) — completed
 
-1. Spec committed on `feat/additional-only-salary-components`.
-2. `is_additional_only` on Salary Component + seed one earning + one deduction.
-3. Link + validate on Additional Salary / Additional Deduction (block free text).
-4. Exclude from SSA query/validate.
-5. Fix slip `earnings_map` merge by component name + ESIC unit test (before/after).
-6. Migrate patch for existing free-text rows.
-7. Manual check: Company ticks Production Incentive → slip ESIC rises by Incentive × employee %.
+1. Spec committed on `feat/additional-only-salary-components`
+2. `is_additional_only` + seeds
+3. Link + validate on Additional Salary / Deduction
+4. Exclude from SSA / Salary Structure
+5. Slip `earnings_map` merge + ESIC unit tests
+6. Migrate patch for free-text rows
+7. Print format fixture sync
+8. Statutory period lock → submitted slips only (+ unlock tests)
 
 ## Progress
 
@@ -137,10 +141,20 @@ Locked periods: same SSA-lock rules as today — wage list changes still blocked
 | SSA exclude | done |
 | Slip earnings_map / ESIC fix | done |
 | Migrate + tests | done |
+| Slip print Additional Salary rows | done |
+| Statutory period lock (slip-based) | done |
+
+## Manual verification notes (Fabrixcel / Sandeep Mankar Jul 2024)
+
+- Additional Salary **Production Incentives** ₹1,270 was on the slip child table and in total ₹16,270 but missing from print until fixture sync
+- ESIC wage list must explicitly include Production Incentives / Production Incentive for ESIC to rise with the incentive
+- Close old ESIC period + new period from 01-07-2024 is the path to change wage components without editing history
+- Clearing **submitted** slips in a period unlocks that period for correction; SSA can stay
 
 ## Non-goals / explicit ignores
 
-- Free-text component names on Additional Salary / Deduction after this ships.
-- Additional deductions as ESIC/PF wage components.
-- Hard-auto “every additional earning always in ESIC/PF”.
-- Renaming virtual Gross / Gross Including Additional Salary UX in this spec (can be a follow-up).
+- Free-text component names on Additional Salary / Deduction after this ships
+- Additional deductions as ESIC/PF wage components
+- Hard-auto “every additional earning always in ESIC/PF”
+- Renaming virtual Gross / Gross Including Additional Salary UX (follow-up)
+- Locking periods based on SSA existence alone
