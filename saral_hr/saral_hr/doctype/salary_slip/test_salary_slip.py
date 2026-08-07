@@ -8,6 +8,7 @@ from frappe.utils import add_days, get_first_day, get_last_day, getdate
 from saral_hr.saral_hr.doctype.salary_slip.salary_slip import (
 	calculate_salary_slip_amounts_exact,
 	get_attendance_and_days,
+	get_eligible_employees_for_salary_slip,
 	get_salary_amount_rounding_digits,
 	round_salary_amount,
 )
@@ -164,3 +165,31 @@ class TestSalaryAmountRounding(FrappeTestCase):
 		frappe.db.set_value("Company", company, "salary_amount_rounding_digits", "2")
 		calculate_salary_slip_amounts_exact(ss, 0, "2024-01-01")
 		self.assertEqual(ss.earnings[0].amount, 3333.33)
+
+
+def _ids_from_eligible_result(result):
+	ids = {row.get("name") for row in result.get("eligible") or []}
+	for bucket in ("skipped", "already_generated"):
+		for row in result.get(bucket) or []:
+			ids.add(row.get("id"))
+	return ids
+
+
+class TestBulkEligibleLeftEmployees(FrappeTestCase):
+	def test_left_employee_included_only_for_overlapping_months(self):
+		"""Left employees must appear for months within tenure, not after left_date."""
+		company = _make_company()
+		employee = _make_employee()
+		cl = _make_company_link(employee, company, "2024-01-01", weekly_off="")
+		doc = frappe.get_doc("Company Link", cl)
+		doc.left_date = getdate("2024-03-15")
+		doc.save(ignore_permissions=True)
+		self.assertEqual(frappe.db.get_value("Company Link", cl, "is_active"), 0)
+
+		march = get_eligible_employees_for_salary_slip(company, "2024", "March")
+		self.assertIn(cl, _ids_from_eligible_result(march))
+		self.assertEqual(march["total_active"], 1)
+
+		april = get_eligible_employees_for_salary_slip(company, "2024", "April")
+		self.assertNotIn(cl, _ids_from_eligible_result(april))
+		self.assertEqual(april["total_active"], 0)
