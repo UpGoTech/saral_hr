@@ -17,11 +17,30 @@ frappe.ui.form.on('Salary Component', {
 
     is_special_component(frm) {
         if (frm.doc.is_special_component) {
+            if (frm.doc.is_additional_only) {
+                frm.set_value("is_additional_only", 0);
+                frappe.show_alert({
+                    message: __("Is Additional Only was unchecked. A component cannot be both Special and Additional Only."),
+                    indicator: "orange",
+                });
+            }
             ensure_all_months(frm);
         } else {
             // Clear the table when unchecked
             frm.clear_table("monthly_amounts");
             frm.refresh_field("monthly_amounts");
+        }
+    },
+
+    is_additional_only(frm) {
+        if (frm.doc.is_additional_only && frm.doc.is_special_component) {
+            frm.set_value("is_special_component", 0);
+            frm.clear_table("monthly_amounts");
+            frm.refresh_field("monthly_amounts");
+            frappe.show_alert({
+                message: __("Is Special Component was unchecked. A component cannot be both Special and Additional Only."),
+                indicator: "orange",
+            });
         }
     },
 

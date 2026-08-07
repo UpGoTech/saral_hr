@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| **Status** | planned |
+| **Status** | in progress |
 | **Branch** | `feat/additional-only-salary-components` (proposed) |
 | **Primary DocTypes** | Salary Component, Additional Salary, Additional Salary Component, Additional Deductions, Additional Deduction Component, Company, Salary Slip, Salary Structure Assignment |
 
@@ -131,12 +131,12 @@ Locked periods: same SSA-lock rules as today — wage list changes still blocked
 
 | Phase | Status |
 |-------|--------|
-| Spec | planned (this file) |
-| Flag + seed | pending |
-| Additional DocTypes Link + validate | pending |
-| SSA exclude | pending |
-| Slip earnings_map / ESIC fix | pending |
-| Migrate + tests | pending |
+| Spec | done |
+| Flag + seed | done |
+| Additional DocTypes Link + validate | done |
+| SSA exclude | done |
+| Slip earnings_map / ESIC fix | done |
+| Migrate + tests | done |
 
 ## Non-goals / explicit ignores
 

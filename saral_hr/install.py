@@ -57,8 +57,10 @@ def create_salary_components():
         {"salary_component": "Education Allowance", "salary_component_abbr": "EDU", "type": "Earning", "depends_on_payment_days": 1},
         {"salary_component": "Other Allowance", "salary_component_abbr": "OA", "type": "Earning", "depends_on_payment_days": 1},
         {"salary_component": "Variable Pay", "salary_component_abbr": "VAR", "type": "Earning", "depends_on_payment_days": 1},
-        {"salary_component": "Arrears", "salary_component_abbr": "ARREARS", "type": "Earning", "depends_on_payment_days": 0},
-        {"salary_component": "Arrears - without PF", "salary_component_abbr": "ARR-NOPF", "type": "Earning", "depends_on_payment_days": 0},
+        {"salary_component": "Arrears", "salary_component_abbr": "ARREARS", "type": "Earning", "depends_on_payment_days": 0, "is_additional_only": 1},
+        {"salary_component": "Arrears - without PF", "salary_component_abbr": "ARR-NOPF", "type": "Earning", "depends_on_payment_days": 0, "is_additional_only": 1},
+        {"salary_component": "Production Incentive", "salary_component_abbr": "PI", "type": "Earning", "depends_on_payment_days": 0, "is_additional_only": 1},
+        {"salary_component": "Safety Gadget Penalty", "salary_component_abbr": "SGP", "type": "Deduction", "is_additional_only": 1},
         {"salary_component": "Basic - DR", "salary_component_abbr": "B-DR", "type": "Earning", "is_daily_rate": 1},
         {"salary_component": "Dearness Allowance - DR", "salary_component_abbr": "DA-DR", "type": "Earning", "is_daily_rate": 1},
         {"salary_component": "Dearness Allowance -  DR", "salary_component_abbr": "DA - DR", "type": "Earning", "is_daily_rate": 1},
@@ -124,11 +126,18 @@ def create_salary_components():
                 "esic_calculation_based_on": comp.get("esic_calculation_based_on"),
                 "esic_percentage": comp.get("esic_percentage", 0.0),
                 "is_pt_component": comp.get("is_pt_component", 0),
+                "is_additional_only": comp.get("is_additional_only", 0),
             })
             doc.insert(ignore_permissions=True)
             print(f"✅ Created: {name}")
         else:
-            print(f"⏭️ Skipped (exists): {name}")
+            if comp.get("is_additional_only") and not int(
+                frappe.db.get_value("Salary Component", name, "is_additional_only") or 0
+            ):
+                frappe.db.set_value("Salary Component", name, "is_additional_only", 1)
+                print(f"✅ Marked additional-only: {name}")
+            else:
+                print(f"⏭️ Skipped (exists): {name}")
 
     frappe.db.commit()
     print("✅ Salary Components created successfully.")

@@ -15,6 +15,7 @@ class SalaryComponent(Document):
 
     def validate(self):
         self._validate_calculation_flags()
+        self._validate_additional_only()
         self._populate_monthly_amounts()
 
     def on_update(self):
@@ -31,6 +32,13 @@ class SalaryComponent(Document):
                 "Only one calculation mode can be enabled at a time. "
                 "Please check only one of: <b>Depends on Payment Days</b> or "
                 "<b>Depends on Physical Working Days</b>."
+            )
+
+    def _validate_additional_only(self):
+        if int(self.is_additional_only or 0) and int(self.is_special_component or 0):
+            frappe.throw(
+                "A component cannot be both <b>Is Special Component</b> and "
+                "<b>Is Additional Only</b>."
             )
 
     # ──────────────────────────────────────────────

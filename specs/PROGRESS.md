@@ -9,7 +9,7 @@ Single board for all specs in this folder. New specs get the next number (`002-â
 | 003 | [Attendance Dashboard yearly](./003-attendance-dashboard-yearly.md) | done | Merged PR #33 â€” yearly headcount + marking coverage |
 | 004 | [Monthly Salary Register (Old Format)](./004-monthly-salary-register.md) | done | Script Report + PDF/Excel; tests passing |
 | 005 | [Monthly Salary Register Compressed](./005-monthly-salary-register-compressed.md) | ready for review | Format filter + Desk/PDF/Excel UX polish |
-| 006 | [Additional-Only Salary Components](./006-additional-only-salary-components.md) | planned | Link-only Additional Salary/Deduction; ESIC/PF wage map by component name |
+| 006 | [Additional-Only Salary Components](./006-additional-only-salary-components.md) | in progress | Flag+Link+earnings_map+ESIC tests; migrate seeds Production Incentive / Safety Gadget Penalty |
 
 ## Status legend
 

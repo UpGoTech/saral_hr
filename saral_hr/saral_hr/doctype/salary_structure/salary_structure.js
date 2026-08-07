@@ -60,6 +60,7 @@ function set_salary_component_filter(frm, cdt, cdn, component_type) {
             return {
                 filters: {
                     type: component_type,
+                    is_additional_only: 0,
                     name: ["not in", selected_components]
                 }
             };

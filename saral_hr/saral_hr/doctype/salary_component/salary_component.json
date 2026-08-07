@@ -18,6 +18,7 @@
   "employer_contribution",
   "exclude_from_ctc",
   "is_special_component",
+  "is_additional_only",
   "section_monthly_amounts",
   "monthly_amounts"
  ],
@@ -100,6 +101,13 @@
    "label": "Is Special Component"
   },
   {
+   "default": "0",
+   "description": "Usable only on Additional Salary / Additional Deductions. Hidden from Salary Structure and Salary Structure Assignment.",
+   "fieldname": "is_additional_only",
+   "fieldtype": "Check",
+   "label": "Is Additional Only"
+  },
+  {
    "depends_on": "eval:doc.is_special_component == 1",
    "description": "Enter the fixed amount for each calendar month. Rows are pre-populated January to December. Amounts are applied as-is during payroll — no proration.",
    "fieldname": "section_monthly_amounts",
@@ -116,7 +124,7 @@
  ],
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-05-06 00:00:00.000000",
+ "modified": "2026-08-07 00:00:00.000000",
  "modified_by": "Administrator",
  "module": "Saral Hr",
  "name": "Salary Component",

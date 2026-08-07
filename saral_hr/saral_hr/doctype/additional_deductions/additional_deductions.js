@@ -28,6 +28,9 @@ frappe.ui.form.on('Additional Deductions', {
     refresh(frm) {
         if (!frm.doc.currency) frm.set_value('currency', 'INR');
         frm.set_query('employee', () => ({ filters: { is_active: 1 } }));
+        frm.set_query('component_type', 'deductions', () => ({
+            filters: { type: 'Deduction', is_additional_only: 1 }
+        }));
     },
 
     employee(frm) {

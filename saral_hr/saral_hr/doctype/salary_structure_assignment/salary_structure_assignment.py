@@ -29,6 +29,9 @@ SC_EMPR_LWF   = "Employer Labour Welfare Fund"
 
 class SalaryStructureAssignment(Document):
 
+    def validate(self):
+        self._reject_additional_only_components()
+
     def before_save(self):
         if self.docstatus == 1:
             return
@@ -45,6 +48,33 @@ class SalaryStructureAssignment(Document):
             throw_if_overlap=True,
             submitted_only=submitted_only,
         )
+
+    def _reject_additional_only_components(self):
+        rows = []
+        for table in ("earnings", "deductions", "employer_share"):
+            for row in self.get(table) or []:
+                if row.salary_component:
+                    rows.append((row.idx, table, row.salary_component))
+        if not rows:
+            return
+        names = list({name for _, _, name in rows})
+        flagged = {
+            r.name
+            for r in frappe.get_all(
+                "Salary Component",
+                filters={"name": ["in", names], "is_additional_only": 1},
+                fields=["name"],
+            )
+        }
+        for idx, table, name in rows:
+            if name in flagged:
+                frappe.throw(
+                    _(
+                        "Row #{0} in {1}: {2} is Additional-Only and cannot be "
+                        "used on Salary Structure Assignment. Use Additional "
+                        "Salary / Additional Deductions instead."
+                    ).format(idx, table.replace("_", " ").title(), frappe.bold(name))
+                )
 
     def on_update_after_submit(self):
         # amend ke baad submitted doc mein date edit — overlap check nahi karna
