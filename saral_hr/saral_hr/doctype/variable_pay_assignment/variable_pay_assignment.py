@@ -1,11 +1,22 @@
 from frappe.model.document import Document
 import frappe
+from frappe.utils import cint
+
+YEAR_MIN = 1950
+YEAR_MAX = 2099
 
 class VariablePayAssignment(Document):
 
     def validate(self):
+        self.validate_year()
         self.validate_unique_month_year()
         self.validate_duplicate_divisions()
+
+    def validate_year(self):
+        year = cint(self.year)
+        if year < YEAR_MIN or year > YEAR_MAX:
+            frappe.throw(f"Year must be between {YEAR_MIN} and {YEAR_MAX}")
+        self.year = year
 
     def validate_unique_month_year(self):
         """One record per Year + Month"""

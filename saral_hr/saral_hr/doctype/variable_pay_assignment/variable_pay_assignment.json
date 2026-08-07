@@ -14,10 +14,10 @@
  "fields": [
   {
    "fieldname": "year",
-   "fieldtype": "Select",
+   "fieldtype": "Int",
    "in_list_view": 1,
    "label": "Year",
-   "options": "\n2025\n2026\n2027\n2028\n2029\n2030",
+   "non_negative": 1,
    "reqd": 1
   },
   {
