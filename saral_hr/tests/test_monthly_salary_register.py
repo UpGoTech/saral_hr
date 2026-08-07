@@ -309,3 +309,60 @@ class TestMonthlySalaryRegister(FrappeTestCase):
 		self.assertEqual(tot["_is_total"], 1)
 		self.assertEqual(tot["employee_name"], "Total")
 		self.assertEqual(tot["net_payable"], payload["data"][0]["net_payable"] + payload["data"][1]["net_payable"])
+
+	def test_compressed_format_ten_columns_and_totals(self):
+		company = _make_company()
+		structure = _make_structure(company)
+		cl = _make_cl(_make_employee(bank="HDFC", ifsc="HDFC0001", acct="998877"), company)
+		_make_ssa(cl, company, structure, basic=10000, hra=2000)
+		_make_slip(cl, company, employee_name="Comp Emp")
+
+		full = build_register(
+			{
+				"company": company,
+				"year": "2024",
+				"month": "June",
+				"population": "All",
+				"format": "Full",
+			}
+		)
+		compressed = build_register(
+			{
+				"company": company,
+				"year": "2024",
+				"month": "June",
+				"population": "All",
+				"format": "Compressed",
+			}
+		)
+
+		labels = [c["label"] for c in compressed["columns"]]
+		self.assertEqual(
+			labels,
+			[
+				"SR. NO.",
+				"Full Name",
+				"IFSC Code",
+				"Account Number",
+				"Days in Month",
+				"Paid For Days",
+				"Actual Gross",
+				"Earning Gross",
+				"Deductions",
+				"Net Payable",
+			],
+		)
+		self.assertEqual(compressed["meta"]["format"], "Compressed")
+
+		full_row = [r for r in full["data"] if not r.get("_is_total")][0]
+		row = [r for r in compressed["data"] if not r.get("_is_total")][0]
+		self.assertEqual(row["ifsc"], "HDFC0001")
+		self.assertEqual(row["bank_account"], "998877")
+		self.assertNotIn("bank_name", row)
+		self.assertNotIn("day_p", row)
+		self.assertEqual(row["total_gross"], full_row["total_gross"])
+		self.assertEqual(row["total_earning"], full_row["total_earning"])
+		self.assertEqual(row["total_deductions"], full_row["total_deductions"])
+		self.assertEqual(row["net_payable"], full_row["net_payable"])
+		self.assertEqual(row["total_paid_days"], full_row["total_paid_days"])
+		self.assertEqual(row["total_month_day"], 30)

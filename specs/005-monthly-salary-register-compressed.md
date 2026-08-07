@@ -2,8 +2,8 @@
 
 | | |
 |---|---|
-| **Status** | planned |
-| **Branch** | `feat/monthly-salary-register-compressed` (proposed) |
+| **Status** | in progress |
+| **Branch** | `feat/monthly-salary-register-compressed` |
 | **Depends on** | [004 — Monthly Salary Register Old Format](./004-monthly-salary-register.md) |
 | **Surface** | Extend existing Script Report **Monthly Salary Register Old Format Net Payable** |
 | **Primary sources** | Same as 004 (submitted Salary Slip, SSA, Employee bank) |
@@ -103,3 +103,4 @@ Keep Desk report name **Monthly Salary Register Old Format Net Payable** (no new
 | Date | Note |
 |------|------|
 | 2026-08-07 | Spec drafted and saved (planned) |
+| 2026-08-07 | Format filter + compressed layout implemented; tests added |

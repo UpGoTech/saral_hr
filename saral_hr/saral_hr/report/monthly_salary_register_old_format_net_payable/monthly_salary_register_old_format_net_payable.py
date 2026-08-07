@@ -49,7 +49,9 @@ DAY_COLS = [
 ]
 
 IDENTITY_FNS = {"sr_no", "employee_name", "bank_name", "ifsc", "bank_account"}
-HIGHLIGHT_FNS = {"total_gross", "total_earning", "net_payable"}
+HIGHLIGHT_FNS = {"total_gross", "total_earning", "total_deductions", "net_payable"}
+COMPRESSED_FORMAT = "Compressed"
+FULL_FORMAT = "Full"
 
 ACTUAL_HDR = "#F4A460"
 EARN_HDR = "#90EE90"
@@ -75,29 +77,35 @@ def execute(filters=None):
 def build_register(filters):
 	"""Build columns + data + meta for Desk / PDF / Excel."""
 	f = _normalize_filters(filters)
+	compressed = f.format == COMPRESSED_FORMAT
+	base_meta = {
+		"company": f.company,
+		"month": f.month,
+		"year": f.year,
+		"format": f.format,
+		"actual_comps": [],
+		"earn_comps": [],
+		"ded_comps": [],
+	}
+
 	if not f.company or not f.year or not f.month:
-		return {"columns": _empty_columns(), "data": [], "meta": {}}
+		return {
+			"columns": _compressed_columns() if compressed else _empty_columns(),
+			"data": [],
+			"meta": base_meta,
+		}
 
 	start = date(int(f.year), MONTH_MAP[f.month], 1)
 	end = getdate(get_last_day(start))
 	month_days = calendar.monthrange(int(f.year), MONTH_MAP[f.month])[1]
+	base_meta.update({"start": str(start), "end": str(end), "month_days": month_days})
 
 	slips = _load_slips(f.company, start, end, f.population)
 	if not slips:
 		return {
-			"columns": _fixed_columns([] , [], []),
+			"columns": _compressed_columns() if compressed else _fixed_columns([], [], []),
 			"data": [],
-			"meta": {
-				"company": f.company,
-				"month": f.month,
-				"year": f.year,
-				"start": str(start),
-				"end": str(end),
-				"month_days": month_days,
-				"actual_comps": [],
-				"earn_comps": [],
-				"ded_comps": [],
-			},
+			"meta": base_meta,
 		}
 
 	cl_ids = [s.employee for s in slips]
@@ -106,12 +114,16 @@ def build_register(filters):
 	emp_map = _employee_bank_map(emp_ids)
 
 	ssa_by_cl = {}
+	for s in slips:
+		ssa_by_cl[s.employee] = _resolve_ssa(s.employee, start, end)
+
+	if compressed:
+		return _build_compressed(slips, cl_map, emp_map, ssa_by_cl, month_days, base_meta)
+
 	actual_union = []
 	seen_act = set()
 	for s in slips:
-		ssa_name = _resolve_ssa(s.employee, start, end)
-		ssa_by_cl[s.employee] = ssa_name
-		for comp, amt in _ssa_earnings(ssa_name):
+		for comp, amt in _ssa_earnings(ssa_by_cl.get(s.employee)):
 			if comp not in seen_act:
 				seen_act.add(comp)
 				actual_union.append(comp)
@@ -177,20 +189,42 @@ def build_register(filters):
 	if rows:
 		rows.append(_totals_row(rows, actual_union, earn_union, ded_union, month_days))
 
+	base_meta.update({
+		"actual_comps": actual_union,
+		"earn_comps": earn_union,
+		"ded_comps": ded_union,
+	})
+	return {"columns": columns, "data": rows, "meta": base_meta}
+
+
+def _build_compressed(slips, cl_map, emp_map, ssa_by_cl, month_days, base_meta):
+	rows = []
+	for idx, s in enumerate(slips, start=1):
+		cl = cl_map.get(s.employee) or {}
+		emp = emp_map.get(cl.get("employee")) or {}
+		ssa_amts = dict(_ssa_earnings(ssa_by_cl.get(s.employee)))
+		gross = flt(sum(flt(v) for v in ssa_amts.values()), 2)
+		rows.append({
+			"sr_no": idx,
+			"employee_name": s.employee_name or cl.get("full_name") or s.employee,
+			"ifsc": emp.get("ifsc_code") or "",
+			"bank_account": emp.get("account_number") or "",
+			"total_month_day": month_days,
+			"total_paid_days": flt(s.payment_days),
+			"total_gross": gross,
+			"total_earning": flt(s.total_earnings),
+			"total_deductions": flt(s.total_deductions),
+			"net_payable": flt(s.net_salary),
+			"_is_total": 0,
+		})
+
+	if rows:
+		rows.append(_compressed_totals_row(rows))
+
 	return {
-		"columns": columns,
+		"columns": _compressed_columns(),
 		"data": rows,
-		"meta": {
-			"company": f.company,
-			"month": f.month,
-			"year": f.year,
-			"start": str(start),
-			"end": str(end),
-			"month_days": month_days,
-			"actual_comps": actual_union,
-			"earn_comps": earn_union,
-			"ded_comps": ded_union,
-		},
+		"meta": base_meta,
 	}
 
 
@@ -205,6 +239,8 @@ def _normalize_filters(filters):
 	if pop.lower() == "all":
 		pop = "All"
 	f.population = pop
+	fmt = (f.get("format") or FULL_FORMAT).strip()
+	f.format = COMPRESSED_FORMAT if fmt == COMPRESSED_FORMAT else FULL_FORMAT
 	return f
 
 
@@ -359,6 +395,21 @@ def _empty_columns():
 	return _fixed_columns([], [], [])
 
 
+def _compressed_columns():
+	return [
+		_col("SR. NO.", "sr_no", "Int", 50),
+		_col("Full Name", "employee_name", width=180),
+		_col("IFSC Code", "ifsc", width=110),
+		_col("Account Number", "bank_account", width=130),
+		_col("Days in Month", "total_month_day", "Int", 80),
+		_col("Paid For Days", "total_paid_days", "Float", 90, precision=1),
+		_col("Actual Gross", "total_gross", "Currency", 110),
+		_col("Earning Gross", "total_earning", "Currency", 110),
+		_col("Deductions", "total_deductions", "Currency", 110),
+		_col("Net Payable", "net_payable", "Currency", 110),
+	]
+
+
 def _fixed_columns(actual_comps, earn_comps, ded_comps):
 	cols = [
 		_col("SR. NO.", "sr_no", "Int", 50),
@@ -413,6 +464,26 @@ def _totals_row(rows, actual_comps, earn_comps, ded_comps, month_days):
 	for fn, _, field in DAY_COLS:
 		if not field:
 			tot[fn] = None
+	return tot
+
+
+def _compressed_totals_row(rows):
+	tot = {
+		"sr_no": "",
+		"employee_name": "Total",
+		"ifsc": "",
+		"bank_account": "",
+		"total_month_day": "",
+		"_is_total": 1,
+	}
+	for fn in (
+		"total_paid_days",
+		"total_gross",
+		"total_earning",
+		"total_deductions",
+		"net_payable",
+	):
+		tot[fn] = flt(sum(flt(r.get(fn)) for r in rows), 2)
 	return tot
 
 

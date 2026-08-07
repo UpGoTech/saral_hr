@@ -49,6 +49,14 @@ frappe.query_reports["Monthly Salary Register Old Format Net Payable"] = {
 			default: "All",
 			options: ["All", "Staff", "Worker", "Consultant"].join("\n"),
 		},
+		{
+			fieldname: "format",
+			label: __("Format"),
+			fieldtype: "Select",
+			reqd: 1,
+			default: "Full",
+			options: ["Full", "Compressed"].join("\n"),
+		},
 	],
 
 	onload(report) {
@@ -65,12 +73,13 @@ frappe.query_reports["Monthly Salary Register Old Format Net Payable"] = {
 		const def = (v) => default_formatter(v, row, column, data);
 		const fn = column.fieldname;
 		if (data._is_total) {
-			if (["bank_name", "ifsc", "bank_account", "total_month_day", "sr_no"].includes(fn)) {
-				return fn === "employee_name" ? `<strong>${def(value)}</strong>` : "";
+			const skip = ["bank_name", "ifsc", "bank_account", "total_month_day", "sr_no"];
+			if (skip.includes(fn)) {
+				return "";
 			}
 			return `<strong>${def(value)}</strong>`;
 		}
-		if (["total_gross", "total_earning", "net_payable"].includes(fn)) {
+		if (["total_gross", "total_earning", "total_deductions", "net_payable"].includes(fn)) {
 			return `<span style="background:#ffff99;padding:0 4px;">${def(value)}</span>`;
 		}
 		return def(value);
