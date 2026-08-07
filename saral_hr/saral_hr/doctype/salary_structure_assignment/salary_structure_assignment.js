@@ -56,6 +56,15 @@ frappe.ui.form.on("Salary Structure Assignment", {
         frm.set_query("salary_structure", () => ({
             filters: { company: frm.doc.company || "", is_active: "Yes" }
         }));
+        frm.set_query("salary_component", "earnings", () => ({
+            filters: { type: "Earning", is_additional_only: 0 }
+        }));
+        frm.set_query("salary_component", "deductions", () => ({
+            filters: { type: "Deduction", is_additional_only: 0 }
+        }));
+        frm.set_query("salary_component", "employer_share", () => ({
+            filters: { type: "Deduction", is_additional_only: 0 }
+        }));
     },
 
     employee(frm) {

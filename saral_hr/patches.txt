@@ -10,3 +10,4 @@ saral_hr.patches.seed_maharashtra_pt_periods
 saral_hr.patches.clear_pt_special_component
 saral_hr.patches.migrate_pt_february_to_slabs
 saral_hr.patches.delete_broken_monthly_salary_register_report
+saral_hr.patches.seed_additional_only_salary_components

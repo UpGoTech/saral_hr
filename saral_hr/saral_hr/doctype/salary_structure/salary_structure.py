@@ -17,14 +17,22 @@ class SalaryStructure(Document):
         # Check earnings
         for earning in self.get('earnings', []):
             if earning.salary_component:
-                component_type = frappe.db.get_value(
+                meta = frappe.db.get_value(
                     'Salary Component',
                     earning.salary_component,
-                    'type'
-                )
-                if component_type != 'Earning':
+                    ['type', 'is_additional_only'],
+                    as_dict=True,
+                ) or {}
+                if meta.get('type') != 'Earning':
                     frappe.throw(
                         _('Row #{0}: Component {1} is not an Earning type component. Please select an Earning component.').format(
+                            earning.idx,
+                            frappe.bold(earning.salary_component)
+                        )
+                    )
+                if int(meta.get('is_additional_only') or 0):
+                    frappe.throw(
+                        _('Row #{0}: Component {1} is Additional-Only and cannot be used on Salary Structure.').format(
                             earning.idx,
                             frappe.bold(earning.salary_component)
                         )
@@ -33,14 +41,22 @@ class SalaryStructure(Document):
         # Check deductions
         for deduction in self.get('deductions', []):
             if deduction.salary_component:
-                component_type = frappe.db.get_value(
+                meta = frappe.db.get_value(
                     'Salary Component',
                     deduction.salary_component,
-                    'type'
-                )
-                if component_type != 'Deduction':
+                    ['type', 'is_additional_only'],
+                    as_dict=True,
+                ) or {}
+                if meta.get('type') != 'Deduction':
                     frappe.throw(
                         _('Row #{0}: Component {1} is not a Deduction type component. Please select a Deduction component.').format(
+                            deduction.idx,
+                            frappe.bold(deduction.salary_component)
+                        )
+                    )
+                if int(meta.get('is_additional_only') or 0):
+                    frappe.throw(
+                        _('Row #{0}: Component {1} is Additional-Only and cannot be used on Salary Structure.').format(
                             deduction.idx,
                             frappe.bold(deduction.salary_component)
                         )
@@ -55,7 +71,6 @@ class SalaryStructure(Document):
         deductions_components = [d.salary_component for d in self.get('deductions', []) if d.salary_component]
         if len(deductions_components) != len(set(deductions_components)):
             frappe.throw(_('Duplicate salary components found in Deductions table. Each component can only be added once.'))
-
 
 def flt(value, decimals=2):
     """Convert to float with proper handling"""

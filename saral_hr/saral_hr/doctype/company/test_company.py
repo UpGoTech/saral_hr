@@ -322,3 +322,99 @@ class TestCompanyProfessionalTax(FrappeTestCase):
 		)
 		with self.assertRaises(frappe.ValidationError):
 			doc.insert(ignore_permissions=True)
+
+
+def _stub_submitted_slip(company: str, start_date: str) -> str:
+	"""Minimal submitted slip row — only fields the lock query needs."""
+	name = f"SS-LOCK-{_uid()}"
+	frappe.get_doc(
+		{
+			"doctype": "Salary Slip",
+			"name": name,
+			"naming_series": "SS-.YYYY.-",
+			"employee": f"LOCK-EMP-{_uid()}",
+			"employee_name": "Lock Test",
+			"company": company,
+			"start_date": start_date,
+			"end_date": start_date,
+			"docstatus": 1,
+		}
+	).db_insert()
+	return name
+
+
+def _stub_submitted_ssa(company: str, from_date: str) -> str:
+	"""Minimal submitted SSA row — only fields the lock query needs."""
+	name = f"SSA-LOCK-{_uid()}"
+	frappe.get_doc(
+		{
+			"doctype": "Salary Structure Assignment",
+			"name": name,
+			"employee": f"LOCK-EMP-{_uid()}",
+			"company": company,
+			"from_date": from_date,
+			"to_date": "9999-12-31",
+			"salary_structure": "LOCK-SS",
+			"docstatus": 1,
+			"status": "Submitted",
+		}
+	).db_insert()
+	return name
+
+
+class TestStatutoryPeriodLock(FrappeTestCase):
+	"""Period lock = submitted Salary Slip in period (SSA alone does not lock)."""
+
+	def test_unlocked_when_no_submitted_slips(self):
+		company = _make_company()
+		_stub_submitted_ssa(company, "2024-04-01")
+		doc = frappe.get_doc("Company", company)
+		# SSA present, but no slips → both periods unlocked for correction
+		self.assertFalse(doc._period_is_locked("2024-07-01", None))
+		self.assertFalse(doc._period_is_locked("2024-04-01", "2024-06-30"))
+
+	def test_submitted_slip_locks_that_period_only(self):
+		company = _make_company()
+		_stub_submitted_ssa(company, "2024-04-01")
+		_stub_submitted_slip(company, "2024-05-01")
+		doc = frappe.get_doc("Company", company)
+		self.assertTrue(doc._period_is_locked("2024-04-01", "2024-06-30"))
+		self.assertFalse(doc._period_is_locked("2024-07-01", None))
+
+	def test_cancelling_slips_unlocks_period(self):
+		company = _make_company()
+		_stub_submitted_ssa(company, "2024-04-01")
+		slip = _stub_submitted_slip(company, "2024-05-01")
+		doc = frappe.get_doc("Company", company)
+		self.assertTrue(doc._period_is_locked("2024-04-01", "2024-06-30"))
+		# Submitted slips must be cancelled (not hard-deleted) — then period unlocks
+		frappe.db.set_value("Salary Slip", slip, "docstatus", 2)
+		self.assertFalse(doc._period_is_locked("2024-04-01", "2024-06-30"))
+
+	def test_draft_slip_does_not_lock(self):
+		company = _make_company()
+		name = f"SS-DRAFT-{_uid()}"
+		frappe.get_doc(
+			{
+				"doctype": "Salary Slip",
+				"name": name,
+				"naming_series": "SS-.YYYY.-",
+				"employee": f"LOCK-EMP-{_uid()}",
+				"company": company,
+				"start_date": "2024-07-01",
+				"end_date": "2024-07-31",
+				"docstatus": 0,
+			}
+		).db_insert()
+		doc = frappe.get_doc("Company", company)
+		self.assertFalse(doc._period_is_locked("2024-07-01", None))
+
+	def test_get_statutory_lock_dates_api(self):
+		from saral_hr.saral_hr.doctype.company.company import get_statutory_lock_dates
+
+		company = _make_company()
+		_stub_submitted_ssa(company, "2024-04-01")
+		_stub_submitted_slip(company, "2024-07-15")
+		payload = get_statutory_lock_dates(company)
+		self.assertNotIn("ssa_from_dates", payload)
+		self.assertIn("2024-07-15", payload["slip_start_dates"])

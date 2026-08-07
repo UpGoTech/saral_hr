@@ -208,22 +208,44 @@ def check_duplicate_salary_slip(employee, start_date, current_doc=""):
     }
 
 
-_ADDITIONAL_SALARY_KEY     = "Additional Salary"
-_ADDITIONAL_SALARY_ALIASES = {"Additional Salary", "Arrears"}
+_VIRTUAL_WAGE_COMPONENTS = {"Gross", "Gross Including Additional Salary"}
 
 
-def _get_additional_salary_total(employee, year_str, month_str):
-    total = 0.0
+def _get_additional_salary_map(employee, year_str, month_str):
+    """Named Additional Salary amounts for the payroll month (component → sum)."""
+    amounts = {}
     records = frappe.db.get_all(
         "Additional Salary",
         filters={"employee": employee, "year": year_str, "month": month_str, "docstatus": 1},
-        fields=["name"]
+        fields=["name"],
     )
     for rec in records:
         doc = frappe.get_doc("Additional Salary", rec.name)
         for row in doc.components or []:
-            total += flt(row.amount)
-    return total
+            if not row.component_type:
+                continue
+            amounts[row.component_type] = amounts.get(row.component_type, 0.0) + flt(row.amount)
+    return amounts
+
+
+def _merge_additional_into_earnings_map(earnings_map, additional_map):
+    for name, amount in (additional_map or {}).items():
+        earnings_map[name] = flt(earnings_map.get(name, 0.0)) + flt(amount)
+    return earnings_map
+
+
+def _additional_affects_statutory(additional_map, company, start_date):
+    """True when named additional earnings intersect ESIC/PF wage lists (or Gross virtuals)."""
+    if not additional_map or not company:
+        return False
+    comp_doc = frappe.get_doc("Company", company)
+    esic_cfg = comp_doc.get_esic_config(start_date)
+    pf_cfg = comp_doc.get_pf_config(start_date)
+    wage_comps = set(esic_cfg.get("wage_components", []) if esic_cfg else [])
+    wage_comps |= set(pf_cfg.get("wage_components", []) if pf_cfg else [])
+    if wage_comps & _VIRTUAL_WAGE_COMPONENTS:
+        return True
+    return bool(wage_comps & set(additional_map.keys()))
 
 
 @frappe.whitelist()
@@ -337,22 +359,15 @@ def get_salary_structure_for_employee(
             "depends_on_physical_working_days": dep_phd,
         })
 
-    additional_total_for_check = 0.0
+    additional_map = {}
     if employee and year_str and month_str:
-        additional_total_for_check = _get_additional_salary_total(employee, year_str, month_str)
+        additional_map = _get_additional_salary_map(employee, year_str, month_str)
 
     statutory_needs_recompute = False
     if has_att_data:
         statutory_needs_recompute = True
-    # AFTER
-    elif additional_total_for_check > 0 and ssa_doc.company:
-        comp_doc   = frappe.get_doc("Company", ssa_doc.company)
-        esic_cfg   = comp_doc.get_esic_config(start_date)
-        pf_cfg     = comp_doc.get_pf_config(start_date)
-        esic_comps = set(esic_cfg.get("wage_components", []) if esic_cfg else [])
-        pf_comps   = set(pf_cfg.get("wage_components", []) if pf_cfg else [])
-        if (esic_comps & _ADDITIONAL_SALARY_ALIASES) or (pf_comps & _ADDITIONAL_SALARY_ALIASES):
-            statutory_needs_recompute = True
+    elif _additional_affects_statutory(additional_map, ssa_doc.company, start_date):
+        statutory_needs_recompute = True
 
     for row in (ssa_doc.deductions or []):
         if statutory_needs_recompute and _is_statutory_component(row.salary_component):
@@ -400,11 +415,8 @@ def get_salary_structure_for_employee(
 
     if statutory_needs_recompute:
         earnings_map = dict(actual_earnings_map)
-        if additional_total_for_check > 0:
-            earnings_map[_ADDITIONAL_SALARY_KEY] = (
-                earnings_map.get(_ADDITIONAL_SALARY_KEY, 0.0) + additional_total_for_check
-            )
-        gross_salary = sum(earnings_map.values())
+        _merge_additional_into_earnings_map(earnings_map, additional_map)
+        gross_salary = sum(flt(v) for v in earnings_map.values())
         recomputed = get_statutory_components_internal(
             company=ssa_doc.company, gross_salary=gross_salary,
             earnings_map=earnings_map, from_date=start_date or "",
@@ -662,8 +674,11 @@ def get_additional_components_for_employee(employee, year, month):
     ):
         doc = frappe.get_doc("Additional Salary", rec.name)
         for row in doc.components:
+            abbr = frappe.db.get_value(
+                "Salary Component", row.component_type, "salary_component_abbr"
+            ) or ""
             earnings.append({
-                "salary_component": row.component_type, "abbr": "",
+                "salary_component": row.component_type, "abbr": abbr,
                 "amount": flt(row.amount), "base_amount": flt(row.amount),
                 "depends_on_payment_days": 0, "depends_on_physical_working_days": 0
             })
@@ -674,8 +689,11 @@ def get_additional_components_for_employee(employee, year, month):
     ):
         doc = frappe.get_doc("Additional Deductions", rec.name)
         for row in doc.deductions:
+            abbr = frappe.db.get_value(
+                "Salary Component", row.component_type, "salary_component_abbr"
+            ) or ""
             deductions.append({
-                "salary_component": row.component_type, "abbr": "",
+                "salary_component": row.component_type, "abbr": abbr,
                 "amount": flt(row.amount), "base_amount": flt(row.amount),
                 "employer_contribution": 0,
                 "depends_on_payment_days": 0, "depends_on_physical_working_days": 0
