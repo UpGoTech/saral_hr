@@ -13,7 +13,7 @@ from datetime import date
 
 import frappe
 from frappe import _
-from frappe.utils import flt, get_last_day, getdate
+from frappe.utils import cint, flt, get_last_day, getdate
 from frappe.utils.pdf import get_pdf
 
 from openpyxl import Workbook
@@ -49,23 +49,22 @@ DAY_COLS = [
 ]
 
 IDENTITY_FNS = {"sr_no", "employee_name", "bank_name", "ifsc", "bank_account"}
-HIGHLIGHT_FNS = {"total_gross", "total_earning", "total_deductions", "net_payable"}
 COMPRESSED_FORMAT = "Compressed"
 FULL_FORMAT = "Full"
 
 ACTUAL_HDR = "#F4A460"
 EARN_HDR = "#90EE90"
 DED_HDR = "#F08080"
-YELLOW = "#FFFF99"
 SIG = (
-	'<div style="display:flex;justify-content:space-between;margin-top:28px;padding-top:8px;">'
+	'<table style="width:100%;margin-top:36px;border-collapse:collapse;table-layout:fixed;">'
+	"<tr>"
 	+ "".join(
-		f'<div style="text-align:center;width:160px;">'
-		f'<div style="border-top:1px solid #000;margin-bottom:4px;"></div>'
-		f'<div style="font-size:10px;">{lbl}</div></div>'
+		f'<td style="width:33.33%;text-align:center;vertical-align:top;padding:0 12px;">'
+		f'<div style="border-top:1px solid #000;margin:0 auto 6px auto;width:85%;"></div>'
+		f'<div style="font-size:10px;">{lbl}</div></td>'
 		for lbl in ("Prepared By", "Checked By", "Authorised Signatory")
 	)
-	+ "</div>"
+	+ "</tr></table>"
 )
 
 
@@ -270,7 +269,7 @@ def _load_slips(company, start, end, population):
 		  AND ss.start_date = %(start)s
 		  AND ss.end_date = %(end)s
 		  {cat_clause}
-		ORDER BY ss.employee_name ASC, ss.employee ASC
+		ORDER BY IFNULL(NULLIF(cl.employee, ''), ss.employee) ASC
 		""",
 		params,
 		as_dict=True,
@@ -396,18 +395,65 @@ def _empty_columns():
 
 
 def _compressed_columns():
+	# Desk already shows DataTable serial — no SR. NO. column.
+	# <br> = two-line headers (Desk / PDF); Excel swaps to \\n.
 	return [
-		_col("SR. NO.", "sr_no", "Int", 50),
-		_col("Full Name", "employee_name", width=180),
-		_col("IFSC Code", "ifsc", width=110),
-		_col("Account Number", "bank_account", width=130),
-		_col("Days in Month", "total_month_day", "Int", 80),
-		_col("Paid For Days", "total_paid_days", "Float", 90, precision=1),
-		_col("Actual Gross", "total_gross", "Currency", 110),
-		_col("Earning Gross", "total_earning", "Currency", 110),
-		_col("Deductions", "total_deductions", "Currency", 110),
-		_col("Net Payable", "net_payable", "Currency", 110),
+		_col("Full<br>Name", "employee_name", width=180),
+		_col("IFSC<br>Code", "ifsc", width=140, align="left"),
+		_col("Account<br>Number", "bank_account", width=165, align="left"),
+		_col("Days in<br>Month", "total_month_day", "Int", 90),
+		_col("Paid For<br>Days", "total_paid_days", "Float", 95, precision=1),
+		_col("Actual<br>Gross", "total_gross", "Currency", 120),
+		_col("Earning<br>Gross", "total_earning", "Currency", 120),
+		_col("Deductions", "total_deductions", "Currency", 115),
+		_col("Net<br>Payable", "net_payable", "Currency", 120),
 	]
+
+
+def _fmt_paid_days(val):
+	"""Whole days without .0; keep one decimal only when fractional."""
+	if val is None or val == "":
+		return ""
+	v = flt(val)
+	if abs(v - round(v)) < 1e-9:
+		return str(int(round(v)))
+	return f"{v:.1f}"
+
+
+def _columns_for_export(payload):
+	"""PDF/Excel keep an SR. NO. (Desk uses DataTable serial instead)."""
+	cols = list(payload["columns"])
+	if payload.get("meta", {}).get("format") == COMPRESSED_FORMAT:
+		cols = [_col("SR.<br>NO.", "sr_no", "Int", 45)] + cols
+	return cols
+
+
+def _colgroup_html(cols):
+	"""Proportional <col> widths so PDF does not force equal columns."""
+	total = sum(cint(c.get("width") or 100) for c in cols) or 1
+	parts = []
+	for c in cols:
+		pct = 100.0 * cint(c.get("width") or 100) / total
+		parts.append(f'<col style="width:{pct:.2f}%">')
+	return "<colgroup>" + "".join(parts) + "</colgroup>"
+
+
+def _excel_col_width(col):
+	"""Map Desk px-ish widths to Excel character widths (breathing room)."""
+	fn = col.get("fieldname")
+	px = cint(col.get("width") or 100)
+	# Excel width ≈ characters; tune bank fields so IFSC / account don't clip
+	if fn == "sr_no":
+		return 6
+	if fn == "employee_name":
+		return max(18, int(px / 9))
+	if fn == "ifsc":
+		return max(14, int(px / 9))
+	if fn == "bank_account":
+		return max(16, int(px / 9))
+	if fn in ("total_gross", "total_earning", "total_deductions", "net_payable"):
+		return max(12, int(px / 9))
+	return max(10, int(px / 9))
 
 
 def _fixed_columns(actual_comps, earn_comps, ded_comps):
@@ -415,8 +461,8 @@ def _fixed_columns(actual_comps, earn_comps, ded_comps):
 		_col("SR. NO.", "sr_no", "Int", 50),
 		_col("Full Name Of The Employee", "employee_name", width=180),
 		_col("BANK", "bank_name", width=90),
-		_col("IFSC", "ifsc", width=110),
-		_col("BANK ACCOUNT NO", "bank_account", width=130),
+		_col("IFSC", "ifsc", width=130, align="left"),
+		_col("BANK ACCOUNT NO", "bank_account", width=140, align="left"),
 		_col("TOTAL MONTH DAY", "total_month_day", "Int", 70),
 	]
 	for fn, lbl, _ in DAY_COLS:
@@ -474,10 +520,10 @@ def _compressed_totals_row(rows):
 		"ifsc": "",
 		"bank_account": "",
 		"total_month_day": "",
+		"total_paid_days": "",
 		"_is_total": 1,
 	}
 	for fn in (
-		"total_paid_days",
 		"total_gross",
 		"total_earning",
 		"total_deductions",
@@ -498,7 +544,7 @@ def print_report(filters):
 
 
 def _build_html(payload):
-	cols = payload["columns"]
+	cols = _columns_for_export(payload)
 	data = payload["data"]
 	meta = payload["meta"]
 	company = meta.get("company") or ""
@@ -508,51 +554,67 @@ def _build_html(payload):
 	if start and end:
 		period = f"{start.strftime('%d-%b-%Y')} to {end.strftime('%d-%b-%Y')}"
 
+	compressed = meta.get("format") == COMPRESSED_FORMAT
 	actual_set = {_act_fn(c) for c in meta.get("actual_comps") or []}
 	earn_set = {_earn_fn(c) for c in meta.get("earn_comps") or []}
 	ded_set = {_ded_fn(c) for c in meta.get("ded_comps") or []}
 
 	def hdr_bg(fn):
+		if compressed:
+			return "#f0f0f0"
 		if fn in actual_set or fn == "total_gross":
 			return ACTUAL_HDR
 		if fn in earn_set or fn == "total_earning":
 			return EARN_HDR
 		if fn in ded_set or fn == "total_deductions":
 			return DED_HDR
-		if fn == "net_payable":
-			return YELLOW
 		return "#f0f0f0"
 
 	th = "".join(
-		f'<th style="border:1px solid #000;padding:2px;font-size:6.5px;background:{hdr_bg(c["fieldname"])};">'
+		f'<th style="padding:4px 6px 4px 8px;font-size:6.5px;'
+		f'background:{hdr_bg(c["fieldname"])};vertical-align:middle;">'
 		f'{c["label"]}</th>'
 		for c in cols
 	)
 
 	body = ""
+	data_idx = 0
 	for row in data:
 		tds = ""
 		is_tot = row.get("_is_total")
+		if not is_tot:
+			data_idx += 1
 		for c in cols:
 			fn = c["fieldname"]
 			val = row.get(fn)
 			if val is None or val == "":
 				disp = ""
+			elif fn == "total_paid_days":
+				disp = "" if is_tot else _fmt_paid_days(val)
 			elif isinstance(val, float):
 				disp = f"{val:,.2f}"
 			else:
 				disp = str(val)
-			bg = YELLOW if fn in HIGHLIGHT_FNS else ("#e8e8e8" if is_tot else "#fff")
+			if is_tot:
+				bg = "#e8e8e8"
+			elif data_idx % 2 == 0:
+				bg = "#f5f5f5"
+			else:
+				bg = "#fff"
 			align = "left" if fn in ("employee_name", "bank_name", "ifsc", "bank_account") else "right"
 			if fn == "sr_no":
 				align = "center"
-			weight = "bold" if is_tot or fn in HIGHLIGHT_FNS else "normal"
+			weight = "bold" if is_tot else "normal"
+			pad = "2px 4px 2px 8px"
+			row_cls = "tot" if is_tot else "data"
 			tds += (
-				f'<td style="border:1px solid #000;padding:1px 2px;font-size:6.5px;'
-				f'text-align:{align};background:{bg};font-weight:{weight};">{disp}</td>'
+				f'<td class="{row_cls}" style="padding:{pad};font-size:6.5px;'
+				f'text-align:{align};background:{bg};font-weight:{weight};'
+				f'white-space:nowrap;overflow:hidden;">{disp}</td>'
 			)
 		body += f"<tr>{tds}</tr>"
 
+	colgroup = _colgroup_html(cols)
 	return f"""<!DOCTYPE html><html><head><meta charset="UTF-8">
 <style>
 *{{margin:0;padding:0;box-sizing:border-box}}
@@ -562,13 +624,33 @@ body{{font-family:Arial,sans-serif;font-size:7px;color:#000}}
 .hdr .ttl{{font-size:12px;font-weight:700;margin-top:2px}}
 .hdr .per{{font-size:10px;margin-top:2px}}
 table{{width:100%;border-collapse:collapse;table-layout:fixed}}
+th,td{{word-wrap:break-word}}
+/* Vertical lines stay solid; horizontal lines in data area are thin dashed */
+th{{
+  border-left:1px solid #000;
+  border-right:1px solid #000;
+  border-top:1px solid #000;
+  border-bottom:1px solid #000;
+}}
+td.data{{
+  border-left:1px solid #000;
+  border-right:1px solid #000;
+  border-top:none;
+  border-bottom:0.5px dashed #999;
+}}
+td.tot{{
+  border-left:1px solid #000;
+  border-right:1px solid #000;
+  border-top:1px solid #000;
+  border-bottom:1px solid #000;
+}}
 </style></head><body>
 <div class="hdr">
   <div class="co">{frappe.utils.escape_html(company)}</div>
   <div class="ttl">Employee Salary Sheet</div>
   <div class="per">For the Period {period} &nbsp;|&nbsp; Month Days: {meta.get("month_days") or ""}</div>
 </div>
-<table><thead><tr>{th}</tr></thead><tbody>{body}</tbody></table>
+<table>{colgroup}<thead><tr>{th}</tr></thead><tbody>{body}</tbody></table>
 {SIG}
 </body></html>"""
 
@@ -582,7 +664,8 @@ def _save_pdf(html, prefix):
 			"margin-top": "6mm",
 			"margin-right": "4mm",
 			"margin-bottom": "6mm",
-			"margin-left": "4mm",
+			# Extra left margin for filing / hole-punch
+			"margin-left": "18mm",
 			"encoding": "UTF-8",
 			"no-outline": None,
 		},
@@ -615,7 +698,7 @@ def excel_report(filters):
 
 
 def _build_workbook(payload):
-	cols = payload["columns"]
+	cols = _columns_for_export(payload)
 	data = payload["data"]
 	meta = payload["meta"]
 	wb = Workbook()
@@ -645,30 +728,30 @@ def _build_workbook(payload):
 	c2.font = Font(name="Arial", size=10)
 	c2.alignment = Alignment(horizontal="center")
 
+	compressed = meta.get("format") == COMPRESSED_FORMAT
 	actual_set = {_act_fn(c) for c in meta.get("actual_comps") or []}
 	earn_set = {_earn_fn(c) for c in meta.get("earn_comps") or []}
 	ded_set = {_ded_fn(c) for c in meta.get("ded_comps") or []}
 
 	def fill_for(fn):
+		if compressed:
+			return PatternFill("solid", fgColor="F0F0F0")
 		if fn in actual_set or fn == "total_gross":
 			return PatternFill("solid", fgColor="F4A460")
 		if fn in earn_set or fn == "total_earning":
 			return PatternFill("solid", fgColor="90EE90")
 		if fn in ded_set or fn == "total_deductions":
 			return PatternFill("solid", fgColor="F08080")
-		if fn == "net_payable" or fn in HIGHLIGHT_FNS:
-			return PatternFill("solid", fgColor="FFFF99")
 		return PatternFill("solid", fgColor="F0F0F0")
 
 	hdr_row = 4
 	for i, col in enumerate(cols, start=1):
-		cell = ws.cell(hdr_row, i, col["label"])
+		cell = ws.cell(hdr_row, i, (col["label"] or "").replace("<br>", "\n"))
 		cell.font = Font(name="Arial", size=8, bold=True)
 		cell.fill = fill_for(col["fieldname"])
 		cell.border = thin
 		cell.alignment = Alignment(horizontal="center", wrap_text=True, vertical="center")
 
-	yellow = PatternFill("solid", fgColor="FFFF99")
 	tot_fill = PatternFill("solid", fgColor="E8E8E8")
 
 	for r_idx, row in enumerate(data, start=hdr_row + 1):
@@ -681,27 +764,50 @@ def _build_workbook(payload):
 			cell = ws.cell(r_idx, c_idx, val if val != "" else None)
 			cell.font = Font(name="Arial", size=8, bold=bool(is_tot))
 			cell.border = thin
-			if fn in HIGHLIGHT_FNS:
-				cell.fill = yellow
-			elif is_tot:
+			if is_tot:
 				cell.fill = tot_fill
-			if col.get("fieldtype") in ("Currency", "Float") and isinstance(val, (int, float)):
+			if is_tot and fn == "total_paid_days":
+				cell.value = None
+			elif fn == "bank_account" or fn == "ifsc":
+				cell.alignment = Alignment(horizontal="left")
+			elif fn == "total_paid_days" and isinstance(val, (int, float)):
+				v = flt(val)
+				if abs(v - round(v)) < 1e-9:
+					cell.value = int(round(v))
+					cell.number_format = "0"
+				else:
+					cell.number_format = "0.0"
+				cell.alignment = Alignment(horizontal="right")
+			elif col.get("fieldtype") in ("Currency", "Float") and isinstance(val, (int, float)):
 				cell.number_format = "#,##0.00"
 				cell.alignment = Alignment(horizontal="right")
 
-	# Signatures
+	# Signatures — one row, equally spaced across the sheet
 	sig_row = hdr_row + len(data) + 3
-	for i, lbl in enumerate(("Prepared By", "Checked By", "Authorised Signatory")):
-		col = 2 + i * 4
-		if col > len(cols):
-			break
-		ws.cell(sig_row, col, "________________")
-		ws.cell(sig_row + 1, col, lbl).font = Font(name="Arial", size=9)
+	labels = ("Prepared By", "Checked By", "Authorised Signatory")
+	n_cols = max(len(cols), 1)
+	# place each label at the center of its third of the columns
+	for i, lbl in enumerate(labels):
+		start = int(i * n_cols / 3) + 1
+		end = int((i + 1) * n_cols / 3)
+		if end < start:
+			end = start
+		mid = (start + end) // 2
+		if start != end:
+			ws.merge_cells(start_row=sig_row, start_column=start, end_row=sig_row, end_column=end)
+			ws.merge_cells(
+				start_row=sig_row + 1, start_column=start, end_row=sig_row + 1, end_column=end
+			)
+		line = ws.cell(sig_row, start, "________________")
+		line.alignment = Alignment(horizontal="center")
+		line.font = Font(name="Arial", size=9)
+		lab = ws.cell(sig_row + 1, start, lbl)
+		lab.alignment = Alignment(horizontal="center")
+		lab.font = Font(name="Arial", size=9)
 
-	for i in range(1, len(cols) + 1):
-		ws.column_dimensions[get_column_letter(i)].width = 11
-	ws.column_dimensions["B"].width = 22
-	ws.row_dimensions[hdr_row].height = 30
+	for i, col in enumerate(cols, start=1):
+		ws.column_dimensions[get_column_letter(i)].width = _excel_col_width(col)
+	ws.row_dimensions[hdr_row].height = 32
 	return wb
 
 
