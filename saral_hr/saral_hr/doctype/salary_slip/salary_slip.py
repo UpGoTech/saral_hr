@@ -1263,19 +1263,37 @@ def get_eligible_employees_for_salary_slip(company, year, month, category=None, 
         extra_filters += " AND cl.division = %(division)s"
         filter_params["division"] = division
 
+    # Tenure overlap (not is_active): left employees stay eligible for months
+    # that still fall within date_of_joining..left_date.
+    filter_params["start_date"] = start_date
+    filter_params["end_date"] = str(end_date)
+    tenure_filters = (
+        " AND (cl.date_of_joining IS NULL OR cl.date_of_joining <= %(end_date)s)"
+        " AND (cl.left_date IS NULL OR cl.left_date >= %(start_date)s)"
+    )
+
+    # Active = company headcount for this month (ignores category/division filters).
+    total_active = frappe.db.sql(
+        f"""
+        SELECT COUNT(DISTINCT cl.name) FROM `tabCompany Link` cl
+        WHERE cl.company=%(company)s {tenure_filters}
+        """,
+        {"company": company, "start_date": start_date, "end_date": str(end_date)},
+    )[0][0]
+
     all_emps = frappe.db.sql(f"""
         SELECT DISTINCT cl.name, cl.full_name AS employee_name, cl.department,
             cl.designation, cl.company, cl.division, cl.requires_variable_pay
         FROM `tabCompany Link` cl
-        WHERE cl.is_active=1 AND cl.company=%(company)s {extra_filters}
+        WHERE cl.company=%(company)s {tenure_filters} {extra_filters}
     """, filter_params, as_dict=1)
 
-    with_structure = frappe.db.sql("""
+    with_structure = frappe.db.sql(f"""
         SELECT DISTINCT cl.name FROM `tabCompany Link` cl
         INNER JOIN `tabSalary Structure Assignment` ssa ON ssa.employee=cl.name
-        WHERE cl.is_active=1 AND cl.company=%(company)s AND ssa.docstatus=1
+        WHERE cl.company=%(company)s {tenure_filters} AND ssa.docstatus=1
           AND ssa.from_date<=%(start_date)s AND (ssa.to_date IS NULL OR ssa.to_date>=%(end_date)s)
-    """, {"company": company, "start_date": start_date, "end_date": str(end_date)}, as_dict=1)
+    """, filter_params, as_dict=1)
     with_structure_ids = {e.name for e in with_structure}
 
     emp_names = [e.name for e in all_emps]
@@ -1340,7 +1358,7 @@ def get_eligible_employees_for_salary_slip(company, year, month, category=None, 
         "eligible":                       eligible,
         "skipped":                        ineligible,
         "already_generated":              already_generated,
-        "total_active":                   len(all_emps),
+        "total_active":                   total_active,
         "total_eligible":                 len(eligible),
         "category_requires_variable_pay": cat_requires_vpa,
     }
@@ -1552,9 +1570,21 @@ def get_salary_slips_print_summary(company, year, month, category=None, division
         extra_filters += " AND division=%(division)s"
         filter_params["division"] = division
 
+    end_date = get_last_day(getdate(start_date))
+    filter_params["start_date"] = start_date
+    filter_params["end_date"] = str(end_date)
+    tenure_filters = (
+        " AND (date_of_joining IS NULL OR date_of_joining <= %(end_date)s)"
+        " AND (left_date IS NULL OR left_date >= %(start_date)s)"
+    )
+    total_active = frappe.db.sql(
+        f"SELECT COUNT(*) FROM `tabCompany Link` "
+        f"WHERE company=%(company)s {tenure_filters}",
+        {"company": company, "start_date": start_date, "end_date": str(end_date)},
+    )[0][0]
     all_emps = frappe.db.sql(
         f"SELECT name, full_name AS employee_name FROM `tabCompany Link` "
-        f"WHERE is_active=1 AND company=%(company)s {extra_filters}",
+        f"WHERE company=%(company)s {tenure_filters} {extra_filters}",
         filter_params, as_dict=1
     )
 
@@ -1589,6 +1619,6 @@ def get_salary_slips_print_summary(company, year, month, category=None, division
     return {
         'submitted':       submitted,
         'not_printable':   not_printable,
-        'total_active':    len(all_emps),
+        'total_active':    total_active,
         'total_submitted': len(submitted)
     }
