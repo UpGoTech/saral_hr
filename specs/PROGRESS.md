@@ -7,8 +7,8 @@ Single board for all specs in this folder. New specs get the next number (`002-â
 | 001 | [Company list employee counts](./001-company-list-employee-counts.md) | done | List + form headcount from Company Link; tests passing |
 | 002 | [Maharashtra Professional Tax](./002-maharashtra-professional-tax.md) | in progress | Per-slab Feb amounts; Female no Feb surcharge; multi-state deferred |
 | 003 | [Attendance Dashboard yearly](./003-attendance-dashboard-yearly.md) | done | Merged PR #33 â€” yearly headcount + marking coverage |
-| 004 | [Monthly Salary Register (Old Format)](./004-monthly-salary-register.md) | in progress | Script Report + PDF/Excel; tests passing |
-| 005 | [Monthly Salary Register Compressed](./005-monthly-salary-register-compressed.md) | in progress | Format filter Full/Compressed on existing report |
+| 004 | [Monthly Salary Register (Old Format)](./004-monthly-salary-register.md) | done | Script Report + PDF/Excel; tests passing |
+| 005 | [Monthly Salary Register Compressed](./005-monthly-salary-register-compressed.md) | ready for review | Format filter + Desk/PDF/Excel UX polish |
 
 ## Status legend
 
