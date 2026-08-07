@@ -218,10 +218,10 @@ function render_period_ui(frm, cfg, ssa_dates = []) {
 
         const action_html = locked
             ? `<span style="color:#f59e0b;font-size:14px;margin-right:4px"
-                   title="Locked — Salary Structure Assignment exists">🔒</span>
+                   title="Locked — a Salary Structure Assignment exists in this period. Set To Date to close it, then Add Period with the updated wage components.">🔒</span>
                <span class="edit-todate" data-idx="${i}"
                    style="cursor:pointer;color:${border_color};font-size:13px"
-                   title="Edit To Date only">✏</span>`
+                   title="Close period (edit To Date), then add a new period to change components">✏</span>`
             : `<span class="edit-period" data-idx="${i}"
                    style="cursor:pointer;color:${border_color};font-size:13px;margin-right:6px"
                    title="Edit">✏</span>
@@ -250,6 +250,17 @@ function render_period_ui(frm, cfg, ssa_dates = []) {
         </tr>`;
     });
 
+    const any_locked = rows.some(row => _is_period_locked(row, ssa_dates));
+    const lock_hint = any_locked
+        ? `<div style="font-size:11px;color:#b45309;background:#fffbeb;border:0.5px solid #f59e0b55;
+                border-radius:4px;padding:6px 8px;margin:0 0 8px 0;line-height:1.45">
+                Locked periods cannot change wage components (an SSA exists in that date range).
+                To include a new component (e.g. Production Incentive): set <b>To Date</b> on the
+                locked period, then click <b>+ New ${label} Period</b> from the next day with the
+                updated components.
+           </div>`
+        : "";
+
     const table_html = tbody_html
         ? `<table style="width:100%;border-collapse:collapse;margin-bottom:6px">
             <thead><tr style="background:#f5f5f5">
@@ -261,7 +272,7 @@ function render_period_ui(frm, cfg, ssa_dates = []) {
                 <th style="padding:6px 8px;border:0.5px solid #e0e0e0;width:55px"></th>
             </tr></thead>
             <tbody>${tbody_html}</tbody>
-           </table>`
+           </table>${lock_hint}`
         : `<div style="font-size:12px;color:#999;margin-bottom:8px">No periods configured yet.</div>`;
 
     // Build rate input fields HTML — flat 3-column grid layout
