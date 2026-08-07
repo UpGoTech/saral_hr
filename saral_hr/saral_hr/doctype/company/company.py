@@ -237,9 +237,9 @@ class Company(Document):
 	def _validate_locked_periods(self, table_fieldname, label, protected_fields):
 		"""Block edits to wage components / rates once this period has been used.
 
-		A period is locked when:
-		- a submitted Salary Slip's start_date falls in the period, or
-		- a submitted SSA's from_date falls in the period.
+		A period is locked when a submitted Salary Slip's start_date falls in the
+		period (payroll already ran on these rates). SSA alone does not lock, so
+		deleting/cancelling slips unlocks the period for data correction.
 
 		to_date stays editable so the period can be closed and a new one opened.
 		"""
@@ -278,22 +278,14 @@ class Company(Document):
 					)
 					frappe.throw(
 						_("{0} period <b>{1}</b>: Cannot edit — "
-						  "submitted Salary Slip or Salary Structure Assignment "
-						  "already uses this period.")
+						  "a submitted Salary Slip already uses this period. "
+						  "Cancel or delete those slips to unlock for correction.")
 						.format(label, period_str)
 					)
 
 	def _period_is_locked(self, from_date, to_date) -> bool:
-		"""True when payroll has already used this period's rates."""
-		return self._period_has_ssa(from_date, to_date) or self._period_has_submitted_slip(
-			from_date, to_date
-		)
-
-	def _period_has_ssa(self, from_date, to_date) -> bool:
-		"""Submitted SSA whose assignment start falls in [from_date, to_date]."""
-		return self._period_has_doc_date(
-			"Salary Structure Assignment", "from_date", from_date, to_date
-		)
+		"""True when a submitted Salary Slip already used this period's rates."""
+		return self._period_has_submitted_slip(from_date, to_date)
 
 	def _period_has_submitted_slip(self, from_date, to_date) -> bool:
 		"""Submitted Salary Slip whose payroll month start falls in [from_date, to_date]."""
@@ -489,20 +481,14 @@ class Company(Document):
 
 @frappe.whitelist()
 def get_statutory_lock_dates(company):
-	"""Dates that lock ESIC / PF / PT periods for the Company form UI."""
+	"""Submitted slip start dates that lock ESIC / PF / PT periods on the Company form."""
 	if not company:
-		return {"ssa_from_dates": [], "slip_start_dates": []}
-	ssa_from_dates = frappe.get_all(
-		"Salary Structure Assignment",
-		filters={"company": company, "docstatus": 1},
-		pluck="from_date",
-	)
+		return {"slip_start_dates": []}
 	slip_start_dates = frappe.get_all(
 		"Salary Slip",
 		filters={"company": company, "docstatus": 1},
 		pluck="start_date",
 	)
 	return {
-		"ssa_from_dates": [str(d) for d in ssa_from_dates if d],
 		"slip_start_dates": [str(d) for d in slip_start_dates if d],
 	}

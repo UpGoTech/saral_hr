@@ -363,28 +363,32 @@ def _stub_submitted_ssa(company: str, from_date: str) -> str:
 
 
 class TestStatutoryPeriodLock(FrappeTestCase):
-	"""Period lock = rates already used by payroll (submitted slip or SSA start)."""
+	"""Period lock = submitted Salary Slip in period (SSA alone does not lock)."""
 
-	def test_unlocked_when_no_payroll_usage(self):
-		company = _make_company()
-		doc = frappe.get_doc("Company", company)
-		self.assertFalse(doc._period_is_locked("2024-07-01", None))
-		self.assertFalse(doc._period_is_locked("2024-04-01", "2024-06-30"))
-
-	def test_ssa_from_date_locks_start_period_only(self):
+	def test_unlocked_when_no_submitted_slips(self):
 		company = _make_company()
 		_stub_submitted_ssa(company, "2024-04-01")
 		doc = frappe.get_doc("Company", company)
-		# SSA started in Apr → Apr–Jun locked; Jul+ not locked by SSA alone
+		# SSA present, but no slips → both periods unlocked for correction
+		self.assertFalse(doc._period_is_locked("2024-07-01", None))
+		self.assertFalse(doc._period_is_locked("2024-04-01", "2024-06-30"))
+
+	def test_submitted_slip_locks_that_period_only(self):
+		company = _make_company()
+		_stub_submitted_ssa(company, "2024-04-01")
+		_stub_submitted_slip(company, "2024-05-01")
+		doc = frappe.get_doc("Company", company)
 		self.assertTrue(doc._period_is_locked("2024-04-01", "2024-06-30"))
 		self.assertFalse(doc._period_is_locked("2024-07-01", None))
 
-	def test_submitted_slip_locks_coverage_month(self):
+	def test_cancelling_slips_unlocks_period(self):
 		company = _make_company()
-		_stub_submitted_slip(company, "2024-07-01")
+		_stub_submitted_ssa(company, "2024-04-01")
+		slip = _stub_submitted_slip(company, "2024-05-01")
 		doc = frappe.get_doc("Company", company)
-		# No SSA in July, but submitted July slip locks Jul+
-		self.assertTrue(doc._period_is_locked("2024-07-01", None))
+		self.assertTrue(doc._period_is_locked("2024-04-01", "2024-06-30"))
+		# Submitted slips must be cancelled (not hard-deleted) — then period unlocks
+		frappe.db.set_value("Salary Slip", slip, "docstatus", 2)
 		self.assertFalse(doc._period_is_locked("2024-04-01", "2024-06-30"))
 
 	def test_draft_slip_does_not_lock(self):
@@ -412,5 +416,5 @@ class TestStatutoryPeriodLock(FrappeTestCase):
 		_stub_submitted_ssa(company, "2024-04-01")
 		_stub_submitted_slip(company, "2024-07-15")
 		payload = get_statutory_lock_dates(company)
-		self.assertIn("2024-04-01", payload["ssa_from_dates"])
+		self.assertNotIn("ssa_from_dates", payload)
 		self.assertIn("2024-07-15", payload["slip_start_dates"])

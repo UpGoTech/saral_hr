@@ -76,20 +76,19 @@ function parse_components(row) {
 
 // ─────────────────────────────────────────────────────────────
 //  Statutory period lock helpers
-//  Locked when payroll already used the period's rates:
-//  - submitted SSA from_date in period, or
-//  - submitted Salary Slip start_date in period
+//  Locked when a submitted Salary Slip start_date falls in the period.
+//  SSA alone does not lock — cancel/delete slips to unlock for correction.
 // ─────────────────────────────────────────────────────────────
 
 function _fetch_lock_dates(frm) {
     const company = frm.doc.name || frm.doc.company;
     if (!company) {
-        return Promise.resolve({ ssa_from_dates: [], slip_start_dates: [] });
+        return Promise.resolve({ slip_start_dates: [] });
     }
     return frappe.call({
         method: "saral_hr.saral_hr.doctype.company.company.get_statutory_lock_dates",
         args: { company },
-    }).then(r => r.message || { ssa_from_dates: [], slip_start_dates: [] });
+    }).then(r => r.message || { slip_start_dates: [] });
 }
 
 function _date_in_period(d, row) {
@@ -100,9 +99,8 @@ function _date_in_period(d, row) {
 }
 
 function _is_period_locked(row, lock_dates) {
-    const ssa = (lock_dates && lock_dates.ssa_from_dates) || [];
     const slips = (lock_dates && lock_dates.slip_start_dates) || [];
-    return ssa.some(d => _date_in_period(d, row)) || slips.some(d => _date_in_period(d, row));
+    return slips.some(d => _date_in_period(d, row));
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -227,7 +225,7 @@ function render_period_ui(frm, cfg, lock_dates = {}) {
 
         const action_html = locked
             ? `<span style="color:#f59e0b;font-size:14px;margin-right:4px"
-                   title="Locked — submitted Salary Slip or SSA already uses this period. Set To Date to close it, then Add Period with updated wage components.">🔒</span>
+                   title="Locked — a submitted Salary Slip uses this period. Cancel or delete those slips to unlock for correction.">🔒</span>
                <span class="edit-todate" data-idx="${i}"
                    style="cursor:pointer;color:${border_color};font-size:13px"
                    title="Close period (edit To Date), then add a new period to change components">✏</span>`
@@ -263,9 +261,9 @@ function render_period_ui(frm, cfg, lock_dates = {}) {
     const lock_hint = any_locked
         ? `<div style="font-size:11px;color:#b45309;background:#fffbeb;border:0.5px solid #f59e0b55;
                 border-radius:4px;padding:6px 8px;margin:0 0 8px 0;line-height:1.45">
-                Locked when a <b>submitted Salary Slip</b> or <b>SSA start</b> falls in the period
-                (rates already used for payroll). To change components: set <b>To Date</b> on the
-                locked period, then <b>+ New ${label} Period</b> from the next day.
+                Locked while a <b>submitted Salary Slip</b> falls in the period.
+                Cancel or delete those slips to unlock for correction. Or set <b>To Date</b>
+                and add a <b>New ${label} Period</b> for future months.
            </div>`
         : "";
 
@@ -633,7 +631,7 @@ function render_pt_period_ui(frm) {
             const locked = _is_period_locked(row, lock_dates);
             const action_html = locked
                 ? `<span style="color:#f59e0b;font-size:14px;margin-right:4px"
-                       title="Locked — submitted Salary Slip or SSA already uses this period">🔒</span>
+                       title="Locked — a submitted Salary Slip uses this period">🔒</span>
                    <span class="edit-todate" data-idx="${i}"
                        style="cursor:pointer;color:${border_color};font-size:13px"
                        title="Close period (edit To Date), then add a new period to change slabs">✏</span>`
