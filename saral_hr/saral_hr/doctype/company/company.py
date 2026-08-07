@@ -231,14 +231,18 @@ class Company(Document):
 					)
 
 	# ──────────────────────────────────────────────
-	# Lock validation — SSA exists → cannot edit period
+	# Lock validation — period rates already used by payroll
 	# ──────────────────────────────────────────────
 
 	def _validate_locked_periods(self, table_fieldname, label, protected_fields):
-		"""If a submitted Salary Structure Assignment exists for a period,
-		block edits to components and rate fields.
-		Note: to_date is intentionally excluded from protected_fields so it
-		remains editable even when the period is locked."""
+		"""Block edits to wage components / rates once this period has been used.
+
+		A period is locked when:
+		- a submitted Salary Slip's start_date falls in the period, or
+		- a submitted SSA's from_date falls in the period.
+
+		to_date stays editable so the period can be closed and a new one opened.
+		"""
 		old_doc = self.get_doc_before_save()
 		if not old_doc:
 			return  # new doc — nothing to compare
@@ -253,8 +257,8 @@ class Company(Document):
 			if not row.name or row.name not in old_rows:
 				continue  # newly added row — allowed
 
-			if not self._period_has_ssa(row.from_date, row.to_date):
-				continue  # no SSA for this period — editable
+			if not self._period_is_locked(row.from_date, row.to_date):
+				continue
 
 			old_row = old_rows[row.name]
 			for field in protected_fields:
@@ -274,20 +278,36 @@ class Company(Document):
 					)
 					frappe.throw(
 						_("{0} period <b>{1}</b>: Cannot edit — "
-						  "Salary Structure Assignment already exists for this period.")
+						  "submitted Salary Slip or Salary Structure Assignment "
+						  "already uses this period.")
 						.format(label, period_str)
 					)
 
+	def _period_is_locked(self, from_date, to_date) -> bool:
+		"""True when payroll has already used this period's rates."""
+		return self._period_has_ssa(from_date, to_date) or self._period_has_submitted_slip(
+			from_date, to_date
+		)
+
 	def _period_has_ssa(self, from_date, to_date) -> bool:
-		"""Return True if any submitted SSA's from_date falls within [from_date, to_date]."""
+		"""Submitted SSA whose assignment start falls in [from_date, to_date]."""
+		return self._period_has_doc_date(
+			"Salary Structure Assignment", "from_date", from_date, to_date
+		)
+
+	def _period_has_submitted_slip(self, from_date, to_date) -> bool:
+		"""Submitted Salary Slip whose payroll month start falls in [from_date, to_date]."""
+		return self._period_has_doc_date("Salary Slip", "start_date", from_date, to_date)
+
+	def _period_has_doc_date(self, doctype, date_field, from_date, to_date) -> bool:
 		filters = {"company": self.name, "docstatus": 1}
 		if from_date and to_date:
-			filters["from_date"] = ["between", [from_date, to_date]]
+			filters[date_field] = ["between", [from_date, to_date]]
 		elif from_date:
-			filters["from_date"] = [">=", from_date]
+			filters[date_field] = [">=", from_date]
 		elif to_date:
-			filters["from_date"] = ["<=", to_date]
-		return bool(frappe.db.exists("Salary Structure Assignment", filters))
+			filters[date_field] = ["<=", to_date]
+		return bool(frappe.db.exists(doctype, filters))
 
 	# ──────────────────────────────────────────────
 	# Helpers
@@ -465,3 +485,24 @@ class Company(Document):
 		if period_date and getdate(period_date).month == 2 and feb_raw is not None and feb_raw != "":
 			return flt(feb_raw)
 		return tax
+
+
+@frappe.whitelist()
+def get_statutory_lock_dates(company):
+	"""Dates that lock ESIC / PF / PT periods for the Company form UI."""
+	if not company:
+		return {"ssa_from_dates": [], "slip_start_dates": []}
+	ssa_from_dates = frappe.get_all(
+		"Salary Structure Assignment",
+		filters={"company": company, "docstatus": 1},
+		pluck="from_date",
+	)
+	slip_start_dates = frappe.get_all(
+		"Salary Slip",
+		filters={"company": company, "docstatus": 1},
+		pluck="start_date",
+	)
+	return {
+		"ssa_from_dates": [str(d) for d in ssa_from_dates if d],
+		"slip_start_dates": [str(d) for d in slip_start_dates if d],
+	}

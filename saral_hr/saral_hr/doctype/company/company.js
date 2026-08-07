@@ -75,25 +75,34 @@ function parse_components(row) {
 }
 
 // ─────────────────────────────────────────────────────────────
-//  SSA lock helpers
+//  Statutory period lock helpers
+//  Locked when payroll already used the period's rates:
+//  - submitted SSA from_date in period, or
+//  - submitted Salary Slip start_date in period
 // ─────────────────────────────────────────────────────────────
 
-function _fetch_ssa_dates(frm) {
-    return frappe.db.get_list("Salary Structure Assignment", {
-        filters: { company: frm.doc.company, docstatus: 1 },
-        fields: ["from_date"],
-        limit: 0
-    }).then(rows => rows.map(r => r.from_date));
+function _fetch_lock_dates(frm) {
+    const company = frm.doc.name || frm.doc.company;
+    if (!company) {
+        return Promise.resolve({ ssa_from_dates: [], slip_start_dates: [] });
+    }
+    return frappe.call({
+        method: "saral_hr.saral_hr.doctype.company.company.get_statutory_lock_dates",
+        args: { company },
+    }).then(r => r.message || { ssa_from_dates: [], slip_start_dates: [] });
 }
 
-function _is_period_locked(row, ssa_dates) {
-    if (!ssa_dates || !ssa_dates.length) return false;
-    // Period is locked if any submitted SSA from_date falls within this period's date range
-    return ssa_dates.some(d => {
-        const from_ok = !row.from_date || d >= row.from_date;
-        const to_ok   = !row.to_date   || d <= row.to_date;
-        return from_ok && to_ok;
-    });
+function _date_in_period(d, row) {
+    if (!d) return false;
+    const from_ok = !row.from_date || d >= row.from_date;
+    const to_ok   = !row.to_date   || d <= row.to_date;
+    return from_ok && to_ok;
+}
+
+function _is_period_locked(row, lock_dates) {
+    const ssa = (lock_dates && lock_dates.ssa_from_dates) || [];
+    const slips = (lock_dates && lock_dates.slip_start_dates) || [];
+    return ssa.some(d => _date_in_period(d, row)) || slips.some(d => _date_in_period(d, row));
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -101,7 +110,7 @@ function _is_period_locked(row, ssa_dates) {
 // ─────────────────────────────────────────────────────────────
 
 function render_esic_period_ui(frm) {
-    _fetch_ssa_dates(frm).then(ssa_dates => render_period_ui(frm, {
+    _fetch_lock_dates(frm).then(lock_dates => render_period_ui(frm, {
         fieldname:         "esic_dependent_component",
         label:             "ESIC",
         border_color:      "#1565c0",
@@ -119,7 +128,7 @@ function render_esic_period_ui(frm) {
                 ]
             }
         ]
-    }, ssa_dates));
+    }, lock_dates));
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -127,7 +136,7 @@ function render_esic_period_ui(frm) {
 // ─────────────────────────────────────────────────────────────
 
 function render_pf_period_ui(frm) {
-    _fetch_ssa_dates(frm).then(ssa_dates => render_period_ui(frm, {
+    _fetch_lock_dates(frm).then(lock_dates => render_period_ui(frm, {
         fieldname:         "pf_dependent_component",
         label:             "PF",
         border_color:      "#2e7d32",
@@ -160,14 +169,14 @@ function render_pf_period_ui(frm) {
                 ]
             }
         ]
-    }, ssa_dates));
+    }, lock_dates));
 }
 
 // ─────────────────────────────────────────────────────────────
 //  Generic renderer — 1 child row = 1 complete period
 // ─────────────────────────────────────────────────────────────
 
-function render_period_ui(frm, cfg, ssa_dates = []) {
+function render_period_ui(frm, cfg, lock_dates = {}) {
     const { fieldname, label, border_color, bg_color, text_color, description, rates_title, rates_description, rate_groups } = cfg;
 
     const field = frm.fields_dict[fieldname];
@@ -207,7 +216,7 @@ function render_period_ui(frm, cfg, ssa_dates = []) {
     let tbody_html = "";
     rows.forEach((row, i) => {
         const components = parse_components(row);
-        const locked     = _is_period_locked(row, ssa_dates);
+        const locked     = _is_period_locked(row, lock_dates);
 
         const tags = components.map(c =>
             `<span style="display:inline-block;background:${bg_color};
@@ -218,7 +227,7 @@ function render_period_ui(frm, cfg, ssa_dates = []) {
 
         const action_html = locked
             ? `<span style="color:#f59e0b;font-size:14px;margin-right:4px"
-                   title="Locked — a Salary Structure Assignment exists in this period. Set To Date to close it, then Add Period with the updated wage components.">🔒</span>
+                   title="Locked — submitted Salary Slip or SSA already uses this period. Set To Date to close it, then Add Period with updated wage components.">🔒</span>
                <span class="edit-todate" data-idx="${i}"
                    style="cursor:pointer;color:${border_color};font-size:13px"
                    title="Close period (edit To Date), then add a new period to change components">✏</span>`
@@ -250,14 +259,13 @@ function render_period_ui(frm, cfg, ssa_dates = []) {
         </tr>`;
     });
 
-    const any_locked = rows.some(row => _is_period_locked(row, ssa_dates));
+    const any_locked = rows.some(row => _is_period_locked(row, lock_dates));
     const lock_hint = any_locked
         ? `<div style="font-size:11px;color:#b45309;background:#fffbeb;border:0.5px solid #f59e0b55;
                 border-radius:4px;padding:6px 8px;margin:0 0 8px 0;line-height:1.45">
-                Locked periods cannot change wage components (an SSA exists in that date range).
-                To include a new component (e.g. Production Incentive): set <b>To Date</b> on the
-                locked period, then click <b>+ New ${label} Period</b> from the next day with the
-                updated components.
+                Locked when a <b>submitted Salary Slip</b> or <b>SSA start</b> falls in the period
+                (rates already used for payroll). To change components: set <b>To Date</b> on the
+                locked period, then <b>+ New ${label} Period</b> from the next day.
            </div>`
         : "";
 
@@ -419,7 +427,7 @@ function render_period_ui(frm, cfg, ssa_dates = []) {
 
         frm.dirty();
         frm.refresh_field(fieldname);
-        render_period_ui(frm, cfg, ssa_dates);
+        render_period_ui(frm, cfg, lock_dates);
     });
 
     // Remove the period row at the given index
@@ -429,7 +437,7 @@ function render_period_ui(frm, cfg, ssa_dates = []) {
             frm.doc[fieldname].splice(idx, 1);
             frm.dirty();
             frm.refresh_field(fieldname);
-            render_period_ui(frm, cfg, ssa_dates);
+            render_period_ui(frm, cfg, lock_dates);
         });
     });
 
@@ -479,7 +487,7 @@ function render_period_ui(frm, cfg, ssa_dates = []) {
                 row.to_date = values.to_date || null;
                 frm.dirty();
                 frm.refresh_field(fieldname);
-                render_period_ui(frm, cfg, ssa_dates);
+                render_period_ui(frm, cfg, lock_dates);
             },
             __("Edit To Date — {0} Period", [label]),
             __("Update")
@@ -604,7 +612,7 @@ function _collect_pt_slabs($form) {
 }
 
 function render_pt_period_ui(frm) {
-    _fetch_ssa_dates(frm).then(ssa_dates => {
+    _fetch_lock_dates(frm).then(lock_dates => {
         const fieldname = "pt_periods";
         const field = frm.fields_dict[fieldname];
         if (!field) return;
@@ -622,13 +630,13 @@ function render_pt_period_ui(frm) {
         let tbody_html = "";
         rows.forEach((row, i) => {
             const slabs = parse_pt_slabs(row);
-            const locked = _is_period_locked(row, ssa_dates);
+            const locked = _is_period_locked(row, lock_dates);
             const action_html = locked
                 ? `<span style="color:#f59e0b;font-size:14px;margin-right:4px"
-                       title="Locked — Salary Structure Assignment exists">🔒</span>
+                       title="Locked — submitted Salary Slip or SSA already uses this period">🔒</span>
                    <span class="edit-todate" data-idx="${i}"
                        style="cursor:pointer;color:${border_color};font-size:13px"
-                       title="Edit To Date only">✏</span>`
+                       title="Close period (edit To Date), then add a new period to change slabs">✏</span>`
                 : `<span class="edit-period" data-idx="${i}"
                        style="cursor:pointer;color:${border_color};font-size:13px;margin-right:6px"
                        title="Edit">✏</span>
