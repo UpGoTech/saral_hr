@@ -35,7 +35,7 @@ New report: **Monthly Salary Register Old Format Net Payable**
 
 - Only **submitted** Salary Slips (`docstatus = 1`) for that company + month
 - Population filter applied via Company Link category (All = no category filter)
-- Sort: employee name ascending (SR. NO. assigned after sort)
+- Sort: Employee ID ascending (`Company Link.employee`, fallback Salary Slip employee); SR. NO. assigned after sort
 - Employees on salary hold with no submitted slip: **excluded** (no row)
 
 ### Report header
@@ -215,3 +215,4 @@ Company + one past month with ≥2 submitted Staff slips → Desk rows → PDF d
 | 2026-08-06 | Grilled from sample screenshot; spec written (planned) |
 | 2026-08-06 | Implemented Script Report + PDF/Excel; unit tests passing |
 | 2026-08-06 | Fix: drop parentheses from report name so scrub() matches module path |
+| 2026-08-07 | Default sort changed to Employee ID (shared with 005 Compressed) |
