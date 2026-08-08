@@ -244,6 +244,31 @@ class TestDataCleansing(FrappeTestCase):
 			)
 		)
 
+	def test_pre_join_absent_fillers_not_flagged_outside_tenure(self):
+		"""Salary scaffolding Absents before joining must not raise Outside tenure."""
+		company = _make_company()
+		employee = _make_employee()
+		cl = _make_company_link(employee, company, "2024-06-10")
+		_make_attendance(cl, company, "2024-06-01", status="Absent")
+		_make_attendance(cl, company, "2024-06-09", status="Absent")
+		_make_attendance(cl, company, "2024-06-10", status="Present")
+
+		result = dc.get_employee_month_matrix(cl, 2024, 6, 2024, 6)
+		self.assertEqual(len(result["months"]), 1)
+		row = result["months"][0]
+		self.assertNotIn("Outside tenure", row["flags"])
+		self.assertGreater(row["expected_days"], 0)
+
+	def test_present_before_joining_still_flagged_outside_tenure(self):
+		company = _make_company()
+		employee = _make_employee()
+		cl = _make_company_link(employee, company, "2024-06-10")
+		_make_attendance(cl, company, "2024-06-05", status="Present")
+		_make_attendance(cl, company, "2024-06-10", status="Present")
+
+		result = dc.get_employee_month_matrix(cl, 2024, 6, 2024, 6)
+		self.assertIn("Outside tenure", result["months"][0]["flags"])
+
 	def test_empty_months_omitted(self):
 		company = _make_company()
 		employee = _make_employee()

@@ -131,17 +131,36 @@ def _expected_days(month_start: date, month_end: date, joining, left) -> int:
 	return (end - start).days + 1
 
 
-def _outside_tenure_dates(dates, joining, left) -> bool:
-	if not dates:
+def _date_outside_tenure(d, joining, left) -> bool:
+	if not d:
 		return False
+	gd = getdate(d)
 	join = getdate(joining) if joining else None
 	leave = getdate(left) if left else None
-	for d in dates:
-		gd = getdate(d)
-		if join and gd < join:
+	if join and gd < join:
+		return True
+	if leave and gd > leave:
+		return True
+	return False
+
+
+# Pre-join / post-left Absent rows are intentional (salary payment-days scaffolding).
+TENURE_FILLER_STATUSES = {"Absent"}
+
+
+def _should_flag_outside_tenure(attendance, slips, expected, joining, left) -> bool:
+	"""True for cleansing anomalies — not for intentional Absent fillers in a tenure month."""
+	if expected == 0 and (attendance or slips):
+		return True
+	for s in slips or []:
+		if _date_outside_tenure(s.start_date, joining, left):
 			return True
-		if leave and gd > leave:
-			return True
+	for a in attendance or []:
+		if not _date_outside_tenure(a.attendance_date, joining, left):
+			continue
+		if (a.status or "").strip() in TENURE_FILLER_STATUSES:
+			continue
+		return True
 	return False
 
 
@@ -199,8 +218,6 @@ def _build_month_row(employee: str, tenure, year: int, month: int):
 
 	att_days = len(attendance)
 	expected = _expected_days(month_start, month_end, tenure.date_of_joining, tenure.left_date)
-	att_dates = [a.attendance_date for a in attendance]
-	slip_dates = [s.start_date for s in slips]
 
 	if expected == 0:
 		coverage = "Outside tenure"
@@ -216,7 +233,9 @@ def _build_month_row(employee: str, tenure, year: int, month: int):
 		flags.append("Attendance only")
 	if slips and att_days == 0:
 		flags.append("Slip only")
-	if _outside_tenure_dates(att_dates + slip_dates, tenure.date_of_joining, tenure.left_date):
+	if _should_flag_outside_tenure(
+		attendance, slips, expected, tenure.date_of_joining, tenure.left_date
+	):
 		flags.append("Outside tenure")
 	if expected > 0 and 0 < att_days < expected:
 		flags.append("Partial coverage")
