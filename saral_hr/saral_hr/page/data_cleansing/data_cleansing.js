@@ -8,6 +8,8 @@ frappe.pages["data-cleansing"].on_page_load = function (wrapper) {
 };
 
 frappe.pages["data-cleansing"].on_page_show = function (wrapper) {
+	// Keep standard Desk chrome (workspace sidebar) — do not go full-bleed
+	$("body").removeClass("full-width");
 	inject_dc_styles();
 	const $main = $(wrapper).find(".layout-main-section");
 	$main.html(dc_shell_html());
@@ -15,29 +17,36 @@ frappe.pages["data-cleansing"].on_page_show = function (wrapper) {
 };
 
 function inject_dc_styles() {
-	if (document.getElementById("dc-styles-v2")) return;
+	$("#dc-styles, #dc-styles-v2, #dc-styles-v3").remove();
 	const s = document.createElement("style");
-	s.id = "dc-styles-v2";
+	s.id = "dc-styles-v3";
 	s.innerHTML = `
-		.dc-root { padding: 12px 20px 48px; max-width: 1120px; margin: 0 auto; color: var(--text-color); }
+		.dc-root { padding: 8px 0 40px; color: var(--text-color); }
 		.dc-filter-card, .dc-emp-card, .dc-results-card {
 			background: var(--card-bg, var(--fg-color));
 			border: 1px solid var(--border-color);
-			border-radius: 10px;
-			box-shadow: 0 1px 2px rgba(0,0,0,.04);
-			margin-bottom: 14px;
+			border-radius: 8px;
+			margin-bottom: 12px;
 		}
 		.dc-filter-card { padding: 14px 16px; }
 		.dc-filter-row { display: flex; flex-wrap: wrap; gap: 12px 14px; align-items: flex-end; }
-		.dc-field { display: flex; flex-direction: column; gap: 5px; min-width: 120px; }
-		.dc-field-employee { min-width: 280px; flex: 1; }
+		.dc-field { display: flex; flex-direction: column; gap: 5px; min-width: 0; }
+		.dc-field-employee { width: 260px; flex: 0 0 260px; }
+		.dc-field-action { flex: 0 0 auto; }
 		.dc-field label {
 			font-size: 11px; font-weight: 700; color: var(--text-muted);
-			text-transform: uppercase; letter-spacing: .04em; margin: 0;
+			text-transform: uppercase; letter-spacing: .04em; margin: 0; line-height: 1.2;
+			min-height: 14px;
 		}
-		.dc-field .frappe-control { margin-bottom: 0 !important; }
+		.dc-field .frappe-control,
+		.dc-field .form-group { margin-bottom: 0 !important; }
+		.dc-field-employee .control-input-wrapper,
+		.dc-field-employee .awesomplete,
+		.dc-field-employee .awesomplete > input { width: 100% !important; }
+		.dc-field-employee input.input-with-feedback,
 		.dc-field .form-control, .dc-field select, .dc-field input[type=number] {
-			height: 32px; font-size: 13px; border-radius: 6px;
+			height: 32px !important; min-height: 32px !important;
+			font-size: 13px; border-radius: 6px; margin: 0;
 		}
 		.dc-mode-toggle {
 			display: inline-flex; border: 1px solid var(--border-color); border-radius: 6px;
@@ -45,17 +54,19 @@ function inject_dc_styles() {
 		}
 		.dc-mode-toggle button {
 			border: none; background: transparent; padding: 0 12px; font-size: 12px; font-weight: 600;
-			cursor: pointer; color: var(--text-muted); height: 100%;
+			cursor: pointer; color: var(--text-muted); height: 100%; white-space: nowrap;
 		}
 		.dc-mode-toggle button.active {
 			background: var(--fg-color); color: var(--text-color);
 			box-shadow: inset 0 0 0 1px var(--border-color);
 		}
 		.dc-period-fields { display: flex; gap: 10px; flex-wrap: wrap; align-items: flex-end; }
+		.dc-period-fields .dc-field { width: 110px; }
 		.dc-period-fields.dc-disabled { opacity: .4; pointer-events: none; }
 		.dc-btn {
-			height: 32px; padding: 0 16px; border: none; border-radius: 6px;
+			height: 32px; padding: 0 18px; border: none; border-radius: 6px;
 			background: var(--primary); color: #fff; font-size: 13px; font-weight: 600; cursor: pointer;
+			white-space: nowrap;
 		}
 		.dc-btn:hover { filter: brightness(.96); }
 		.dc-btn-ghost {
@@ -67,6 +78,14 @@ function inject_dc_styles() {
 			height: 28px; padding: 0 12px; border: none; border-radius: 6px;
 			background: var(--red-500, #e03131); color: #fff; font-size: 12px; font-weight: 600; cursor: pointer;
 		}
+		.dc-flag-filter {
+			display: inline-flex; border: 1px solid var(--border-color); border-radius: 6px; overflow: hidden; height: 28px;
+		}
+		.dc-flag-filter button {
+			border: none; background: transparent; padding: 0 11px; font-size: 12px; font-weight: 600;
+			color: var(--text-muted); cursor: pointer; height: 100%;
+		}
+		.dc-flag-filter button.active { background: var(--subtle-fg, #f1f3f5); color: var(--text-color); }
 
 		.dc-emp-card { display: none; padding: 16px 18px; }
 		.dc-emp-card.visible { display: block; }
@@ -94,15 +113,14 @@ function inject_dc_styles() {
 		.dc-pill.ok { background: #d3f9d8; color: #2b8a3e; }
 
 		.dc-results-header {
-			display: flex; align-items: center; justify-content: space-between; gap: 12px;
+			display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap;
 			padding: 12px 16px; border-bottom: 1px solid var(--border-color);
 		}
 		.dc-results-title { font-size: 13px; font-weight: 700; }
 		.dc-results-sub { font-size: 12px; color: var(--text-muted); font-weight: 500; }
-		.dc-table-wrap { overflow: auto; max-height: min(62vh, 640px); }
+		.dc-table-wrap { overflow: visible; max-height: none; }
 		.dc-table { width: 100%; border-collapse: collapse; font-size: 13px; }
 		.dc-table thead th {
-			position: sticky; top: 0; z-index: 1;
 			padding: 9px 14px; text-align: left; font-size: 11px; font-weight: 700;
 			color: var(--text-muted); text-transform: uppercase; letter-spacing: .03em;
 			background: var(--subtle-fg, #f8f9fa); border-bottom: 1px solid var(--border-color);
@@ -121,9 +139,7 @@ function inject_dc_styles() {
 		}
 		.dc-flag.warn { background: #fff3bf; color: #5c4800; }
 		.dc-flag.bad { background: #ffe3e3; color: #c92a2a; }
-		.dc-empty {
-			padding: 40px 20px; text-align: center; color: var(--text-muted); font-size: 13px;
-		}
+		.dc-empty { padding: 40px 20px; text-align: center; color: var(--text-muted); font-size: 13px; }
 		.dc-empty-title { font-weight: 600; color: var(--text-color); margin-bottom: 4px; }
 
 		.dc-dialog-body { padding: 4px 2px 8px; }
@@ -154,6 +170,7 @@ function inject_dc_styles() {
 		.dc-hint { font-size: 12px; color: var(--text-muted); }
 		@media (max-width: 720px) {
 			.dc-dialog-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+			.dc-field-employee { width: 100%; flex: 1 1 100%; }
 		}
 	`;
 	document.head.appendChild(s);
@@ -181,7 +198,10 @@ function dc_shell_html() {
 						<div class="dc-field"><label>${__("To Year")}</label><input type="number" class="form-control dc-to-year" min="1950" max="2099"></div>
 						<div class="dc-field"><label>${__("To Month")}</label><select class="form-control dc-to-month"></select></div>
 					</div>
-					<button type="button" class="dc-btn dc-load">${__("Scan")}</button>
+					<div class="dc-field dc-field-action">
+						<label>&nbsp;</label>
+						<button type="button" class="dc-btn dc-load">${__("Scan")}</button>
+					</div>
 				</div>
 			</div>
 			<div class="dc-emp-card"></div>
@@ -190,6 +210,11 @@ function dc_shell_html() {
 					<div>
 						<div class="dc-results-title">${__("Months with data")}</div>
 						<div class="dc-results-sub dc-results-hint">${__("Select an employee and scan to begin")}</div>
+					</div>
+					<div class="dc-flag-filter" title="${__("Filter months by flags")}">
+						<button type="button" class="dc-flag-btn active" data-filter="all">${__("All")}</button>
+						<button type="button" class="dc-flag-btn" data-filter="flagged">${__("Flagged")}</button>
+						<button type="button" class="dc-flag-btn" data-filter="unflagged">${__("Unflagged")}</button>
 					</div>
 				</div>
 				<div class="dc-matrix"><div class="dc-empty">${__("No scan yet.")}</div></div>
@@ -251,6 +276,7 @@ function init_data_cleansing($main) {
 		detail: null,
 		can_mutate: false,
 		scan_mode: "all",
+		flag_filter: "all",
 		dialog: null,
 	};
 
@@ -265,6 +291,13 @@ function init_data_cleansing($main) {
 		sync_mode_ui();
 	});
 	sync_mode_ui();
+
+	$main.find(".dc-flag-btn").on("click", function () {
+		state.flag_filter = $(this).data("filter");
+		$main.find(".dc-flag-btn").removeClass("active");
+		$(this).addClass("active");
+		render_matrix($main, state);
+	});
 
 	$main.find(".dc-load").on("click", () => load_matrix($main, state));
 }
@@ -336,20 +369,44 @@ function flag_class(flag) {
 	return "bad";
 }
 
+function filtered_rows(state) {
+	const rows = (state.matrix && state.matrix.months) || [];
+	const f = state.flag_filter || "all";
+	if (f === "flagged") return rows.filter((r) => (r.flags || []).length > 0);
+	if (f === "unflagged") return rows.filter((r) => !(r.flags || []).length);
+	return rows;
+}
+
 function render_matrix($main, state) {
 	const m = state.matrix || {};
-	const rows = m.months || [];
+	const all_rows = m.months || [];
+	const rows = filtered_rows(state);
 	const mode_label = m.scan_mode === "all" ? __("Whole data search") : __("Period scan");
+	const filter_label = {
+		all: __("All"),
+		flagged: __("Flagged"),
+		unflagged: __("Unflagged"),
+	}[state.flag_filter || "all"];
 
 	$main.find(".dc-results-hint").text(
-		__("{0} · {1} month(s)", [mode_label, rows.length])
+		__("{0} · showing {1} of {2} · {3}", [mode_label, rows.length, all_rows.length, filter_label])
 	);
 
-	if (!rows.length) {
+	if (!all_rows.length) {
 		$main.find(".dc-matrix").html(`
 			<div class="dc-empty">
 				<div class="dc-empty-title">${__("No attendance or salary slips found")}</div>
 				<div>${__("Try Whole data search, or widen the period.")}</div>
+			</div>
+		`);
+		return;
+	}
+
+	if (!rows.length) {
+		$main.find(".dc-matrix").html(`
+			<div class="dc-empty">
+				<div class="dc-empty-title">${__("No months match this filter")}</div>
+				<div>${__("Switch to All or another flag filter.")}</div>
 			</div>
 		`);
 		return;
