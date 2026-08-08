@@ -10,16 +10,30 @@ frappe.pages["data-cleansing"].on_page_load = function (wrapper) {
 frappe.pages["data-cleansing"].on_page_show = function (wrapper) {
 	// Keep standard Desk chrome (workspace sidebar) — do not go full-bleed
 	$("body").removeClass("full-width");
+	dc_set_breadcrumbs();
+	if (wrapper._dc_page) {
+		wrapper._dc_page.set_title(__("Data Cleansing"));
+	}
 	inject_dc_styles();
 	const $main = $(wrapper).find(".layout-main-section");
 	$main.html(dc_shell_html());
 	init_data_cleansing($main, wrapper._dc_page);
 };
 
+function dc_set_breadcrumbs() {
+	const $nb = $("#navbar-breadcrumbs");
+	if (!$nb.length) return;
+	$nb.empty().append(
+		`<li><a href="/app/saral-hr">${__("Saral HR")}</a></li>`,
+		`<li><a href="/app/data-cleansing">${__("Data Cleansing")}</a></li>`
+	);
+	document.title = __("Data Cleansing");
+}
+
 function inject_dc_styles() {
-	$("#dc-styles, #dc-styles-v2, #dc-styles-v3").remove();
+	$("#dc-styles, #dc-styles-v2, #dc-styles-v3, #dc-styles-v4, #dc-styles-v5").remove();
 	const s = document.createElement("style");
-	s.id = "dc-styles-v3";
+	s.id = "dc-styles-v5";
 	s.innerHTML = `
 		.dc-root { padding: 8px 0 40px; color: var(--text-color); }
 		.dc-filter-card, .dc-emp-card, .dc-results-card {
@@ -29,24 +43,42 @@ function inject_dc_styles() {
 			margin-bottom: 12px;
 		}
 		.dc-filter-card { padding: 14px 16px; }
-		.dc-filter-row { display: flex; flex-wrap: wrap; gap: 12px 14px; align-items: flex-end; }
-		.dc-field { display: flex; flex-direction: column; gap: 5px; min-width: 0; }
-		.dc-field-employee { width: 260px; flex: 0 0 260px; }
-		.dc-field-action { flex: 0 0 auto; }
-		.dc-field label {
+		.dc-filter-grid {
+			display: grid;
+			grid-template-columns: minmax(220px, 1.1fr) max-content repeat(4, 108px) auto;
+			column-gap: 12px;
+			row-gap: 6px;
+			align-items: center;
+		}
+		.dc-filter-grid > .dc-filter-label {
+			grid-row: 1;
 			font-size: 11px; font-weight: 700; color: var(--text-muted);
 			text-transform: uppercase; letter-spacing: .04em; margin: 0; line-height: 1.2;
-			min-height: 14px;
 		}
-		.dc-field .frappe-control,
-		.dc-field .form-group { margin-bottom: 0 !important; }
-		.dc-field-employee .control-input-wrapper,
-		.dc-field-employee .awesomplete,
-		.dc-field-employee .awesomplete > input { width: 100% !important; }
-		.dc-field-employee input.input-with-feedback,
-		.dc-field .form-control, .dc-field select, .dc-field input[type=number] {
+		.dc-filter-grid > .dc-filter-control { grid-row: 2; min-width: 0; }
+		.dc-employee-wrap .frappe-control,
+		.dc-employee-wrap .form-group { margin-bottom: 0 !important; }
+		.dc-employee-wrap .control-label,
+		.dc-employee-wrap .help-box,
+		.dc-employee-wrap .clearfix { display: none !important; height: 0 !important; margin: 0 !important; padding: 0 !important; }
+		.dc-employee-wrap .control-input-wrapper,
+		.dc-employee-wrap .awesomplete,
+		.dc-employee-wrap .awesomplete > input { width: 100% !important; }
+		.dc-employee-wrap input.input-with-feedback,
+		.dc-filter-grid .form-control,
+		.dc-filter-grid select,
+		.dc-filter-grid input[type=number] {
 			height: 32px !important; min-height: 32px !important;
-			font-size: 13px; border-radius: 6px; margin: 0;
+			font-size: 13px; border-radius: 6px; margin: 0; width: 100%;
+		}
+		.dc-period-fields.dc-disabled,
+		.dc-period-disabled { opacity: .4; pointer-events: none; }
+		@media (max-width: 1100px) {
+			.dc-filter-grid {
+				grid-template-columns: repeat(2, minmax(160px, 1fr));
+			}
+			.dc-filter-grid > .dc-filter-label,
+			.dc-filter-grid > .dc-filter-control { grid-row: auto; }
 		}
 		.dc-mode-toggle {
 			display: inline-flex; border: 1px solid var(--border-color); border-radius: 6px;
@@ -60,8 +92,6 @@ function inject_dc_styles() {
 			background: var(--fg-color); color: var(--text-color);
 			box-shadow: inset 0 0 0 1px var(--border-color);
 		}
-		.dc-period-fields { display: flex; gap: 10px; flex-wrap: wrap; align-items: flex-end; }
-		.dc-period-fields .dc-field { width: 110px; }
 		.dc-period-fields.dc-disabled { opacity: .4; pointer-events: none; }
 		.dc-btn {
 			height: 32px; padding: 0 18px; border: none; border-radius: 6px;
@@ -180,28 +210,27 @@ function dc_shell_html() {
 	return `
 		<div class="dc-root">
 			<div class="dc-filter-card">
-				<div class="dc-filter-row">
-					<div class="dc-field dc-field-employee">
-						<label>${__("Employee")}</label>
-						<div class="dc-employee"></div>
-					</div>
-					<div class="dc-field">
-						<label>${__("Scan mode")}</label>
+				<div class="dc-filter-grid">
+					<div class="dc-filter-label">${__("Employee")}</div>
+					<div class="dc-filter-label">${__("Scan mode")}</div>
+					<div class="dc-filter-label dc-period-label">${__("From Year")}</div>
+					<div class="dc-filter-label dc-period-label">${__("From Month")}</div>
+					<div class="dc-filter-label dc-period-label">${__("To Year")}</div>
+					<div class="dc-filter-label dc-period-label">${__("To Month")}</div>
+					<div class="dc-filter-label">&nbsp;</div>
+
+					<div class="dc-filter-control dc-employee-wrap"><div class="dc-employee"></div></div>
+					<div class="dc-filter-control">
 						<div class="dc-mode-toggle" title="${__("Period scan uses From–To. Whole data search lists every month with attendance or slips.")}">
 							<button type="button" class="dc-mode-btn" data-mode="period">${__("Period scan")}</button>
 							<button type="button" class="dc-mode-btn active" data-mode="all">${__("Whole data search")}</button>
 						</div>
 					</div>
-					<div class="dc-period-fields dc-disabled">
-						<div class="dc-field"><label>${__("From Year")}</label><input type="number" class="form-control dc-from-year" min="1950" max="2099"></div>
-						<div class="dc-field"><label>${__("From Month")}</label><select class="form-control dc-from-month"></select></div>
-						<div class="dc-field"><label>${__("To Year")}</label><input type="number" class="form-control dc-to-year" min="1950" max="2099"></div>
-						<div class="dc-field"><label>${__("To Month")}</label><select class="form-control dc-to-month"></select></div>
-					</div>
-					<div class="dc-field dc-field-action">
-						<label>&nbsp;</label>
-						<button type="button" class="dc-btn dc-load">${__("Scan")}</button>
-					</div>
+					<div class="dc-filter-control dc-period-field"><input type="number" class="form-control dc-from-year" min="1950" max="2099"></div>
+					<div class="dc-filter-control dc-period-field"><select class="form-control dc-from-month"></select></div>
+					<div class="dc-filter-control dc-period-field"><input type="number" class="form-control dc-to-year" min="1950" max="2099"></div>
+					<div class="dc-filter-control dc-period-field"><select class="form-control dc-to-month"></select></div>
+					<div class="dc-filter-control"><button type="button" class="dc-btn dc-load">${__("Scan")}</button></div>
 				</div>
 			</div>
 			<div class="dc-emp-card"></div>
@@ -257,8 +286,10 @@ function init_data_cleansing($main) {
 			fieldtype: "Link",
 			options: "Company Link",
 			fieldname: "employee",
+			label: __("Employee"),
 			placeholder: __("Search employee / Company Link"),
 			only_select: 1,
+			hidden: 0,
 			change() {
 				const val = employee_control.get_value();
 				if (!val) {
@@ -269,6 +300,8 @@ function init_data_cleansing($main) {
 		render_input: true,
 	});
 	employee_control.refresh();
+	// Link control ships its own label — hide it so our grid labels stay aligned
+	$main.find(".dc-employee .control-label, .dc-employee .help-box").hide();
 
 	const state = {
 		employee_control,
@@ -283,7 +316,8 @@ function init_data_cleansing($main) {
 	function sync_mode_ui() {
 		$main.find(".dc-mode-btn").removeClass("active");
 		$main.find(`.dc-mode-btn[data-mode="${state.scan_mode}"]`).addClass("active");
-		$main.find(".dc-period-fields").toggleClass("dc-disabled", state.scan_mode !== "period");
+		const period = state.scan_mode === "period";
+		$main.find(".dc-period-field, .dc-period-label").toggleClass("dc-period-disabled", !period);
 	}
 
 	$main.find(".dc-mode-btn").on("click", function () {
