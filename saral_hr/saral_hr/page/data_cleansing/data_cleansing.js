@@ -31,16 +31,18 @@ function dc_set_breadcrumbs() {
 }
 
 function inject_dc_styles() {
-	$("#dc-styles, #dc-styles-v2, #dc-styles-v3, #dc-styles-v4, #dc-styles-v5, #dc-styles-v6").remove();
+	$("#dc-styles, #dc-styles-v2, #dc-styles-v3, #dc-styles-v4, #dc-styles-v5, #dc-styles-v6, #dc-styles-v7").remove();
 	const s = document.createElement("style");
-	s.id = "dc-styles-v6";
+	s.id = "dc-styles-v7";
 	s.innerHTML = `
-		.dc-root { padding: 8px 0 40px; color: var(--text-color); }
+		.dc-root { padding: 8px 0 40px; color: var(--text-color); max-width: 100%; overflow-x: hidden; }
 		.dc-filter-card, .dc-emp-card, .dc-results-card {
 			background: var(--card-bg, var(--fg-color));
 			border: 1px solid var(--border-color);
 			border-radius: 8px;
 			margin-bottom: 12px;
+			max-width: 100%;
+			overflow: hidden;
 		}
 		.dc-filter-card { padding: 14px 16px; }
 		.dc-filter-row {
@@ -158,17 +160,54 @@ function inject_dc_styles() {
 		}
 		.dc-results-title { font-size: 13px; font-weight: 700; }
 		.dc-results-sub { font-size: 12px; color: var(--text-muted); font-weight: 500; }
-		.dc-table-wrap { overflow: visible; max-height: none; }
-		.dc-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+		.dc-table-wrap {
+			overflow-x: auto;
+			overflow-y: visible;
+			max-height: none;
+			-webkit-overflow-scrolling: touch;
+			width: 100%;
+		}
+		.dc-table {
+			width: 100%;
+			min-width: 760px;
+			border-collapse: collapse;
+			font-size: 13px;
+			table-layout: auto;
+		}
 		.dc-table thead th {
-			padding: 9px 14px; text-align: left; font-size: 11px; font-weight: 700;
+			padding: 9px 12px; text-align: left; font-size: 11px; font-weight: 700;
 			color: var(--text-muted); text-transform: uppercase; letter-spacing: .03em;
 			background: var(--subtle-fg, #f8f9fa); border-bottom: 1px solid var(--border-color);
 			white-space: nowrap;
 		}
 		.dc-table tbody td {
-			padding: 11px 14px; border-bottom: 1px solid var(--border-color);
+			padding: 11px 12px; border-bottom: 1px solid var(--border-color);
 			vertical-align: middle;
+			white-space: nowrap;
+		}
+		.dc-table .dc-slip-cell {
+			max-width: 160px;
+			overflow: hidden;
+			text-overflow: ellipsis;
+		}
+		.dc-table .dc-flags-cell {
+			white-space: normal;
+			min-width: 120px;
+		}
+		.dc-table .dc-actions-cell {
+			position: sticky;
+			right: 0;
+			background: var(--card-bg, var(--fg-color));
+			box-shadow: -6px 0 8px -6px rgba(0,0,0,.12);
+		}
+		.dc-table thead th.dc-actions-cell {
+			background: var(--subtle-fg, #f8f9fa);
+		}
+		.dc-table tbody tr:hover td.dc-actions-cell {
+			background: var(--highlight-color, rgba(0,0,0,.02));
+		}
+		.dc-table tbody tr.dc-has-flags td.dc-actions-cell {
+			background: #fffceb;
 		}
 		.dc-table tbody tr:last-child td { border-bottom: none; }
 		.dc-table tbody tr:hover td { background: var(--highlight-color, rgba(0,0,0,.02)); }
@@ -475,7 +514,7 @@ function render_matrix($main, state) {
 		<th>${__("Slip")}</th>
 		<th>${__("Status")}</th>
 		<th>${__("Flags")}</th>
-		<th style="width:88px"></th>
+		<th class="dc-actions-cell" style="width:88px"></th>
 	</tr></thead><tbody>`;
 
 	rows.forEach((row) => {
@@ -483,15 +522,16 @@ function render_matrix($main, state) {
 			(f) => `<span class="dc-flag ${flag_class(f)}">${frappe.utils.escape_html(f)}</span>`
 		).join("");
 		const has_flags = (row.flags || []).length > 0;
+		const slip = frappe.utils.escape_html(row.slip_names || "—");
 		html += `<tr class="${has_flags ? "dc-has-flags" : ""}" data-year="${row.year}" data-month="${row.month}">
 			<td><strong>${frappe.utils.escape_html(row.month_label)}</strong></td>
 			<td>${row.attendance_days}</td>
 			<td>${row.expected_days}</td>
 			<td>${frappe.utils.escape_html(row.coverage)}</td>
-			<td>${frappe.utils.escape_html(row.slip_names)}</td>
+			<td class="dc-slip-cell" title="${slip}">${slip}</td>
 			<td>${frappe.utils.escape_html(row.slip_status)}</td>
-			<td>${flags || "—"}</td>
-			<td><button type="button" class="dc-btn-ghost dc-view">${__("View")}</button></td>
+			<td class="dc-flags-cell">${flags || "—"}</td>
+			<td class="dc-actions-cell"><button type="button" class="dc-btn-ghost dc-view">${__("View")}</button></td>
 		</tr>`;
 	});
 	html += "</tbody></table></div>";
