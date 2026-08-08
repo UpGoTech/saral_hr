@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| **Status** | planned |
+| **Status** | in progress |
 | **Branch** | `feat/loan-management` |
 | **Surfaces** | DocTypes `Employee Loan`, `Employee Advance`; Desk page / Report **Monthly Loan Prep**; Reports **Employee Loan Ledger** (employee + document); cash recovery on form; PDF prints |
 | **Workspace** | Saral HR → separate **Loans** and **Advances** links (no shared “Loan Advance” list as primary UX) |
@@ -293,10 +293,11 @@ Mirror current `Employee Loan Advance` permission rows unless grill revisits.
 |------|--------|
 | Grill decisions locked | done |
 | Spec drafted | done |
-| Branch / implementation | not started |
-| DocType split + migration | not started |
+| Branch / implementation | in progress (`feat/loan-management`) |
+| DocType split + migration | done (phase 1) |
 | Cash recovery | not started |
 | Monthly Loan Prep | not started |
 | Tally ledgers | not started |
 | PDF polish | not started |
 | Tests | not started |
+| Salary retarget | done (phase 1) |
