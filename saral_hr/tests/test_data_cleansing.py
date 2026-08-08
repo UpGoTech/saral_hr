@@ -269,6 +269,30 @@ class TestDataCleansing(FrappeTestCase):
 		result = dc.get_employee_month_matrix(cl, 2024, 6, 2024, 6)
 		self.assertIn("Outside tenure", result["months"][0]["flags"])
 
+	def test_mid_month_join_slip_not_flagged_outside_tenure(self):
+		"""Slip start_date is month 1st; joining mid-month must not raise Outside tenure."""
+		company = _make_company()
+		employee = _make_employee()
+		cl = _make_company_link(employee, company, "2024-09-08")
+		_make_attendance(cl, company, "2024-09-01", status="Absent")
+		_make_attendance(cl, company, "2024-09-08", status="Present")
+		_stub_slip(cl, company, "2024-09-01", docstatus=1)
+
+		result = dc.get_employee_month_matrix(cl, 2024, 9, 2024, 9)
+		row = result["months"][0]
+		self.assertGreater(row["expected_days"], 0)
+		self.assertNotIn("Outside tenure", row["flags"])
+
+	def test_present_after_left_flagged_outside_tenure(self):
+		company = _make_company()
+		employee = _make_employee()
+		cl = _make_company_link(employee, company, "2024-01-01", left="2025-03-08")
+		_make_attendance(cl, company, "2025-03-08", status="Present")
+		_make_attendance(cl, company, "2025-03-11", status="Present")
+
+		result = dc.get_employee_month_matrix(cl, 2025, 3, 2025, 3)
+		self.assertIn("Outside tenure", result["months"][0]["flags"])
+
 	def test_empty_months_omitted(self):
 		company = _make_company()
 		employee = _make_employee()

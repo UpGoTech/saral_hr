@@ -149,12 +149,15 @@ TENURE_FILLER_STATUSES = {"Absent"}
 
 
 def _should_flag_outside_tenure(attendance, slips, expected, joining, left) -> bool:
-	"""True for cleansing anomalies — not for intentional Absent fillers in a tenure month."""
+	"""True for cleansing anomalies — not for intentional Absent fillers or mid-month join slips.
+
+	Salary slips always use month ``start_date`` (1st). A slip in a month that overlaps
+	tenure is normal even when the 1st is before joining / after left_date.
+	"""
+	# Entire calendar month outside employment, yet data exists
 	if expected == 0 and (attendance or slips):
 		return True
-	for s in slips or []:
-		if _date_outside_tenure(s.start_date, joining, left):
-			return True
+	# Non-Absent attendance on dates outside joining–left (Present/leave after left, etc.)
 	for a in attendance or []:
 		if not _date_outside_tenure(a.attendance_date, joining, left):
 			continue

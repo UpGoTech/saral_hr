@@ -59,7 +59,7 @@ Interactive Desk page **Data Cleansing**:
 |------|---------|
 | Attendance only | ≥1 attendance day, no slip of any status |
 | Slip only | Slip exists (any status), 0 attendance rows |
-| Outside tenure | Month fully outside employment with any data; **or** non-`Absent` attendance / any slip outside joining–left. Intentional pre-join / post-left **Absent** fillers in a tenure month are **not** flagged |
+| Outside tenure | Month fully outside employment with any data; **or** non-`Absent` attendance on dates outside joining–left. Not flagged: intentional pre-join/post-left **Absent** fillers; salary slips in a tenure-overlapping month (slip `start_date` is always the 1st) |
 | Partial coverage | Inside tenure and `0 < days < expected` |
 | Draft slip | At least one Draft slip for the month |
 
@@ -199,5 +199,5 @@ Tenure for Expected / Outside tenure uses Company Link `date_of_joining` / `left
 | Page stub | done (phase 0) |
 | Matrix API + UI | done |
 | Delete APIs + log DocType | done |
-| Tests | done (12) |
+| Tests | done (14) |
 | v2 features | planned (not started) |
