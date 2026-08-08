@@ -31,9 +31,9 @@ function dc_set_breadcrumbs() {
 }
 
 function inject_dc_styles() {
-	$("#dc-styles, #dc-styles-v2, #dc-styles-v3, #dc-styles-v4, #dc-styles-v5").remove();
+	$("#dc-styles, #dc-styles-v2, #dc-styles-v3, #dc-styles-v4, #dc-styles-v5, #dc-styles-v6").remove();
 	const s = document.createElement("style");
-	s.id = "dc-styles-v5";
+	s.id = "dc-styles-v6";
 	s.innerHTML = `
 		.dc-root { padding: 8px 0 40px; color: var(--text-color); }
 		.dc-filter-card, .dc-emp-card, .dc-results-card {
@@ -43,42 +43,53 @@ function inject_dc_styles() {
 			margin-bottom: 12px;
 		}
 		.dc-filter-card { padding: 14px 16px; }
-		.dc-filter-grid {
-			display: grid;
-			grid-template-columns: minmax(220px, 1.1fr) max-content repeat(4, 108px) auto;
-			column-gap: 12px;
-			row-gap: 6px;
-			align-items: center;
+		.dc-filter-row {
+			display: flex;
+			flex-wrap: wrap;
+			align-items: flex-end;
+			gap: 12px 14px;
 		}
-		.dc-filter-grid > .dc-filter-label {
-			grid-row: 1;
+		.dc-fg {
+			display: flex;
+			flex-direction: column;
+			gap: 5px;
+			min-width: 0;
+		}
+		.dc-fg-employee { flex: 1 1 240px; min-width: 200px; max-width: 320px; }
+		.dc-fg-mode { flex: 0 1 auto; }
+		.dc-fg-period { flex: 0 0 108px; width: 108px; }
+		.dc-fg-action { flex: 0 0 auto; }
+		.dc-fg-label {
 			font-size: 11px; font-weight: 700; color: var(--text-muted);
 			text-transform: uppercase; letter-spacing: .04em; margin: 0; line-height: 1.2;
+			min-height: 14px;
 		}
-		.dc-filter-grid > .dc-filter-control { grid-row: 2; min-width: 0; }
 		.dc-employee-wrap .frappe-control,
 		.dc-employee-wrap .form-group { margin-bottom: 0 !important; }
 		.dc-employee-wrap .control-label,
 		.dc-employee-wrap .help-box,
-		.dc-employee-wrap .clearfix { display: none !important; height: 0 !important; margin: 0 !important; padding: 0 !important; }
+		.dc-employee-wrap .clearfix {
+			display: none !important; height: 0 !important; margin: 0 !important; padding: 0 !important;
+		}
 		.dc-employee-wrap .control-input-wrapper,
 		.dc-employee-wrap .awesomplete,
 		.dc-employee-wrap .awesomplete > input { width: 100% !important; }
 		.dc-employee-wrap input.input-with-feedback,
-		.dc-filter-grid .form-control,
-		.dc-filter-grid select,
-		.dc-filter-grid input[type=number] {
+		.dc-fg .form-control,
+		.dc-fg select,
+		.dc-fg input[type=number] {
 			height: 32px !important; min-height: 32px !important;
 			font-size: 13px; border-radius: 6px; margin: 0; width: 100%;
 		}
-		.dc-period-fields.dc-disabled,
 		.dc-period-disabled { opacity: .4; pointer-events: none; }
-		@media (max-width: 1100px) {
-			.dc-filter-grid {
-				grid-template-columns: repeat(2, minmax(160px, 1fr));
+		@media (max-width: 720px) {
+			.dc-filter-row { flex-direction: column; align-items: stretch; }
+			.dc-fg-employee, .dc-fg-mode, .dc-fg-period, .dc-fg-action {
+				flex: 1 1 auto; width: 100%; max-width: none;
 			}
-			.dc-filter-grid > .dc-filter-label,
-			.dc-filter-grid > .dc-filter-control { grid-row: auto; }
+			.dc-mode-toggle { width: 100%; }
+			.dc-mode-toggle button { flex: 1; }
+			.dc-fg-action .dc-btn { width: 100%; }
 		}
 		.dc-mode-toggle {
 			display: inline-flex; border: 1px solid var(--border-color); border-radius: 6px;
@@ -92,7 +103,6 @@ function inject_dc_styles() {
 			background: var(--fg-color); color: var(--text-color);
 			box-shadow: inset 0 0 0 1px var(--border-color);
 		}
-		.dc-period-fields.dc-disabled { opacity: .4; pointer-events: none; }
 		.dc-btn {
 			height: 32px; padding: 0 18px; border: none; border-radius: 6px;
 			background: var(--primary); color: #fff; font-size: 13px; font-weight: 600; cursor: pointer;
@@ -210,27 +220,38 @@ function dc_shell_html() {
 	return `
 		<div class="dc-root">
 			<div class="dc-filter-card">
-				<div class="dc-filter-grid">
-					<div class="dc-filter-label">${__("Employee")}</div>
-					<div class="dc-filter-label">${__("Scan mode")}</div>
-					<div class="dc-filter-label dc-period-label">${__("From Year")}</div>
-					<div class="dc-filter-label dc-period-label">${__("From Month")}</div>
-					<div class="dc-filter-label dc-period-label">${__("To Year")}</div>
-					<div class="dc-filter-label dc-period-label">${__("To Month")}</div>
-					<div class="dc-filter-label">&nbsp;</div>
-
-					<div class="dc-filter-control dc-employee-wrap"><div class="dc-employee"></div></div>
-					<div class="dc-filter-control">
+				<div class="dc-filter-row">
+					<div class="dc-fg dc-fg-employee">
+						<div class="dc-fg-label">${__("Employee")}</div>
+						<div class="dc-employee-wrap"><div class="dc-employee"></div></div>
+					</div>
+					<div class="dc-fg dc-fg-mode">
+						<div class="dc-fg-label">${__("Scan mode")}</div>
 						<div class="dc-mode-toggle" title="${__("Period scan uses From–To. Whole data search lists every month with attendance or slips.")}">
 							<button type="button" class="dc-mode-btn" data-mode="period">${__("Period scan")}</button>
 							<button type="button" class="dc-mode-btn active" data-mode="all">${__("Whole data search")}</button>
 						</div>
 					</div>
-					<div class="dc-filter-control dc-period-field"><input type="number" class="form-control dc-from-year" min="1950" max="2099"></div>
-					<div class="dc-filter-control dc-period-field"><select class="form-control dc-from-month"></select></div>
-					<div class="dc-filter-control dc-period-field"><input type="number" class="form-control dc-to-year" min="1950" max="2099"></div>
-					<div class="dc-filter-control dc-period-field"><select class="form-control dc-to-month"></select></div>
-					<div class="dc-filter-control"><button type="button" class="dc-btn dc-load">${__("Scan")}</button></div>
+					<div class="dc-fg dc-fg-period dc-period-field">
+						<div class="dc-fg-label dc-period-label">${__("From Year")}</div>
+						<input type="number" class="form-control dc-from-year" min="1950" max="2099">
+					</div>
+					<div class="dc-fg dc-fg-period dc-period-field">
+						<div class="dc-fg-label dc-period-label">${__("From Month")}</div>
+						<select class="form-control dc-from-month"></select>
+					</div>
+					<div class="dc-fg dc-fg-period dc-period-field">
+						<div class="dc-fg-label dc-period-label">${__("To Year")}</div>
+						<input type="number" class="form-control dc-to-year" min="1950" max="2099">
+					</div>
+					<div class="dc-fg dc-fg-period dc-period-field">
+						<div class="dc-fg-label dc-period-label">${__("To Month")}</div>
+						<select class="form-control dc-to-month"></select>
+					</div>
+					<div class="dc-fg dc-fg-action">
+						<div class="dc-fg-label">&nbsp;</div>
+						<button type="button" class="dc-btn dc-load">${__("Scan")}</button>
+					</div>
 				</div>
 			</div>
 			<div class="dc-emp-card"></div>
@@ -317,7 +338,7 @@ function init_data_cleansing($main) {
 		$main.find(".dc-mode-btn").removeClass("active");
 		$main.find(`.dc-mode-btn[data-mode="${state.scan_mode}"]`).addClass("active");
 		const period = state.scan_mode === "period";
-		$main.find(".dc-period-field, .dc-period-label").toggleClass("dc-period-disabled", !period);
+		$main.find(".dc-period-field").toggleClass("dc-period-disabled", !period);
 	}
 
 	$main.find(".dc-mode-btn").on("click", function () {
