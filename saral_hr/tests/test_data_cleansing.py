@@ -252,3 +252,22 @@ class TestDataCleansing(FrappeTestCase):
 		result = dc.get_employee_month_matrix(cl, 2024, 1, 2024, 3)
 		labels = [r["month_label"] for r in result["months"]]
 		self.assertEqual(labels, ["Jan 2024"])
+
+	def test_whole_data_search_finds_orphan_month_outside_period(self):
+		"""Mistaken Mar-24 attendance is invisible in a 2025 period scan but found via all."""
+		company = _make_company()
+		employee = _make_employee()
+		cl = _make_company_link(employee, company, "2025-01-01")
+		_make_attendance(cl, company, "2024-03-15")
+
+		period = dc.get_employee_month_matrix(
+			cl, 2025, 1, 2025, 8, scan_mode="period"
+		)
+		self.assertEqual(period["months"], [])
+
+		all_data = dc.get_employee_month_matrix(cl, scan_mode="all")
+		self.assertEqual(all_data["scan_mode"], "all")
+		labels = [r["month_label"] for r in all_data["months"]]
+		self.assertEqual(labels, ["Mar 2024"])
+		self.assertIn("Attendance only", all_data["months"][0]["flags"])
+		self.assertIn("Outside tenure", all_data["months"][0]["flags"])

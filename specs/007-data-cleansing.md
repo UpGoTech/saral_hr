@@ -28,12 +28,19 @@ Interactive Desk page **Data Cleansing**:
 | Filter | Type | Notes |
 |--------|------|--------|
 | Employee | Link → **Company Link** | Required |
-| From (year + month) | Select / Date parts | Required |
-| To (year + month) | Select / Date parts | Required; ≥ From |
+| Scan mode | Toggle | **Period scan** (From–To) or **Whole data search** (default) |
+| From (year + month) | Select / Date parts | Required only for Period scan |
+| To (year + month) | Select / Date parts | Required only for Period scan; ≥ From |
+
+**Whole data search** — lists every month that has any Attendance or Salary Slip for the employee (no date range). Use this to find mistaken orphans (e.g. only Mar-24 attendance) without guessing From–To.
+
+**Period scan** — same as before: only months inside From–To that have data.
 
 ### Month grid rows
 
-Show **every calendar month in [From, To] that has any Attendance or any Salary Slip** for that Company Link — including months **outside tenure** (that is how extras are found). Months with neither are omitted.
+- **Period scan:** every calendar month in [From, To] that has any Attendance or any Salary Slip.
+- **Whole data search:** every month with data across the employee’s entire history.
+- Including months **outside tenure**. Months with neither attendance nor slip are omitted.
 
 | Column | Definition |
 |--------|------------|
@@ -123,8 +130,8 @@ v2 reopen / grill before build: exact SSA delete rules, AS/AD interaction with s
 | # | Decision | Choice |
 |---|----------|--------|
 | 1 | Surface | Desk **Page** (interactive) |
-| 2 | Filters | Employee (Company Link) + **From–To month** |
-| 3 | Months shown | Any month in range with attendance **or** slip (incl. outside tenure) |
+| 2 | Filters | Employee (Company Link) + scan mode toggle + From–To for Period scan |
+| 3 | Months shown | Period: months in range with data. **All:** every month with attendance or slip (default UI) |
 | 4 | Flags | **All** five |
 | 5 | Attendance vs slip | Hard block attendance delete until **no** slip remains (any docstatus) |
 | 6 | Audit | DocType **Data Cleansing Log** |
@@ -132,6 +139,7 @@ v2 reopen / grill before build: exact SSA delete rules, AS/AD interaction with s
 | 8 | v1 scope | Attendance + Salary Slip only; AS/AD, SSA, company-wide orphans, period lock → **v2** |
 | 9 | Delete grain | Whole month **and** individual days |
 | 10 | Delete roles | Administrator / Saral HR Manager only; HR User view-only |
+| 11 | Scan modes | **Period scan** vs **Whole data search** (find orphans without knowing the month) |
 
 ## How?
 
@@ -139,11 +147,12 @@ v2 reopen / grill before build: exact SSA delete rules, AS/AD interaction with s
 
 Page module `saral_hr/saral_hr/page/data_cleansing/`:
 
-- `get_employee_month_matrix(employee, from_year, from_month, to_year, to_month)`
+- `get_employee_month_matrix(employee, …, scan_mode=period|all)`
 - `get_month_detail(employee, year, month)` — day list + slips
 - `delete_attendance(employee, names | month)` — enforces slip-absent rule + role
 - `cancel_salary_slip(name)` / `delete_salary_slip(name)` — role + write log
 - Permission helper: Manager / Admin / System Manager for mutating APIs; User can call read APIs
+- Whole-data discovery: distinct months from Attendance + Salary Slip (no range walk)
 
 Tenure for Expected / Outside tenure uses Company Link `date_of_joining` / `left_date` (same spirit as Attendance Dashboard).
 
@@ -162,6 +171,7 @@ Tenure for Expected / Outside tenure uses Company Link `date_of_joining` / `left
 ### Tests
 
 - Matrix includes outside-tenure months that have data
+- Whole data search finds months outside a narrow Period scan
 - Flags compute correctly for fixtures
 - Attendance delete blocked when Draft / Submitted / Cancelled slip exists
 - Attendance delete succeeds after slip removed
@@ -189,5 +199,5 @@ Tenure for Expected / Outside tenure uses Company Link `date_of_joining` / `left
 | Page stub | done (phase 0) |
 | Matrix API + UI | done |
 | Delete APIs + log DocType | done |
-| Tests | done (9) |
+| Tests | done (10) |
 | v2 features | planned (not started) |

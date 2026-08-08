@@ -53,6 +53,16 @@ function inject_dc_styles() {
 		.dc-att-row { display: flex; align-items: center; gap: 10px; padding: 6px 10px; border-bottom: 1px solid var(--border-color); font-size: 13px; }
 		.dc-att-row:last-child { border-bottom: none; }
 		.dc-slip-row { display: flex; align-items: center; gap: 10px; padding: 8px 0; border-bottom: 1px solid var(--border-color); font-size: 13px; }
+		.dc-mode-toggle {
+			display: inline-flex; border: 1px solid var(--border-color); border-radius: var(--border-radius);
+			overflow: hidden; height: 30px; align-self: flex-end;
+		}
+		.dc-mode-toggle button {
+			border: none; background: transparent; padding: 0 12px; font-size: 12px; font-weight: 600;
+			cursor: pointer; color: var(--text-muted); height: 100%;
+		}
+		.dc-mode-toggle button.active { background: var(--primary); color: #fff; }
+		.dc-period-fields.dc-disabled { opacity: 0.45; pointer-events: none; }
 	`;
 	document.head.appendChild(s);
 }
@@ -62,10 +72,16 @@ function dc_shell_html() {
 		<div class="dc-root">
 			<div class="dc-filter-bar">
 				<div class="dc-field" style="min-width:260px"><label>${__("Employee")}</label><div class="dc-employee"></div></div>
-				<div class="dc-field"><label>${__("From Year")}</label><input type="number" class="form-control dc-from-year" min="1950" max="2099"></div>
-				<div class="dc-field"><label>${__("From Month")}</label><select class="form-control dc-from-month"></select></div>
-				<div class="dc-field"><label>${__("To Year")}</label><input type="number" class="form-control dc-to-year" min="1950" max="2099"></div>
-				<div class="dc-field"><label>${__("To Month")}</label><select class="form-control dc-to-month"></select></div>
+				<div class="dc-mode-toggle" title="${__("Period scan uses From–To. Whole data search lists every month with attendance or slips.")}">
+					<button type="button" class="dc-mode-btn" data-mode="period">${__("Period scan")}</button>
+					<button type="button" class="dc-mode-btn active" data-mode="all">${__("Whole data search")}</button>
+				</div>
+				<div class="dc-period-fields dc-disabled" style="display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end;">
+					<div class="dc-field"><label>${__("From Year")}</label><input type="number" class="form-control dc-from-year" min="1950" max="2099"></div>
+					<div class="dc-field"><label>${__("From Month")}</label><select class="form-control dc-from-month"></select></div>
+					<div class="dc-field"><label>${__("To Year")}</label><input type="number" class="form-control dc-to-year" min="1950" max="2099"></div>
+					<div class="dc-field"><label>${__("To Month")}</label><select class="form-control dc-to-month"></select></div>
+				</div>
 				<button class="dc-btn dc-load">${__("Load")}</button>
 			</div>
 			<div class="dc-meta"></div>
@@ -114,7 +130,20 @@ function init_data_cleansing($main) {
 		matrix: null,
 		detail: null,
 		can_mutate: false,
+		scan_mode: "all",
 	};
+
+	function sync_mode_ui() {
+		$main.find(".dc-mode-btn").removeClass("active");
+		$main.find(`.dc-mode-btn[data-mode="${state.scan_mode}"]`).addClass("active");
+		$main.find(".dc-period-fields").toggleClass("dc-disabled", state.scan_mode !== "period");
+	}
+
+	$main.find(".dc-mode-btn").on("click", function () {
+		state.scan_mode = $(this).data("mode");
+		sync_mode_ui();
+	});
+	sync_mode_ui();
 
 	$main.find(".dc-load").on("click", () => load_matrix($main, state));
 }
@@ -127,11 +156,14 @@ function load_matrix($main, state, after) {
 	}
 	const args = {
 		employee,
-		from_year: cint($main.find(".dc-from-year").val()),
-		from_month: cint($main.find(".dc-from-month").val()),
-		to_year: cint($main.find(".dc-to-year").val()),
-		to_month: cint($main.find(".dc-to-month").val()),
+		scan_mode: state.scan_mode || "all",
 	};
+	if (args.scan_mode === "period") {
+		args.from_year = cint($main.find(".dc-from-year").val());
+		args.from_month = cint($main.find(".dc-from-month").val());
+		args.to_year = cint($main.find(".dc-to-year").val());
+		args.to_month = cint($main.find(".dc-to-month").val());
+	}
 
 	$main.find(".dc-matrix").html(`<div class="dc-empty">${__("Loading…")}</div>`);
 	if (!after) $main.find(".dc-detail-wrap").empty();
@@ -160,10 +192,16 @@ function render_matrix($main, state) {
 		m.left_date ? `${__("Left")} ${frappe.datetime.str_to_user(m.left_date)}` : null,
 	].filter(Boolean).join(" · ");
 
+	const mode_label = m.scan_mode === "all"
+		? __("Whole data search")
+		: __("Period scan");
+
 	$main.find(".dc-meta").html(
 		`<strong>${frappe.utils.escape_html(m.employee_name || m.employee)}</strong>`
 		+ ` · ${frappe.utils.escape_html(m.company || "")}`
 		+ (tenure ? ` · ${tenure}` : "")
+		+ ` · ${mode_label}`
+		+ ` · ${(m.months || []).length} ${__("month(s) with data")}`
 		+ (state.can_mutate ? "" : ` · <span class="text-muted">${__("View only")}</span>`)
 	);
 

@@ -73,6 +73,36 @@ def _iter_months(from_year, from_month, to_year, to_month):
 			m += 1
 
 
+def _discover_months_with_data(employee: str):
+	"""All distinct (year, month) that have Attendance or Salary Slip for employee."""
+	months = set()
+	for row in frappe.db.sql(
+		"""
+		SELECT DISTINCT YEAR(attendance_date) AS y, MONTH(attendance_date) AS m
+		FROM `tabAttendance`
+		WHERE employee = %s AND attendance_date IS NOT NULL
+		""",
+		employee,
+		as_dict=True,
+	):
+		if row.y and row.m:
+			months.add((int(row.y), int(row.m)))
+
+	for row in frappe.db.sql(
+		"""
+		SELECT DISTINCT YEAR(start_date) AS y, MONTH(start_date) AS m
+		FROM `tabSalary Slip`
+		WHERE employee = %s AND start_date IS NOT NULL
+		""",
+		employee,
+		as_dict=True,
+	):
+		if row.y and row.m:
+			months.add((int(row.y), int(row.m)))
+
+	return sorted(months)
+
+
 def _tenure(employee: str):
 	row = frappe.db.get_value(
 		"Company Link",
@@ -232,18 +262,44 @@ def can_mutate():
 
 
 @frappe.whitelist()
-def get_employee_month_matrix(employee, from_year, from_month, to_year, to_month):
-	"""Return month rows that have attendance and/or salary slips in range."""
+def get_employee_month_matrix(
+	employee,
+	from_year=None,
+	from_month=None,
+	to_year=None,
+	to_month=None,
+	scan_mode="period",
+):
+	"""Return month rows that have attendance and/or salary slips.
+
+	scan_mode:
+	  - period: only months in [from, to]
+	  - all: every month that has any Attendance or Salary Slip (whole-data search)
+	"""
 	_assert_can_view()
 	if not employee:
 		frappe.throw(_("Employee is required"))
 
+	mode = (scan_mode or "period").strip().lower()
+	if mode not in ("period", "all"):
+		frappe.throw(_("Invalid scan mode"))
+
 	tenure = _tenure(employee)
 	rows = []
-	for y, m in _iter_months(from_year, from_month, to_year, to_month):
-		row = _build_month_row(employee, tenure, y, m)
-		if row:
-			rows.append(row)
+
+	if mode == "all":
+		month_keys = _discover_months_with_data(employee)
+		for y, m in month_keys:
+			row = _build_month_row(employee, tenure, y, m)
+			if row:
+				rows.append(row)
+	else:
+		if from_year is None or from_month is None or to_year is None or to_month is None:
+			frappe.throw(_("From and To month are required for Period scan"))
+		for y, m in _iter_months(from_year, from_month, to_year, to_month):
+			row = _build_month_row(employee, tenure, y, m)
+			if row:
+				rows.append(row)
 
 	return {
 		"employee": employee,
@@ -251,6 +307,7 @@ def get_employee_month_matrix(employee, from_year, from_month, to_year, to_month
 		"company": tenure.company,
 		"date_of_joining": str(tenure.date_of_joining) if tenure.date_of_joining else None,
 		"left_date": str(tenure.left_date) if tenure.left_date else None,
+		"scan_mode": mode,
 		"can_mutate": bool(
 			frappe.session.user == "Administrator"
 			or (_user_roles() & {"System Manager", "Saral HR Manager"})
