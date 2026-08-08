@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| **Status** | planned |
+| **Status** | in progress |
 | **Branch** | `feat/data-cleansing` |
 | **Surface** | Desk page `data-cleansing` |
 | **Workspace** | Saral HR → card **Data Auditing and Cleansing** → link **Data Cleansing** |
@@ -187,7 +187,7 @@ Tenure for Expected / Outside tenure uses Company Link `date_of_joining` / `left
 | v2 scope documented | done |
 | Workspace card + link | done (phase 0) |
 | Page stub | done (phase 0) |
-| Matrix API + UI | pending |
-| Delete APIs + log DocType | pending |
-| Tests | pending |
+| Matrix API + UI | done |
+| Delete APIs + log DocType | done |
+| Tests | done (9) |
 | v2 features | planned (not started) |
