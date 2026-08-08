@@ -31,9 +31,9 @@ function dc_set_breadcrumbs() {
 }
 
 function inject_dc_styles() {
-	$("#dc-styles, #dc-styles-v2, #dc-styles-v3, #dc-styles-v4, #dc-styles-v5, #dc-styles-v6, #dc-styles-v7").remove();
+	$("#dc-styles, #dc-styles-v2, #dc-styles-v3, #dc-styles-v4, #dc-styles-v5, #dc-styles-v6, #dc-styles-v7, #dc-styles-v8").remove();
 	const s = document.createElement("style");
-	s.id = "dc-styles-v7";
+	s.id = "dc-styles-v8";
 	s.innerHTML = `
 		.dc-root { padding: 8px 0 40px; color: var(--text-color); max-width: 100%; overflow-x: hidden; }
 		.dc-filter-card, .dc-emp-card, .dc-results-card {
@@ -160,19 +160,11 @@ function inject_dc_styles() {
 		}
 		.dc-results-title { font-size: 13px; font-weight: 700; }
 		.dc-results-sub { font-size: 12px; color: var(--text-muted); font-weight: 500; }
-		.dc-table-wrap {
-			overflow-x: auto;
-			overflow-y: visible;
-			max-height: none;
-			-webkit-overflow-scrolling: touch;
-			width: 100%;
-		}
+		.dc-table-wrap { overflow: visible; width: 100%; }
 		.dc-table {
 			width: 100%;
-			min-width: 760px;
 			border-collapse: collapse;
 			font-size: 13px;
-			table-layout: auto;
 		}
 		.dc-table thead th {
 			padding: 9px 12px; text-align: left; font-size: 11px; font-weight: 700;
@@ -183,35 +175,52 @@ function inject_dc_styles() {
 		.dc-table tbody td {
 			padding: 11px 12px; border-bottom: 1px solid var(--border-color);
 			vertical-align: middle;
-			white-space: nowrap;
 		}
 		.dc-table .dc-slip-cell {
-			max-width: 160px;
+			max-width: 180px;
 			overflow: hidden;
 			text-overflow: ellipsis;
+			white-space: nowrap;
 		}
-		.dc-table .dc-flags-cell {
-			white-space: normal;
-			min-width: 120px;
-		}
-		.dc-table .dc-actions-cell {
-			position: sticky;
-			right: 0;
-			background: var(--card-bg, var(--fg-color));
-			box-shadow: -6px 0 8px -6px rgba(0,0,0,.12);
-		}
-		.dc-table thead th.dc-actions-cell {
-			background: var(--subtle-fg, #f8f9fa);
-		}
-		.dc-table tbody tr:hover td.dc-actions-cell {
-			background: var(--highlight-color, rgba(0,0,0,.02));
-		}
-		.dc-table tbody tr.dc-has-flags td.dc-actions-cell {
-			background: #fffceb;
-		}
+		.dc-table .dc-flags-cell { white-space: normal; }
 		.dc-table tbody tr:last-child td { border-bottom: none; }
 		.dc-table tbody tr:hover td { background: var(--highlight-color, rgba(0,0,0,.02)); }
 		.dc-table tbody tr.dc-has-flags td { background: rgba(255, 224, 102, .08); }
+
+		.dc-month-cards { display: none; padding: 10px 12px 12px; }
+		.dc-month-card {
+			border: 1px solid var(--border-color);
+			border-radius: 8px;
+			padding: 12px;
+			margin-bottom: 10px;
+			background: var(--card-bg, var(--fg-color));
+		}
+		.dc-month-card:last-child { margin-bottom: 0; }
+		.dc-month-card.dc-has-flags { background: rgba(255, 224, 102, .08); border-color: #ffe066; }
+		.dc-month-card-top {
+			display: flex; align-items: flex-start; justify-content: space-between; gap: 10px;
+			margin-bottom: 10px;
+		}
+		.dc-month-card-title { font-size: 14px; font-weight: 700; margin: 0; }
+		.dc-month-card-grid {
+			display: grid;
+			grid-template-columns: 1fr 1fr;
+			gap: 8px 12px;
+			font-size: 12px;
+		}
+		.dc-month-card-grid .k { color: var(--text-muted); font-weight: 600; text-transform: uppercase; font-size: 10px; letter-spacing: .03em; }
+		.dc-month-card-grid .v { font-weight: 600; margin-top: 2px; word-break: break-word; }
+		.dc-month-card-flags { margin-top: 10px; }
+		.dc-month-card-actions { margin-top: 12px; }
+
+		@media (max-width: 900px) {
+			.dc-table-wrap { display: none; }
+			.dc-month-cards { display: block; }
+		}
+		@media (min-width: 901px) {
+			.dc-table-wrap { display: block; }
+			.dc-month-cards { display: none; }
+		}
 		.dc-flag {
 			display: inline-block; margin: 1px 4px 1px 0; padding: 2px 8px; border-radius: 10px;
 			font-size: 11px; font-weight: 600; background: var(--subtle-fg); color: var(--text-color);
@@ -514,8 +523,10 @@ function render_matrix($main, state) {
 		<th>${__("Slip")}</th>
 		<th>${__("Status")}</th>
 		<th>${__("Flags")}</th>
-		<th class="dc-actions-cell" style="width:88px"></th>
+		<th style="width:88px"></th>
 	</tr></thead><tbody>`;
+
+	let cards = `<div class="dc-month-cards">`;
 
 	rows.forEach((row) => {
 		const flags = (row.flags || []).map(
@@ -531,15 +542,31 @@ function render_matrix($main, state) {
 			<td class="dc-slip-cell" title="${slip}">${slip}</td>
 			<td>${frappe.utils.escape_html(row.slip_status)}</td>
 			<td class="dc-flags-cell">${flags || "—"}</td>
-			<td class="dc-actions-cell"><button type="button" class="dc-btn-ghost dc-view">${__("View")}</button></td>
+			<td><button type="button" class="dc-btn-ghost dc-view">${__("View")}</button></td>
 		</tr>`;
+
+		cards += `<div class="dc-month-card ${has_flags ? "dc-has-flags" : ""}" data-year="${row.year}" data-month="${row.month}">
+			<div class="dc-month-card-top">
+				<div class="dc-month-card-title">${frappe.utils.escape_html(row.month_label)}</div>
+				<button type="button" class="dc-btn-ghost dc-view">${__("View")}</button>
+			</div>
+			<div class="dc-month-card-grid">
+				<div><div class="k">${__("Att days")}</div><div class="v">${row.attendance_days}</div></div>
+				<div><div class="k">${__("Expected")}</div><div class="v">${row.expected_days}</div></div>
+				<div><div class="k">${__("Coverage")}</div><div class="v">${frappe.utils.escape_html(row.coverage)}</div></div>
+				<div><div class="k">${__("Status")}</div><div class="v">${frappe.utils.escape_html(row.slip_status)}</div></div>
+				<div style="grid-column:1 / -1"><div class="k">${__("Slip")}</div><div class="v">${slip}</div></div>
+			</div>
+			${flags ? `<div class="dc-month-card-flags">${flags}</div>` : ""}
+		</div>`;
 	});
 	html += "</tbody></table></div>";
-	$main.find(".dc-matrix").html(html);
+	cards += "</div>";
+	$main.find(".dc-matrix").html(html + cards);
 
 	$main.find(".dc-matrix .dc-view").on("click", function () {
-		const $tr = $(this).closest("tr");
-		open_month_dialog($main, state, cint($tr.data("year")), cint($tr.data("month")));
+		const $row = $(this).closest("[data-year]");
+		open_month_dialog($main, state, cint($row.data("year")), cint($row.data("month")));
 	});
 }
 
