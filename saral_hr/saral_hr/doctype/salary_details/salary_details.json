@@ -17,7 +17,9 @@
   "daily_wage_component",
   "employer_contribution",
   "exclude_from_ctc",
-  "is_deferred"
+  "is_deferred",
+  "loan",
+  "loan_due"
  ],
  "fields": [
   {
@@ -113,6 +115,22 @@
    "fieldtype": "Check",
    "in_list_view": 1,
    "label": "Is Deferred",
+   "read_only": 1
+  },
+  {
+   "fieldname": "loan",
+   "fieldtype": "Link",
+   "hidden": 1,
+   "label": "Loan",
+   "options": "Employee Loan",
+   "read_only": 1
+  },
+  {
+   "fieldname": "loan_due",
+   "fieldtype": "Link",
+   "hidden": 1,
+   "label": "Loan Due",
+   "options": "Employee Loan Due",
    "read_only": 1
   }
  ],

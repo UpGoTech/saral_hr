@@ -87,6 +87,121 @@ class SalarySlip(Document):
         if self.start_date:
             self.end_date = get_last_day(getdate(self.start_date))
 
+    def on_submit(self):
+        self._sync_loan_dues(deducted=True)
+
+    def on_cancel(self):
+        self._sync_loan_dues(deducted=False)
+
+    def _sync_loan_dues(self, deducted):
+        touched_loans = set()
+        for row in self.deductions or []:
+            due_name = getattr(row, "loan_due", None)
+            if not due_name:
+                continue
+            if not frappe.db.exists("Employee Loan Due", due_name):
+                continue
+            if deducted:
+                frappe.db.set_value(
+                    "Employee Loan Due",
+                    due_name,
+                    {"salary_slip": self.name, "status": "Deducted"},
+                    update_modified=False,
+                )
+            else:
+                amount = frappe.db.get_value("Employee Loan Due", due_name, "amount")
+                frappe.db.set_value(
+                    "Employee Loan Due",
+                    due_name,
+                    {
+                        "salary_slip": "",
+                        "status": "Skipped" if flt(amount) == 0 else "Pending",
+                    },
+                    update_modified=False,
+                )
+            loan = getattr(row, "loan", None) or frappe.db.get_value(
+                "Employee Loan Due", due_name, "loan"
+            )
+            if loan:
+                touched_loans.add(loan)
+
+        for loan_name in touched_loans:
+            _recalc_loan_outstanding(loan_name)
+
+
+def _recalc_loan_outstanding(loan_name):
+    if not loan_name or not frappe.db.exists("Employee Loan", loan_name):
+        return
+    doc = frappe.get_doc("Employee Loan", loan_name)
+    doc.calculate_outstanding()
+    frappe.db.set_value(
+        "Employee Loan",
+        loan_name,
+        {
+            "total_recovered": doc.total_recovered,
+            "outstanding_amount": doc.outstanding_amount,
+            "status": doc.status,
+            "expected_months_remaining": doc.expected_months_remaining,
+        },
+        update_modified=False,
+    )
+
+
+def _ensure_loan_salary_component():
+    if frappe.db.exists("Salary Component", "Loan"):
+        return "Loan"
+    doc = frappe.get_doc(
+        {
+            "doctype": "Salary Component",
+            "salary_component": "Loan",
+            "salary_component_abbr": "LOAN",
+            "type": "Deduction",
+            "depends_on_payment_days": 0,
+        }
+    )
+    doc.insert(ignore_permissions=True)
+    return "Loan"
+
+
+@frappe.whitelist()
+def get_loan_dues_for_slip(employee, start_date):
+    if not employee or not start_date:
+        return []
+    if not frappe.db.exists("DocType", "Employee Loan Due"):
+        return []
+
+    d = getdate(start_date)
+    month_label = f"{MONTHS_LIST[d.month - 1]} {d.year}"
+    _ensure_loan_salary_component()
+
+    dues = frappe.get_all(
+        "Employee Loan Due",
+        filters={
+            "employee": employee,
+            "month": month_label,
+            "amount": [">", 0],
+        },
+        fields=["name", "loan", "amount", "salary_slip", "status"],
+    )
+    rows = []
+    for due in dues:
+        if due.salary_slip:
+            continue
+        loan_status = frappe.db.get_value("Employee Loan", due.loan, "status")
+        if loan_status != "Active":
+            continue
+        suffix = due.loan.split("-")[-1] if due.loan else due.name
+        rows.append(
+            {
+                "salary_component": "Loan",
+                "abbr": f"Loan-{suffix}",
+                "amount": flt(due.amount),
+                "loan": due.loan,
+                "loan_due": due.name,
+            }
+        )
+    return rows
+
 
 def _is_attendance_allowance(comp_name):
     return (comp_name or "").strip() == ATTENDANCE_ALLOWANCE_COMPONENT
@@ -1280,6 +1395,7 @@ def bulk_generate_salary_slips(employees, year, month):
 
             category = frappe.db.get_value("Company Link", employee, "category")
             add_e, add_d = get_additional_components_for_employee(employee, year, month)
+            loan_dues = get_loan_dues_for_slip(employee, start_date)
 
             ss = frappe.new_doc("Salary Slip")
             ss.employee = employee; ss.start_date = start_date
@@ -1323,6 +1439,18 @@ def bulk_generate_salary_slips(employees, year, month):
             for s in sd.get('employer_share', []): _append_row('employer_share', s, extra=1)
             for e in add_e: _append_row('earnings',   {**e, 'per_day_rate': 0, 'daily_wage_component': 0})
             for d in add_d: _append_row('deductions', {**d, 'per_day_rate': 0, 'daily_wage_component': 0, 'employer_contribution': 0})
+
+            for item in loan_dues:
+                row = ss.append('deductions', {})
+                row.salary_component = item.get('salary_component')
+                row.abbr = item.get('abbr', '')
+                row.amount = flt(item.get('amount'))
+                row.base_amount = flt(item.get('amount'))
+                row.employer_contribution = 0
+                row.depends_on_payment_days = 0
+                row.depends_on_physical_working_days = 0
+                row.loan = item.get('loan')
+                row.loan_due = item.get('loan_due')
 
             calculate_salary_slip_amounts_exact(ss, vp_dec, start_date, category, ssa_gross=sd.get('ssa_gross', 0))
             ss.insert(ignore_permissions=True); success_count += 1; frappe.db.commit()

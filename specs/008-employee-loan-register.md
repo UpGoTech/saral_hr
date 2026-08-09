@@ -244,4 +244,6 @@ Card **Employee Loans**:
 |------|--------|
 | Grill locked | done |
 | Spec drafted | done |
-| Implementation | not started |
+| Phase 1–3 (Loan, Due, Generate page, slip sync) | done — ready to test |
+| Phase 4 ledgers + PDF | pending |
+| Phase 5 workspace + polish tests | workspace done; unit tests stub |
