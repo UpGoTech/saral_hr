@@ -383,6 +383,36 @@
    "link_type": "Page",
    "onboard": 0,
    "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 1,
+   "label": "Employee Loan Ledger",
+   "link_count": 0,
+   "link_to": "Employee Loan Ledger",
+   "link_type": "Report",
+   "onboard": 0,
+   "type": "Link",
+   "dependencies": null,
+   "only_for": null,
+   "icon": null,
+   "description": null,
+   "report_ref_doctype": "Employee Loan"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 1,
+   "label": "Loan Ledger",
+   "link_count": 0,
+   "link_to": "Loan Ledger",
+   "link_type": "Report",
+   "onboard": 0,
+   "type": "Link",
+   "dependencies": null,
+   "only_for": null,
+   "icon": null,
+   "description": null,
+   "report_ref_doctype": "Employee Loan"
   }
  ],
  "modified": "2026-08-09 10:30:12.504821",

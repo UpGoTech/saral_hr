@@ -59,6 +59,22 @@ def _ensure_workspace():
 		link_to="generate-monthly-loan-dues",
 		hidden=0,
 	)
+	add_link(
+		type="Link",
+		label="Employee Loan Ledger",
+		link_type="Report",
+		link_to="Employee Loan Ledger",
+		hidden=0,
+		is_query_report=1,
+	)
+	add_link(
+		type="Link",
+		label="Loan Ledger",
+		link_type="Report",
+		link_to="Loan Ledger",
+		hidden=0,
+		is_query_report=1,
+	)
 
 	ws.flags.ignore_permissions = True
 	ws.flags.ignore_links = True
