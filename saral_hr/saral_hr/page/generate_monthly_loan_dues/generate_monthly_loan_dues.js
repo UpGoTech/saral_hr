@@ -437,39 +437,157 @@ function init_generate_loan_dues($main) {
 		}
 		const f = filters();
 		if (!f.company) return frappe.msgprint(__("Select Company"));
-		const d = new frappe.ui.Dialog({
-			title: __("Add Loan Due"),
-			fields: [
-				{ fieldname: "loan", fieldtype: "Link", options: "Employee Loan", label: __("Loan"), reqd: 1,
-					get_query: () => ({ filters: { docstatus: 1, status: "Active", company: f.company } }) },
-				{ fieldname: "amount", fieldtype: "Currency", label: __("Amount"), reqd: 1 },
-				{ fieldname: "remarks", fieldtype: "Small Text", label: __("Remarks") },
-			],
-			primary_action_label: __("Add"),
-			primary_action(values) {
-				const month = `${f.month} ${f.year}`;
-				frappe.call({
-					method: "saral_hr.saral_hr.page.generate_monthly_loan_dues.generate_monthly_loan_dues.save_dues",
-					args: {
-						rows: [{
-							loan: values.loan,
-							month,
-							year: cint(f.year),
-							amount: values.amount,
-							remarks: values.remarks || "",
-						}],
-						company: f.company,
-						month: f.month,
-						year: f.year,
-					},
-					freeze: true,
-					callback() {
-						d.hide();
-						open_period();
-					},
+		open_add_due_dialog(f, open_period);
+	});
+}
+
+function open_add_due_dialog(f, on_done) {
+	const loan_map = {};
+
+	const d = new frappe.ui.Dialog({
+		title: __("Add Loan Due"),
+		size: "large",
+		fields: [
+			{
+				fieldname: "employee",
+				fieldtype: "Link",
+				options: "Company Link",
+				label: __("Employee"),
+				default: f.employee || "",
+				get_query: () => ({ filters: { company: f.company } }),
+				description: __("Optional — narrow the loan list"),
+			},
+			{
+				fieldname: "loan",
+				fieldtype: "Select",
+				label: __("Loan"),
+				reqd: 1,
+				options: "",
+			},
+			{
+				fieldname: "loan_info",
+				fieldtype: "HTML",
+			},
+			{
+				fieldname: "amount",
+				fieldtype: "Currency",
+				label: __("Due Amount"),
+				reqd: 1,
+			},
+			{
+				fieldname: "remarks",
+				fieldtype: "Small Text",
+				label: __("Remarks"),
+			},
+		],
+		primary_action_label: __("Add"),
+		primary_action(values) {
+			if (!values.loan) {
+				frappe.msgprint(__("Select a loan"));
+				return;
+			}
+			const month = `${f.month} ${f.year}`;
+			frappe.call({
+				method: "saral_hr.saral_hr.page.generate_monthly_loan_dues.generate_monthly_loan_dues.save_dues",
+				args: {
+					rows: [{
+						loan: values.loan,
+						month,
+						year: cint(f.year),
+						amount: values.amount,
+						remarks: values.remarks || "",
+					}],
+					company: f.company,
+					month: f.month,
+					year: f.year,
+				},
+				freeze: true,
+				callback() {
+					d.hide();
+					on_done();
+				},
+			});
+		},
+	});
+
+	function render_loan_info(loan) {
+		const $wrap = d.fields_dict.loan_info.$wrapper;
+		if (!loan) {
+			$wrap.html(
+				`<div class="text-muted" style="padding:8px 0;">${__("Select a loan to see details.")}</div>`
+			);
+			return;
+		}
+		$wrap.html(`
+			<div style="border:1px solid var(--border-color);border-radius:8px;padding:12px 14px;margin:4px 0 8px;background:var(--subtle-fg,#f8f9fa);">
+				<div style="font-weight:700;margin-bottom:8px;">${frappe.utils.escape_html(loan.name)}</div>
+				<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px 16px;font-size:12px;">
+					<div><div class="text-muted">${__("Employee")}</div><div style="font-weight:600;">${frappe.utils.escape_html(loan.employee)} — ${frappe.utils.escape_html(loan.full_name || "")}</div></div>
+					<div><div class="text-muted">${__("Loan Date")}</div><div style="font-weight:600;">${frappe.utils.escape_html(String(loan.loan_date || ""))}</div></div>
+					<div><div class="text-muted">${__("Principal")}</div><div style="font-weight:600;">${gld_fmt_currency(loan.amount)}</div></div>
+					<div><div class="text-muted">${__("Outstanding")}</div><div style="font-weight:600;">${gld_fmt_currency(loan.outstanding_amount)}</div></div>
+					<div><div class="text-muted">${__("Expected EMI")}</div><div style="font-weight:600;">${gld_fmt_currency(loan.expected_emi)}</div></div>
+					<div><div class="text-muted">${__("Start")}</div><div style="font-weight:600;">${frappe.utils.escape_html(loan.start || "")}</div></div>
+					<div><div class="text-muted">${__("Tenure")}</div><div style="font-weight:600;">${loan.proposed_tenure_months || "—"} ${__("months")}</div></div>
+					<div style="grid-column:1/-1;"><div class="text-muted">${__("Reason")}</div><div style="font-weight:600;">${frappe.utils.escape_html(loan.reason || "—")}</div></div>
+				</div>
+			</div>
+		`);
+	}
+
+	function load_loans() {
+		const emp = d.get_value("employee") || "";
+		frappe.call({
+			method: "saral_hr.saral_hr.page.generate_monthly_loan_dues.generate_monthly_loan_dues.search_loans_for_due",
+			args: {
+				company: f.company,
+				month: f.month,
+				year: f.year,
+				employee: emp,
+			},
+			freeze: true,
+			callback(r) {
+				const rows = r.message || [];
+				Object.keys(loan_map).forEach((k) => delete loan_map[k]);
+				const options = [""];
+				rows.forEach((row) => {
+					loan_map[row.name] = row;
+					options.push({ label: row.label, value: row.name });
 				});
+				// Frappe Select wants newline options or set_data
+				const df = d.fields_dict.loan.df;
+				df.options = [""].concat(rows.map((row) => row.name)).join("\n");
+				d.fields_dict.loan.refresh();
+				// Replace select with richer labels via HTML options
+				const $sel = d.fields_dict.loan.$input;
+				$sel.empty().append(`<option value="">${__("Select loan…")}</option>`);
+				rows.forEach((row) => {
+					$sel.append(
+						`<option value="${frappe.utils.escape_html(row.name)}">${frappe.utils.escape_html(row.label)}</option>`
+					);
+				});
+				d.set_value("loan", "");
+				d.set_value("amount", "");
+				render_loan_info(null);
+				if (!rows.length) {
+					d.fields_dict.loan_info.$wrapper.html(
+						`<div class="text-muted" style="padding:8px 0;">${__("No eligible active loans without a due for this month.")}</div>`
+					);
+				}
 			},
 		});
-		d.show();
-	});
+	}
+
+	d.fields_dict.employee.df.onchange = () => load_loans();
+	d.fields_dict.loan.df.onchange = () => {
+		const name = d.get_value("loan");
+		const loan = loan_map[name];
+		render_loan_info(loan || null);
+		if (loan) {
+			d.set_value("amount", loan.suggested_amount);
+		}
+	};
+
+	d.show();
+	load_loans();
 }

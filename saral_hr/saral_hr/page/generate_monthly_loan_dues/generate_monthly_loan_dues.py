@@ -253,3 +253,65 @@ def save_dues(rows, company=None, month=None, year=None):
 		doc.save(ignore_permissions=True)
 		updated += 1
 	return {"updated": updated}
+
+
+@frappe.whitelist()
+def search_loans_for_due(company, month, year, employee=None):
+	"""Active loans for Add Row picker, with display fields; excludes loans that already have a due."""
+	if not company or not month or not year:
+		frappe.throw("Company, month and year are required.")
+	label = _month_label(month, year)
+	filters = {"docstatus": 1, "status": "Active", "company": company}
+	if employee:
+		filters["employee"] = employee
+
+	loans = frappe.get_all(
+		"Employee Loan",
+		filters=filters,
+		fields=[
+			"name",
+			"employee",
+			"full_name",
+			"amount",
+			"expected_emi",
+			"outstanding_amount",
+			"start_month",
+			"start_year",
+			"loan_date",
+			"reason",
+			"proposed_tenure_months",
+		],
+		order_by="employee asc, name asc",
+	)
+	rows = []
+	for loan in loans:
+		if frappe.db.exists("Employee Loan Due", {"loan": loan.name, "month": label}):
+			continue
+		if month_sort_key(start_month_label(loan.start_month, loan.start_year)) > month_sort_key(label):
+			continue
+		if flt(loan.outstanding_amount) <= 0:
+			continue
+		suggested = min(flt(loan.expected_emi), flt(loan.outstanding_amount))
+		reason = (loan.reason or "").strip().replace("\n", " ")
+		if len(reason) > 80:
+			reason = reason[:77] + "…"
+		rows.append(
+			{
+				"name": loan.name,
+				"employee": loan.employee,
+				"full_name": loan.full_name,
+				"amount": flt(loan.amount),
+				"expected_emi": flt(loan.expected_emi),
+				"outstanding_amount": flt(loan.outstanding_amount),
+				"suggested_amount": suggested,
+				"start": f"{loan.start_month} {loan.start_year}",
+				"loan_date": loan.loan_date,
+				"reason": reason,
+				"proposed_tenure_months": loan.proposed_tenure_months,
+				"label": (
+					f"{loan.employee} · {loan.full_name or ''} · {loan.name} · "
+					f"Outst {flt(loan.outstanding_amount):,.0f} · EMI {flt(loan.expected_emi):,.0f}"
+				),
+			}
+		)
+	return rows
