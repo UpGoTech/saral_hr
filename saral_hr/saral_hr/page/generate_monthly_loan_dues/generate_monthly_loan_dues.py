@@ -4,7 +4,7 @@
 import json
 
 import frappe
-from frappe.utils import flt, get_first_day, get_last_day, getdate
+from frappe.utils import flt, get_last_day, getdate
 
 from saral_hr.saral_hr.doctype.employee_loan.employee_loan import month_sort_key, start_month_label
 
