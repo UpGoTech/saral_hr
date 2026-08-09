@@ -443,6 +443,7 @@ function init_generate_loan_dues($main) {
 
 function open_add_due_dialog(f, on_done) {
 	const loan_map = {};
+	let selected_loan = null;
 
 	const d = new frappe.ui.Dialog({
 		title: __("Add Loan Due"),
@@ -456,13 +457,21 @@ function open_add_due_dialog(f, on_done) {
 				default: f.employee || "",
 				get_query: () => ({ filters: { company: f.company } }),
 				description: __("Optional — narrow the loan list"),
+				onchange() {
+					selected_loan = null;
+					load_loans();
+				},
+			},
+			{
+				fieldname: "loan_list",
+				fieldtype: "HTML",
+				label: __("Loans"),
 			},
 			{
 				fieldname: "loan",
-				fieldtype: "Select",
-				label: __("Loan"),
+				fieldtype: "Data",
+				hidden: 1,
 				reqd: 1,
-				options: "",
 			},
 			{
 				fieldname: "loan_info",
@@ -482,8 +491,9 @@ function open_add_due_dialog(f, on_done) {
 		],
 		primary_action_label: __("Add"),
 		primary_action(values) {
-			if (!values.loan) {
-				frappe.msgprint(__("Select a loan"));
+			const loan_name = selected_loan || values.loan;
+			if (!loan_name) {
+				frappe.msgprint(__("Select a loan from the list"));
 				return;
 			}
 			const month = `${f.month} ${f.year}`;
@@ -491,7 +501,7 @@ function open_add_due_dialog(f, on_done) {
 				method: "saral_hr.saral_hr.page.generate_monthly_loan_dues.generate_monthly_loan_dues.save_dues",
 				args: {
 					rows: [{
-						loan: values.loan,
+						loan: loan_name,
 						month,
 						year: cint(f.year),
 						amount: values.amount,
@@ -513,9 +523,7 @@ function open_add_due_dialog(f, on_done) {
 	function render_loan_info(loan) {
 		const $wrap = d.fields_dict.loan_info.$wrapper;
 		if (!loan) {
-			$wrap.html(
-				`<div class="text-muted" style="padding:8px 0;">${__("Select a loan to see details.")}</div>`
-			);
+			$wrap.html("");
 			return;
 		}
 		$wrap.html(`
@@ -535,8 +543,75 @@ function open_add_due_dialog(f, on_done) {
 		`);
 	}
 
+	function select_loan(name) {
+		selected_loan = name;
+		d.set_value("loan", name || "");
+		const loan = name ? loan_map[name] : null;
+		render_loan_info(loan);
+		if (loan) {
+			d.set_value("amount", loan.suggested_amount);
+		}
+		d.fields_dict.loan_list.$wrapper.find(".gld-loan-row").removeClass("selected");
+		if (name) {
+			d.fields_dict.loan_list.$wrapper
+				.find(`.gld-loan-row[data-loan="${CSS.escape(name)}"]`)
+				.addClass("selected");
+		}
+	}
+
+	function render_loan_list(rows) {
+		const $wrap = d.fields_dict.loan_list.$wrapper;
+		if (!rows.length) {
+			$wrap.html(
+				`<div class="text-muted" style="padding:10px 0;">${__("No eligible active loans without a due for this month.")}</div>`
+			);
+			return;
+		}
+		let html = `
+			<style>
+				.gld-loan-pick { border:1px solid var(--border-color); border-radius:8px; overflow:hidden; max-height:240px; overflow-y:auto; }
+				.gld-loan-row { display:grid; grid-template-columns:1.1fr 1.2fr 1fr .9fr .9fr; gap:8px; padding:10px 12px; border-bottom:1px solid var(--border-color); cursor:pointer; font-size:12px; }
+				.gld-loan-row:last-child { border-bottom:none; }
+				.gld-loan-row:hover { background: var(--highlight-color, rgba(0,0,0,.03)); }
+				.gld-loan-row.selected { background: rgba(37,99,235,.08); outline:1px solid var(--primary); }
+				.gld-loan-row .k { color:var(--text-muted); font-size:10px; text-transform:uppercase; font-weight:600; }
+				.gld-loan-row .v { font-weight:600; margin-top:2px; word-break:break-word; }
+				.gld-loan-head { background:var(--subtle-fg,#f8f9fa); font-size:10px; text-transform:uppercase; letter-spacing:.03em; color:var(--text-muted); font-weight:700; cursor:default; }
+				.gld-loan-head:hover { background:var(--subtle-fg,#f8f9fa); }
+				@media (max-width:720px) {
+					.gld-loan-row { grid-template-columns:1fr 1fr; }
+					.gld-loan-head { display:none; }
+				}
+			</style>
+			<div class="gld-loan-pick">
+				<div class="gld-loan-row gld-loan-head">
+					<div>${__("Employee")}</div>
+					<div>${__("Loan")}</div>
+					<div>${__("Reason")}</div>
+					<div>${__("Outstanding")}</div>
+					<div>${__("EMI")}</div>
+				</div>
+		`;
+		rows.forEach((row) => {
+			html += `
+				<div class="gld-loan-row" data-loan="${frappe.utils.escape_html(row.name)}">
+					<div><div class="k">${__("Employee")}</div><div class="v">${frappe.utils.escape_html(row.employee)}<br>${frappe.utils.escape_html(row.full_name || "")}</div></div>
+					<div><div class="k">${__("Loan")}</div><div class="v">${frappe.utils.escape_html(row.name)}</div></div>
+					<div><div class="k">${__("Reason")}</div><div class="v">${frappe.utils.escape_html(row.reason || "—")}</div></div>
+					<div><div class="k">${__("Outstanding")}</div><div class="v">${gld_fmt_currency(row.outstanding_amount)}</div></div>
+					<div><div class="k">${__("EMI")}</div><div class="v">${gld_fmt_currency(row.expected_emi)}</div></div>
+				</div>
+			`;
+		});
+		html += "</div>";
+		$wrap.html(html);
+		$wrap.find(".gld-loan-row[data-loan]").on("click", function () {
+			select_loan($(this).attr("data-loan"));
+		});
+	}
+
 	function load_loans() {
-		const emp = d.get_value("employee") || "";
+		const emp = (d.get_value("employee") || "").trim();
 		frappe.call({
 			method: "saral_hr.saral_hr.page.generate_monthly_loan_dues.generate_monthly_loan_dues.search_loans_for_due",
 			args: {
@@ -546,48 +621,28 @@ function open_add_due_dialog(f, on_done) {
 				employee: emp,
 			},
 			freeze: true,
+			freeze_message: __("Loading loans…"),
 			callback(r) {
 				const rows = r.message || [];
 				Object.keys(loan_map).forEach((k) => delete loan_map[k]);
-				const options = [""];
 				rows.forEach((row) => {
 					loan_map[row.name] = row;
-					options.push({ label: row.label, value: row.name });
 				});
-				// Frappe Select wants newline options or set_data
-				const df = d.fields_dict.loan.df;
-				df.options = [""].concat(rows.map((row) => row.name)).join("\n");
-				d.fields_dict.loan.refresh();
-				// Replace select with richer labels via HTML options
-				const $sel = d.fields_dict.loan.$input;
-				$sel.empty().append(`<option value="">${__("Select loan…")}</option>`);
-				rows.forEach((row) => {
-					$sel.append(
-						`<option value="${frappe.utils.escape_html(row.name)}">${frappe.utils.escape_html(row.label)}</option>`
-					);
-				});
-				d.set_value("loan", "");
-				d.set_value("amount", "");
-				render_loan_info(null);
-				if (!rows.length) {
-					d.fields_dict.loan_info.$wrapper.html(
-						`<div class="text-muted" style="padding:8px 0;">${__("No eligible active loans without a due for this month.")}</div>`
-					);
+				render_loan_list(rows);
+				if (selected_loan && loan_map[selected_loan]) {
+					select_loan(selected_loan);
+				} else {
+					select_loan(null);
+					d.set_value("amount", "");
 				}
 			},
 		});
 	}
 
-	d.fields_dict.employee.df.onchange = () => load_loans();
-	d.fields_dict.loan.df.onchange = () => {
-		const name = d.get_value("loan");
-		const loan = loan_map[name];
-		render_loan_info(loan || null);
-		if (loan) {
-			d.set_value("amount", loan.suggested_amount);
-		}
-	};
-
 	d.show();
-	load_loans();
+	// Link default / awesomplete may not fire field onchange — bind + initial load
+	d.fields_dict.employee.$input.on("awesomplete-selectcomplete change", () => {
+		setTimeout(load_loans, 50);
+	});
+	setTimeout(load_loans, 0);
 }
