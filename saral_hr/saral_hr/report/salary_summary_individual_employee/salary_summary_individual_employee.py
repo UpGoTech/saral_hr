@@ -67,46 +67,36 @@ def _fn(prefix, abbr):
 def _get_loan_advance_addl_maps(month, year, start_date, end_date):
     """
     Returns three dicts {employee: amount}:
-      - loan_map     : sum of all "Loan"-type schedule installments deducted
-                       in the given month, across ALL loans the employee has
-                       (handles multiple simultaneous loans correctly).
-      - advance_map  : sum of "Advance"-type amounts deducted within the
-                       given date range.
-      - addl_map     : sum of Additional Salary total_amount for the month.
+      - loan_map / advance_map from Salary Slip deduction lines (Loan-* / Advance-*)
+      - addl_map from Additional Salary
+    Loan master DocTypes were removed; historical amounts remain on slips.
     """
     loan_map = {}
-    if month and year:
-        month_str = "{0} {1}".format(month, year)
-        for r in frappe.db.sql(
-            """
-            SELECT ela.employee AS employee, SUM(elas.deduction_amount) AS amt
-            FROM `tabEmployee Loan Advance` ela
-            INNER JOIN `tabEmployee Loan Advance Schedule` elas ON elas.parent = ela.name
-            WHERE ela.docstatus = 1
-              AND ela.type = 'Loan'
-              AND elas.month = %(month_str)s
-              AND elas.is_deducted = 1
-            GROUP BY ela.employee
-            """,
-            {"month_str": month_str}, as_dict=1
-        ):
-            loan_map[r.employee] = flt(r.amt, 2)
-
     advance_map = {}
     if start_date and end_date:
         for r in frappe.db.sql(
             """
-            SELECT employee, SUM(amount) AS amt
-            FROM `tabEmployee Loan Advance`
-            WHERE docstatus = 1
-              AND type = 'Advance'
-              AND is_deducted = 1
-              AND date BETWEEN %(start_date)s AND %(end_date)s
-            GROUP BY employee
+            SELECT ss.employee AS employee,
+                   SUM(CASE WHEN LOWER(sd.salary_component) LIKE 'loan%%'
+                            THEN sd.amount ELSE 0 END) AS loan_amt,
+                   SUM(CASE WHEN LOWER(sd.salary_component) LIKE 'advance%%'
+                            THEN sd.amount ELSE 0 END) AS advance_amt
+            FROM `tabSalary Slip` ss
+            INNER JOIN `tabSalary Details` sd
+                ON sd.parent = ss.name
+               AND sd.parenttype = 'Salary Slip'
+               AND sd.parentfield = 'deductions'
+            WHERE ss.docstatus = 1
+              AND ss.start_date BETWEEN %(start_date)s AND %(end_date)s
+            GROUP BY ss.employee
             """,
-            {"start_date": start_date, "end_date": end_date}, as_dict=1
+            {"start_date": start_date, "end_date": end_date},
+            as_dict=1,
         ):
-            advance_map[r.employee] = flt(r.amt, 2)
+            if flt(r.loan_amt):
+                loan_map[r.employee] = flt(r.loan_amt, 2)
+            if flt(r.advance_amt):
+                advance_map[r.employee] = flt(r.advance_amt, 2)
 
     addl_map = {}
     if month and year:

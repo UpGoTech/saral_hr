@@ -402,35 +402,13 @@ def get_all_slip_deductions(slip_names):
                 if comp not in add_ded_deducted:
                     add_ded_deducted[comp] = 0
 
-            # ── Check deferral for Loan ───────────────────────────────────
-            _slip_month   = frappe.utils.formatdate(slip_date, "MMMM YYYY") if slip_date else ""
+            # ── Loan deferral flag from slip deduction row (masters removed) ─
             loan_deferred = False
-
-            if loan_total > 0:
-                docs_to_check = loan_names_in_slip
-
-                if not docs_to_check:
-                    docs_to_check = [
-                        r.name for r in frappe.db.get_all(
-                            "Employee Loan Advance",
-                            filters={"employee": doc.employee, "docstatus": 1, "type": "Loan"},
-                            fields=["name"]
-                        )
-                    ]
-
-                for loan_doc_name in docs_to_check:
-                    try:
-                        loan_doc = frappe.get_doc("Employee Loan Advance", loan_doc_name)
-                        for schedule_row in loan_doc.schedule:
-                            if schedule_row.month == _slip_month:
-                                if getattr(schedule_row, 'is_deferred', 0):
-                                    loan_deferred = True
-                                break
-                    except Exception:
-                        pass
-
-                    if loan_deferred:
-                        break
+            for row in doc.deductions:
+                comp_lower = (row.salary_component or "").lower()
+                if (comp_lower == "loan" or comp_lower.startswith("loan-")) and int(getattr(row, "is_deferred", 0) or 0):
+                    loan_deferred = True
+                    break
 
             # ── Build result ──────────────────────────────────────────────
             result[name] = {

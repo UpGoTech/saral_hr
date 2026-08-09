@@ -163,9 +163,8 @@ function fetch_and_validate_all(frm) {
     let vpa_status = null;
     let vpa_percentage = 0;
     let additional_data = { earnings: [], deductions: [] };
-    let loan_advance_data = [];
 
-    let pending = 4;
+    let pending = 3;
 
     function try_finalize() {
         if (--pending > 0) return;
@@ -238,18 +237,6 @@ function fetch_and_validate_all(frm) {
                     d._is_additional = true;
                 });
 
-                (loan_advance_data || []).forEach(item => {
-                    const d = frm.add_child("deductions");
-                    d.salary_component                 = item.salary_component;
-                    d.abbr                             = item.abbr;
-                    d.amount                           = flt(item.amount);
-                    d.base_amount                      = flt(item.amount);
-                    d.employer_contribution            = 0;
-                    d.depends_on_payment_days          = 0;
-                    d.depends_on_physical_working_days = 0;
-                    d.is_deferred                      = item.is_deferred || 0;
-                });
-
                 frm.refresh_fields(["earnings", "deductions", "employer_share"]);
                 apply_attendance(frm, attendance_data, flt(vpa_percentage) / 100);
                 frm.page.btn_primary.prop("disabled", false);
@@ -296,13 +283,6 @@ function fetch_and_validate_all(frm) {
         args:   { employee: frm.doc.employee, start_date: frm.doc.start_date },
         callback(r) { additional_data = r.message || { earnings: [], deductions: [] }; try_finalize(); },
         error()     { additional_data = { earnings: [], deductions: [] };               try_finalize(); }
-    });
-
-    frappe.call({
-        method: "saral_hr.saral_hr.doctype.salary_slip.salary_slip.get_loan_advance_deductions",
-        args:   { employee: frm.doc.employee, start_date: frm.doc.start_date },
-        callback(r) { loan_advance_data = r.message || []; try_finalize(); },
-        error()     { loan_advance_data = [];              try_finalize(); }
     });
 }
 

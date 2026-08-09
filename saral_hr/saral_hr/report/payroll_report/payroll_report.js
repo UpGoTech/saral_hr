@@ -229,8 +229,6 @@ const REPORTS = [
     { key:"home_bank_advice",          label:"Home Bank Advice"          },
     { key:"monthly_attendance",        label:"Monthly Attendance"        },
     { key:"income_tax",                label:"Income Tax"                },
-    { key:"loan_register",             label:"Loan Register"             },
-    { key:"advance_register",          label:"Advance Register"          },
 ];
 
 // ── State ─────────────────────────────────────────────────────────────────────

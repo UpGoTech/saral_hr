@@ -13,3 +13,4 @@ saral_hr.patches.delete_broken_monthly_salary_register_report
 saral_hr.patches.seed_additional_only_salary_components
 saral_hr.patches.ensure_data_cleansing_workspace_link
 saral_hr.patches.migrate_employee_loan_advance_split
+saral_hr.patches.scrap_legacy_loan_module
