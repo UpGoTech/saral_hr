@@ -8,22 +8,173 @@ frappe.pages["generate-monthly-loan-dues"].on_page_load = function (wrapper) {
 };
 
 frappe.pages["generate-monthly-loan-dues"].on_page_show = function (wrapper) {
+	// Keep standard Desk chrome (workspace sidebar) — do not go full-bleed
 	$("body").removeClass("full-width");
-	const $nb = $("#navbar-breadcrumbs");
-	if ($nb.length) {
-		$nb.empty().append(
-			`<li><a href="/app/saral-hr">${__("Saral HR")}</a></li>`,
-			`<li><a href="/app/generate-monthly-loan-dues">${__("Generate Monthly Loan Dues")}</a></li>`
-		);
-	}
-	document.title = __("Generate Monthly Loan Dues");
+	gld_set_breadcrumbs();
 	if (wrapper._gld_page) {
 		wrapper._gld_page.set_title(__("Generate Monthly Loan Dues"));
 	}
+	inject_gld_styles();
 	const $main = $(wrapper).find(".layout-main-section");
 	$main.html(gld_shell_html());
 	init_generate_loan_dues($main, wrapper._gld_page);
 };
+
+function gld_set_breadcrumbs() {
+	const $nb = $("#navbar-breadcrumbs");
+	if (!$nb.length) return;
+	$nb.empty().append(
+		`<li><a href="/app/saral-hr">${__("Saral HR")}</a></li>`,
+		`<li><a href="/app/generate-monthly-loan-dues">${__("Generate Monthly Loan Dues")}</a></li>`
+	);
+	document.title = __("Generate Monthly Loan Dues");
+}
+
+function inject_gld_styles() {
+	$("#gld-styles, #gld-styles-v1, #gld-styles-v2").remove();
+	const s = document.createElement("style");
+	s.id = "gld-styles-v2";
+	s.innerHTML = `
+		.gld-root { padding: 8px 0 40px; color: var(--text-color); max-width: 100%; }
+		.gld-filter-card {
+			background: var(--card-bg, var(--fg-color));
+			border: 1px solid var(--border-color);
+			border-radius: 8px;
+			margin-bottom: 12px;
+			padding: 14px 16px;
+			max-width: 100%;
+			overflow: visible;
+			position: relative;
+			z-index: 20;
+		}
+		.gld-filter-row {
+			display: flex;
+			flex-wrap: wrap;
+			align-items: flex-end;
+			gap: 12px 14px;
+		}
+		.gld-fg {
+			display: flex;
+			flex-direction: column;
+			gap: 5px;
+			min-width: 0;
+		}
+		.gld-fg-company { flex: 1 1 200px; min-width: 180px; max-width: 280px; }
+		.gld-fg-employee { flex: 1 1 200px; min-width: 180px; max-width: 280px; }
+		.gld-fg-period { flex: 0 0 130px; width: 130px; }
+		.gld-fg-action { flex: 0 0 auto; }
+		.gld-fg-label {
+			font-size: 11px; font-weight: 700; color: var(--text-muted);
+			text-transform: uppercase; letter-spacing: .04em; margin: 0; line-height: 1.2;
+			min-height: 14px;
+		}
+		.gld-link-wrap .frappe-control,
+		.gld-link-wrap .form-group { margin-bottom: 0 !important; }
+		.gld-link-wrap .control-label,
+		.gld-link-wrap .help-box,
+		.gld-link-wrap .clearfix {
+			display: none !important; height: 0 !important; margin: 0 !important; padding: 0 !important;
+		}
+		.gld-link-wrap .control-input-wrapper,
+		.gld-link-wrap .awesomplete,
+		.gld-link-wrap .awesomplete > input { width: 100% !important; }
+		.gld-link-wrap .awesomplete { position: relative; z-index: 30; }
+		.gld-link-wrap .awesomplete > ul {
+			z-index: 40 !important;
+			max-height: 240px;
+			overflow-y: auto;
+		}
+		.gld-link-wrap input.input-with-feedback,
+		.gld-fg .form-control,
+		.gld-fg select {
+			height: 32px !important; min-height: 32px !important;
+			font-size: 13px; border-radius: 6px; margin: 0; width: 100%;
+		}
+		.gld-btn {
+			height: 32px; padding: 0 16px; border: none; border-radius: 6px;
+			background: var(--primary); color: #fff; font-size: 13px; font-weight: 600; cursor: pointer;
+			white-space: nowrap;
+		}
+		.gld-btn:hover { filter: brightness(.96); }
+		.gld-btn:disabled { opacity: .45; cursor: not-allowed; filter: none; }
+		.gld-btn-ghost {
+			height: 32px; padding: 0 14px; border: 1px solid var(--border-color); border-radius: 6px;
+			background: transparent; color: var(--text-color); font-size: 13px; font-weight: 600; cursor: pointer;
+		}
+		.gld-btn-ghost:hover { background: var(--subtle-fg, rgba(0,0,0,.03)); }
+		.gld-btn-ghost:disabled { opacity: .45; cursor: not-allowed; }
+		.gld-btn-success {
+			height: 32px; padding: 0 14px; border: none; border-radius: 6px;
+			background: var(--green-500, #2f9e44); color: #fff; font-size: 13px; font-weight: 600; cursor: pointer;
+		}
+		.gld-btn-success:disabled { opacity: .45; cursor: not-allowed; }
+		.gld-banner {
+			margin-top: 10px; font-size: 12px; color: var(--text-muted);
+			min-height: 16px;
+		}
+		.gld-banner.locked { color: var(--orange-600, #e67700); font-weight: 600; }
+		.gld-results-card {
+			background: var(--card-bg, var(--fg-color));
+			border: 1px solid var(--border-color);
+			border-radius: 8px;
+			margin-bottom: 12px;
+			max-width: 100%;
+			overflow: hidden;
+			position: relative;
+			z-index: 1;
+		}
+		.gld-table-wrap { overflow-x: auto; padding: 0; }
+		.gld-table {
+			width: 100%; border-collapse: collapse; margin: 0; font-size: 13px;
+		}
+		.gld-table th, .gld-table td {
+			padding: 8px 10px; border-bottom: 1px solid var(--border-color);
+			vertical-align: middle;
+		}
+		.gld-table th {
+			font-size: 11px; text-transform: uppercase; letter-spacing: .03em;
+			color: var(--text-muted); font-weight: 700; background: var(--subtle-fg, #f8f9fa);
+			white-space: nowrap;
+		}
+		.gld-table tbody tr:hover td { background: var(--highlight-color, rgba(0,0,0,.02)); }
+		.gld-table .form-control {
+			height: 30px !important; min-height: 30px !important; font-size: 13px;
+		}
+		.gld-empty { padding: 40px 20px; text-align: center; color: var(--text-muted); font-size: 13px; }
+		.gld-cards { display: none; padding: 10px 12px 12px; }
+		.gld-card {
+			border: 1px solid var(--border-color); border-radius: 8px; padding: 12px;
+			margin-bottom: 10px; background: var(--card-bg, var(--fg-color));
+		}
+		.gld-card:last-child { margin-bottom: 0; }
+		.gld-card-title { font-size: 13px; font-weight: 700; margin-bottom: 8px; }
+		.gld-card-grid {
+			display: grid; grid-template-columns: 1fr 1fr; gap: 8px 12px; font-size: 12px;
+		}
+		.gld-card-grid .k { color: var(--text-muted); font-weight: 600; text-transform: uppercase; font-size: 10px; }
+		.gld-card-grid .v { font-weight: 600; margin-top: 2px; word-break: break-word; }
+		.gld-card-full { grid-column: 1 / -1; }
+		@media (max-width: 720px) {
+			.gld-filter-row { flex-direction: column; align-items: stretch; }
+			.gld-fg-company, .gld-fg-employee, .gld-fg-period, .gld-fg-action {
+				flex: 1 1 auto; width: 100%; max-width: none;
+			}
+			.gld-fg-action .gld-btn,
+			.gld-fg-action .gld-btn-ghost,
+			.gld-fg-action .gld-btn-success { width: 100%; }
+			.gld-fg-action { display: grid; gap: 8px; }
+		}
+		@media (max-width: 900px) {
+			.gld-table-wrap { display: none; }
+			.gld-cards { display: block; }
+		}
+		@media (min-width: 901px) {
+			.gld-table-wrap { display: block; }
+			.gld-cards { display: none; }
+		}
+	`;
+	document.head.appendChild(s);
+}
 
 function gld_shell_html() {
 	const years = [];
@@ -35,42 +186,62 @@ function gld_shell_html() {
 	];
 	const now = new Date();
 	return `
-	<div class="gld-root" style="padding:8px 0 40px;">
-		<div class="frappe-card" style="padding:14px 16px;margin-bottom:12px;">
-			<div style="display:flex;flex-wrap:wrap;gap:12px;align-items:flex-end;">
-				<div>
-					<label class="control-label">${__("Company")}</label>
-					<div class="gld-company"></div>
+	<div class="gld-root">
+		<div class="gld-filter-card">
+			<div class="gld-filter-row">
+				<div class="gld-fg gld-fg-company">
+					<div class="gld-fg-label">${__("Company")}</div>
+					<div class="gld-link-wrap"><div class="gld-company"></div></div>
 				</div>
-				<div>
-					<label class="control-label">${__("Month")}</label>
-					<select class="form-control gld-month" style="width:140px;">
-						${months.map((m,i)=>`<option value="${m}" ${i===now.getMonth()?"selected":""}>${m}</option>`).join("")}
+				<div class="gld-fg gld-fg-period">
+					<div class="gld-fg-label">${__("Month")}</div>
+					<select class="form-control gld-month">
+						${months.map((m,i)=>`<option value="${m}" ${i===now.getMonth()?"selected":""}>${__(m)}</option>`).join("")}
 					</select>
 				</div>
-				<div>
-					<label class="control-label">${__("Year")}</label>
-					<select class="form-control gld-year" style="width:100px;">
+				<div class="gld-fg gld-fg-period">
+					<div class="gld-fg-label">${__("Year")}</div>
+					<select class="form-control gld-year">
 						${years.map(y=>`<option value="${y}" ${y===String(cy)?"selected":""}>${y}</option>`).join("")}
 					</select>
 				</div>
-				<div>
-					<label class="control-label">${__("Employee")}</label>
-					<div class="gld-employee"></div>
+				<div class="gld-fg gld-fg-employee">
+					<div class="gld-fg-label">${__("Employee")}</div>
+					<div class="gld-link-wrap"><div class="gld-employee"></div></div>
 				</div>
-				<button class="btn btn-primary btn-sm gld-open">${__("Load")}</button>
-				<button class="btn btn-success btn-sm gld-save">${__("Save")}</button>
-				<button class="btn btn-default btn-sm gld-add">${__("Add Row")}</button>
+				<div class="gld-fg gld-fg-action">
+					<div class="gld-fg-label">&nbsp;</div>
+					<button type="button" class="gld-btn gld-open">${__("Load")}</button>
+				</div>
+				<div class="gld-fg gld-fg-action">
+					<div class="gld-fg-label">&nbsp;</div>
+					<button type="button" class="gld-btn-success gld-save">${__("Save")}</button>
+				</div>
+				<div class="gld-fg gld-fg-action">
+					<div class="gld-fg-label">&nbsp;</div>
+					<button type="button" class="gld-btn-ghost gld-add">${__("Add Row")}</button>
+				</div>
 			</div>
-			<div class="gld-banner text-muted" style="margin-top:10px;font-size:12px;"></div>
+			<div class="gld-banner"></div>
 		</div>
-		<div class="frappe-card gld-table-wrap" style="padding:12px;overflow:auto;">
-			<div class="text-muted">${__("Select company and month, then Load.")}</div>
+		<div class="gld-results-card">
+			<div class="gld-table-wrap">
+				<div class="gld-empty">${__("Select company and month, then Load.")}</div>
+			</div>
+			<div class="gld-cards"></div>
 		</div>
 	</div>`;
 }
 
-function init_generate_loan_dues($main, page) {
+function gld_fmt_currency(v) {
+	const n = flt(v);
+	if (typeof format_currency === "function") {
+		try { return format_currency(n); } catch (e) { /* fall through */ }
+	}
+	return frappe.format(n, { fieldtype: "Currency" });
+}
+
+function init_generate_loan_dues($main) {
 	const state = { rows: [], loading: false, period_locked: false };
 
 	const company = frappe.ui.form.make_control({
@@ -79,7 +250,9 @@ function init_generate_loan_dues($main, page) {
 			fieldtype: "Link",
 			options: "Company",
 			fieldname: "company",
+			label: __("Company"),
 			placeholder: __("Company"),
+			only_select: 1,
 			default: frappe.defaults.get_user_default("Company"),
 		},
 		render_input: true,
@@ -92,11 +265,16 @@ function init_generate_loan_dues($main, page) {
 			fieldtype: "Link",
 			options: "Company Link",
 			fieldname: "employee",
+			label: __("Employee"),
 			placeholder: __("Optional"),
+			only_select: 1,
 		},
 		render_input: true,
 	});
 	employee.refresh();
+
+	// Link control ships its own label — hide so field-group labels stay aligned
+	$main.find(".gld-company .control-label, .gld-company .help-box, .gld-employee .control-label, .gld-employee .help-box").hide();
 
 	function filters() {
 		return {
@@ -112,19 +290,32 @@ function init_generate_loan_dues($main, page) {
 		$main.find(".gld-save, .gld-add").prop("disabled", locked);
 	}
 
-	function set_banner(msg) {
-		$main.find(".gld-banner").text(msg || "");
+	function set_banner(msg, locked) {
+		const $b = $main.find(".gld-banner");
+		$b.text(msg || "").toggleClass("locked", !!locked);
+	}
+
+	function amount_input(r, idx, locked) {
+		return `<input type="number" step="0.01" class="form-control input-sm gld-amount"
+			data-idx="${idx}" value="${flt(r.amount)}" ${locked ? "disabled" : ""} />`;
+	}
+
+	function remarks_input(r, idx, locked) {
+		return `<input type="text" class="form-control input-sm gld-remarks"
+			data-idx="${idx}" value="${frappe.utils.escape_html(r.remarks || "")}" ${locked ? "disabled" : ""} />`;
 	}
 
 	function render() {
 		const $wrap = $main.find(".gld-table-wrap");
+		const $cards = $main.find(".gld-cards");
 		set_actions_enabled();
 		if (!state.rows.length) {
-			$wrap.html(`<div class="text-muted">${__("No dues for this period.")}</div>`);
+			$wrap.html(`<div class="gld-empty">${__("No dues for this period.")}</div>`);
+			$cards.empty();
 			return;
 		}
 		const periodLocked = !!state.period_locked;
-		let html = `<table class="table table-bordered" style="margin:0;">
+		let html = `<table class="gld-table">
 			<thead><tr>
 				<th>${__("Employee")}</th>
 				<th>${__("Name")}</th>
@@ -135,33 +326,47 @@ function init_generate_loan_dues($main, page) {
 				<th>${__("Salary Slip")}</th>
 				<th>${__("Remarks")}</th>
 			</tr></thead><tbody>`;
+		let cards = "";
 		state.rows.forEach((r, idx) => {
 			const locked = periodLocked || !!r.salary_slip || !!r.locked;
+			const slip = r.salary_slip
+				? `<a href="/app/salary-slip/${encodeURIComponent(r.salary_slip)}">${frappe.utils.escape_html(r.salary_slip)}</a>`
+				: "—";
+			const loan = `<a href="/app/employee-loan/${encodeURIComponent(r.loan)}">${frappe.utils.escape_html(r.loan || "")}</a>`;
 			html += `<tr data-idx="${idx}">
 				<td>${frappe.utils.escape_html(r.employee || "")}</td>
 				<td>${frappe.utils.escape_html(r.full_name || "")}</td>
-				<td><a href="/app/employee-loan/${encodeURIComponent(r.loan)}">${frappe.utils.escape_html(r.loan || "")}</a></td>
-				<td style="text-align:right;">${format_currency(r.outstanding_amount || 0)}</td>
-				<td style="text-align:right;">
-					<input type="number" step="0.01" class="form-control input-sm gld-amount"
-						value="${flt(r.amount)}" ${locked ? "disabled" : ""} style="max-width:120px;margin-left:auto;" />
-				</td>
+				<td>${loan}</td>
+				<td style="text-align:right;">${gld_fmt_currency(r.outstanding_amount || 0)}</td>
+				<td style="text-align:right;max-width:130px;">${amount_input(r, idx, locked)}</td>
 				<td>${frappe.utils.escape_html(r.status || "")}</td>
-				<td>${r.salary_slip ? `<a href="/app/salary-slip/${encodeURIComponent(r.salary_slip)}">${frappe.utils.escape_html(r.salary_slip)}</a>` : "—"}</td>
-				<td><input type="text" class="form-control input-sm gld-remarks" value="${frappe.utils.escape_html(r.remarks || "")}" ${locked ? "disabled" : ""} /></td>
+				<td>${slip}</td>
+				<td>${remarks_input(r, idx, locked)}</td>
 			</tr>`;
+			cards += `<div class="gld-card" data-idx="${idx}">
+				<div class="gld-card-title">${frappe.utils.escape_html(r.full_name || r.employee || "")} · ${loan}</div>
+				<div class="gld-card-grid">
+					<div><div class="k">${__("Outstanding")}</div><div class="v">${gld_fmt_currency(r.outstanding_amount || 0)}</div></div>
+					<div><div class="k">${__("Status")}</div><div class="v">${frappe.utils.escape_html(r.status || "")}</div></div>
+					<div class="gld-card-full"><div class="k">${__("Amount")}</div><div class="v">${amount_input(r, idx, locked)}</div></div>
+					<div class="gld-card-full"><div class="k">${__("Salary Slip")}</div><div class="v">${slip}</div></div>
+					<div class="gld-card-full"><div class="k">${__("Remarks")}</div><div class="v">${remarks_input(r, idx, locked)}</div></div>
+				</div>
+			</div>`;
 		});
 		html += "</tbody></table>";
 		$wrap.html(html);
+		$cards.html(cards);
 	}
 
 	function collect() {
-		$main.find("tbody tr").each(function () {
+		$main.find(".gld-amount").each(function () {
 			const idx = cint($(this).attr("data-idx"));
-			if (state.rows[idx]) {
-				state.rows[idx].amount = flt($(this).find(".gld-amount").val());
-				state.rows[idx].remarks = $(this).find(".gld-remarks").val();
-			}
+			if (state.rows[idx]) state.rows[idx].amount = flt($(this).val());
+		});
+		$main.find(".gld-remarks").each(function () {
+			const idx = cint($(this).attr("data-idx"));
+			if (state.rows[idx]) state.rows[idx].remarks = $(this).val();
 		});
 		return state.rows;
 	}
@@ -182,11 +387,11 @@ function init_generate_loan_dues($main, page) {
 				state.rows = msg.rows || [];
 				state.period_locked = !!msg.period_locked;
 				if (state.period_locked) {
-					set_banner(__("Period locked — submitted salary slips exist for this month. View only."));
+					set_banner(__("Period locked — submitted salary slips exist for this month. View only."), true);
 				} else if (msg.created) {
-					set_banner(__("Loaded existing dues and added {0} missing.", [msg.created]));
+					set_banner(__("Loaded existing dues and added {0} missing.", [msg.created]), false);
 				} else {
-					set_banner(__("Loaded existing dues for {0}.", [msg.month || ""]));
+					set_banner(__("Loaded existing dues for {0}.", [msg.month || ""]), false);
 				}
 				render();
 			},
@@ -196,6 +401,7 @@ function init_generate_loan_dues($main, page) {
 		});
 	}
 
+	// Replacing HTML on each show leaves delegated handlers on $main stacked.
 	$main.off(".gld");
 
 	$main.on("click.gld", ".gld-open", () => open_period());
