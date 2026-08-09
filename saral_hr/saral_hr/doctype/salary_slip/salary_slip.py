@@ -194,7 +194,7 @@ def get_loan_dues_for_slip(employee, start_date):
         rows.append(
             {
                 "salary_component": "Loan",
-                "abbr": f"Loan-{suffix}",
+                "abbr": f"LN-{suffix}",
                 "amount": flt(due.amount),
                 "loan": due.loan,
                 "loan_due": due.name,

@@ -45,7 +45,7 @@ HR needs a simple loan **register**: record each loan given to an employee, use 
 | 8 | Generate dues | HR opens **Generate Monthly Loan Dues**, clicks **Generate**; can **add** rows manually too |
 | 9 | Last EMI | Proposed amount = `min(expected_EMI, outstanding)` |
 | 10 | Due storage | Separate DocType **Employee Loan Due** (not child of loan) |
-| 11 | Naming | `{employee}-Loan-{####}` |
+| 11 | Naming | `{last4}-LN-{n}` (last 4 digits of employee id) |
 | 12 | Ledger | Date, Particulars, Voucher, Debit, Credit, Running balance; opening OK |
 | 13 | Workspace | Card **Employee Loans** + links |
 | 14 | Roles | Saral HR User + Saral HR Manager |
@@ -71,7 +71,7 @@ HR needs a simple loan **register**: record each loan given to an employee, use 
 | prepayments | Table → Employee Loan Prepayment | |
 | amended_from | Link | |
 
-**Autoname:** `{employee}-Loan-{####}` (e.g. `HR-EMP-00002-Loan-0001`).
+**Autoname:** `{last4}-LN-{n}` where `last4` is the last 4 digits of the employee (Company Link) id (e.g. `HR-EMP-00002` → `0002-LN-1`).
 
 **Read-only projection (not stored rows):**  
 `expected_months_remaining ≈ ceil(outstanding / expected_emi)` (handle EMI=0); display proposed end ≈ start + proposed_tenure vs actual months with dues/prepayments until Closed.
@@ -139,7 +139,7 @@ Standalone DocType so Generate Monthly Loan Dues can list/edit without opening e
 
 - Resolve month label from slip `start_date`.
 - Find Employee Loan Due: employee + month, status Pending (or no salary_slip), amount > 0, loan Active.
-- Return one row per due: `salary_component` / abbr e.g. `Loan-{####}` from loan name suffix, `amount`, **`loan`**, **`loan_due`** (due name).
+- Return one row per due: `salary_component` / abbr e.g. `LN-{n}` from loan name suffix, `amount`, **`loan`**, **`loan_due`** (due name).
 
 ### Persist link on Salary Details (hard requirement)
 
@@ -221,7 +221,7 @@ Card **Employee Loans**:
 
 | Case | Expect |
 |------|--------|
-| Autoname | Second loan → `…-Loan-0002` |
+| Autoname | Second loan for same last-4 → `0002-LN-2` |
 | Generate | Creates dues with min(EMI, outstanding); skips closed / existing month |
 | Edit dues | Saves amount; blocked after slip linked |
 | Two loans | Slip gets two deduction lines |

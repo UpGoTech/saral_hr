@@ -10,7 +10,8 @@ from frappe.utils import flt
 
 class EmployeeLoan(Document):
 	def autoname(self):
-		prefix = f"{self.employee}-Loan-"
+		prefix = f"{_employee_loan_prefix(self.employee)}-"
+		# prefix is like "0002-LN-"
 		last = frappe.db.sql(
 			"""
 			SELECT name FROM `tabEmployee Loan`
@@ -27,7 +28,14 @@ class EmployeeLoan(Document):
 				last_num = int(last[0]["name"].split("-")[-1])
 			except (ValueError, IndexError):
 				last_num = 0
-		self.name = f"{prefix}{str(last_num + 1).zfill(4)}"
+		self.name = f"{prefix}{last_num + 1}"
+
+
+def _employee_loan_prefix(employee):
+	"""Last 4 digits of employee id → '{last4}-LN' (e.g. HR-EMP-00002 → 0002-LN)."""
+	digits = "".join(ch for ch in (employee or "") if ch.isdigit())
+	last4 = (digits[-4:] if digits else "0000").zfill(4)
+	return f"{last4}-LN"
 
 	def validate(self):
 		if flt(self.amount) <= 0:
