@@ -4,7 +4,7 @@
 import json
 
 import frappe
-from frappe.utils import flt
+from frappe.utils import flt, get_first_day, get_last_day, getdate
 
 from saral_hr.saral_hr.doctype.employee_loan.employee_loan import month_sort_key, start_month_label
 
@@ -28,12 +28,29 @@ def _month_label(month, year):
 	return f"{month} {year}"
 
 
-@frappe.whitelist()
-def get_dues(company, month, year, employee=None):
-	if not company or not month or not year:
-		frappe.throw("Company, month and year are required.")
-	label = _month_label(month, year)
-	filters = {"company": company, "month": label}
+def _period_dates(month, year):
+	month_num = MONTHS.index(month) + 1
+	start = getdate(f"{int(year)}-{month_num:02d}-01")
+	return start, get_last_day(start)
+
+
+def _period_locked(company, month, year):
+	"""True when any submitted salary slip exists for this company in the month."""
+	start, end = _period_dates(month, year)
+	return bool(
+		frappe.db.exists(
+			"Salary Slip",
+			{
+				"company": company,
+				"docstatus": 1,
+				"start_date": ["between", [start, end]],
+			},
+		)
+	)
+
+
+def _list_dues(company, month_label, employee=None):
+	filters = {"company": company, "month": month_label}
 	if employee:
 		filters["employee"] = employee
 	rows = frappe.get_all(
@@ -67,10 +84,7 @@ def get_dues(company, month, year, employee=None):
 	return rows
 
 
-@frappe.whitelist()
-def generate_dues(company, month, year, employee=None):
-	if not company or not month or not year:
-		frappe.throw("Company, month and year are required.")
+def _create_missing_dues(company, month, year, employee=None):
 	label = _month_label(month, year)
 	target_key = month_sort_key(label)
 
@@ -123,30 +137,95 @@ def generate_dues(company, month, year, employee=None):
 		except (frappe.UniqueValidationError, frappe.DuplicateEntryError):
 			skipped += 1
 		except frappe.ValidationError as e:
-			# Concurrent generate can hit validate unique before commit
 			if "already exists" in str(e).lower():
 				skipped += 1
 			else:
 				raise
 
-	return {"created": created, "skipped": skipped, "month": label}
+	return created, skipped
 
 
 @frappe.whitelist()
-def save_dues(rows):
+def open_period(company, month, year, employee=None):
+	"""Single entry: load existing dues; create any missing when period is unlocked."""
+	if not company or not month or not year:
+		frappe.throw("Company, month and year are required.")
+	if month not in MONTHS:
+		frappe.throw(f"Invalid month: {month}")
+
+	label = _month_label(month, year)
+	locked = _period_locked(company, month, year)
+	created = 0
+	skipped = 0
+	if not locked:
+		created, skipped = _create_missing_dues(company, month, year, employee=employee)
+
+	rows = _list_dues(company, label, employee=employee)
+	if locked:
+		for row in rows:
+			row["locked"] = 1
+
+	return {
+		"rows": rows,
+		"created": created,
+		"skipped": skipped,
+		"month": label,
+		"period_locked": 1 if locked else 0,
+	}
+
+
+@frappe.whitelist()
+def get_dues(company, month, year, employee=None):
+	"""Backward-compatible read-only list (no create)."""
+	if not company or not month or not year:
+		frappe.throw("Company, month and year are required.")
+	label = _month_label(month, year)
+	locked = _period_locked(company, month, year)
+	rows = _list_dues(company, label, employee=employee)
+	if locked:
+		for row in rows:
+			row["locked"] = 1
+	return rows
+
+
+@frappe.whitelist()
+def generate_dues(company, month, year, employee=None):
+	"""Deprecated: use open_period. Kept for any old callers."""
+	if _period_locked(company, month, year):
+		return {"created": 0, "skipped": 0, "month": _month_label(month, year), "period_locked": 1}
+	created, skipped = _create_missing_dues(company, month, year, employee=employee)
+	return {"created": created, "skipped": skipped, "month": _month_label(month, year), "period_locked": 0}
+
+
+@frappe.whitelist()
+def save_dues(rows, company=None, month=None, year=None):
 	if isinstance(rows, str):
 		rows = json.loads(rows)
+
+	if company and month and year and _period_locked(company, month, year):
+		frappe.throw(
+			f"Salary slips already exist for {_month_label(month, year)} — this period is locked."
+		)
+
 	updated = 0
 	for row in rows or []:
 		name = row.get("name")
 		if not name:
-			# new manual row
 			loan = row.get("loan")
-			month = row.get("month")
-			if not loan or not month:
+			row_month = row.get("month")
+			if not loan or not row_month:
 				continue
-			if frappe.db.exists("Employee Loan Due", {"loan": loan, "month": month}):
-				frappe.throw(f"Due already exists for {loan} / {month}.")
+			# Derive company/year from loan if period args missing
+			if row_month and " " in row_month:
+				parts = row_month.rsplit(" ", 1)
+				if len(parts) == 2 and _period_locked(
+					frappe.db.get_value("Employee Loan", loan, "company"),
+					parts[0],
+					parts[1],
+				):
+					frappe.throw(f"Salary slips already exist for {row_month} — this period is locked.")
+			if frappe.db.exists("Employee Loan Due", {"loan": loan, "month": row_month}):
+				frappe.throw(f"Due already exists for {loan} / {row_month}.")
 			loan_doc = frappe.get_doc("Employee Loan", loan)
 			doc = frappe.get_doc(
 				{
@@ -154,7 +233,7 @@ def save_dues(rows):
 					"employee": loan_doc.employee,
 					"loan": loan,
 					"company": loan_doc.company,
-					"month": month,
+					"month": row_month,
 					"year": row.get("year"),
 					"amount": flt(row.get("amount")),
 					"remarks": row.get("remarks") or "",
@@ -166,7 +245,6 @@ def save_dues(rows):
 
 		doc = frappe.get_doc("Employee Loan Due", name)
 		if doc.salary_slip and frappe.db.get_value("Salary Slip", doc.salary_slip, "docstatus") == 1:
-			# locked — skip silently or throw
 			if abs(flt(doc.amount) - flt(row.get("amount"))) > 0.01:
 				frappe.throw(f"Cannot change locked due {doc.loan} ({doc.month}).")
 			continue

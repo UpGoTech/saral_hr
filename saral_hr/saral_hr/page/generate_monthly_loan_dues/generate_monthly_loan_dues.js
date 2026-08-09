@@ -28,7 +28,6 @@ frappe.pages["generate-monthly-loan-dues"].on_page_show = function (wrapper) {
 function gld_shell_html() {
 	const years = [];
 	const cy = new Date().getFullYear();
-	// Cover historical payroll months (loans often start in prior FY).
 	for (let y = cy - 3; y <= cy + 2; y++) years.push(String(y));
 	const months = [
 		"January","February","March","April","May","June",
@@ -59,20 +58,20 @@ function gld_shell_html() {
 					<label class="control-label">${__("Employee")}</label>
 					<div class="gld-employee"></div>
 				</div>
-				<button class="btn btn-default btn-sm gld-load">${__("Load")}</button>
-				<button class="btn btn-primary btn-sm gld-generate">${__("Generate")}</button>
+				<button class="btn btn-primary btn-sm gld-open">${__("Load")}</button>
 				<button class="btn btn-success btn-sm gld-save">${__("Save")}</button>
 				<button class="btn btn-default btn-sm gld-add">${__("Add Row")}</button>
 			</div>
+			<div class="gld-banner text-muted" style="margin-top:10px;font-size:12px;"></div>
 		</div>
 		<div class="frappe-card gld-table-wrap" style="padding:12px;overflow:auto;">
-			<div class="text-muted">${__("Select company and month, then Generate or Load.")}</div>
+			<div class="text-muted">${__("Select company and month, then Load.")}</div>
 		</div>
 	</div>`;
 }
 
 function init_generate_loan_dues($main, page) {
-	const state = { rows: [], generating: false };
+	const state = { rows: [], loading: false, period_locked: false };
 
 	const company = frappe.ui.form.make_control({
 		parent: $main.find(".gld-company"),
@@ -108,12 +107,23 @@ function init_generate_loan_dues($main, page) {
 		};
 	}
 
+	function set_actions_enabled() {
+		const locked = !!state.period_locked;
+		$main.find(".gld-save, .gld-add").prop("disabled", locked);
+	}
+
+	function set_banner(msg) {
+		$main.find(".gld-banner").text(msg || "");
+	}
+
 	function render() {
 		const $wrap = $main.find(".gld-table-wrap");
+		set_actions_enabled();
 		if (!state.rows.length) {
 			$wrap.html(`<div class="text-muted">${__("No dues for this period.")}</div>`);
 			return;
 		}
+		const periodLocked = !!state.period_locked;
 		let html = `<table class="table table-bordered" style="margin:0;">
 			<thead><tr>
 				<th>${__("Employee")}</th>
@@ -126,7 +136,7 @@ function init_generate_loan_dues($main, page) {
 				<th>${__("Remarks")}</th>
 			</tr></thead><tbody>`;
 		state.rows.forEach((r, idx) => {
-			const locked = !!r.salary_slip;
+			const locked = periodLocked || !!r.salary_slip || !!r.locked;
 			html += `<tr data-idx="${idx}">
 				<td>${frappe.utils.escape_html(r.employee || "")}</td>
 				<td>${frappe.utils.escape_html(r.full_name || "")}</td>
@@ -156,67 +166,69 @@ function init_generate_loan_dues($main, page) {
 		return state.rows;
 	}
 
-	function load_dues() {
+	function open_period() {
 		const f = filters();
 		if (!f.company) return frappe.msgprint(__("Select Company"));
+		if (state.loading) return;
+		state.loading = true;
 		frappe.call({
-			method: "saral_hr.saral_hr.page.generate_monthly_loan_dues.generate_monthly_loan_dues.get_dues",
+			method: "saral_hr.saral_hr.page.generate_monthly_loan_dues.generate_monthly_loan_dues.open_period",
 			args: f,
 			freeze: true,
+			freeze_message: __("Loading…"),
 			callback(r) {
-				state.rows = r.message || [];
+				state.loading = false;
+				const msg = r.message || {};
+				state.rows = msg.rows || [];
+				state.period_locked = !!msg.period_locked;
+				if (state.period_locked) {
+					set_banner(__("Period locked — submitted salary slips exist for this month. View only."));
+				} else if (msg.created) {
+					set_banner(__("Loaded existing dues and added {0} missing.", [msg.created]));
+				} else {
+					set_banner(__("Loaded existing dues for {0}.", [msg.month || ""]));
+				}
 				render();
+			},
+			error() {
+				state.loading = false;
 			},
 		});
 	}
 
-	// Replacing HTML on each show leaves delegated handlers on $main stacked —
-	// a second Generate click fired in parallel and raced past the exists check.
 	$main.off(".gld");
 
-	$main.on("click.gld", ".gld-load", () => load_dues());
-
-	$main.on("click.gld", ".gld-generate", () => {
-		const f = filters();
-		if (!f.company) return frappe.msgprint(__("Select Company"));
-		if (state.generating) return;
-		state.generating = true;
-		frappe.call({
-			method: "saral_hr.saral_hr.page.generate_monthly_loan_dues.generate_monthly_loan_dues.generate_dues",
-			args: f,
-			freeze: true,
-			freeze_message: __("Generating…"),
-			callback(r) {
-				state.generating = false;
-				frappe.show_alert({
-					message: __("Created {0}, skipped {1}", [r.message.created, r.message.skipped]),
-					indicator: "green",
-				});
-				load_dues();
-			},
-			error() {
-				state.generating = false;
-			},
-		});
-	});
+	$main.on("click.gld", ".gld-open", () => open_period());
 
 	$main.on("click.gld", ".gld-save", () => {
+		if (state.period_locked) {
+			return frappe.msgprint(__("This period is locked because salary slips already exist."));
+		}
+		const f = filters();
 		const rows = collect();
 		frappe.call({
 			method: "saral_hr.saral_hr.page.generate_monthly_loan_dues.generate_monthly_loan_dues.save_dues",
-			args: { rows },
+			args: {
+				rows,
+				company: f.company,
+				month: f.month,
+				year: f.year,
+			},
 			freeze: true,
 			callback(r) {
 				frappe.show_alert({
 					message: __("Saved {0} row(s)", [r.message.updated]),
 					indicator: "green",
 				});
-				load_dues();
+				open_period();
 			},
 		});
 	});
 
 	$main.on("click.gld", ".gld-add", () => {
+		if (state.period_locked) {
+			return frappe.msgprint(__("This period is locked because salary slips already exist."));
+		}
 		const f = filters();
 		if (!f.company) return frappe.msgprint(__("Select Company"));
 		const d = new frappe.ui.Dialog({
@@ -240,11 +252,14 @@ function init_generate_loan_dues($main, page) {
 							amount: values.amount,
 							remarks: values.remarks || "",
 						}],
+						company: f.company,
+						month: f.month,
+						year: f.year,
 					},
 					freeze: true,
 					callback() {
 						d.hide();
-						load_dues();
+						open_period();
 					},
 				});
 			},

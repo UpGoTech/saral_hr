@@ -118,10 +118,13 @@ Standalone DocType so Generate Monthly Loan Dues can list/edit without opening e
 
 ### Actions
 
-1. **Generate** — for each submitted **Active** Employee Loan in company where `start_month ≤ selected month` and `outstanding > 0` and no Due for that loan+month yet: create Due with `amount = min(expected_emi, outstanding)`.
-2. Grid shows all dues for company+month (existing + generated): employee, loan ID, outstanding (snapshot), amount (editable), remarks.
-3. HR may **edit amounts**, **add** a new due row (pick employee + loan for that month), **save**.
+1. **Load** (single button) — for the selected company + month:
+   - If any **submitted** Salary Slip exists for that company in the month → **period locked**: show existing dues read-only (no create / edit / add / save).
+   - Otherwise → create any missing dues for Active loans (`amount = min(expected_emi, outstanding)`), then show existing + newly created rows for edit.
+2. Grid: employee, loan ID, outstanding, amount (editable when unlocked), remarks.
+3. When unlocked, HR may **edit amounts**, **Add Row**, **Save**.
 4. Amount `0` allowed (skip month without deferral UI).
+5. Individual rows with a linked salary slip stay locked even if the period is otherwise open.
 
 ### Save rules
 
