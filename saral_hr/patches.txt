@@ -16,3 +16,4 @@ saral_hr.patches.migrate_employee_loan_advance_split
 saral_hr.patches.scrap_legacy_loan_module
 saral_hr.patches.ensure_employee_loan_workspace
 saral_hr.patches.ensure_loan_ledger_workspace_links
+saral_hr.patches.dedupe_employee_loan_dues

@@ -28,7 +28,8 @@ frappe.pages["generate-monthly-loan-dues"].on_page_show = function (wrapper) {
 function gld_shell_html() {
 	const years = [];
 	const cy = new Date().getFullYear();
-	for (let y = cy - 1; y <= cy + 2; y++) years.push(String(y));
+	// Cover historical payroll months (loans often start in prior FY).
+	for (let y = cy - 3; y <= cy + 2; y++) years.push(String(y));
 	const months = [
 		"January","February","March","April","May","June",
 		"July","August","September","October","November","December"
@@ -71,7 +72,7 @@ function gld_shell_html() {
 }
 
 function init_generate_loan_dues($main, page) {
-	const state = { rows: [] };
+	const state = { rows: [], generating: false };
 
 	const company = frappe.ui.form.make_control({
 		parent: $main.find(".gld-company"),
@@ -155,7 +156,7 @@ function init_generate_loan_dues($main, page) {
 		return state.rows;
 	}
 
-	$main.on("click", ".gld-load", () => {
+	function load_dues() {
 		const f = filters();
 		if (!f.company) return frappe.msgprint(__("Select Company"));
 		frappe.call({
@@ -167,27 +168,39 @@ function init_generate_loan_dues($main, page) {
 				render();
 			},
 		});
-	});
+	}
 
-	$main.on("click", ".gld-generate", () => {
+	// Replacing HTML on each show leaves delegated handlers on $main stacked —
+	// a second Generate click fired in parallel and raced past the exists check.
+	$main.off(".gld");
+
+	$main.on("click.gld", ".gld-load", () => load_dues());
+
+	$main.on("click.gld", ".gld-generate", () => {
 		const f = filters();
 		if (!f.company) return frappe.msgprint(__("Select Company"));
+		if (state.generating) return;
+		state.generating = true;
 		frappe.call({
 			method: "saral_hr.saral_hr.page.generate_monthly_loan_dues.generate_monthly_loan_dues.generate_dues",
 			args: f,
 			freeze: true,
 			freeze_message: __("Generating…"),
 			callback(r) {
+				state.generating = false;
 				frappe.show_alert({
 					message: __("Created {0}, skipped {1}", [r.message.created, r.message.skipped]),
 					indicator: "green",
 				});
-				$main.find(".gld-load").click();
+				load_dues();
+			},
+			error() {
+				state.generating = false;
 			},
 		});
 	});
 
-	$main.on("click", ".gld-save", () => {
+	$main.on("click.gld", ".gld-save", () => {
 		const rows = collect();
 		frappe.call({
 			method: "saral_hr.saral_hr.page.generate_monthly_loan_dues.generate_monthly_loan_dues.save_dues",
@@ -198,12 +211,12 @@ function init_generate_loan_dues($main, page) {
 					message: __("Saved {0} row(s)", [r.message.updated]),
 					indicator: "green",
 				});
-				$main.find(".gld-load").click();
+				load_dues();
 			},
 		});
 	});
 
-	$main.on("click", ".gld-add", () => {
+	$main.on("click.gld", ".gld-add", () => {
 		const f = filters();
 		if (!f.company) return frappe.msgprint(__("Select Company"));
 		const d = new frappe.ui.Dialog({
@@ -231,7 +244,7 @@ function init_generate_loan_dues($main, page) {
 					freeze: true,
 					callback() {
 						d.hide();
-						$main.find(".gld-load").click();
+						load_dues();
 					},
 				});
 			},

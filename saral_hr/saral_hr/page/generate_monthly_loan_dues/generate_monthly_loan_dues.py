@@ -117,8 +117,17 @@ def generate_dues(company, month, year, employee=None):
 				"status": "Skipped" if amount == 0 else "Pending",
 			}
 		)
-		doc.insert(ignore_permissions=True)
-		created += 1
+		try:
+			doc.insert(ignore_permissions=True)
+			created += 1
+		except (frappe.UniqueValidationError, frappe.DuplicateEntryError):
+			skipped += 1
+		except frappe.ValidationError as e:
+			# Concurrent generate can hit validate unique before commit
+			if "already exists" in str(e).lower():
+				skipped += 1
+			else:
+				raise
 
 	return {"created": created, "skipped": skipped, "month": label}
 
