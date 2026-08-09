@@ -49,7 +49,7 @@ class EmployeeLoan(Document):
 				"total_recovered": self.total_recovered,
 				"outstanding_amount": self.outstanding_amount,
 				"status": self.status,
-				"expected_months_remaining": self.expected_months_remaining,
+				"expected_months_remaining": self.expected_months_remaining or 0,
 			},
 			update_modified=False,
 		)
@@ -76,10 +76,8 @@ class EmployeeLoan(Document):
 		self.outstanding_amount = max(flt(self.amount) - flt(self.total_recovered), 0)
 		self.status = "Closed" if self.outstanding_amount <= 0.01 else "Active"
 		emi = flt(self.expected_emi)
-		if self.outstanding_amount <= 0.01:
+		if self.outstanding_amount <= 0.01 or emi <= 0:
 			self.expected_months_remaining = 0
-		elif emi <= 0:
-			self.expected_months_remaining = None
 		else:
 			self.expected_months_remaining = int(math.ceil(self.outstanding_amount / emi))
 

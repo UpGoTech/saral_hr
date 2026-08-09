@@ -141,7 +141,7 @@ def _recalc_loan_outstanding(loan_name):
             "total_recovered": doc.total_recovered,
             "outstanding_amount": doc.outstanding_amount,
             "status": doc.status,
-            "expected_months_remaining": doc.expected_months_remaining,
+            "expected_months_remaining": doc.expected_months_remaining or 0,
         },
         update_modified=False,
     )

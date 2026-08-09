@@ -28,7 +28,6 @@
   {
    "fieldname": "employee",
    "fieldtype": "Link",
-   "in_list_view": 1,
    "label": "Employee",
    "options": "Company Link",
    "reqd": 1
@@ -38,14 +37,13 @@
    "fieldname": "full_name",
    "fieldtype": "Data",
    "in_list_view": 1,
-   "label": "Full Name",
+   "label": "Employee Name",
    "reqd": 1
   },
   {
    "fetch_from": "employee.company",
    "fieldname": "company",
    "fieldtype": "Data",
-   "in_list_view": 1,
    "in_standard_filter": 1,
    "label": "Company"
   },
@@ -60,7 +58,7 @@
    "fieldname": "amount",
    "fieldtype": "Currency",
    "in_list_view": 1,
-   "label": "Amount",
+   "label": "Loan Amount",
    "options": "currency",
    "reqd": 1
   },
@@ -101,7 +99,6 @@
    "default": "Active",
    "fieldname": "status",
    "fieldtype": "Select",
-   "in_list_view": 1,
    "in_standard_filter": 1,
    "label": "Status",
    "options": "Active\nClosed",
@@ -117,14 +114,17 @@
   {
    "fieldname": "outstanding_amount",
    "fieldtype": "Currency",
-   "label": "Outstanding Amount",
+   "in_list_view": 1,
+   "label": "Balance Left",
    "options": "currency",
    "read_only": 1
   },
   {
+   "default": "0",
    "fieldname": "expected_months_remaining",
    "fieldtype": "Int",
    "label": "Expected Months Remaining",
+   "non_negative": 1,
    "read_only": 1
   },
   {
