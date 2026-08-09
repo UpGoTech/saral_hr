@@ -563,7 +563,7 @@ function open_add_due_dialog(f, on_done) {
 		const $wrap = d.fields_dict.loan_list.$wrapper;
 		if (!rows.length) {
 			$wrap.html(
-				`<div class="text-muted" style="padding:10px 0;">${__("No eligible active loans without a due for this month.")}</div>`
+				`<div class="text-muted" style="padding:10px 0;">${__("No active loans found.")}</div>`
 			);
 			return;
 		}

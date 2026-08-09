@@ -256,11 +256,10 @@ def save_dues(rows, company=None, month=None, year=None):
 
 
 @frappe.whitelist()
-def search_loans_for_due(company, month, year, employee=None):
-	"""Active loans for Add Row picker, with display fields; excludes loans that already have a due."""
-	if not company or not month or not year:
-		frappe.throw("Company, month and year are required.")
-	label = _month_label(month, year)
+def search_loans_for_due(company, month=None, year=None, employee=None):
+	"""Active loans for Add Row picker. No month/due eligibility filtering."""
+	if not company:
+		frappe.throw("Company is required.")
 	filters = {"docstatus": 1, "status": "Active", "company": company}
 	if employee:
 		filters["employee"] = employee
@@ -285,13 +284,7 @@ def search_loans_for_due(company, month, year, employee=None):
 	)
 	rows = []
 	for loan in loans:
-		if frappe.db.exists("Employee Loan Due", {"loan": loan.name, "month": label}):
-			continue
-		if month_sort_key(start_month_label(loan.start_month, loan.start_year)) > month_sort_key(label):
-			continue
-		if flt(loan.outstanding_amount) <= 0:
-			continue
-		suggested = min(flt(loan.expected_emi), flt(loan.outstanding_amount))
+		suggested = min(flt(loan.expected_emi), flt(loan.outstanding_amount)) if flt(loan.outstanding_amount) > 0 else flt(loan.expected_emi)
 		reason = (loan.reason or "").strip().replace("\n", " ")
 		if len(reason) > 80:
 			reason = reason[:77] + "…"
