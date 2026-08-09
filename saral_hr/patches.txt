@@ -18,3 +18,4 @@ saral_hr.patches.ensure_employee_loan_workspace
 saral_hr.patches.ensure_loan_ledger_workspace_links
 saral_hr.patches.dedupe_employee_loan_dues
 saral_hr.patches.rename_employee_loan_short_ids
+saral_hr.patches.pad_employee_loan_sequence

@@ -28,7 +28,7 @@ class EmployeeLoan(Document):
 				last_num = int(last[0]["name"].split("-")[-1])
 			except (ValueError, IndexError):
 				last_num = 0
-		self.name = f"{prefix}{last_num + 1}"
+		self.name = f"{prefix}{str(last_num + 1).zfill(2)}"
 
 
 def _employee_loan_prefix(employee):

@@ -30,9 +30,9 @@ def execute():
 			continue
 
 		next_n = counters.get(prefix, 0) + 1
-		new_name = f"{prefix}-{next_n}"
+		new_name = f"{prefix}-{str(next_n).zfill(2)}"
 		while frappe.db.exists("Employee Loan", new_name):
 			next_n += 1
-			new_name = f"{prefix}-{next_n}"
+			new_name = f"{prefix}-{str(next_n).zfill(2)}"
 		counters[prefix] = next_n
 		frappe.rename_doc("Employee Loan", loan.name, new_name, force=True, merge=False)
