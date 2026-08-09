@@ -163,7 +163,7 @@ Filters: Company, Employee (required for detail), optional From–To.
 | Column | Definition |
 |--------|------------|
 | Date | loan_date / slip period date / prepayment_date |
-| Particulars | Loan given — {loan}; Salary recovery — {loan} — {slip}; Prepayment — {remark} |
+| Particulars | Loan given — {loan}; Loan recovery from Salary ({month}); Prepayment — {remark} |
 | Loan ID | Employee Loan name (reference on every line, especially salary recovery) |
 | Voucher | Link to loan / slip / (loan for prepay) |
 | Debit | Loan principal |

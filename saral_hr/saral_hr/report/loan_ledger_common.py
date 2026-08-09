@@ -115,7 +115,7 @@ def _collect_raw_events(employee=None, loan=None, company=None):
 		events.append(
 			{
 				"posting_date": dt,
-				"particulars": f"Salary recovery — {d.loan} — {d.salary_slip} ({d.month})",
+				"particulars": f"Loan recovery from Salary ({d.month})",
 				"voucher": d.salary_slip,
 				"voucher_type": "Salary Slip",
 				"reference": d.loan,
