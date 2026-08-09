@@ -40,8 +40,9 @@ ROWS_OTHER_PAGE = 32
 def ledger_columns():
 	return [
 		{"label": _("Date"), "fieldname": "posting_date", "fieldtype": "Date", "width": 100},
-		{"label": _("Particulars"), "fieldname": "particulars", "fieldtype": "Data", "width": 320},
-		{"label": _("Voucher"), "fieldname": "voucher", "fieldtype": "Dynamic Link", "options": "voucher_type", "width": 180},
+		{"label": _("Particulars"), "fieldname": "particulars", "fieldtype": "Data", "width": 280},
+		{"label": _("Loan ID"), "fieldname": "reference", "fieldtype": "Link", "options": "Employee Loan", "width": 120},
+		{"label": _("Voucher"), "fieldname": "voucher", "fieldtype": "Dynamic Link", "options": "voucher_type", "width": 160},
 		{"label": _("Voucher Type"), "fieldname": "voucher_type", "fieldtype": "Data", "width": 120, "hidden": 1},
 		{"label": _("Debit"), "fieldname": "debit", "fieldtype": "Currency", "width": 110},
 		{"label": _("Credit"), "fieldname": "credit", "fieldtype": "Currency", "width": 110},
@@ -79,6 +80,7 @@ def _collect_raw_events(employee=None, loan=None, company=None):
 				+ (f" ({l.reason})" if l.reason else ""),
 				"voucher": l.name,
 				"voucher_type": "Employee Loan",
+				"reference": l.name,
 				"debit": flt(l.amount),
 				"credit": 0.0,
 				"loan": l.name,
@@ -113,9 +115,10 @@ def _collect_raw_events(employee=None, loan=None, company=None):
 		events.append(
 			{
 				"posting_date": dt,
-				"particulars": f"Salary recovery — {d.salary_slip} ({d.month})",
+				"particulars": f"Salary recovery — {d.loan} — {d.salary_slip} ({d.month})",
 				"voucher": d.salary_slip,
 				"voucher_type": "Salary Slip",
+				"reference": d.loan,
 				"debit": 0.0,
 				"credit": flt(d.amount),
 				"loan": d.loan,
@@ -145,6 +148,7 @@ def _collect_raw_events(employee=None, loan=None, company=None):
 				"particulars": f"{particulars} ({p.loan})",
 				"voucher": p.loan,
 				"voucher_type": "Employee Loan",
+				"reference": p.loan,
 				"debit": 0.0,
 				"credit": flt(p.amount),
 				"loan": p.loan,
@@ -187,6 +191,7 @@ def build_ledger_rows(employee=None, loan=None, company=None, from_date=None, to
 				"particulars": _("Opening Balance"),
 				"voucher": "",
 				"voucher_type": "",
+				"reference": "",
 				"debit": flt(opening) if opening > 0 else 0.0,
 				"credit": flt(-opening) if opening < 0 else 0.0,
 				"balance": flt(opening, 2),
@@ -206,6 +211,7 @@ def build_ledger_rows(employee=None, loan=None, company=None, from_date=None, to
 				"particulars": e["particulars"],
 				"voucher": e["voucher"],
 				"voucher_type": e["voucher_type"],
+				"reference": e.get("reference") or e.get("loan") or "",
 				"debit": flt(e["debit"], 2) or None,
 				"credit": flt(e["credit"], 2) or None,
 				"balance": flt(balance, 2),
@@ -219,6 +225,7 @@ def build_ledger_rows(employee=None, loan=None, company=None, from_date=None, to
 				"particulars": _("Total"),
 				"voucher": "",
 				"voucher_type": "",
+				"reference": "",
 				"debit": flt(total_dr, 2),
 				"credit": flt(total_cr, 2),
 				"balance": flt(balance, 2),
@@ -251,9 +258,10 @@ def _sig_html():
 
 def build_ledger_pdf_html(title, company, meta_lines, rows):
 	cols = [
-		("posting_date", "Date", "10%", "center"),
-		("particulars", "Particulars", "38%", "left"),
-		("voucher", "Voucher", "18%", "left"),
+		("posting_date", "Date", "9%", "center"),
+		("particulars", "Particulars", "28%", "left"),
+		("reference", "Loan ID", "12%", "left"),
+		("voucher", "Voucher", "17%", "left"),
 		("debit", "Debit", "11%", "right"),
 		("credit", "Credit", "11%", "right"),
 		("balance", "Balance", "12%", "right"),
@@ -324,7 +332,7 @@ def build_ledger_pdf_html(title, company, meta_lines, rows):
 		if not has_data:
 			tbl = (
 				'<table class="data-tbl">{cg}<thead>{hdr}</thead>'
-				'<tbody><tr><td colspan="6" class="nd">No entries</td></tr></tbody></table>'
+				'<tbody><tr><td colspan="7" class="nd">No entries</td></tr></tbody></table>'
 			).format(cg=cg, hdr=header_tr)
 		else:
 			tbody = "".join(row_html(r, row_counter + j) for j, r in enumerate(page_rows))

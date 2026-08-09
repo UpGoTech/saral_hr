@@ -118,10 +118,11 @@
    "read_only": 1
   },
   {
+   "columns": 1,
    "fieldname": "loan",
    "fieldtype": "Link",
-   "hidden": 1,
-   "label": "Loan",
+   "in_list_view": 1,
+   "label": "Loan ID",
    "options": "Employee Loan",
    "read_only": 1
   },

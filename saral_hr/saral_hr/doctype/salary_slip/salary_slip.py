@@ -190,11 +190,10 @@ def get_loan_dues_for_slip(employee, start_date):
         loan_status = frappe.db.get_value("Employee Loan", due.loan, "status")
         if loan_status != "Active":
             continue
-        suffix = due.loan.split("-")[-1] if due.loan else due.name
         rows.append(
             {
                 "salary_component": "Loan",
-                "abbr": f"LN-{suffix}",
+                "abbr": due.loan,
                 "amount": flt(due.amount),
                 "loan": due.loan,
                 "loan_due": due.name,

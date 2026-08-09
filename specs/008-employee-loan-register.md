@@ -139,7 +139,7 @@ Standalone DocType so Generate Monthly Loan Dues can list/edit without opening e
 
 - Resolve month label from slip `start_date`.
 - Find Employee Loan Due: employee + month, status Pending (or no salary_slip), amount > 0, loan Active.
-- Return one row per due: `salary_component` / abbr e.g. `LN-{n}` from loan name suffix, `amount`, **`loan`**, **`loan_due`** (due name).
+- Return one row per due: `salary_component` = Loan, **`abbr` = Loan ID** (e.g. `0002-LN-01`), `amount`, **`loan`**, **`loan_due`** (due name). Loan ID is also visible on the Salary Details grid.
 
 ### Persist link on Salary Details (hard requirement)
 
@@ -163,7 +163,8 @@ Filters: Company, Employee (required for detail), optional From–To.
 | Column | Definition |
 |--------|------------|
 | Date | loan_date / slip period date / prepayment_date |
-| Particulars | Loan given — {loan}; Salary recovery — {slip}; Prepayment — {remark} |
+| Particulars | Loan given — {loan}; Salary recovery — {loan} — {slip}; Prepayment — {remark} |
+| Loan ID | Employee Loan name (reference on every line, especially salary recovery) |
 | Voucher | Link to loan / slip / (loan for prepay) |
 | Debit | Loan principal |
 | Credit | Salary due amount + prepayment |
