@@ -3,6 +3,7 @@
 
 import frappe
 from frappe.model.document import Document
+from frappe.utils import flt
 
 MONTHS = [
     "January", "February", "March", "April",
@@ -11,11 +12,32 @@ MONTHS = [
 ]
 
 
+@frappe.whitelist()
+def is_percent_of_total_earning_locked(component_name: str) -> bool:
+    """True when any non-cancelled SSA still references this component."""
+    if not component_name:
+        return False
+    return bool(frappe.db.sql(
+        """
+        SELECT 1
+        FROM `tabSalary Details` sd
+        INNER JOIN `tabSalary Structure Assignment` ssa ON ssa.name = sd.parent
+        WHERE sd.salary_component = %s
+          AND sd.parenttype = 'Salary Structure Assignment'
+          AND ssa.docstatus < 2
+        LIMIT 1
+        """,
+        (component_name,),
+    ))
+
+
 class SalaryComponent(Document):
 
     def validate(self):
         self._validate_calculation_flags()
         self._validate_additional_only()
+        self._validate_percent_of_total_earning()
+        self._validate_percent_lock()
         self._populate_monthly_amounts()
 
     def on_update(self):
@@ -39,6 +61,66 @@ class SalaryComponent(Document):
             frappe.throw(
                 "A component cannot be both <b>Is Special Component</b> and "
                 "<b>Is Additional Only</b>."
+            )
+
+    def _validate_percent_of_total_earning(self):
+        if not int(self.percent_on_total_earning or 0):
+            self.percent_of_total_earning = 0
+            return
+
+        if (self.type or "") != "Deduction":
+            frappe.throw(
+                "<b>% on Total Earning</b> is only allowed for Deduction components."
+            )
+
+        pct = flt(self.percent_of_total_earning)
+        if pct <= 0 or pct > 100:
+            frappe.throw(
+                "<b>Percent of Total Earning</b> must be greater than 0 and at most 100."
+            )
+
+        conflicts = []
+        if int(self.depends_on_payment_days or 0):
+            conflicts.append("Depends on Payment Days")
+        if int(self.depends_on_physical_working_days or 0):
+            conflicts.append("Depends on Physical Working Days")
+        if int(self.daily_wage_component or 0):
+            conflicts.append("Daily Wage Component")
+        if int(self.is_special_component or 0):
+            conflicts.append("Is Special Component")
+        if int(self.is_additional_only or 0):
+            conflicts.append("Is Additional Only")
+        if int(self.employer_contribution or 0):
+            conflicts.append("Employer Contribution")
+
+        if conflicts:
+            frappe.throw(
+                "<b>% on Total Earning</b> cannot be combined with: "
+                + ", ".join(f"<b>{c}</b>" for c in conflicts)
+                + "."
+            )
+
+    def _validate_percent_lock(self):
+        if self.is_new():
+            return
+        before = self.get_doc_before_save()
+        if not before:
+            return
+
+        check_changed = int(before.percent_on_total_earning or 0) != int(
+            self.percent_on_total_earning or 0
+        )
+        pct_changed = flt(before.percent_of_total_earning) != flt(
+            self.percent_of_total_earning
+        )
+        if not (check_changed or pct_changed):
+            return
+
+        if is_percent_of_total_earning_locked(self.name):
+            frappe.throw(
+                "Cannot change <b>% on Total Earning</b> or the percent while this "
+                "component is used on a Salary Structure Assignment. "
+                "Cancel or delete those assignments first."
             )
 
     # ──────────────────────────────────────────────
@@ -76,8 +158,8 @@ class SalaryComponent(Document):
 
     def _sync_flags_to_salary_details(self):
         """Push updated payment-day flags, daily_wage_component flag,
-        and exclude_from_ctc flag to every Salary Details row that
-        references this component."""
+        exclude_from_ctc, and percent-of-earning fields to every Salary Details
+        row that references this component."""
         try:
             existing_columns = set(frappe.db.get_table_columns("tabSalary Details"))
         except Exception:
@@ -94,6 +176,16 @@ class SalaryComponent(Document):
 
         if "exclude_from_ctc" in existing_columns:
             updates["exclude_from_ctc"] = self.exclude_from_ctc or 0
+
+        if "percent_on_total_earning" in existing_columns:
+            updates["percent_on_total_earning"] = self.percent_on_total_earning or 0
+
+        if "percent_of_total_earning" in existing_columns:
+            updates["percent_of_total_earning"] = (
+                flt(self.percent_of_total_earning)
+                if int(self.percent_on_total_earning or 0)
+                else 0
+            )
 
         if not updates:
             return

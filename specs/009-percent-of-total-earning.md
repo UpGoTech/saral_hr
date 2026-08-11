@@ -136,6 +136,6 @@ Same branch as server (load percent from component or child field). Keep Amount 
 | Phase | Status | Notes |
 |-------|--------|-------|
 | Grill / spec | done | |
-| Tracer fields + slip calc | pending | |
-| SSA / Structure UI | pending | |
-| Client parity + tests | pending | |
+| Tracer fields + slip calc | done | Component fields, lock, server calc |
+| SSA / Structure UI | done | Preview % amount on SSA; Structure amount 0 |
+| Client parity + tests | done | Slip JS + 5 unit tests passing |
