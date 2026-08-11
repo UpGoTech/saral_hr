@@ -295,102 +295,8 @@ def get_employee_profile_data(employee):
         except Exception:
             pass
 
-    # ── Loan Ledger ────────────────────────────────────────────────────────────
+    # Loan masters removed — ledger rebuilt in a later feature. Keep key for UI compat.
     loan_ledger = []
-    try:
-        loan_names = frappe.db.get_all(
-            "Employee Loan Advance",
-            filters={
-                "employee": employee,
-                "docstatus": 1
-            },
-            fields=["name"],
-            order_by="creation desc"
-        )
-
-        for ln in loan_names:
-            try:
-                loan_doc = frappe.get_doc("Employee Loan Advance", ln.name)
-
-                schedule_rows = []
-                total_recovered = 0.0
-                total_outstanding = 0.0
-
-                loan_type = loan_doc.get("type")
-                loan_amount = float(loan_doc.get("amount") or 0)
-
-                if loan_type == "Advance":
-                    is_deducted = loan_doc.get("is_deducted", 0)
-                    if is_deducted:
-                        total_recovered = loan_amount
-                        total_outstanding = 0
-                    else:
-                        total_recovered = 0
-                        total_outstanding = loan_amount
-                    schedule_rows = []
-
-                else:
-                    if loan_doc.get("schedule") and len(loan_doc.schedule) > 0:
-                        for row in loan_doc.schedule:
-                            deducted = float(row.get("deduction_amount") or 0)
-                            base_emi = float(row.get("deduction_amount") or 0)
-                            status = "Deducted" if row.get("is_deducted") else "Pending"
-                            if row.get("is_deferred"):
-                                status = "Deferred"
-                            deferred_to = str(row.get("deferred_to")) if row.get("deferred_to") else None
-
-                            if status == "Deducted":
-                                total_recovered += deducted
-                            else:
-                                total_outstanding += base_emi
-
-                            schedule_rows.append({
-                                "month": str(row.get("month")) if row.get("month") else None,
-                                "base_emi": base_emi,
-                                "actual_deducted": deducted,
-                                "status": status,
-                                "deferred_to": deferred_to,
-                            })
-                    else:
-                        total_outstanding = loan_amount
-
-                pct_recovered = round((total_recovered / loan_amount * 100), 1) if loan_amount else 0
-
-                if total_outstanding <= 0:
-                    status = "Completed"
-                else:
-                    status = "Active"
-
-                loan_data = {
-                    "name": loan_doc.name,
-                    "loan_type": loan_type,
-                    "loan_amount": loan_amount,
-                    "start_date": str(loan_doc.get("date")) if loan_doc.get("date") else None,
-                    "status": status,
-                    "total_recovered": total_recovered,
-                    "outstanding": total_outstanding,
-                    "pct_recovered": pct_recovered,
-                    "schedule": schedule_rows,
-                }
-
-                if loan_type == "Advance":
-                    loan_data["is_deducted"] = loan_doc.get("is_deducted", 0)
-                else:
-                    loan_data["frequency"] = loan_doc.get("installment_gap") or ""
-                    loan_data["tenure_months"] = loan_doc.get("tenure_months")
-                    loan_data["tenure_display"] = f"{loan_doc.get('tenure_months')} months" if loan_doc.get('tenure_months') else "—"
-                    loan_data["monthly_deduction"] = float(loan_doc.get("monthly_deduction") or 0)
-                    loan_data["start_month"] = loan_doc.get("start_month") or ""
-                    loan_data["start_year"] = loan_doc.get("start_year") or ""
-
-                loan_ledger.append(loan_data)
-
-            except Exception as e:
-                frappe.log_error(f"Error loading loan {ln.name}: {str(e)}", "Employee Profile")
-                continue
-
-    except Exception as e:
-        frappe.log_error(f"Error fetching loans: {str(e)}", "Employee Profile")
 
     # ── Return data ────────────────────────────────────────────────────────────
     return {
@@ -693,29 +599,12 @@ def get_employee_deduction_breakdown(employee, month, year, start_date):
         if comp not in add_ded_deducted:
             add_ded_deducted[comp] = 0
 
-    _slip_month   = frappe.utils.formatdate(doc.start_date, "MMMM YYYY") if doc.start_date else ""
     loan_deferred = False
-
-    if loan_total > 0:
-        docs_to_check = loan_names_in_slip or [
-            r.name for r in frappe.db.get_all(
-                "Employee Loan Advance",
-                filters={"employee": employee, "docstatus": 1, "type": "Loan"},
-                fields=["name"]
-            )
-        ]
-        for loan_doc_name in docs_to_check:
-            try:
-                loan_doc = frappe.get_doc("Employee Loan Advance", loan_doc_name)
-                for srow in loan_doc.schedule:
-                    if srow.month == _slip_month:
-                        if getattr(srow, "is_deferred", 0):
-                            loan_deferred = True
-                        break
-            except Exception:
-                pass
-            if loan_deferred:
-                break
+    for row in doc.deductions:
+        comp_lower = (row.salary_component or "").lower()
+        if (comp_lower == "loan" or comp_lower.startswith("loan-")) and int(getattr(row, "is_deferred", 0) or 0):
+            loan_deferred = True
+            break
 
     return {
         "employee":      doc.employee,

@@ -45,8 +45,6 @@ REPORT_LABELS = {
     "transaction_checklist":     "Transaction Checklist",
     "variable_pay":              "Variable Pay Register",
     "income_tax":                "Income Tax Register",
-    "loan_register":             "Loan Register",
-    "advance_register":          "Advance Register",
 }
 
 REPORTS = [
@@ -64,8 +62,6 @@ REPORTS = [
     "home_bank_advice",
     "monthly_attendance",
     "income_tax",
-    "loan_register",
-    "advance_register",
 ]
 
 MONTH_MAP = {
