@@ -3,7 +3,7 @@
 
 frappe.ui.form.on("Salary Structure", {
     refresh(frm) {
-        // No totals calculation
+        // No totals calculation — % components keep Amount at 0
     }
 });
 
@@ -19,26 +19,48 @@ frappe.ui.form.on("Salary Details", {
     salary_component: function(frm, cdt, cdn) {
         let row = locals[cdt][cdn];
 
-        if (row.salary_component) {
-            frappe.call({
-                method: "frappe.client.get",
-                args: {
-                    doctype: "Salary Component",
-                    name: row.salary_component
-                },
-                callback: function(r) {
-                    if (r.message) {
-                        frappe.model.set_value(
-                            cdt,
-                            cdn,
-                            "abbr",
-                            r.message.salary_component_abbr
-                        );
-                    }
+        if (!row.salary_component) return;
+
+        frappe.db.get_value(
+            "Salary Component",
+            row.salary_component,
+            [
+                "salary_component_abbr",
+                "percent_on_total_earning",
+                "percent_of_total_earning",
+            ],
+            (r) => {
+                if (!r) return;
+                frappe.model.set_value(cdt, cdn, "abbr", r.salary_component_abbr || "");
+                frappe.model.set_value(
+                    cdt,
+                    cdn,
+                    "percent_on_total_earning",
+                    cint(r.percent_on_total_earning)
+                );
+                frappe.model.set_value(
+                    cdt,
+                    cdn,
+                    "percent_of_total_earning",
+                    flt(r.percent_of_total_earning)
+                );
+                if (cint(r.percent_on_total_earning) && row.parentfield === "deductions") {
+                    frappe.model.set_value(cdt, cdn, "amount", 0);
+                    frappe.model.set_value(cdt, cdn, "base_amount", 0);
                 }
-            });
-        }
-    }
+            }
+        );
+    },
+
+    form_render(frm, cdt, cdn) {
+        if (frm.doctype !== "Salary Structure") return;
+        const row = locals[cdt][cdn];
+        if (!row || !cint(row.percent_on_total_earning)) return;
+        const grid = frm.fields_dict[row.parentfield] && frm.fields_dict[row.parentfield].grid;
+        if (!grid) return;
+        const grid_row = grid.grid_rows_by_docname[cdn];
+        if (grid_row) grid_row.toggle_editable("amount", false);
+    },
 });
 
 function set_salary_component_filter(frm, cdt, cdn, component_type) {
