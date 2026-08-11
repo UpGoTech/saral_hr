@@ -202,6 +202,74 @@ def get_loan_dues_for_slip(employee, start_date):
     return rows
 
 
+def _loan_dues_missing_message(month, year):
+    return (
+        f"Monthly loan dues not created for {month} {year}. "
+        f"Open Generate Monthly Loan Dues and Load/Save for this period first."
+    )
+
+
+def _employees_missing_loan_dues(employees, month, year):
+    """Return set of employee names that have Active loans without a Due for month."""
+    if not employees or not frappe.db.exists("DocType", "Employee Loan"):
+        return set()
+    if not frappe.db.exists("DocType", "Employee Loan Due"):
+        return set()
+
+    from saral_hr.saral_hr.doctype.employee_loan.employee_loan import (
+        month_sort_key,
+        start_month_label,
+    )
+
+    month_label = f"{month} {year}"
+    target_key = month_sort_key(month_label)
+    if target_key == (0, 0):
+        return set()
+
+    loans = frappe.get_all(
+        "Employee Loan",
+        filters={
+            "docstatus": 1,
+            "status": "Active",
+            "employee": ["in", list(employees)],
+            "outstanding_amount": [">", 0],
+        },
+        fields=["name", "employee", "start_month", "start_year"],
+    )
+    if not loans:
+        return set()
+
+    applicable = []
+    for loan in loans:
+        start_label = start_month_label(loan.start_month, loan.start_year)
+        if month_sort_key(start_label) > target_key:
+            continue
+        applicable.append(loan)
+    if not applicable:
+        return set()
+
+    loan_names = [loan.name for loan in applicable]
+    existing = frappe.get_all(
+        "Employee Loan Due",
+        filters={"loan": ["in", loan_names], "month": month_label},
+        pluck="loan",
+    )
+    existing_set = set(existing)
+
+    missing = set()
+    for loan in applicable:
+        if loan.name not in existing_set:
+            missing.add(loan.employee)
+    return missing
+
+
+def employee_missing_loan_dues(employee, month, year):
+    """True when employee has an Active loan without a Due for the payroll month."""
+    if not employee:
+        return False
+    return employee in _employees_missing_loan_dues([employee], month, year)
+
+
 def _is_attendance_allowance(comp_name):
     return (comp_name or "").strip() == ATTENDANCE_ALLOWANCE_COMPONENT
 
@@ -1297,6 +1365,9 @@ def get_eligible_employees_for_salary_slip(company, year, month, category=None, 
         for s in slip_rows:
             existing_slips[s.employee] = s
 
+    missing_loan_dues = _employees_missing_loan_dues(emp_names, month, year)
+    loan_dues_msg = _loan_dues_missing_message(month, year)
+
     eligible = []; ineligible = []; already_generated = []
 
     for emp in all_emps:
@@ -1324,6 +1395,8 @@ def get_eligible_employees_for_salary_slip(company, year, month, category=None, 
                     unmet.append(f"No Variable Pay Assignment has been created for {month} {year}")
                 elif div not in vpa_divisions:
                     unmet.append(f"Division '{div}' is not configured in the Variable Pay Assignment for {month} {year}")
+        if emp.name in missing_loan_dues:
+            unmet.append(loan_dues_msg)
 
         if unmet:
             ineligible.append({"id": emp.name, "name": emp.employee_name or emp.name, "reasons": unmet})
@@ -1373,6 +1446,11 @@ def bulk_generate_salary_slips(employees, year, month):
                     vpa = frappe.get_doc("Variable Pay Assignment", vpa_name)
                     if not any(r.division == division for r in vpa.variable_pay):
                         errors.append(f"{emp_display}: Division '{division}' not configured in VPA"); failed_count += 1; continue
+
+            if employee_missing_loan_dues(employee, month, year):
+                errors.append(f"{emp_display}: {_loan_dues_missing_message(month, year)}")
+                failed_count += 1
+                continue
 
             company_name = frappe.db.get_value("Company Link", employee, "company")
             wdcm = frappe.db.get_value("Company", company_name, "salary_calculation_based_on") or "" if company_name else ""

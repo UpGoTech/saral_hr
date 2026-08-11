@@ -193,3 +193,72 @@ class TestBulkEligibleLeftEmployees(FrappeTestCase):
 		april = get_eligible_employees_for_salary_slip(company, "2024", "April")
 		self.assertNotIn(cl, _ids_from_eligible_result(april))
 		self.assertEqual(april["total_active"], 0)
+
+
+def _skipped_reasons(result, employee_id):
+	for row in result.get("skipped") or []:
+		if row.get("id") == employee_id:
+			return row.get("reasons") or []
+	return None
+
+
+class TestBulkEligibleLoanDues(FrappeTestCase):
+	def test_missing_loan_due_marks_ineligible_until_created(self):
+		from saral_hr.saral_hr.doctype.salary_slip.salary_slip import (
+			_loan_dues_missing_message,
+			employee_missing_loan_dues,
+		)
+
+		company = _make_company()
+		employee = _make_employee()
+		cl = _make_company_link(employee, company, "2024-01-01", weekly_off="")
+		full_name = frappe.db.get_value("Company Link", cl, "full_name") or cl
+
+		loan = frappe.get_doc(
+			{
+				"doctype": "Employee Loan",
+				"employee": cl,
+				"full_name": full_name,
+				"company": company,
+				"loan_date": "2024-05-01",
+				"amount": 5000,
+				"reason": "bulk eligibility loan gate",
+				"expected_emi": 1000,
+				"start_month": "June",
+				"start_year": "2024",
+				"proposed_tenure_months": 5,
+			}
+		)
+		loan.insert(ignore_permissions=True)
+		loan.submit()
+
+		self.assertTrue(employee_missing_loan_dues(cl, "June", "2024"))
+		self.assertFalse(employee_missing_loan_dues(cl, "May", "2024"))
+
+		june = get_eligible_employees_for_salary_slip(company, "2024", "June")
+		reasons = _skipped_reasons(june, cl)
+		self.assertIsNotNone(reasons)
+		self.assertIn(_loan_dues_missing_message("June", "2024"), reasons)
+
+		due = frappe.get_doc(
+			{
+				"doctype": "Employee Loan Due",
+				"employee": cl,
+				"loan": loan.name,
+				"company": company,
+				"month": "June 2024",
+				"year": 2024,
+				"amount": 0,
+				"status": "Skipped",
+			}
+		)
+		due.insert(ignore_permissions=True)
+
+		self.assertFalse(employee_missing_loan_dues(cl, "June", "2024"))
+		june_after = get_eligible_employees_for_salary_slip(company, "2024", "June")
+		reasons_after = _skipped_reasons(june_after, cl)
+		loan_msg = _loan_dues_missing_message("June", "2024")
+		if reasons_after is None:
+			self.assertIn(cl, {e.name for e in june_after.get("eligible") or []})
+		else:
+			self.assertNotIn(loan_msg, reasons_after)

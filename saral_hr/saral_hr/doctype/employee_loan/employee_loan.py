@@ -30,13 +30,6 @@ class EmployeeLoan(Document):
 				last_num = 0
 		self.name = f"{prefix}{str(last_num + 1).zfill(2)}"
 
-
-def _employee_loan_prefix(employee):
-	"""Last 4 digits of employee id → '{last4}-LN' (e.g. HR-EMP-00002 → 0002-LN)."""
-	digits = "".join(ch for ch in (employee or "") if ch.isdigit())
-	last4 = (digits[-4:] if digits else "0000").zfill(4)
-	return f"{last4}-LN"
-
 	def validate(self):
 		if flt(self.amount) <= 0:
 			frappe.throw("Loan amount must be greater than zero.")
@@ -88,6 +81,68 @@ def _employee_loan_prefix(employee):
 			self.expected_months_remaining = 0
 		else:
 			self.expected_months_remaining = int(math.ceil(self.outstanding_amount / emi))
+
+	def before_cancel(self):
+		self._assert_no_salary_linked_dues()
+
+	def on_cancel(self):
+		# Remove open dues so cancel/delete is not blocked by Link checks.
+		self._delete_related_dues()
+
+	def on_trash(self):
+		self._assert_no_salary_linked_dues()
+		self._delete_related_dues()
+		self._clear_salary_detail_loan_refs()
+
+	def _assert_no_salary_linked_dues(self):
+		linked = frappe.get_all(
+			"Employee Loan Due",
+			filters={"loan": self.name, "salary_slip": ["is", "set"]},
+			fields=["name", "salary_slip", "month"],
+		)
+		# get_all "is set" still returns empty-string slips on some versions — filter in Python
+		linked = [d for d in linked if d.salary_slip]
+		if not linked:
+			return
+		examples = ", ".join(
+			f"{d.month or d.name} → {d.salary_slip}" for d in linked[:5]
+		)
+		frappe.throw(
+			f"Cannot cancel or delete Employee Loan {self.name}: "
+			f"{len(linked)} due(s) still linked to Salary Slip(s) ({examples}). "
+			f"Cancel those salary slips first."
+		)
+
+	def _delete_related_dues(self):
+		for due_name in frappe.get_all(
+			"Employee Loan Due", filters={"loan": self.name}, pluck="name"
+		):
+			frappe.delete_doc(
+				"Employee Loan Due",
+				due_name,
+				force=1,
+				ignore_permissions=True,
+			)
+
+	def _clear_salary_detail_loan_refs(self):
+		"""Clear loan pointers on slip rows so a cancelled loan can be deleted."""
+		if not frappe.db.exists("DocType", "Salary Details"):
+			return
+		frappe.db.sql(
+			"""
+			UPDATE `tabSalary Details`
+			SET loan = NULL, loan_due = NULL
+			WHERE loan = %s
+			""",
+			self.name,
+		)
+
+
+def _employee_loan_prefix(employee):
+	"""Last 4 digits of employee id → '{last4}-LN' (e.g. HR-EMP-00002 → 0002-LN)."""
+	digits = "".join(ch for ch in (employee or "") if ch.isdigit())
+	last4 = (digits[-4:] if digits else "0000").zfill(4)
+	return f"{last4}-LN"
 
 
 def _salary_recovered_for_loan(loan_name):

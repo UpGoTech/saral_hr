@@ -49,6 +49,7 @@ HR needs a simple loan **register**: record each loan given to an employee, use 
 | 12 | Ledger | Date, Particulars, Voucher, Debit, Credit, Running balance; opening OK |
 | 13 | Workspace | Card **Employee Loans** + links |
 | 14 | Roles | Saral HR User + Saral HR Manager |
+| 15 | Bulk salary gate | Per-employee: Active loan without an `Employee Loan Due` for the payroll month → Not Eligible in bulk generate. Amount `0` (Skipped) counts as created. Single slip create is not hard-blocked. |
 
 ## DocTypes
 
@@ -132,6 +133,16 @@ Standalone DocType so Generate Monthly Loan Dues can list/edit without opening e
 - Revalidate amount ≥ 0; hard block if amount > outstanding.
 
 ## Salary Slip integration
+
+### Bulk eligibility (hard requirement)
+
+`get_eligible_employees_for_salary_slip` / `bulk_generate_salary_slips`:
+
+- If the employee has any **submitted Active** loan with `start_month` ≤ payroll month and outstanding > 0, an **Employee Loan Due** must already exist for that loan + month.
+- Missing due → Not Eligible / bulk error: open **Generate Monthly Loan Dues** and Load/Save first.
+- Due amount `0` (Skipped) satisfies the gate.
+- Employees with no applicable Active loans are unaffected.
+- Single Salary Slip create/refresh is unchanged (loads dues if present; does not hard-block).
 
 ### Create / refresh deductions
 
@@ -226,6 +237,7 @@ Card **Employee Loans**:
 | Generate | Creates dues with min(EMI, outstanding); skips closed / existing month |
 | Edit dues | Saves amount; blocked after slip linked |
 | Two loans | Slip gets two deduction lines |
+| Bulk eligibility | Active loan, no due for month → skipped; due present (incl. amount 0) → not blocked by loan gate |
 | Submit slip | due.salary_slip set; outstanding drops |
 | Cancel slip | due unlocked; outstanding restored |
 | Prepayment | Partial + close; Generate skips closed |
