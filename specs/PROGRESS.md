@@ -12,6 +12,7 @@ Single board for all specs in this folder. New specs get the next number (`002-â
 | 006 | [Additional-Only Salary Components](./006-additional-only-salary-components.md) | done | Link-only AS/AD; earnings_map by name; slip print; period lock = submitted slips |
 | 007 | [Data Cleansing](./007-data-cleansing.md) | in progress | v1 matrix+delete+log; v2 AS/AD, SSA, orphans, period lock |
 | 008 | [Employee Loan Register](./008-employee-loan-register.md) | in progress | Phases 1â€“4 coded (loan/dues/slip/ledgers); polish tests pending |
+| 009 | [Percent of Total Earning](./009-percent-of-total-earning.md) | in progress | Implemented on `feat/percent-of-total-earning`; tests passing |
 
 ## Status legend
 

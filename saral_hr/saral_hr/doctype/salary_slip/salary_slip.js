@@ -64,6 +64,14 @@ frappe.ui.form.on("Salary Slip", {
 });
 
 frappe.ui.form.on("Salary Details", {
+    form_render(frm, cdt, cdn) {
+        const row = locals[cdt][cdn];
+        if (!row || !cint(row.percent_on_total_earning)) return;
+        const grid = frm.fields_dict[row.parentfield] && frm.fields_dict[row.parentfield].grid;
+        if (!grid) return;
+        const grid_row = grid.grid_rows_by_docname[cdn];
+        if (grid_row) grid_row.toggle_editable("amount", false);
+    },
     amount(frm) { recalculate_salary(frm); },
     earnings_remove(frm) { recalculate_salary(frm); },
     deductions_remove(frm) { recalculate_salary(frm); },
@@ -445,10 +453,14 @@ function recalculate_salary(frm, wd_override, pd_override, phd_override) {
         const per_day_rate = flt(row.per_day_rate || 0);
         const statutory = is_statutory(row.salary_component);
         const pt = is_pt(row.salary_component);
+        const pct_on = parseInt(row.percent_on_total_earning || 0);
+        const pct = flt(row.percent_of_total_earning || 0);
 
         let amount;
 
-        if (pt) {
+        if (pct_on) {
+            amount = Math.max(total_earnings, 0) * pct / 100;
+        } else if (pt) {
             amount = slip_month === 2 ? 300 : 200;
         } else if (statutory) {
             amount = base;
@@ -467,6 +479,9 @@ function recalculate_salary(frm, wd_override, pd_override, phd_override) {
         }
 
         row.amount = round_salary_amount(frm, amount);
+        if (pct_on) {
+            row.base_amount = row.amount;
+        }
         total_deductions += row.amount;
 
         if ((row.salary_component || "").toLowerCase().includes("retention")) retention += row.amount;

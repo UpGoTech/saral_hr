@@ -401,7 +401,8 @@ def get_salary_structure_for_employee(
             "Salary Component", comp_name,
             ["salary_component_abbr", "depends_on_payment_days",
              "depends_on_physical_working_days", "employer_contribution",
-             "type", "daily_wage_component"],
+             "type", "daily_wage_component",
+             "percent_on_total_earning", "percent_of_total_earning"],
             as_dict=True
         ) or {}
 
@@ -471,6 +472,8 @@ def get_salary_structure_for_employee(
         is_daily_wage = int(meta.get("daily_wage_component") or getattr(row, "daily_wage_component", 0) or 0)
         per_day_rate  = flt(getattr(row, "per_day_rate", None) or 0)
         amount        = flt(row.amount, amount_digits)
+        pct_on        = int(meta.get("percent_on_total_earning") or 0)
+        pct_val       = flt(meta.get("percent_of_total_earning") or 0)
         if _is_pt_component(row.salary_component):
             # Preview only — final PT is applied after gross in calculate_salary_slip_amounts_exact
             ssa_gross_est = sum(flt(r.amount) for r in (ssa_doc.earnings or []))
@@ -478,6 +481,9 @@ def get_salary_structure_for_employee(
                 _company_pt_amount(ssa_doc.company, ssa_gross_est, employee, start_date),
                 amount_digits,
             )
+        elif pct_on:
+            # Preview from SSA amount; final amount from slip total_earnings after Additional Salary
+            amount = flt(row.amount, amount_digits)
         deductions.append({
             "salary_component":                 row.salary_component,
             "abbr":                             meta.get("salary_component_abbr") or getattr(row, "abbr", "") or "",
@@ -486,8 +492,10 @@ def get_salary_structure_for_employee(
             "per_day_rate":                     per_day_rate,
             "daily_wage_component":             is_daily_wage,
             "employer_contribution":            0,
-            "depends_on_payment_days":          int(meta.get("depends_on_payment_days") or 0),
-            "depends_on_physical_working_days": int(meta.get("depends_on_physical_working_days") or 0),
+            "depends_on_payment_days":          0 if pct_on else int(meta.get("depends_on_payment_days") or 0),
+            "depends_on_physical_working_days": 0 if pct_on else int(meta.get("depends_on_physical_working_days") or 0),
+            "percent_on_total_earning":         pct_on,
+            "percent_of_total_earning":         pct_val if pct_on else 0,
         })
 
     for row in (ssa_doc.employer_share or []):
@@ -620,8 +628,16 @@ def calculate_salary_slip_amounts_exact(
         is_daily_wage = int(getattr(row, "daily_wage_component", 0) or 0)
         per_day_rate  = flt(getattr(row, "per_day_rate", 0) or 0)
         is_pt         = _is_pt_component(row.salary_component)
+        pct_meta      = _percent_of_total_earning_meta(row.salary_component)
 
-        if is_pt:
+        if int(pct_meta.get("percent_on_total_earning") or 0):
+            pct = flt(pct_meta.get("percent_of_total_earning") or 0)
+            if hasattr(row, "percent_on_total_earning"):
+                row.percent_on_total_earning = 1
+            if hasattr(row, "percent_of_total_earning"):
+                row.percent_of_total_earning = pct
+            amount = max(flt(total_earnings), 0.0) * pct / 100.0
+        elif is_pt:
             amount = _company_pt_amount(company, total_earnings, salary_slip.employee, start_date)
         elif _is_statutory_component(row.salary_component):
             amount = base
@@ -635,6 +651,8 @@ def calculate_salary_slip_amounts_exact(
             amount = base
 
         row.amount        = flt(amount, digits)
+        if int(pct_meta.get("percent_on_total_earning") or 0):
+            row.base_amount = row.amount
         total_deductions += row.amount
         if "retention" in (row.salary_component or "").lower():
             retention += row.amount
@@ -671,6 +689,17 @@ def _is_da_component(comp_name, abbr):
         a.startswith("da-") or a.startswith("da ") or
         a == "da - dr" or a.startswith("da-dr")
     )
+
+
+def _percent_of_total_earning_meta(comp_name):
+    if not comp_name:
+        return {}
+    return frappe.db.get_value(
+        "Salary Component",
+        comp_name,
+        ["percent_on_total_earning", "percent_of_total_earning"],
+        as_dict=True,
+    ) or {}
 
 
 MONTHS_LIST = [
@@ -1509,6 +1538,8 @@ def bulk_generate_salary_slips(employees, year, month):
                 r.daily_wage_component             = int(src.get('daily_wage_component', 0))
                 r.depends_on_payment_days          = int(src.get('depends_on_payment_days', 0))
                 r.depends_on_physical_working_days = int(src.get('depends_on_physical_working_days', 0))
+                r.percent_on_total_earning         = int(src.get('percent_on_total_earning', 0))
+                r.percent_of_total_earning         = flt(src.get('percent_of_total_earning', 0))
                 if extra is not None: r.employer_contribution = extra
 
             for e in sd.get('earnings', []):       _append_row('earnings', e)

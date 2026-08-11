@@ -142,6 +142,12 @@ frappe.ui.form.on("Salary Details", {
     amount(frm, cdt, cdn) {
         const row = frappe.get_doc(cdt, cdn);
 
+        if (cint(row.percent_on_total_earning) && row.parentfield === "deductions") {
+            // Amount is derived from SSA gross × % — restore computed value
+            _apply_percent_of_total_earning_amounts(frm);
+            return;
+        }
+
         if (frm._locked_vda_row
             && row
             && row.name === frm._locked_vda_row
@@ -173,6 +179,15 @@ frappe.ui.form.on("Salary Details", {
         }
 
         setTimeout(() => calculate_salary(frm), 50);
+    },
+    form_render(frm, cdt, cdn) {
+        const row = locals[cdt][cdn];
+        if (!row || !cint(row.percent_on_total_earning)) return;
+        if (frm.doctype !== "Salary Structure Assignment" && frm.doctype !== "Salary Structure") return;
+        const grid = frm.fields_dict[row.parentfield] && frm.fields_dict[row.parentfield].grid;
+        if (!grid) return;
+        const grid_row = grid.grid_rows_by_docname[cdn];
+        if (grid_row) grid_row.toggle_editable("amount", false);
     },
     salary_details_remove(frm, cdt, cdn) {
         _calculate_excluding_row(frm, cdn);
@@ -1078,6 +1093,7 @@ function _sum_basic_da_excluding(frm, excluded_cdn) {
 
 function _do_calculate(frm, silent) {
     if (frm.doc.docstatus === 1) return;
+    _apply_percent_of_total_earning_amounts(frm);
     const gross       = flt(_sum_earnings(frm), 2);
     let emp_ded       = 0;
     let empr_cont     = 0;
@@ -1122,6 +1138,24 @@ function _sum_earnings(frm) {
     let t = 0;
     (frm.doc.earnings || []).forEach(r => { t += flt(r.amount); });
     return t;
+}
+
+function _apply_percent_of_total_earning_amounts(frm) {
+    const gross = flt(_sum_earnings(frm), 2);
+    let changed = false;
+    (frm.doc.deductions || []).forEach(row => {
+        if (!cint(row.percent_on_total_earning)) return;
+        const pct = flt(row.percent_of_total_earning);
+        const amount = flt(Math.max(gross, 0) * pct / 100, 2);
+        if (flt(row.amount) !== amount) {
+            row.amount = amount;
+            row.base_amount = amount;
+            changed = true;
+        }
+    });
+    if (changed) {
+        frm.refresh_field("deductions");
+    }
 }
 
 function _sum_basic_da(frm) {
