@@ -11,8 +11,9 @@ REPORTS = [
 ]
 
 # Parents first, then children (force also handles orphans).
+# Do NOT delete "Employee Loan" — the new loan register reuses that DocType name.
+# Deleting it after model sync leaves Salary Details.loan pointing at a missing DocType.
 DOCTYPES = [
-	"Employee Loan",
 	"Employee Advance",
 	"Employee Loan Advance",
 	"Employee Loan Schedule",
