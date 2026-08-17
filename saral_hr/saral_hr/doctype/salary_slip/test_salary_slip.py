@@ -262,3 +262,70 @@ class TestBulkEligibleLoanDues(FrappeTestCase):
 			self.assertIn(cl, {e.name for e in june_after.get("eligible") or []})
 		else:
 			self.assertNotIn(loan_msg, reasons_after)
+
+
+class TestBulkPrintPdf(FrappeTestCase):
+	def test_offline_print_html_drops_stylesheets_keeps_inline_css(self):
+		from saral_hr.utils.pdf import offline_print_html
+
+		html = (
+			"<html><head>"
+			'<link type="text/css" rel="stylesheet" href="https://hrms.example.com/assets/frappe/dist/css/print.bundle.css">'
+			"<style>.payslip-container { border: 1px solid #000; }</style>"
+			'</head><body><div class="payslip-container">Pay</div></body></html>'
+		)
+		out = offline_print_html(html)
+		self.assertNotIn("print.bundle.css", out)
+		self.assertNotIn("<link", out.lower())
+		self.assertIn(".payslip-container", out)
+		self.assertIn("Pay", out)
+
+	def test_salary_slip_pdf_strips_stylesheets_before_wkhtmltopdf(self):
+		from unittest.mock import patch
+
+		from saral_hr.saral_hr.doctype.salary_slip.salary_slip import _salary_slip_pdf
+
+		html = (
+			'<html><head><link rel="stylesheet" href="https://hrms.fabrixcel.com/assets/print.bundle.css">'
+			"<style>.payslip{}</style></head><body>slip</body></html>"
+		)
+		with patch("frappe.get_print", return_value=html), patch(
+			"saral_hr.saral_hr.doctype.salary_slip.salary_slip.get_pdf", return_value=b"%PDF-1.4"
+		) as get_pdf:
+			_salary_slip_pdf("SS-1")
+
+		passed_html = get_pdf.call_args[0][0]
+		self.assertNotIn("print.bundle.css", passed_html)
+		self.assertNotIn("<link", passed_html.lower())
+		self.assertIn(".payslip", passed_html)
+
+	def test_download_pdf_override_is_hooked(self):
+		self.assertEqual(
+			frappe.override_whitelisted_method("frappe.utils.print_format.download_pdf"),
+			"saral_hr.utils.pdf.download_pdf",
+		)
+
+	def test_form_download_pdf_strips_stylesheets_before_wkhtmltopdf(self):
+		from unittest.mock import MagicMock, patch
+
+		from saral_hr.utils.pdf import download_pdf
+
+		html = (
+			'<html><head><link rel="stylesheet" href="https://hrms.fabrixcel.com/assets/print.bundle.css">'
+			"<style>.payslip{}</style></head><body>slip</body></html>"
+		)
+		with (
+			patch("frappe.get_doc", return_value=MagicMock()),
+			patch("saral_hr.utils.pdf.validate_print_permission"),
+			patch("frappe.get_print", return_value=html),
+			patch("saral_hr.utils.pdf.get_pdf", return_value=b"%PDF-1.4") as get_pdf,
+		):
+			download_pdf("Salary Slip", "SS-1", format="Salary Slip Custom")
+
+		passed_html = get_pdf.call_args[0][0]
+		self.assertNotIn("print.bundle.css", passed_html)
+		self.assertNotIn("<link", passed_html.lower())
+		self.assertIn(".payslip", passed_html)
+		self.assertEqual(frappe.local.response.type, "pdf")
+		self.assertEqual(frappe.local.response.filecontent, b"%PDF-1.4")
+		self.assertEqual(frappe.local.response.filename, "SS-1.pdf")

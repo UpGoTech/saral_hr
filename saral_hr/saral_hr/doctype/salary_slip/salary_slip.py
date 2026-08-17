@@ -1,12 +1,15 @@
 import frappe
 from frappe.model.document import Document
 from frappe.utils import getdate, get_last_day, flt
+from frappe.utils.pdf import get_pdf
 import calendar
 from datetime import timedelta, date as date_type
 import json
 from decimal import Decimal, ROUND_HALF_UP
 from PyPDF2 import PdfMerger
 import os
+
+from saral_hr.utils.pdf import WKHTMLTOPDF_PDF_OPTIONS, offline_print_html
 
 BULK_PRINT_FORMAT = "Salary Slip Custom"
 
@@ -1612,6 +1615,16 @@ def bulk_submit_salary_slips(salary_slip_names):
     return {"success": success_count, "failed": failed_count, "errors": errors}
 
 
+def _salary_slip_pdf(name):
+    html = frappe.get_print(
+        doctype="Salary Slip",
+        name=name,
+        print_format=BULK_PRINT_FORMAT,
+        no_letterhead=1,
+    )
+    return get_pdf(offline_print_html(html), options=WKHTMLTOPDF_PDF_OPTIONS)
+
+
 @frappe.whitelist()
 def bulk_print_salary_slips(salary_slip_names):
     if isinstance(salary_slip_names, str): salary_slip_names = json.loads(salary_slip_names)
@@ -1621,7 +1634,7 @@ def bulk_print_salary_slips(salary_slip_names):
     tag = hashlib.md5(f"{frappe.session.user}_{frappe.utils.now_datetime()}".encode()).hexdigest()[:8]
     try:
         for name in salary_slip_names:
-            pdf = frappe.get_print(doctype="Salary Slip", name=name, print_format=BULK_PRINT_FORMAT, as_pdf=True, letterhead=None, pdf_options={"load-error-handling": "ignore", "load-media-error-handling": "ignore"})
+            pdf = _salary_slip_pdf(name)
             tf = frappe.utils.get_files_path(f"temp_slip_{tag}_{name}.pdf", is_private=1)
             temp_files.append(tf)
             with open(tf, "wb") as f: f.write(pdf)

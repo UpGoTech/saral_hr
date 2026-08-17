@@ -256,11 +256,10 @@ after_uninstall = "saral_hr.uninstall.after_uninstall"
 
 # Overriding Methods
 # ------------------------------
-#
-# override_whitelisted_methods = {
-# 	"frappe.desk.doctype.event.event.get_events": "saral_hr.event.get_events"
-# }
-#
+override_whitelisted_methods = {
+	"frappe.utils.print_format.download_pdf": "saral_hr.utils.pdf.download_pdf",
+}
+
 # each overriding function accepts a `data` argument;
 # generated from the base implementation of the doctype dashboard,
 # along with any modifications made in other Frappe apps
