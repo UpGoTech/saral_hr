@@ -360,11 +360,16 @@ function init_generate_loan_dues($main) {
 	}
 
 	function collect() {
-		$main.find(".gld-amount").each(function () {
+		// Table + cards both render inputs; only read the visible set or the
+		// hidden copy overwrites desktop edits (e.g. amount 0 → old EMI).
+		const $src = $main.find(".gld-cards").is(":visible")
+			? $main.find(".gld-cards")
+			: $main.find(".gld-table-wrap");
+		$src.find(".gld-amount").each(function () {
 			const idx = cint($(this).attr("data-idx"));
 			if (state.rows[idx]) state.rows[idx].amount = flt($(this).val());
 		});
-		$main.find(".gld-remarks").each(function () {
+		$src.find(".gld-remarks").each(function () {
 			const idx = cint($(this).attr("data-idx"));
 			if (state.rows[idx]) state.rows[idx].remarks = $(this).val();
 		});
