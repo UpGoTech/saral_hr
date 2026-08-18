@@ -300,7 +300,7 @@ function dc_shell_html() {
 					</div>
 					<div class="dc-fg dc-fg-period dc-period-field">
 						<div class="dc-fg-label dc-period-label">${__("From Year")}</div>
-						<input type="number" class="form-control dc-from-year" min="1950" max="2099">
+						<input type="number" class="form-control dc-from-year" min="${saral_hr.period_picker.PERIOD_YEAR_MIN}" max="${saral_hr.period_picker.get_period_year_max()}">
 					</div>
 					<div class="dc-fg dc-fg-period dc-period-field">
 						<div class="dc-fg-label dc-period-label">${__("From Month")}</div>
@@ -308,7 +308,7 @@ function dc_shell_html() {
 					</div>
 					<div class="dc-fg dc-fg-period dc-period-field">
 						<div class="dc-fg-label dc-period-label">${__("To Year")}</div>
-						<input type="number" class="form-control dc-to-year" min="1950" max="2099">
+						<input type="number" class="form-control dc-to-year" min="${saral_hr.period_picker.PERIOD_YEAR_MIN}" max="${saral_hr.period_picker.get_period_year_max()}">
 					</div>
 					<div class="dc-fg dc-fg-period dc-period-field">
 						<div class="dc-fg-label dc-period-label">${__("To Month")}</div>

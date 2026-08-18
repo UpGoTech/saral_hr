@@ -23,19 +23,19 @@ frappe.pages["mark-attendance"].on_page_show = function (wrapper) {
     init_mark_attendance($main);
 };
 
-var MA_YEAR_MIN = 1950;
-var MA_YEAR_MAX = 2099;
-
 function get_default_year() {
     return new Date().getFullYear();
 }
 
 function clamp_year(value) {
-    var year = parseInt(value, 10);
-    if (isNaN(year)) return get_default_year();
-    if (year < MA_YEAR_MIN) return MA_YEAR_MIN;
-    if (year > MA_YEAR_MAX) return MA_YEAR_MAX;
-    return year;
+    return saral_hr.period_picker.clamp_period_year(value);
+}
+
+function get_ma_year_select_html() {
+    return saral_hr.period_picker.get_period_year_options(false).map(function (y) {
+        var sel = parseInt(y, 10) === get_default_year() ? " selected" : "";
+        return '<option value="' + y + '"' + sel + ">" + y + "</option>";
+    }).join("");
 }
 
 function get_ma_html() {
@@ -71,8 +71,7 @@ function get_ma_html() {
             <div class="ma-row2">
                 <div class="ma-r2-year">
                     <label class="ma-label">Year</label>
-                    <input type="number" id="ma_year" class="ma-input" min="${MA_YEAR_MIN}" max="${MA_YEAR_MAX}"
-                        step="1" value="${get_default_year()}" placeholder="YYYY" />
+                    <select id="ma_year" class="ma-input">${get_ma_year_select_html()}</select>
                 </div>
                 <div class="ma-r2-month">
                     <label class="ma-label">Month</label>
@@ -2116,7 +2115,11 @@ function init_mark_attendance($main) {
         loadYearAttendance();
     }
     function closeCalendarModal() { document.getElementById("ma_cal_modal").classList.remove("show"); }
-    function changeYear(dir) { currentCalendarYear += dir; document.getElementById("ma_cal_year").textContent = currentCalendarYear; loadYearAttendance(); }
+    function changeYear(dir) {
+        currentCalendarYear = saral_hr.period_picker.clamp_period_year(currentCalendarYear + dir);
+        document.getElementById("ma_cal_year").textContent = currentCalendarYear;
+        loadYearAttendance();
+    }
     function loadYearAttendance() {
         var employee = employeeSel.value, company = employeeCompanyMap[employee];
         if (!employee) return;

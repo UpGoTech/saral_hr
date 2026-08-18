@@ -14,7 +14,7 @@
  "fields": [
   {
    "fieldname": "year",
-   "fieldtype": "Int",
+   "fieldtype": "Select",
    "in_list_view": 1,
    "label": "Year",
    "non_negative": 1,

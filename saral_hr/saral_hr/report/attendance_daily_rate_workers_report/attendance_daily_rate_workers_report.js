@@ -14,7 +14,7 @@ frappe.query_reports["Attendance Daily Rate Workers Report"] = {
 			"fieldname": "year",
 			"label": __("Year"),
 			"fieldtype": "Select",
-			"options": get_year_options(),
+			"options": saral_hr.period_picker.get_period_year_options_newline(),
 			"default": new Date().getFullYear().toString(),
 			"reqd": 1
 		},
@@ -87,12 +87,3 @@ frappe.query_reports["Attendance Daily Rate Workers Report"] = {
 		}, "printer");
 	},
 };
-
-function get_year_options() {
-	var cur = new Date().getFullYear();
-	var opts = [];
-	for (var y = cur - 2; y <= cur + 1; y++) {
-		opts.push(y.toString());
-	}
-	return opts.join("\n");
-}

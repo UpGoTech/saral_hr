@@ -480,16 +480,18 @@ frappe.pages["attendance-dashboard"].on_page_load = function (wrapper) {
 			const $yrGrp=$(`<div class="ap-yr-grp"></div>`);
 			const $next=$(`<button class="ap-nav-btn">›</button>`);
 			buildYrPills($yrGrp);
-			$prev.on("click",()=>{ state.year=String(parseInt(state.year)-1); buildYrPills($yrGrp); if(state.company) autoLoad(); });
-			$next.on("click",()=>{ state.year=String(parseInt(state.year)+1); buildYrPills($yrGrp); if(state.company) autoLoad(); });
+			$prev.on("click",()=>{ state.year=String(saral_hr.period_picker.clamp_period_year(parseInt(state.year, 10) - 1)); buildYrPills($yrGrp); if(state.company) autoLoad(); });
+			$next.on("click",()=>{ state.year=String(saral_hr.period_picker.clamp_period_year(parseInt(state.year, 10) + 1)); buildYrPills($yrGrp); if(state.company) autoLoad(); });
 			$pf.append($prev,$yrGrp,$next);
 		}
 	}
 
 	function buildYrPills($grp){
 		$grp.empty();
-		const cur=parseInt(state.year);
-		[cur-1,cur,cur+1].forEach(y=>{
+		const cur = parseInt(state.year, 10);
+		const min = saral_hr.period_picker.PERIOD_YEAR_MIN;
+		const max = saral_hr.period_picker.get_period_year_max();
+		[cur - 1, cur, cur + 1].filter((y) => y >= min && y <= max).forEach((y) => {
 			const $p=$(`<span class="ap-yr-pill ${String(y)===state.year?"active":""}">${y}</span>`);
 			$p.on("click",()=>{ state.year=String(y); buildYrPills($grp); if(state.company) autoLoad(); });
 			$grp.append($p);
@@ -499,8 +501,11 @@ frappe.pages["attendance-dashboard"].on_page_load = function (wrapper) {
 	function shiftDate(d){ const dt=new Date(state.date); dt.setDate(dt.getDate()+d); state.date=dt.toISOString().split("T")[0]; }
 	function shiftMonth(d){
 		let mi=MONTHS.indexOf(state.month)+d;
-		if(mi<0){ mi=11; state.year=String(parseInt(state.year)-1); }
-		if(mi>11){ mi=0;  state.year=String(parseInt(state.year)+1); }
+		let year = parseInt(state.year, 10);
+		if(mi<0){ mi=11; year -= 1; }
+		if(mi>11){ mi=0; year += 1; }
+		year = saral_hr.period_picker.clamp_period_year(year);
+		state.year = String(year);
 		state.month=MONTHS[mi];
 	}
 

@@ -1,10 +1,5 @@
 // ─── Additional Deductions Form ───────────────────────────────────────────────
 
-const AD_YEAR_OPTIONS = (() => {
-    const y = new Date().getFullYear();
-    return [y - 2, y - 1, y, y + 1].map(String);
-})();
-
 const AD_MONTHS = [
     'January','February','March','April','May','June',
     'July','August','September','October','November','December'
@@ -13,11 +8,8 @@ const AD_MONTHS = [
 frappe.ui.form.on('Additional Deductions', {
 
     onload(frm) {
-        const year_field = frm.fields_dict['year'];
-        if (year_field) {
-            year_field.df.options = AD_YEAR_OPTIONS.join('\n');
-            year_field.refresh();
-        }
+        saral_hr.period_picker.apply_form_year_select(frm);
+        saral_hr.period_picker.reset_year_if_invalid(frm);
         if (frm.is_new()) {
             frm.set_value('year',     String(new Date().getFullYear()));
             frm.set_value('month',    AD_MONTHS[new Date().getMonth()]);
