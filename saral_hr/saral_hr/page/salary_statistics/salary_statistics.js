@@ -568,7 +568,9 @@ frappe.pages["salary-statistics"].on_page_load = function (wrapper) {
 		// Year
 		const $yw = $(`<div class="ss-filter-item"><span class="ss-filter-label">Year</span></div>`).appendTo($fr);
 		const $yr = $(`<select class="ss-select"></select>`).appendTo($yw);
-		for (let y = 2022; y <= 2030; y++) $yr.append(`<option ${String(y) === state.year ? "selected":""}>${y}</option>`);
+		saral_hr.period_picker.get_period_year_options(false).forEach((y) => {
+			$yr.append(`<option value="${y}" ${String(y) === state.year ? "selected" : ""}>${y}</option>`);
+		});
 		$yr.on("change", () => { state.year = $yr.val(); });
 
 		// Month
@@ -830,8 +832,7 @@ frappe.pages["salary-statistics"].on_page_load = function (wrapper) {
 		let monthlyNetCache = {};
 
 		function shiftYear(delta) {
-			const ny = parseInt(state.year) + delta;
-			if (ny < 2022 || ny > 2030) return;
+			const ny = saral_hr.period_picker.clamp_period_year(parseInt(state.year, 10) + delta);
 			state.year = String(ny);
 			$ys.find(".ss-year-val").text(state.year);
 			loadYearData(true);

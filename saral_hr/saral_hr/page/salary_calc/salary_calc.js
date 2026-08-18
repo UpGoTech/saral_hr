@@ -289,8 +289,8 @@ function render_calc($main) {
         return Math.max(0, cal - weekly);
     }
 
-    var year_opts = [cur_year - 1, cur_year, cur_year + 1].map(function(y) {
-        return '<option value="' + y + '"' + (y === cur_year ? ' selected' : '') + '>' + y + '</option>';
+    var year_opts = saral_hr.period_picker.get_period_year_options(false).map(function(y) {
+        return '<option value="' + y + '"' + (parseInt(y, 10) === cur_year ? ' selected' : '') + '>' + y + '</option>';
     }).join('');
 
     var month_opts = MONTHS.map(function(m, i) {
@@ -327,12 +327,12 @@ function render_calc($main) {
                         <div class="sc-section-title">Pay period</div>
                         <div class="sc-row-2">
                             <div class="sc-field">
-                                <span class="sc-label">Month</span>
-                                <select class="sc-select" id="sc-month">${month_opts}</select>
-                            </div>
-                            <div class="sc-field">
                                 <span class="sc-label">Year</span>
                                 <select class="sc-select" id="sc-year">${year_opts}</select>
+                            </div>
+                            <div class="sc-field">
+                                <span class="sc-label">Month</span>
+                                <select class="sc-select" id="sc-month">${month_opts}</select>
                             </div>
                         </div>
                         <div class="sc-info-chips" id="sc-period-info"></div>

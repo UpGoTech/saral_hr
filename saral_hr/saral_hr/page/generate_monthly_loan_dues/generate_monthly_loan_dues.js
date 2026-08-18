@@ -177,9 +177,8 @@ function inject_gld_styles() {
 }
 
 function gld_shell_html() {
-	const years = [];
+	const years = saral_hr.period_picker.get_period_year_options(false);
 	const cy = new Date().getFullYear();
-	for (let y = cy - 3; y <= cy + 2; y++) years.push(String(y));
 	const months = [
 		"January","February","March","April","May","June",
 		"July","August","September","October","November","December"
@@ -194,15 +193,15 @@ function gld_shell_html() {
 					<div class="gld-link-wrap"><div class="gld-company"></div></div>
 				</div>
 				<div class="gld-fg gld-fg-period">
-					<div class="gld-fg-label">${__("Month")}</div>
-					<select class="form-control gld-month">
-						${months.map((m,i)=>`<option value="${m}" ${i===now.getMonth()?"selected":""}>${__(m)}</option>`).join("")}
-					</select>
-				</div>
-				<div class="gld-fg gld-fg-period">
 					<div class="gld-fg-label">${__("Year")}</div>
 					<select class="form-control gld-year">
 						${years.map(y=>`<option value="${y}" ${y===String(cy)?"selected":""}>${y}</option>`).join("")}
+					</select>
+				</div>
+				<div class="gld-fg gld-fg-period">
+					<div class="gld-fg-label">${__("Month")}</div>
+					<select class="form-control gld-month">
+						${months.map((m,i)=>`<option value="${m}" ${i===now.getMonth()?"selected":""}>${__(m)}</option>`).join("")}
 					</select>
 				</div>
 				<div class="gld-fg gld-fg-employee">

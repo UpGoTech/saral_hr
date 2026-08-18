@@ -9,15 +9,11 @@ frappe.query_reports["Payroll Report"] = {
         },
         {
             fieldname: "year",
-            label:     __("Year"),
+            label: __("Year"),
             fieldtype: "Select",
-            reqd:      1,
-            default:   String(new Date().getFullYear()),
-            options:   (function () {
-                const y = new Date().getFullYear(), opts = [""];
-                for (let i = y - 2; i <= y + 2; i++) opts.push(String(i));
-                return opts;
-            })(),
+            reqd: 1,
+            default: String(new Date().getFullYear()),
+            options: saral_hr.period_picker.get_period_year_options(),
         },
         {
             fieldname: "month",

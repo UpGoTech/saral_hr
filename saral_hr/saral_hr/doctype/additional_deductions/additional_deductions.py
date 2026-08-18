@@ -12,8 +12,15 @@ from saral_hr.saral_hr.doctype.additional_salary.additional_salary import (
 
 class AdditionalDeductions(Document):
 	def validate(self):
+		self._validate_period_year()
 		self._validate_components()
 		self._recalculate_total()
+
+	def _validate_period_year(self):
+		from saral_hr.utils.period import validate_period_year
+
+		if self.year:
+			validate_period_year(self.year)
 
 	def _validate_components(self):
 		for row in self.deductions or []:

@@ -13,34 +13,15 @@ frappe.listview_settings['Salary Slip'] = {
 const MONTHS = ['January','February','March','April','May','June',
                 'July','August','September','October','November','December'];
 
-const SS_YEAR_MIN = 1950;
-const SS_YEAR_MAX = 2099;
-
 function get_current_month() { return MONTHS[new Date().getMonth()]; }
 function get_current_year()  { return new Date().getFullYear(); }
 
 function clamp_year(value) {
-    let year = parseInt(value, 10);
-    if (isNaN(year)) return get_current_year();
-    if (year < SS_YEAR_MIN) return SS_YEAR_MIN;
-    if (year > SS_YEAR_MAX) return SS_YEAR_MAX;
-    return year;
-}
-
-function bind_year_clamp(dialog) {
-    const field = dialog.fields_dict.year;
-    if (!field || !field.$input) return;
-    field.$input.attr({ min: SS_YEAR_MIN, max: SS_YEAR_MAX, step: 1 });
-    field.$input.on('change blur', () => {
-        const clamped = clamp_year(dialog.get_value('year'));
-        if (parseInt(dialog.get_value('year'), 10) !== clamped) {
-            dialog.set_value('year', clamped);
-        }
-    });
+    return saral_hr.period_picker.clamp_period_year(value);
 }
 
 function year_field() {
-    return { fieldname:'year', fieldtype:'Int', label:'Year', reqd:1, default:get_current_year() };
+    return saral_hr.period_picker.year_select_field();
 }
 
 // ─── Shared icon helpers ──────────────────────────────────────────────────────
@@ -383,11 +364,11 @@ function show_bulk_salary_slip_dialog() {
         title: __('Bulk Generate Salary Slips'),
         size:  'large',
         fields: [
-            year_field(),
-            { fieldname:'cb1',        fieldtype:'Column Break' },
-            { fieldname:'month',      fieldtype:'Select', label:'Month',   options:MONTHS, reqd:1, default:get_current_month() },
-            { fieldname:'cb2',        fieldtype:'Column Break' },
             { fieldname:'company',    fieldtype:'Link',   label:'Company', options:'Company', reqd:1 },
+            { fieldname:'cb1',        fieldtype:'Column Break' },
+            year_field(),
+            { fieldname:'cb2',        fieldtype:'Column Break' },
+            { fieldname:'month',      fieldtype:'Select', label:'Month',   options:MONTHS, reqd:1, default:get_current_month() },
             { fieldname:'sb_filters', fieldtype:'Section Break', label:'Optional Filters' },
             { fieldname:'category',   fieldtype:'Link',   label:'Category', options:'Category',
               description:'Leave blank to include all categories.' },
@@ -404,7 +385,6 @@ function show_bulk_salary_slip_dialog() {
         primary_action: () => generate_bulk_salary_slips(d)
     });
     d.show();
-    bind_year_clamp(d);
 }
 
 function fetch_generate_employees(dialog) {
@@ -524,11 +504,11 @@ function show_bulk_print_dialog() {
         title: __('Bulk Print Salary Slips'),
         size:  'large',
         fields: [
-            year_field(),
-            { fieldname:'cb1',        fieldtype:'Column Break' },
-            { fieldname:'month',      fieldtype:'Select', label:'Month',   options:MONTHS, reqd:1, default:get_current_month() },
-            { fieldname:'cb2',        fieldtype:'Column Break' },
             { fieldname:'company',    fieldtype:'Link',   label:'Company', options:'Company', reqd:1 },
+            { fieldname:'cb1',        fieldtype:'Column Break' },
+            year_field(),
+            { fieldname:'cb2',        fieldtype:'Column Break' },
+            { fieldname:'month',      fieldtype:'Select', label:'Month',   options:MONTHS, reqd:1, default:get_current_month() },
             { fieldname:'sb_filters', fieldtype:'Section Break', label:'Optional Filters' },
             { fieldname:'category',   fieldtype:'Link',   label:'Category', options:'Category',
               description:'Leave blank to include all categories.' },
@@ -545,7 +525,6 @@ function show_bulk_print_dialog() {
         primary_action: () => print_selected_salary_slips(d)
     });
     d.show();
-    bind_year_clamp(d);
 }
 
 function fetch_print_slips(dialog) {
@@ -672,11 +651,11 @@ function show_draft_to_submit_dialog() {
     const d = new frappe.ui.Dialog({
         title: __('Submit Draft Salary Slips'),
         fields: [
-            year_field(),
-            { fieldname:'cb1',          fieldtype:'Column Break' },
-            { fieldname:'month',        fieldtype:'Select', label:'Month',   options:MONTHS, reqd:1, default:get_current_month() },
-            { fieldname:'cb2',          fieldtype:'Column Break' },
             { fieldname:'company',      fieldtype:'Link',   label:'Company', options:'Company', reqd:1 },
+            { fieldname:'cb1',          fieldtype:'Column Break' },
+            year_field(),
+            { fieldname:'cb2',          fieldtype:'Column Break' },
+            { fieldname:'month',        fieldtype:'Select', label:'Month',   options:MONTHS, reqd:1, default:get_current_month() },
             { fieldname:'sb1',          fieldtype:'Section Break' },
             { fieldname:'fetch_drafts', fieldtype:'Button', label:'Fetch Draft Salary Slips',
               click: () => fetch_draft_salary_slips(d) },
@@ -687,7 +666,6 @@ function show_draft_to_submit_dialog() {
         primary_action: () => submit_selected_salary_slips(d)
     });
     d.show();
-    bind_year_clamp(d);
 }
 
 function fetch_draft_salary_slips(dialog) {
