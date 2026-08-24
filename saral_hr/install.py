@@ -11,6 +11,14 @@ def after_migrate():
     ensure_desk_home_consistent()
 
 
+def _is_setup_complete():
+    """True when site setup is done. Works on Frappe with or without is_setup_complete()."""
+    checker = getattr(frappe, "is_setup_complete", None)
+    if callable(checker):
+        return checker()
+    return int(frappe.db.get_single_value("System Settings", "setup_complete") or 0)
+
+
 def ensure_desk_home_consistent():
     """Avoid Setup Wizard ↔ /app redirect loop after install.
 
@@ -18,7 +26,7 @@ def ensure_desk_home_consistent():
     while `desktop:home_page` is still `setup-wizard`. Desk then loads the
     wizard, which redirects to `/app`, which loads the wizard again.
     """
-    if not frappe.is_setup_complete():
+    if not _is_setup_complete():
         return
 
     changed = False
