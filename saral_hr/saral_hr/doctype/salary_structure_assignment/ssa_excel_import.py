@@ -4,17 +4,22 @@
 """Import Salary Structure Assignments from Excel.
 
 Same as the form: pick Salary Structure in the dialog; Excel only needs
-employee name (or id), from/to dates, and component amounts.
+employee Name, from/to dates, and component amounts (no Employee ID).
 
 Company, employee name, designation, branch, department, category and
 skill type are fetched from Company Link — not from Excel.
 
 Non-statutory amounts come from Excel columns (exact Salary Component names).
 
-If PF / ESIC / PT / LWF columns are in the sheet, those checkboxes turn ON
-and both employee + employer shares are filled by existing
-get_statutory_components (Company config). Excel numbers for those columns
-are ignored.
+PF / ESIC / PT / LWF cells are flags, not the SSA amount: 0 or blank = off;
+1 or any amount = on. Shares still come from get_statutory_components
+(Company config). When PF is on, the PF Type column (Limited PF / Full PF)
+sets the type.
+
+Worker (category has_subtype): Basic and V-DA come from Skill Rate Revision
+for from_date + skill_type; Excel values there are ignored. Daily-wage
+columns are per-day × SRR daily_wage_multiplier (default 26). No covering
+SRR → that row errors, same as the form.
 """
 
 from __future__ import annotations
@@ -40,6 +45,8 @@ from saral_hr.saral_hr.doctype.salary_structure_assignment.salary_structure_assi
 	SC_EMPR_PF,
 	SC_EMPR_PFADM,
 	SC_PT,
+	get_daily_wage_multiplier,
+	get_srr_for_ssa,
 	get_statutory_components,
 )
 
@@ -141,8 +148,39 @@ def _link_for_employee(employee, company=None):
 	return frappe.db.get_value("Company Link", filters, "name")
 
 
+def _matches_by_name(label, company=None):
+	"""Match Excel name to Company Link. Extra spaces and case are ignored."""
+	key = _norm_key(label)
+	if not key:
+		return []
+	filters = {"is_active": 1}
+	if company:
+		filters["company"] = company
+	candidates = frappe.db.get_all(
+		"Company Link",
+		filters=filters,
+		fields=["name", "full_name", "employee"],
+	)
+	emp_ids = [c.employee for c in candidates if c.employee]
+	emp_full = {}
+	if emp_ids:
+		for row in frappe.db.get_all(
+			"Employee",
+			filters={"name": ["in", emp_ids]},
+			fields=["name", "employee"],
+		):
+			emp_full[row.name] = row.employee
+	matched = []
+	for c in candidates:
+		if _norm_key(c.full_name) == key:
+			matched.append(c.name)
+		elif _norm_key(emp_full.get(c.employee)) == key:
+			matched.append(c.name)
+	return list(dict.fromkeys(matched))
+
+
 def _resolve_company_link(employee_id, employee_name, company=None):
-	"""Resolve Excel name/id to Company Link, same record the SSA form uses."""
+	"""Resolve Excel Name (ID optional) to Company Link used on the SSA form."""
 	eid = _norm(employee_id)
 	ename = _norm(employee_name)
 
@@ -163,47 +201,17 @@ def _resolve_company_link(employee_id, employee_name, company=None):
 
 	label = ename or eid
 	if not label:
-		return None, _("employee not found")
+		return None, _("Name is required")
 
 	found = _by_docname(label)
 	if found:
 		return found, None
 
-	params = {"n": label.lower()}
-	company_sql = ""
-	if company:
-		company_sql = " and company = %(c)s"
-		params["c"] = company
-	matches = [
-		r[0]
-		for r in frappe.db.sql(
-			f"""
-			select name from `tabCompany Link`
-			where is_active = 1 and lower(trim(full_name)) = %(n)s
-			{company_sql}
-			""",
-			params,
-		)
-	]
+	matches = _matches_by_name(label, company)
 	if len(matches) == 1:
 		return matches[0], None
 	if len(matches) > 1:
 		return None, _("name matches more than one employee")
-
-	emps = [
-		r[0]
-		for r in frappe.db.sql(
-			"select name from `tabEmployee` where lower(trim(employee)) = %s",
-			label.lower(),
-		)
-	]
-	if len(emps) == 1:
-		link = _link_for_employee(emps[0], company)
-		if link:
-			return link, None
-	if len(emps) > 1:
-		return None, _("name matches more than one employee")
-
 	return None, _("employee not found")
 
 
@@ -274,8 +282,103 @@ def _find_row(tables, component_name):
 	return None
 
 
-def statutory_flags_from_columns(component_names, pf_type=None):
-	"""Turn SSA checkboxes on when those statutory columns exist in the sheet."""
+def _flag_yes(value):
+	"""0 / no / blank = off. 1 / yes or any other amount = on."""
+	if value is None:
+		return False
+	if isinstance(value, str):
+		key = _norm_key(value)
+		if key in {"yes", "y", "true", "on"}:
+			return True
+		if key in {"no", "n", "false", "off"}:
+			return False
+	return bool(flt(value))
+
+
+def _norm_pf_type(value):
+	key = _norm_key(value)
+	if key in {"limited pf", "limited"}:
+		return "Limited PF"
+	if key in {"full pf", "full"}:
+		return "Full PF"
+	return _norm(value)
+
+
+def _group_flag_on(components, group_names):
+	keys = {_norm_key(n) for n in group_names}
+	for name, val in (components or {}).items():
+		if _norm_key(name) in keys and _flag_yes(val):
+			return True
+	return False
+
+
+def _row_is_basic(row):
+	comp = _norm_key(row.get("salary_component"))
+	abbr = _norm_key(row.get("abbr"))
+	return "basic" in comp or abbr == "basic"
+
+
+def _row_is_vda(row):
+	comp = _norm_key(row.get("salary_component"))
+	abbr = _norm_key(row.get("abbr"))
+	return "dearness" in comp or abbr in {"v-da", "vda"}
+
+
+def _row_is_daily_wage(row):
+	if int(row.get("daily_wage_component") or 0):
+		return True
+	name = row.get("salary_component")
+	if not name:
+		return False
+	return int(frappe.db.get_value("Salary Component", name, "daily_wage_component") or 0)
+
+
+def apply_srr_and_daily_wage(earnings, deductions, employer_share, srr, multiplier):
+	"""Form path: SRR fills Basic/V-DA; daily-wage Excel cells are per-day × multiplier."""
+	if srr:
+		vbasic = flt(srr.get("vbasic"), 2)
+		vda = flt(srr.get("vda"), 2)
+		for row in earnings:
+			if _row_is_basic(row):
+				row["amount"] = vbasic
+				row["base_amount"] = vbasic
+			if _row_is_vda(row):
+				row["amount"] = vda
+				row["base_amount"] = vda
+	mult = flt(multiplier) or 26
+	for table in (earnings, deductions, employer_share):
+		for row in table:
+			if not _row_is_daily_wage(row):
+				continue
+			per_day = flt(row.get("amount"))
+			monthly = flt(per_day * mult, 2)
+			row["per_day_rate"] = per_day
+			row["amount"] = monthly
+			row["base_amount"] = monthly
+
+
+def _apply_worker_rates(earnings, deductions, employer_share, fetched, from_date):
+	"""Staff: no-op. Worker: SRR + daily wage, or an error string."""
+	category = fetched.get("category")
+	if not category or not int(frappe.db.get_value("Category", category, "has_subtype") or 0):
+		return None
+	skill_type = fetched.get("skill_type")
+	if not skill_type:
+		return _("skill type is required for category {0}").format(category)
+	srr = get_srr_for_ssa(from_date, skill_type)
+	if not srr:
+		return _(
+			"Skill Rate Revision Not Found covering {0} for {1} ({2}, {3})"
+		).format(from_date, fetched.get("employee_name") or "", category, skill_type)
+	dw = get_daily_wage_multiplier(from_date, skill_type) or {}
+	apply_srr_and_daily_wage(
+		earnings, deductions, employer_share, srr, dw.get("multiplier") or 26
+	)
+	return None
+
+
+def statutory_flags_from_row(components, pf_type=None):
+	"""Connect PF/ESIC/PT/LWF on-off (1, 0, or amount) with PF Type when PF is on."""
 	flags = {
 		"is_esic_applicable": 0,
 		"is_pf_applicable": 0,
@@ -283,15 +386,14 @@ def statutory_flags_from_columns(component_names, pf_type=None):
 		"is_pt_applicable": 0,
 		"is_lwf_applicable": 0,
 	}
-	names = {_norm_key(n) for n in (component_names or [])}
-	if names & {_norm_key(n) for n in ESIC_COMPONENTS}:
+	if _group_flag_on(components, ESIC_COMPONENTS):
 		flags["is_esic_applicable"] = 1
-	if names & {_norm_key(n) for n in PF_COMPONENTS}:
+	if _group_flag_on(components, PF_COMPONENTS):
 		flags["is_pf_applicable"] = 1
-		flags["pf_applicable"] = _norm(pf_type)
-	if names & {_norm_key(n) for n in PT_COMPONENTS}:
+		flags["pf_applicable"] = _norm_pf_type(pf_type)
+	if _group_flag_on(components, PT_COMPONENTS):
 		flags["is_pt_applicable"] = 1
-	if names & {_norm_key(n) for n in LWF_COMPONENTS}:
+	if _group_flag_on(components, LWF_COMPONENTS):
 		flags["is_lwf_applicable"] = 1
 	return flags
 
@@ -420,9 +522,11 @@ def import_from_rows(salary_structure, rows):
 		if not frappe.db.exists("Salary Component", name):
 			unknown_components.append(name)
 	if unknown_components:
-		warnings.append(
-			_("Skipped unknown component columns: {0}").format(", ".join(unknown_components))
-		)
+		for name in unknown_components:
+			errors.append(
+				_("{0} is not created as a Salary Component. Create it first.").format(name)
+			)
+		return {"created": [], "errors": errors, "warnings": warnings}
 
 	structure_keys = set()
 	for row in list(structure.earnings or []) + list(structure.deductions or []):
@@ -476,7 +580,7 @@ def import_from_rows(salary_structure, rows):
 			errors.append(_("Row {0}: from date and to date are required").format(i))
 			continue
 
-		flags = statutory_flags_from_columns(header_components, meta.get("pf_type"))
+		flags = statutory_flags_from_row(components, meta.get("pf_type"))
 		earnings, deductions, employer_share = _structure_tables(structure)
 
 		row_failed = False
@@ -494,6 +598,13 @@ def import_from_rows(salary_structure, rows):
 				row["amount"] = amount
 				row["base_amount"] = amount
 		if row_failed:
+			continue
+
+		worker_error = _apply_worker_rates(
+			earnings, deductions, employer_share, fetched, from_date
+		)
+		if worker_error:
+			errors.append(_("Row {0}: {1}").format(i, worker_error))
 			continue
 
 		_apply_percent_of_total_earning(earnings, deductions)

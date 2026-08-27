@@ -29,7 +29,7 @@ function show_ssa_import_dialog(listview) {
 				fieldname: "help",
 				fieldtype: "HTML",
 				options: `<p class="text-muted small">${__(
-					"Excel only needs Name (or Employee id), Start/From Date, End/To Date, and component amounts with exact names (Basic, HRA, …). Company and other employee details are fetched automatically. Select Salary Structure here — same as the form. If PF/ESIC/PT/LWF columns are present, those checkboxes turn on and both employee and employer shares are calculated from Company settings. Optional: PF Type (Limited PF / Full PF)."
+					"Excel only needs Name, Start/From Date, End/To Date, and component amounts with exact names (Basic, HRA, …). Employee ID is not required — company and other details are fetched from the name. Select Salary Structure here. For PF/ESIC/PT/LWF: 1 or any amount = on, 0 or blank = off. Excel figures are ignored; employee and employer shares come from Company settings. When PF is on, the PF Type column (Limited PF / Full PF) sets the type. For workers, Basic and V-DA come from Skill Rate Revision; daily-wage columns are per-day × the SRR multiplier."
 				)}</p>`,
 			},
 		],
@@ -65,7 +65,7 @@ function show_ssa_import_dialog(listview) {
 					}
 					frappe.msgprint({
 						title: __("SSA Import"),
-						indicator: errors.length && !created.length ? "red" : "green",
+						indicator: errors.length ? "red" : "green",
 						message: html,
 					});
 					listview.refresh();
