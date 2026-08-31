@@ -115,7 +115,8 @@ fixtures = [
             "Variable Pay",
             "Salary Slip Custom",
             "CTC Calculator Statement",
-            "SSA Print Format"
+            "SSA Print Format",
+            "Employee Print Format"
         ]]
     ]
 },
