@@ -25,13 +25,6 @@ function show_ssa_import_dialog(listview) {
 				label: __("Excel File"),
 				reqd: 1,
 			},
-			{
-				fieldname: "help",
-				fieldtype: "HTML",
-				options: `<p class="text-muted small">${__(
-					"Excel only needs Name, Start/From Date, End/To Date, and component amounts with exact names (Basic, HRA, …). Employee ID is not required — company and other details are fetched from the name. Select Salary Structure here. For PF/ESIC/PT/LWF: 1 or any amount = on, 0 or blank = off. Excel figures are ignored; employee and employer shares come from Company settings. When PF is on, the PF Type column (Limited PF / Full PF) sets the type. For workers, Basic and V-DA come from Skill Rate Revision; daily-wage columns are per-day × the SRR multiplier."
-				)}</p>`,
-			},
 		],
 		primary_action_label: __("Import"),
 		primary_action(values) {
