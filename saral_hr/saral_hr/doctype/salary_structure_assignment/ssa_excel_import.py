@@ -25,11 +25,14 @@ SRR → that row errors, same as the form.
 from __future__ import annotations
 
 from datetime import datetime
+import json
+import re
 
 import frappe
 from frappe import _
 from frappe.utils import flt, getdate
 from frappe.utils.xlsxutils import (
+	make_xlsx,
 	read_xls_file_from_attached_file,
 	read_xlsx_file_from_attached_file,
 )
@@ -67,6 +70,7 @@ SKIP_CHILD_KEYS = {
 META_ALIASES = {
 	"employee": {"employee", "employee id", "company link", "emp id", "emp"},
 	"employee_name": {"name", "employee name", "full name"},
+	"company": {"company"},
 	"from_date": {"from date", "from_date", "start date", "startdate", "period from"},
 	"to_date": {"to date", "to_date", "end date", "enddate", "period to"},
 	"pf_type": {"pf type", "pf_type", "pf applicable"},
@@ -127,6 +131,252 @@ def parse_header_map(header_row):
 	return mapping
 
 
+def _kind_from_map_value(target):
+	if not target or target in ("__skip__", "Don't Import"):
+		return None
+	if ":" in str(target):
+		typ, name = str(target).split(":", 1)
+		if typ in ("meta", "component") and name:
+			return (typ, name)
+	return None
+
+
+def apply_column_map(mapping, column_map):
+	"""Override auto-mapping with user picks from the Map Columns select."""
+	mapping = list(mapping or [])
+	if not column_map:
+		return mapping
+	if isinstance(column_map, str):
+		try:
+			column_map = json.loads(column_map)
+		except Exception:
+			column_map = {}
+	for key, target in (column_map or {}).items():
+		try:
+			idx = int(key)
+		except (TypeError, ValueError):
+			continue
+		if idx < 0 or idx >= len(mapping):
+			continue
+		kind = _kind_from_map_value(target)
+		if kind and kind[0] == "meta":
+			for i, existing in enumerate(mapping):
+				if existing and existing[0] == "meta" and existing[1] == kind[1]:
+					mapping[i] = None
+		mapping[idx] = kind
+	return mapping
+
+
+META_FIELD_LABELS = {
+	"employee": "Employee",
+	"employee_name": "Employee Name",
+	"company": "Company",
+	"from_date": "From Date",
+	"to_date": "To Date",
+	"pf_type": "PF Type",
+}
+
+
+def _excel_col_number(index):
+	"""1-based Excel column, matching Frappe Data Import (Sr. No is column 0)."""
+	return index + 1
+
+
+def _name_column_number(mapping):
+	for i, kind in enumerate(mapping or []):
+		if kind and kind[0] == "meta" and kind[1] in ("employee_name", "employee"):
+			return _excel_col_number(i)
+	return 1
+
+
+def _ssa_column_warnings(header, mapping, skip_unmapped, skip_not_on_structure):
+	"""Frappe Data Import shape: mapping / cannot-match / skipping."""
+	warnings = []
+	skip_unmapped = set(skip_unmapped or [])
+	skip_not_on_structure = set(skip_not_on_structure or [])
+	for i, raw in enumerate(header or []):
+		col = _excel_col_number(i)
+		kind = mapping[i] if i < len(mapping) else None
+		title = _norm(raw)
+		if not kind:
+			if not title:
+				warnings.append({"col": col, "message": _("Skipping Untitled Column")})
+			else:
+				warnings.append(
+					{
+						"col": col,
+						"message": _("Skipping Duplicate Column {0}").format(frappe.bold(title)),
+					}
+				)
+			continue
+		if kind[0] == "meta":
+			field_label = META_FIELD_LABELS.get(kind[1], kind[1])
+			warnings.append(
+				{
+					"message": _("Mapping column {0} to field {1}").format(
+						frappe.bold(title), frappe.bold(_(field_label))
+					)
+				}
+			)
+			continue
+		comp = kind[1]
+		if comp in skip_unmapped:
+			warnings.append(
+				{
+					"col": col,
+					"message": _("Cannot match column {0} with any field").format(frappe.bold(title)),
+				}
+			)
+		elif comp in skip_not_on_structure:
+			warnings.append(
+				{
+					"col": col,
+					"message": _("Skipping column {0}").format(frappe.bold(title)),
+				}
+			)
+		else:
+			warnings.append(
+				{
+					"message": _("Mapping column {0} to field {1}").format(
+						frappe.bold(title), frappe.bold(comp)
+					)
+				}
+			)
+	return warnings
+
+
+def _classify_ssa_header(salary_structure, header, column_map=None):
+	if not salary_structure or not frappe.db.exists("Salary Structure", salary_structure):
+		frappe.throw(_("Salary Structure {0} not found").format(salary_structure))
+	mapping = apply_column_map(parse_header_map(header), column_map)
+	header_components = [col[1] for col in mapping if col and col[0] == "component"]
+	structure = frappe.get_doc("Salary Structure", salary_structure)
+	unmapped = []
+	for name in header_components:
+		if not frappe.db.exists("Salary Component", name):
+			unmapped.append(name)
+	structure_keys = set()
+	for row in list(structure.earnings or []) + list(structure.deductions or []):
+		if row.salary_component:
+			structure_keys.add(_norm_key(row.salary_component))
+	not_on_structure = []
+	for name in header_components:
+		if name in unmapped or _is_statutory(name):
+			continue
+		if _norm_key(name) not in structure_keys:
+			not_on_structure.append(name)
+	return {
+		"mapping": mapping,
+		"unmapped": unmapped,
+		"not_on_structure": not_on_structure,
+		"structure_keys": structure_keys,
+		"company": structure.company,
+		"warnings": _ssa_column_warnings(header, mapping, unmapped, not_on_structure),
+	}
+
+
+def _preview_cell(value):
+	if value is None:
+		return ""
+	if isinstance(value, datetime):
+		return str(value.date())
+	return value
+
+
+def _preview_columns(header, mapping, structure_keys):
+	columns = []
+	for i, label in enumerate(header or []):
+		kind = mapping[i] if i < len(mapping) else None
+		shown = _norm(label)
+		if kind and kind[0] == "meta":
+			columns.append(
+				{
+					"label": shown,
+					"header_title": shown,
+					"mapped": True,
+					"maps_to": _(META_FIELD_LABELS.get(kind[1], kind[1])),
+					"value": f"meta:{kind[1]}",
+					"fieldname": kind[1],
+				}
+			)
+		elif kind and kind[0] == "component":
+			exists = bool(frappe.db.exists("Salary Component", kind[1]))
+			on_structure = _is_statutory(kind[1]) or _norm_key(kind[1]) in structure_keys
+			mapped = exists and on_structure
+			columns.append(
+				{
+					"label": shown,
+					"header_title": shown,
+					"mapped": mapped,
+					"maps_to": kind[1] if mapped else None,
+					"value": f"component:{kind[1]}" if mapped else "",
+					"fieldname": kind[1] if mapped else "",
+				}
+			)
+		else:
+			columns.append(
+				{
+					"label": shown,
+					"header_title": shown,
+					"mapped": False,
+					"maps_to": None,
+					"value": "",
+					"fieldname": "",
+				}
+			)
+	return columns
+
+
+def _missing_employee_warning(rows, mapping, company):
+	missing = []
+	cache = {}
+	for raw in (rows or [])[1:]:
+		if not raw or not any(_cell_has_value(c) for c in raw):
+			continue
+		meta, _components = _row_dict(mapping, raw)
+		cache_key = (_norm(meta.get("employee")), _norm(meta.get("employee_name")))
+		if cache_key not in cache:
+			cache[cache_key] = _resolve_company_link(
+				meta.get("employee"),
+				meta.get("employee_name"),
+				company=_row_company(meta, company),
+			)
+		link, err = cache[cache_key]
+		if link or err != _("employee not found"):
+			continue
+		label = cache_key[1] or cache_key[0]
+		if label and label not in missing:
+			missing.append(label)
+	if not missing:
+		return None
+	return {
+		"col": _name_column_number(mapping),
+		"message": _("The following values do not exist for {0}: {1}").format(
+			_("Employee"), ", ".join(missing)
+		),
+	}
+
+
+def build_ssa_excel_preview(salary_structure, rows, max_rows=10):
+	"""Mapping + sample rows for the Import dialog and Data Import log. Does not insert."""
+	header = rows[0] if rows else []
+	classified = _classify_ssa_header(salary_structure, header)
+	warnings = list(classified["warnings"])
+	missing = _missing_employee_warning(rows, classified["mapping"], classified["company"])
+	if missing:
+		warnings.append(missing)
+	body = []
+	for raw in (rows[1:max_rows + 1] if rows else []):
+		body.append([_preview_cell(c) for c in (raw or [])])
+	return {
+		"columns": _preview_columns(header, classified["mapping"], classified["structure_keys"]),
+		"rows": body,
+		"warnings": warnings,
+		"salary_structure": salary_structure,
+		"fields": get_ssa_import_fields(salary_structure),
+	}
+
+
 def _parse_date(value):
 	if not value:
 		return None
@@ -139,6 +389,23 @@ def _excel_amount(value):
 	if not _cell_has_value(value):
 		return None
 	return flt(value, 2)
+
+
+def _row_company(meta, structure_company):
+	return _norm((meta or {}).get("company")) or structure_company
+
+
+def _validate_row_company(meta, structure_company):
+	excel_company = _norm((meta or {}).get("company"))
+	if not excel_company:
+		return structure_company, None
+	if not frappe.db.exists("Company", excel_company):
+		return None, _("company {0} not found").format(excel_company)
+	if structure_company and excel_company != structure_company:
+		return None, _("Excel company {0} does not match Salary Structure company {1}").format(
+			excel_company, structure_company
+		)
+	return excel_company, None
 
 
 def _link_for_employee(employee, company=None):
@@ -271,6 +538,97 @@ def _structure_tables(structure):
 		else:
 			deductions.append(copied)
 	return earnings, deductions, employer_share
+
+
+STATUTORY_FLAG_COLUMNS = (SC_EMP_PF, SC_EMP_ESIC, SC_PT, SC_EMP_LWF)
+
+
+def _ssa_import_columns(salary_structure):
+	"""SSA meta + this structure's earnings/deductions + statutory flag columns.
+
+	PF / ESIC / PT / LWF live on the SSA form as checkboxes, not as Salary
+	Structure child rows, so those headers are always on the template.
+	"""
+	if not salary_structure or not frappe.db.exists("Salary Structure", salary_structure):
+		frappe.throw(_("Salary Structure {0} not found").format(salary_structure))
+	structure = frappe.get_doc("Salary Structure", salary_structure)
+	columns = [
+		{
+			"header": "Employee Name",
+			"value": "meta:employee_name",
+			"label": _("Employee Name"),
+			"fieldname": "employee_name",
+		},
+		{
+			"header": "Company",
+			"value": "meta:company",
+			"label": _("Company"),
+			"fieldname": "company",
+		},
+		{
+			"header": "From Date",
+			"value": "meta:from_date",
+			"label": _("From Date"),
+			"fieldname": "from_date",
+		},
+		{
+			"header": "To Date",
+			"value": "meta:to_date",
+			"label": _("To Date"),
+			"fieldname": "to_date",
+		},
+	]
+	seen = {_norm_key(c["header"]) for c in columns}
+	for table in (structure.earnings, structure.deductions):
+		for row in table or []:
+			name = row.salary_component
+			if not name or _is_statutory(name):
+				continue
+			if int(frappe.db.get_value("Salary Component", name, "is_additional_only") or 0):
+				continue
+			key = _norm_key(name)
+			if key in seen:
+				continue
+			columns.append(
+				{"header": name, "value": f"component:{name}", "label": name, "fieldname": name}
+			)
+			seen.add(key)
+	columns.append(
+		{
+			"header": "PF Type",
+			"value": "meta:pf_type",
+			"label": _("PF Type"),
+			"fieldname": "pf_type",
+		}
+	)
+	seen.add(_norm_key("PF Type"))
+	for flag in STATUTORY_FLAG_COLUMNS:
+		key = _norm_key(flag)
+		if key in seen:
+			continue
+		columns.append(
+			{"header": flag, "value": f"component:{flag}", "label": flag, "fieldname": flag}
+		)
+		seen.add(key)
+	return columns
+
+
+def get_ssa_import_template_headers(salary_structure):
+	"""Headers that parse_header_map already understands for this structure."""
+	return [col["header"] for col in _ssa_import_columns(salary_structure)]
+
+
+def get_ssa_import_fields(salary_structure):
+	"""Map Columns left side: only SSA fields for this Salary Structure."""
+	return [
+		{
+			"value": col["value"],
+			"label": col["label"],
+			"fieldname": col["fieldname"],
+			"header": col["header"],
+		}
+		for col in _ssa_import_columns(salary_structure)
+	]
 
 
 def _find_row(tables, component_name):
@@ -500,33 +858,35 @@ def _row_dict(mapping, row):
 	return meta, components
 
 
-def import_from_rows(salary_structure, rows):
+def import_from_rows(salary_structure, rows, column_map=None):
 	if not salary_structure or not frappe.db.exists("Salary Structure", salary_structure):
 		frappe.throw(_("Salary Structure {0} not found").format(salary_structure))
 	if not rows:
-		return {"created": [], "errors": [_("Excel is empty")], "warnings": []}
+		return {
+			"created": [],
+			"created_rows": [],
+			"errors": [_("Excel is empty")],
+			"warnings": [],
+			"import_warnings": [{"message": _("Excel is empty")}],
+			"failed_logs": [],
+		}
 
 	header = rows[0]
-	mapping = parse_header_map(header)
+	mapping = apply_column_map(parse_header_map(header), column_map)
 	header_components = [col[1] for col in mapping if col and col[0] == "component"]
 	structure = frappe.get_doc("Salary Structure", salary_structure)
 	created = []
+	created_rows = []
 	errors = []
 	warnings = []
-	unknown_components = []
+	failed_logs = []
+	missing_employees = []
+	resolve_cache = {}
 
-	for col in mapping:
-		if not col or col[0] != "component":
-			continue
-		name = col[1]
+	unmapped_components = []
+	for name in header_components:
 		if not frappe.db.exists("Salary Component", name):
-			unknown_components.append(name)
-	if unknown_components:
-		for name in unknown_components:
-			errors.append(
-				_("{0} is not created as a Salary Component. Create it first.").format(name)
-			)
-		return {"created": [], "errors": errors, "warnings": warnings}
+			unmapped_components.append(name)
 
 	structure_keys = set()
 	for row in list(structure.earnings or []) + list(structure.deductions or []):
@@ -534,7 +894,7 @@ def import_from_rows(salary_structure, rows):
 			structure_keys.add(_norm_key(row.salary_component))
 	not_on_structure = []
 	for name in header_components:
-		if name in unknown_components or _is_statutory(name):
+		if name in unmapped_components or _is_statutory(name):
 			continue
 		if _norm_key(name) not in structure_keys:
 			not_on_structure.append(name)
@@ -544,40 +904,89 @@ def import_from_rows(salary_structure, rows):
 				structure.name, ", ".join(not_on_structure)
 			)
 		)
+	if unmapped_components:
+		warnings.append(
+			_("Cannot match column {0} with any field").format(", ".join(unmapped_components))
+		)
+
+	import_warnings = _ssa_column_warnings(
+		header, mapping, unmapped_components, not_on_structure
+	)
+	skip_components = set(unmapped_components) | set(not_on_structure)
+	name_col = _name_column_number(mapping)
 
 	for i, raw in enumerate(rows[1:], start=2):
 		if not raw or not any(_cell_has_value(c) for c in raw):
 			continue
 		meta, components = _row_dict(mapping, raw)
-		for unknown in unknown_components:
-			components.pop(unknown, None)
-		for extra in not_on_structure:
+		for extra in skip_components:
 			components.pop(extra, None)
 
-		link, resolve_error = _resolve_company_link(
-			meta.get("employee"),
-			meta.get("employee_name"),
-			company=structure.company,
+		cache_key = (
+			_norm(meta.get("employee")),
+			_norm(meta.get("employee_name")),
+			_norm(meta.get("company")),
 		)
+		if cache_key not in resolve_cache:
+			row_company, company_error = _validate_row_company(meta, structure.company)
+			if company_error:
+				resolve_cache[cache_key] = (None, company_error)
+			else:
+				resolve_cache[cache_key] = _resolve_company_link(
+					meta.get("employee"),
+					meta.get("employee_name"),
+					company=row_company,
+				)
+		link, resolve_error = resolve_cache[cache_key]
 		if not link:
-			errors.append(_("Row {0}: {1}").format(i, resolve_error or _("employee not found")))
+			label = _norm(meta.get("employee_name")) or _norm(meta.get("employee"))
+			msg = resolve_error or _("employee not found")
+			errors.append(_("Row {0}: {1}").format(i, msg))
+			if msg == _("employee not found") and label:
+				if label not in missing_employees:
+					missing_employees.append(label)
+				failed_logs.append(
+					{
+						"row": i,
+						"messages": [
+							{
+								"message": _("Value {0} missing for {1}").format(
+									frappe.bold(label), frappe.bold(_("Employee"))
+								)
+							}
+						],
+						"exception": _("Value {0} missing for {1}").format(label, _("Employee")),
+					}
+				)
+			else:
+				failed_logs.append(
+					{
+						"row": i,
+						"messages": [{"message": msg}],
+						"exception": msg,
+					}
+				)
 			continue
 		fetched = _fetched_employee_fields(link)
 		if structure.company and fetched.get("company") and fetched["company"] != structure.company:
-			errors.append(
-				_("Row {0}: employee company {1} does not match Salary Structure company {2}").format(
-					i, fetched["company"], structure.company
-				)
+			msg = _("employee company {0} does not match Salary Structure company {1}").format(
+				fetched["company"], structure.company
 			)
+			errors.append(_("Row {0}: {1}").format(i, msg))
+			failed_logs.append({"row": i, "messages": [{"message": msg}], "exception": msg})
 			continue
 		try:
 			from_date = _parse_date(meta.get("from_date"))
 			to_date = _parse_date(meta.get("to_date"))
 		except Exception:
-			errors.append(_("Row {0}: invalid from/to date").format(i))
+			msg = _("invalid from/to date")
+			errors.append(_("Row {0}: {1}").format(i, msg))
+			failed_logs.append({"row": i, "messages": [{"message": msg}], "exception": msg})
 			continue
 		if not from_date or not to_date:
-			errors.append(_("Row {0}: from date and to date are required").format(i))
+			msg = _("from date and to date are required")
+			errors.append(_("Row {0}: {1}").format(i, msg))
+			failed_logs.append({"row": i, "messages": [{"message": msg}], "exception": msg})
 			continue
 
 		flags = statutory_flags_from_row(components, meta.get("pf_type"))
@@ -588,9 +997,9 @@ def import_from_rows(salary_structure, rows):
 			if _is_statutory(comp_name):
 				continue
 			if int(frappe.db.get_value("Salary Component", comp_name, "is_additional_only") or 0):
-				errors.append(
-					_("Row {0}: {1} is Additional-Only and cannot go on SSA").format(i, comp_name)
-				)
+				msg = _("{0} is Additional-Only and cannot go on SSA").format(comp_name)
+				errors.append(_("Row {0}: {1}").format(i, msg))
+				failed_logs.append({"row": i, "messages": [{"message": msg}], "exception": msg})
 				row_failed = True
 				break
 			row = _find_row([earnings, deductions, employer_share], comp_name)
@@ -605,6 +1014,9 @@ def import_from_rows(salary_structure, rows):
 		)
 		if worker_error:
 			errors.append(_("Row {0}: {1}").format(i, worker_error))
+			failed_logs.append(
+				{"row": i, "messages": [{"message": worker_error}], "exception": worker_error}
+			)
 			continue
 
 		_apply_percent_of_total_earning(earnings, deductions)
@@ -638,12 +1050,141 @@ def import_from_rows(salary_structure, rows):
 		try:
 			ssa.insert()
 			created.append(ssa.name)
+			created_rows.append(i)
 		except frappe.DuplicateEntryError as e:
-			errors.append(_("Row {0}: {1}").format(i, str(e)[:200]))
+			msg = str(e)[:200]
+			errors.append(_("Row {0}: {1}").format(i, msg))
+			failed_logs.append({"row": i, "messages": [{"message": msg}], "exception": msg})
 		except frappe.ValidationError as e:
-			errors.append(_("Row {0}: {1}").format(i, str(e)[:200]))
+			msg = str(e)[:200]
+			errors.append(_("Row {0}: {1}").format(i, msg))
+			failed_logs.append({"row": i, "messages": [{"message": msg}], "exception": msg})
 
-	return {"created": created, "errors": errors, "warnings": warnings}
+	if missing_employees:
+		import_warnings.append(
+			{
+				"col": name_col,
+				"message": _("The following values do not exist for {0}: {1}").format(
+					_("Employee"), ", ".join(missing_employees)
+				),
+			}
+		)
+
+	return {
+		"created": created,
+		"created_rows": created_rows,
+		"errors": errors,
+		"warnings": warnings,
+		"import_warnings": import_warnings,
+		"failed_logs": failed_logs,
+	}
+
+
+def _row_number_from_error(message):
+	match = re.match(r"Row\s+(\d+)\s*:", str(message or ""), flags=re.I)
+	return int(match.group(1)) if match else None
+
+
+def _ssa_import_status(created, errors):
+	if created and errors:
+		return "Partial Success"
+	if created:
+		return "Success"
+	return "Error"
+
+
+def is_ssa_excel_import_doc(doc):
+	raw = getattr(doc, "template_options", None) or "{}"
+	try:
+		opts = json.loads(raw)
+	except Exception:
+		return False
+	return isinstance(opts, dict) and bool(opts.get("ssa_excel_import"))
+
+
+def record_ssa_import_on_data_import(file_url, salary_structure, result):
+	"""Write a Data Import list record. Does not change the Data Import DocType."""
+	from frappe.core.doctype.data_import.importer import create_import_log
+
+	created = result.get("created") or []
+	created_rows = result.get("created_rows") or []
+	errors = result.get("errors") or []
+	failed_logs = result.get("failed_logs") or []
+	import_warnings = result.get("import_warnings")
+
+	di = frappe.new_doc("Data Import")
+	di.reference_doctype = "Salary Structure Assignment"
+	di.import_type = "Insert New Records"
+	di.mute_emails = 1
+	di.submit_after_import = 0
+	di.import_file = file_url
+	di.template_options = json.dumps(
+		{"ssa_excel_import": 1, "salary_structure": salary_structure}
+	)
+	di.flags.ignore_validate = True
+	di.insert(ignore_permissions=True, ignore_mandatory=True)
+
+	if import_warnings is None:
+		import_warnings = []
+		for warning in result.get("warnings") or []:
+			import_warnings.append({"message": warning})
+		for err in errors:
+			row = _row_number_from_error(err)
+			item = {"message": err}
+			if row:
+				item["row"] = row
+			import_warnings.append(item)
+	di.db_set("template_warnings", json.dumps(import_warnings), update_modified=False)
+
+	log_index = 0
+	for idx, name in enumerate(created):
+		log_index += 1
+		row = created_rows[idx] if idx < len(created_rows) else None
+		create_import_log(
+			di.name,
+			log_index,
+			{
+				"success": 1,
+				"docname": name,
+				"row_indexes": [row] if row else [],
+				"messages": [],
+				"exception": None,
+			},
+		)
+	if failed_logs:
+		for fail in failed_logs:
+			log_index += 1
+			row = fail.get("row")
+			create_import_log(
+				di.name,
+				log_index,
+				{
+					"success": 0,
+					"docname": None,
+					"row_indexes": [row] if row else [log_index],
+					"messages": fail.get("messages") or [{"message": fail.get("exception")}],
+					"exception": fail.get("exception"),
+				},
+			)
+	else:
+		for err in errors:
+			log_index += 1
+			row = _row_number_from_error(err)
+			create_import_log(
+				di.name,
+				log_index,
+				{
+					"success": 0,
+					"docname": None,
+					"row_indexes": [row] if row else [log_index],
+					"messages": [{"message": err}],
+					"exception": err,
+				},
+			)
+
+	di.db_set("payload_count", len(created) + len(failed_logs or errors), update_modified=False)
+	di.db_set("status", _ssa_import_status(created, errors), update_modified=False)
+	return di.name
 
 
 def _read_excel(file_url):
@@ -658,7 +1199,95 @@ def _read_excel(file_url):
 
 
 @frappe.whitelist()
-def import_ssa_excel(salary_structure, file_url):
+def import_ssa_excel(salary_structure, file_url, column_map=None):
 	frappe.has_permission("Salary Structure Assignment", "create", throw=True)
 	rows = _read_excel(file_url)
-	return import_from_rows(salary_structure, rows)
+	result = import_from_rows(salary_structure, rows, column_map=column_map)
+	try:
+		result["data_import"] = record_ssa_import_on_data_import(
+			file_url, salary_structure, result
+		)
+	except Exception:
+		frappe.log_error(title="SSA import Data Import log", message=frappe.get_traceback())
+		result["data_import"] = None
+		result.setdefault("warnings", []).append(
+			_("Could not write the Data Import log. Check Error Log.")
+		)
+	return result
+
+
+@frappe.whitelist()
+def download_ssa_import_template(salary_structure: str):
+	"""Excel template for the SSA Import button. Does not change Data Import."""
+	frappe.has_permission("Salary Structure Assignment", "create", throw=True)
+	headers = get_ssa_import_template_headers(salary_structure)
+	xlsx_file = make_xlsx([headers], "SSA Import")
+	safe = "".join(ch if ch.isalnum() or ch in "-_ " else "_" for ch in salary_structure)[:40]
+	frappe.response["filename"] = f"SSA_Import_{safe.strip() or 'Template'}.xlsx"
+	frappe.response["filecontent"] = xlsx_file.getvalue()
+	frappe.response["type"] = "binary"
+
+
+@frappe.whitelist()
+def preview_ssa_excel(salary_structure, file_url):
+	"""Column mapping for the SSA Import dialog. Does not import."""
+	frappe.has_permission("Salary Structure Assignment", "create", throw=True)
+	if not salary_structure:
+		frappe.throw(_("Select Salary Structure first."))
+	rows = _read_excel(file_url)
+	return build_ssa_excel_preview(salary_structure, rows)
+
+
+def _ssa_template_options(data_import):
+	raw = frappe.db.get_value("Data Import", data_import, "template_options") or "{}"
+	try:
+		opts = json.loads(raw)
+	except Exception:
+		opts = {}
+	return opts if isinstance(opts, dict) else {}
+
+
+@frappe.whitelist()
+def get_ssa_data_import_preview(data_import: str):
+	frappe.has_permission("Data Import", "read", throw=True)
+	opts = _ssa_template_options(data_import)
+	if not opts.get("ssa_excel_import"):
+		frappe.throw(_("Not an SSA Excel import log"))
+	file_url = frappe.db.get_value("Data Import", data_import, "import_file")
+	salary_structure = opts.get("salary_structure")
+	rows = _read_excel(file_url) if file_url else []
+	if not salary_structure:
+		return {"columns": [], "rows": [], "warnings": [], "salary_structure": None}
+	return build_ssa_excel_preview(salary_structure, rows)
+
+
+@frappe.whitelist()
+def download_ssa_import_errored_rows(data_import: str):
+	frappe.has_permission("Data Import", "read", throw=True)
+	opts = _ssa_template_options(data_import)
+	if not opts.get("ssa_excel_import"):
+		frappe.throw(_("Not an SSA Excel import log"))
+	file_url = frappe.db.get_value("Data Import", data_import, "import_file")
+	rows = _read_excel(file_url) if file_url else []
+	if not rows:
+		frappe.throw(_("Import file is empty"))
+	failed = set()
+	for log in frappe.get_all(
+		"Data Import Log",
+		filters={"data_import": data_import, "success": 0},
+		fields=["row_indexes"],
+	):
+		try:
+			failed.update(json.loads(log.row_indexes or "[]"))
+		except Exception:
+			pass
+	out = [rows[0]]
+	for i, row in enumerate(rows[1:], start=2):
+		if i in failed:
+			out.append(row)
+	if len(out) == 1:
+		frappe.throw(_("No errored rows"))
+	xlsx_file = make_xlsx(out, "Errored Rows")
+	frappe.response["filename"] = "SSA_Import_Errored_Rows.xlsx"
+	frappe.response["filecontent"] = xlsx_file.getvalue()
+	frappe.response["type"] = "binary"

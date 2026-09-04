@@ -12,6 +12,8 @@ from saral_hr.saral_hr.doctype.salary_structure_assignment.salary_structure_assi
 )
 from saral_hr.saral_hr.doctype.salary_structure_assignment.ssa_excel_import import (
 	apply_srr_and_daily_wage,
+	get_ssa_import_fields,
+	get_ssa_import_template_headers,
 	import_from_rows,
 	parse_header_map,
 	statutory_flags_from_row,
@@ -119,6 +121,164 @@ class TestSSAExcelImport(FrappeTestCase):
 		self.assertEqual(mapping[1], ("meta", "from_date"))
 		self.assertEqual(mapping[2], ("meta", "to_date"))
 		self.assertEqual(mapping[3], ("component", "Basic"))
+		named = parse_header_map(["Employee Name", "Company", "From Date", "To Date"])
+		self.assertEqual(
+			named,
+			[
+				("meta", "employee_name"),
+				("meta", "company"),
+				("meta", "from_date"),
+				("meta", "to_date"),
+			],
+		)
+
+	def test_template_headers_match_import_parser(self):
+		company = _make_company()
+		basic = _ensure_component("Basic", "BASIC", "Earning")
+		hra = _ensure_component("House Rent Allowance", "HRA", "Earning")
+		_ensure_component("Employee PF", "PF", "Deduction")
+		_ensure_component("Employee ESIC", "ESIC", "Deduction")
+		ss = frappe.get_doc(
+			{
+				"doctype": "Salary Structure",
+				"salary_structure_name": f"SSA Imp {_uid()}",
+				"company": company,
+				"is_active": "Yes",
+				"currency": "INR",
+			}
+		)
+		ss.append("earnings", {"salary_component": basic, "amount": 0})
+		ss.append("earnings", {"salary_component": hra, "amount": 0})
+		ss.insert(ignore_permissions=True)
+
+		headers = get_ssa_import_template_headers(ss.name)
+		self.assertEqual(headers[:4], ["Employee Name", "Company", "From Date", "To Date"])
+		self.assertIn("Basic", headers)
+		self.assertIn("House Rent Allowance", headers)
+		self.assertIn("PF Type", headers)
+		self.assertIn("Employee PF", headers)
+		self.assertIn("Employee ESIC", headers)
+		self.assertIn("Professional Tax", headers)
+		self.assertIn("Employee Labour Welfare Fund", headers)
+		self.assertEqual(
+			headers[-5:],
+			[
+				"PF Type",
+				"Employee PF",
+				"Employee ESIC",
+				"Professional Tax",
+				"Employee Labour Welfare Fund",
+			],
+		)
+
+		fields = get_ssa_import_fields(ss.name)
+		values = [f["value"] for f in fields]
+		self.assertNotIn("meta:employee", values)
+		self.assertIn("meta:pf_type", values)
+		self.assertIn("meta:company", values)
+		self.assertEqual(
+			[f["fieldname"] for f in fields],
+			[
+				"employee_name",
+				"company",
+				"from_date",
+				"to_date",
+				"Basic",
+				"House Rent Allowance",
+				"pf_type",
+				"Employee PF",
+				"Employee ESIC",
+				"Professional Tax",
+				"Employee Labour Welfare Fund",
+			],
+		)
+
+		mapping = parse_header_map(headers)
+		self.assertEqual(mapping[0], ("meta", "employee_name"))
+		self.assertEqual(mapping[1], ("meta", "company"))
+		self.assertEqual(mapping[2], ("meta", "from_date"))
+		self.assertEqual(mapping[3], ("meta", "to_date"))
+		kinds = [m[0] for m in mapping if m]
+		self.assertIn("component", kinds)
+		self.assertIn("component:Employee PF", values)
+		self.assertEqual(headers.count("Employee PF"), 1)
+
+	def test_ssa_import_status_and_row_parse(self):
+		from saral_hr.saral_hr.doctype.salary_structure_assignment.ssa_excel_import import (
+			_row_number_from_error,
+			_ssa_import_status,
+		)
+
+		self.assertEqual(_ssa_import_status(["a"], []), "Success")
+		self.assertEqual(_ssa_import_status(["a"], ["err"]), "Partial Success")
+		self.assertEqual(_ssa_import_status([], ["err"]), "Error")
+		self.assertEqual(_row_number_from_error("Row 7: employee not found"), 7)
+		self.assertIsNone(_row_number_from_error("bad file"))
+
+	def test_ssa_import_writes_data_import_log(self):
+		from saral_hr.saral_hr.doctype.salary_structure_assignment.ssa_excel_import import (
+			record_ssa_import_on_data_import,
+		)
+
+		name = record_ssa_import_on_data_import(
+			"/private/files/ssa_test.xlsx",
+			"Test Structure",
+			{
+				"created": ["HR-SSA-TEST-1"],
+				"created_rows": [2],
+				"errors": ["Row 3: employee not found"],
+				"warnings": ["Extra column skipped"],
+			},
+		)
+		di = frappe.get_doc("Data Import", name)
+		self.assertEqual(di.reference_doctype, "Salary Structure Assignment")
+		self.assertEqual(di.import_file, "/private/files/ssa_test.xlsx")
+		self.assertEqual(di.status, "Partial Success")
+		opts = json.loads(di.template_options or "{}")
+		self.assertEqual(opts.get("ssa_excel_import"), 1)
+		logs = frappe.get_all(
+			"Data Import Log",
+			filters={"data_import": name},
+			fields=["success", "docname"],
+			order_by="log_index",
+		)
+		self.assertEqual(len(logs), 2)
+		self.assertEqual(int(logs[0].success), 1)
+		self.assertEqual(logs[0].docname, "HR-SSA-TEST-1")
+		self.assertEqual(int(logs[1].success), 0)
+
+		name2 = record_ssa_import_on_data_import(
+			"/private/files/ssa_test2.xlsx",
+			"Test Structure",
+			{
+				"created": ["HR-SSA-TEST-2"],
+				"created_rows": [2],
+				"errors": ["Row 3: employee not found"],
+				"import_warnings": [
+					{"message": "Mapping column <strong>Name</strong> to field <strong>Employee</strong>"},
+					{
+						"col": 1,
+						"message": "The following values do not exist for Employee: Ghost",
+					},
+				],
+				"failed_logs": [
+					{
+						"row": 3,
+						"messages": [{"message": "Value <strong>Ghost</strong> missing for <strong>Employee</strong>"}],
+						"exception": "Value Ghost missing for Employee",
+					}
+				],
+			},
+		)
+		di2 = frappe.get_doc("Data Import", name2)
+		self.assertIn("do not exist for Employee", di2.template_warnings)
+		fail = frappe.get_all(
+			"Data Import Log",
+			filters={"data_import": name2, "success": 0},
+			fields=["messages", "row_indexes"],
+		)
+		self.assertEqual(len(fail), 1)
+		self.assertIn("missing for", fail[0].messages)
 
 	def test_statutory_flags_follow_excel_yes_no(self):
 		flags = statutory_flags_from_row(
@@ -323,14 +483,92 @@ class TestSSAExcelImport(FrappeTestCase):
 
 		cl = _make_company_link(_make_employee(), company)
 		missing = f"Ghost Comp {_uid()}"
+		ghost_name = "Nobody From Excel"
 		rows = [
 			["Name", "Start Date", "End Date", "Basic", missing],
-			["Anybody", "2026-04-01", "2027-03-31", 10000, 50],
+			[frappe.db.get_value("Company Link", cl, "full_name"), "2026-04-01", "2027-03-31", 10000, 50],
+			[ghost_name, "2026-04-01", "2027-03-31", 10000, 50],
 		]
 		result = import_from_rows(ss.name, rows)
-		self.assertEqual(result["created"], [])
-		self.assertTrue(any(missing in e for e in result["errors"]))
-		self.assertTrue(any("not created" in e.lower() for e in result["errors"]))
+		self.assertEqual(len(result["created"]), 1, result)
+		self.assertTrue(any("employee not found" in e.lower() for e in result["errors"]))
+		joined = " ".join(w.get("message", "") for w in result.get("import_warnings") or [])
+		self.assertIn("Cannot match column", joined)
+		self.assertIn(missing, joined)
+		self.assertIn("do not exist for", joined)
+		self.assertIn(ghost_name, joined)
+		self.assertTrue(any(f.get("row") == 3 for f in result.get("failed_logs") or []))
+
+	def test_ssa_column_and_missing_employee_messages(self):
+		from saral_hr.saral_hr.doctype.salary_structure_assignment.ssa_excel_import import (
+			_ssa_column_warnings,
+			parse_header_map,
+		)
+
+		header = ["Name", "From Date", "To Date", "Basic", "Junk Col"]
+		mapping = parse_header_map(header)
+		warns = _ssa_column_warnings(header, mapping, ["Junk Col"], [])
+		texts = [w["message"] for w in warns]
+		self.assertTrue(any("Mapping column" in t and "Name" in t for t in texts))
+		self.assertTrue(any("Cannot match column" in t and "Junk Col" in t for t in texts))
+		unmapped = [w for w in warns if w.get("col") and "Cannot match" in w["message"]]
+		self.assertEqual(unmapped[0]["col"], 5)
+
+	def test_apply_column_map_overrides_unmapped_header(self):
+		from saral_hr.saral_hr.doctype.salary_structure_assignment.ssa_excel_import import (
+			apply_column_map,
+			parse_header_map,
+		)
+
+		header = ["Name", "From Date", "To Date", "Amt"]
+		mapping = parse_header_map(header)
+		self.assertEqual(mapping[3], ("component", "Amt"))
+		mapped = apply_column_map(mapping, {"3": "component:Basic"})
+		self.assertEqual(mapped[3], ("component", "Basic"))
+		skipped = apply_column_map(mapping, {"3": ""})
+		self.assertIsNone(skipped[3])
+
+	def test_build_ssa_excel_preview_mapping_and_missing_names(self):
+		from saral_hr.saral_hr.doctype.salary_structure_assignment.ssa_excel_import import (
+			build_ssa_excel_preview,
+		)
+
+		company = _make_company()
+		basic = _ensure_component("Basic", "BASIC", "Earning")
+		ss = frappe.get_doc(
+			{
+				"doctype": "Salary Structure",
+				"salary_structure_name": f"SSA Imp {_uid()}",
+				"company": company,
+				"is_active": "Yes",
+				"currency": "INR",
+			}
+		)
+		ss.append("earnings", {"salary_component": basic, "amount": 0})
+		ss.insert(ignore_permissions=True)
+		cl = _make_company_link(_make_employee(), company)
+		full_name = frappe.db.get_value("Company Link", cl, "full_name")
+		ghost = "Ghost Name From Excel"
+		junk = f"Junk {_uid()}"
+		preview = build_ssa_excel_preview(
+			ss.name,
+			[
+				["Name", "From Date", "To Date", "Basic", junk],
+				[full_name, "2026-04-01", "2027-03-31", 10000, 1],
+				[ghost, "2026-04-01", "2027-03-31", 10000, 1],
+			],
+		)
+		self.assertNotIn("created", preview)
+		mapped = {c["label"]: c["mapped"] for c in preview["columns"]}
+		self.assertTrue(mapped["Name"])
+		self.assertTrue(mapped["Basic"])
+		self.assertFalse(mapped[junk])
+		texts = " ".join(w.get("message", "") for w in preview["warnings"])
+		self.assertIn("Mapping column", texts)
+		self.assertIn("Cannot match column", texts)
+		self.assertIn("do not exist for", texts)
+		self.assertIn(ghost, texts)
+		self.assertEqual(len(preview["rows"]), 2)
 
 	def test_apply_srr_overrides_excel_and_multiplies_daily_wage(self):
 		earnings = [
