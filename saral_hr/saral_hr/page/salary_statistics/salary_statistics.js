@@ -846,7 +846,8 @@ frappe.pages["salary-statistics"].on_page_load = function (wrapper) {
 				method: "saral_hr.saral_hr.page.salary_statistics.salary_statistics.get_employees_for_company",
 				args: { company: state.company, year: state.year, month: state.month, employee: emp.employee },
 				callback(r) {
-					const found = (r.message||[]).find(e => e.employee === emp.employee);
+					state.employees = r.message || [];
+					const found = state.employees.find(e => e.employee === emp.employee);
 					monthlyNetCache = found ? found.monthly_net : {};
 					if (allowYearJump && found && found.latest_slip_year
 						&& String(found.latest_slip_year) !== String(state.year)) {
@@ -972,7 +973,7 @@ frappe.pages["salary-statistics"].on_page_load = function (wrapper) {
 						const $item = $(`<div class="ss-hdr-switch-item">
 							<div class="ss-hdr-switch-item-avatar">${initials}</div>
 							<div class="ss-hdr-switch-item-body">
-								<div class="ss-hdr-switch-item-name">${e.employee_name}</div>
+								<div class="ss-hdr-switch-item-name">${e.employee_name}${e.is_active ? "" : " · Left"}</div>
 								<div class="ss-hdr-switch-item-id">${e.employee}</div>
 							</div>
 						</div>`);

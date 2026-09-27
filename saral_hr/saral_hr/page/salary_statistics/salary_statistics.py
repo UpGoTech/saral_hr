@@ -88,15 +88,12 @@ def get_employees_for_company(company, year, month, employee=None):
         for i, e in enumerate(permitted):
             emp_params[f"pe_{i}"] = e
 
-    # Leaving sets is_active = 0. The active roster stays filtered; the detail
-    # view passes employee so that one leaver is still returned.
+    # Leaving sets is_active = 0. The company roster stays active-only.
+    # The detail page passes employee so its search lists every leaver too.
     focus = (employee or "").strip()
     if permitted is not None and focus and focus not in permitted:
         focus = ""
-    active_clause = "AND cl.is_active = 1"
-    if focus:
-        active_clause = "AND (cl.is_active = 1 OR cl.name = %(focus_employee)s)"
-        emp_params["focus_employee"] = focus
+    active_clause = "" if focus else "AND cl.is_active = 1"
 
     employees = frappe.db.sql(f"""
         SELECT
@@ -167,6 +164,7 @@ def get_employees_for_company(company, year, month, employee=None):
         emp_data = {
             "employee":       emp.employee,
             "employee_name":  emp.employee_name or emp.employee,
+            "is_active":      1 if emp.is_active else 0,
             "department":     emp.department or "",
             "designation":    emp.designation or "",
             "date_of_birth":  str(emp.date_of_birth) if emp.date_of_birth else "",

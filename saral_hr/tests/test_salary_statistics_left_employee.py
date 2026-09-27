@@ -99,6 +99,9 @@ class TestSalaryStatisticsLeftEmployee(FrappeTestCase):
 		)
 		self.assertEqual(frappe.db.get_value("Company Link", leaver, "is_active"), 0)
 
+		other = _make_company_link(
+			_make_employee(), company, "2024-01-01", left="2025-03-31"
+		)
 		slip = _stub_slip(leaver, company, "2025-07-01", 29032)
 		_stub_slip(leaver, company, "2025-08-01", 999, docstatus=0)
 
@@ -106,10 +109,13 @@ class TestSalaryStatisticsLeftEmployee(FrappeTestCase):
 		roster_ids = {row["employee"] for row in roster}
 		self.assertIn(stayer, roster_ids)
 		self.assertNotIn(leaver, roster_ids)
+		self.assertNotIn(other, roster_ids)
 
 		focused = get_employees_for_company(company, 2025, "July", employee=leaver)
 		by_id = {row["employee"]: row for row in focused}
 		self.assertIn(stayer, by_id)
+		self.assertIn(other, by_id)
+		self.assertEqual(by_id[other]["is_active"], 0)
 		self.assertEqual(by_id[leaver]["monthly_net"]["July"], 29032)
 		self.assertIsNone(by_id[leaver]["monthly_net"]["August"])
 		self.assertNotIn("latest_slip_year", by_id[leaver])
