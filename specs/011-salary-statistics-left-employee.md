@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| **Status** | in progress |
+| **Status** | ready for review |
 | **Branch** | `fix/salary-statistics-left-employee` |
 | **Surface** | Salary Statistics desk page |
 
@@ -24,3 +24,9 @@ Example: HR-EMP-00017 (Jitesh N Bokade), Fabrixcel Private Limited, left 2025-07
 - `get_employees_for_company(..., employee=None)`: when `employee` is set, also return that Company Link if it belongs to the company (and to the user's employee permission, when restricted).
 - If that person is inactive and the requested year has no submitted slips, set `latest_slip_year` on their row.
 - Detail page passes `employee` into the company query. Initial load follows `latest_slip_year` once. The search list does not pass `employee`.
+
+## Progress log
+
+| Date | Note |
+|------|------|
+| 2026-09-27 | Spec written. Detail query includes one inactive employee; page opens on their latest slip year. |

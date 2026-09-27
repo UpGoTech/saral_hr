@@ -64,7 +64,7 @@ def get_permitted_companies():
 
 
 @frappe.whitelist()
-def get_employees_for_company(company, year, month):
+def get_employees_for_company(company, year, month, employee=None):
     MONTHS = [
         "January", "February", "March", "April", "May", "June",
         "July", "August", "September", "October", "November", "December"
@@ -88,10 +88,21 @@ def get_employees_for_company(company, year, month):
         for i, e in enumerate(permitted):
             emp_params[f"pe_{i}"] = e
 
+    # Leaving sets is_active = 0. The active roster stays filtered; the detail
+    # view passes employee so that one leaver is still returned.
+    focus = (employee or "").strip()
+    if permitted is not None and focus and focus not in permitted:
+        focus = ""
+    active_clause = "AND cl.is_active = 1"
+    if focus:
+        active_clause = "AND (cl.is_active = 1 OR cl.name = %(focus_employee)s)"
+        emp_params["focus_employee"] = focus
+
     employees = frappe.db.sql(f"""
         SELECT
             cl.name        AS employee,
             cl.full_name   AS employee_name,
+            cl.is_active,
             cl.department,
             cl.designation,
             e.date_of_birth,
@@ -108,8 +119,8 @@ def get_employees_for_company(company, year, month):
                 WHERE s2.employee  = cl.name
                   AND s2.docstatus = 1
             )
-        WHERE cl.is_active = 1
-          AND cl.company   = %(company)s
+        WHERE cl.company = %(company)s
+          {active_clause}
           {emp_clause}
         ORDER BY cl.full_name
     """, emp_params, as_dict=True)
@@ -137,6 +148,20 @@ def get_employees_for_company(company, year, month):
             slip_map[emp_id] = {}
         slip_map[emp_id][month_name] = flt(slip.net_salary, 2)
 
+    latest_slip_year = None
+    focus_row = next((emp for emp in employees if emp.employee == focus), None)
+    if focus_row and not focus_row.is_active and not slip_map.get(focus):
+        latest = frappe.db.sql(
+            """
+            SELECT MAX(YEAR(start_date))
+            FROM `tabSalary Slip`
+            WHERE employee = %s AND docstatus = 1
+            """,
+            focus,
+        )
+        if latest and latest[0][0]:
+            latest_slip_year = int(latest[0][0])
+
     result = []
     for emp in employees:
         emp_data = {
@@ -151,6 +176,8 @@ def get_employees_for_company(company, year, month):
         }
         for m in MONTHS:
             emp_data["monthly_net"][m] = slip_map.get(emp.employee, {}).get(m, None)
+        if latest_slip_year and emp.employee == focus:
+            emp_data["latest_slip_year"] = latest_slip_year
         result.append(emp_data)
 
     return result

@@ -650,7 +650,7 @@ frappe.pages["salary-statistics"].on_page_load = function (wrapper) {
 			state.company = deepCompany;
 			frappe.call({
 				method: "saral_hr.saral_hr.page.salary_statistics.salary_statistics.get_employees_for_company",
-				args: { company: deepCompany, year: state.year, month: state.month },
+				args: { company: deepCompany, year: state.year, month: state.month, employee: deepEmpId },
 				callback(r) {
 					var employees = r.message || [];
 					state.employees = employees;
@@ -840,14 +840,24 @@ frappe.pages["salary-statistics"].on_page_load = function (wrapper) {
 		$ys.find(".ss-yr-prev").on("click", () => shiftYear(-1));
 		$ys.find(".ss-yr-next").on("click", () => shiftYear(+1));
 
-		function loadYearData(resetMonth) {
+		function loadYearData(resetMonth, allowYearJump) {
 			$monthList.html(`<div style="padding:16px;text-align:center;color:var(--text-muted);font-size:12px;"><div class="spinner-border spinner-border-sm"></div></div>`);
 			frappe.call({
 				method: "saral_hr.saral_hr.page.salary_statistics.salary_statistics.get_employees_for_company",
-				args: { company: state.company, year: state.year, month: state.month },
+				args: { company: state.company, year: state.year, month: state.month, employee: emp.employee },
 				callback(r) {
 					const found = (r.message||[]).find(e => e.employee === emp.employee);
 					monthlyNetCache = found ? found.monthly_net : {};
+					if (allowYearJump && found && found.latest_slip_year
+						&& String(found.latest_slip_year) !== String(state.year)) {
+						const ny = saral_hr.period_picker.clamp_period_year(found.latest_slip_year);
+						if (String(ny) !== String(state.year)) {
+							state.year = String(ny);
+							$ys.find(".ss-year-val").text(state.year);
+							loadYearData(true, false);
+							return;
+						}
+					}
 					if (resetMonth) {
 						activeMonth = (state.year === String(CUR_YEAR)) ? MONTHS[CUR_MONTH_IDX] : "January";
 					}
@@ -889,7 +899,7 @@ frappe.pages["salary-statistics"].on_page_load = function (wrapper) {
 			});
 		}
 
-		loadYearData(false);
+		loadYearData(false, true);
 	}
 
 	// ─────────────────────────────────────────────────────────────────────────

@@ -14,7 +14,7 @@ Single board for all specs in this folder. New specs get the next number (`002-�
 | 008 | [Employee Loan Register](./008-employee-loan-register.md) | in progress | Phases 1–4 coded (loan/dues/slip/ledgers); polish tests pending |
 | 009 | [Percent of Total Earning](./009-percent-of-total-earning.md) | in progress | Implemented on `feat/percent-of-total-earning`; tests passing |
 | 010 | [Period picker standardization](./010-period-picker-standardization.md) | in progress | Company → Year → Month; year floor 2024 |
-| 011 | [Salary statistics for left employees](./011-salary-statistics-left-employee.md) | in progress | Detail view keeps leavers; active list unchanged |
+| 011 | [Salary statistics for left employees](./011-salary-statistics-left-employee.md) | ready for review | Detail view keeps leavers; active list unchanged |
 
 ## Status legend
 
