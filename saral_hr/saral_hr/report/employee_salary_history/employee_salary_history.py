@@ -1,0 +1,823 @@
+# Copyright (c) 2026, sj and Contributors
+# See license.txt
+
+"""Employee Salary History — one row per month for a single employee."""
+
+from __future__ import annotations
+
+import io
+import json
+import re
+
+import frappe
+from frappe import _
+from frappe.utils import cint, flt, getdate
+from frappe.utils.pdf import get_pdf
+from openpyxl import Workbook
+from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
+from openpyxl.utils import get_column_letter
+
+
+def execute(filters=None):
+	filters = _normalize_filters(filters)
+	if not filters.company or not filters.employee:
+		return _columns([], [], []), []
+
+	from_date, to_date = _period_dates(filters)
+	if _is_period(filters) and (not from_date or not to_date):
+		return _columns([], [], []), []
+
+	slips = _load_slips(filters.company, filters.employee, from_date, to_date)
+	if not slips:
+		return _columns([], [], []), []
+
+	ssa_by_slip = {s.name: _resolve_ssa(s.employee, s.start_date, s.end_date) for s in slips}
+	actual_union = _actual_union(ssa_by_slip)
+	earn_maps, ded_maps, add_earn_maps, add_ded_maps, labels = _slip_component_maps([s.name for s in slips])
+	add_earn_names = _map_names(add_earn_maps)
+	earn_union = _earn_union(actual_union, earn_maps, labels, add_earn_names)
+	ded_union = _ded_union(ded_maps, labels)
+	add_earn_union = _extra_union(add_earn_maps, labels, use_name=True)
+	add_ded_union = _extra_union(add_ded_maps, labels, use_name=True)
+
+	rows = []
+	for slip in slips:
+		row = _slip_row(
+			slip,
+			ssa_by_slip.get(slip.name),
+			actual_union,
+			earn_union,
+			ded_union,
+			add_earn_union,
+			add_ded_union,
+			earn_maps,
+			ded_maps,
+			add_earn_maps,
+			add_ded_maps,
+		)
+		rows.append(row)
+
+	if rows:
+		rows.append(_totals_row(rows, actual_union, earn_union, ded_union, add_earn_union, add_ded_union))
+
+	return _columns(actual_union, earn_union, ded_union, add_earn_union, add_ded_union), rows
+
+
+def _normalize_filters(filters):
+	if isinstance(filters, str):
+		filters = json.loads(filters or "{}")
+	return frappe._dict(filters or {})
+
+
+def _is_period(filters):
+	return (filters.get("show") or "Full") == "Select Period"
+
+
+def _period_dates(filters):
+	if not _is_period(filters):
+		return None, None
+	if not filters.from_date or not filters.to_date:
+		return None, None
+	from_date = getdate(filters.from_date)
+	to_date = getdate(filters.to_date)
+	if from_date > to_date:
+		frappe.msgprint(_("From Date cannot be after To Date."))
+		return None, None
+	return from_date, to_date
+
+
+def _load_slips(company, employee, from_date=None, to_date=None):
+	date_sql = ""
+	params = {"company": company, "employee": employee}
+	if from_date and to_date:
+		date_sql = """
+		  AND ss.start_date <= %(to_date)s
+		  AND ss.end_date >= %(from_date)s
+		"""
+		params["from_date"] = str(from_date)
+		params["to_date"] = str(to_date)
+	return frappe.db.sql(
+		f"""
+		SELECT
+			ss.name, ss.employee, ss.start_date, ss.end_date,
+			ss.payment_days, ss.total_earnings, ss.total_deductions, ss.net_salary
+		FROM `tabSalary Slip` ss
+		WHERE ss.docstatus = 1
+		  AND ss.company = %(company)s
+		  AND ss.employee = %(employee)s
+		  {date_sql}
+		ORDER BY ss.start_date ASC
+		""",
+		params,
+		as_dict=True,
+	)
+
+
+def _resolve_ssa(employee, start, end):
+	rows = frappe.db.sql(
+		"""
+		SELECT name
+		FROM `tabSalary Structure Assignment`
+		WHERE employee = %(employee)s
+		  AND docstatus = 1
+		  AND from_date <= %(start)s
+		  AND (to_date IS NULL OR to_date >= %(end)s)
+		ORDER BY from_date DESC
+		LIMIT 1
+		""",
+		{"employee": employee, "start": str(start), "end": str(end)},
+		as_dict=True,
+	)
+	return rows[0].name if rows else None
+
+
+def _ssa_earnings(ssa_name):
+	if not ssa_name:
+		return []
+	return frappe.db.sql(
+		"""
+		SELECT salary_component, abbr, amount
+		FROM `tabSalary Details`
+		WHERE parent = %(parent)s
+		  AND parenttype = 'Salary Structure Assignment'
+		  AND parentfield = 'earnings'
+		  AND IFNULL(amount, 0) != 0
+		ORDER BY idx ASC
+		""",
+		{"parent": ssa_name},
+		as_dict=True,
+	)
+
+
+def _slip_component_maps(slip_names):
+	earn = {n: {} for n in slip_names}
+	ded = {n: {} for n in slip_names}
+	add_earn = {n: {} for n in slip_names}
+	add_ded = {n: {} for n in slip_names}
+	labels = {}
+	if not slip_names:
+		return earn, ded, add_earn, add_ded, labels
+
+	rows = frappe.db.sql(
+		"""
+		SELECT sd.parent, sd.parentfield, sd.salary_component, sd.abbr, sd.amount,
+		       IFNULL(sc.employer_contribution, 0) AS employer_contribution,
+		       IFNULL(sc.is_additional_only, 0) AS is_additional_only
+		FROM `tabSalary Details` sd
+		LEFT JOIN `tabSalary Component` sc ON sc.name = sd.salary_component
+		WHERE sd.parent IN %(parents)s
+		  AND sd.parenttype = 'Salary Slip'
+		  AND sd.parentfield IN ('earnings', 'deductions')
+		ORDER BY sd.idx ASC
+		""",
+		{"parents": slip_names},
+		as_dict=True,
+	)
+	for row in rows:
+		amount = flt(row.amount)
+		if not amount:
+			continue
+		if row.abbr and row.salary_component not in labels:
+			labels[row.salary_component] = row.abbr
+		additional = int(row.is_additional_only or 0)
+		if row.parentfield == "earnings":
+			bucket = add_earn if additional else earn
+			bucket[row.parent][row.salary_component] = flt(bucket[row.parent].get(row.salary_component)) + amount
+		elif row.parentfield == "deductions" and not int(row.employer_contribution or 0):
+			bucket = add_ded if additional else ded
+			bucket[row.parent][row.salary_component] = flt(bucket[row.parent].get(row.salary_component)) + amount
+	return earn, ded, add_earn, add_ded, labels
+
+
+def _comp(name, abbr=None):
+	# Short title under the group heading: Basic, DA, PF, ESIC, PT, RET.
+	return {"name": name, "label": _heading(name, abbr)}
+
+
+def _heading(name, abbr):
+	text = " ".join((abbr or "").split())
+	# Professional Tax stores the slab note in Abbr. The column title is PT.
+	if (name or "").strip().lower() == "professional tax":
+		return "PT"
+	if text and len(text) <= 16:
+		return text
+	return (name or text).strip()
+
+
+# Codes such as PRODUCTIONIN and Add-Deduct are hard to read. Use the real name.
+_DISPLAY_NAMES = {
+	"additional saralry": "Additional Salary",
+	"additional salary": "Additional Salary",
+	"additional deduction": "Additional Deduction",
+	"production incentive": "Production Incentive",
+}
+
+
+def _proper_name(name):
+	key = " ".join((name or "").split()).lower()
+	if key in _DISPLAY_NAMES:
+		return _DISPLAY_NAMES[key]
+	return " ".join((name or "").split())
+
+
+def _actual_union(ssa_by_slip):
+	comps = []
+	seen = set()
+	for ssa_name in ssa_by_slip.values():
+		for row in _ssa_earnings(ssa_name):
+			name = row.salary_component
+			if name not in seen:
+				seen.add(name)
+				comps.append(_comp(name, row.abbr))
+	return comps
+
+
+def _map_names(maps):
+	names = set()
+	for amounts in maps.values():
+		names.update(amounts)
+	return names
+
+
+def _earn_union(actual_union, earn_maps, labels, skip_names=None):
+	skip_names = skip_names or set()
+	comps = []
+	seen = set()
+	for comp in actual_union:
+		if comp["name"] in skip_names or comp["name"] in seen:
+			continue
+		seen.add(comp["name"])
+		comps.append(dict(comp))
+	for amounts in earn_maps.values():
+		for name in amounts:
+			if name in seen or name in skip_names:
+				continue
+			seen.add(name)
+			comps.append(_comp(name, labels.get(name)))
+	return comps
+
+
+def _ded_union(ded_maps, labels):
+	return _extra_union(ded_maps, labels)
+
+
+def _extra_union(comp_maps, labels, use_name=False):
+	comps = []
+	seen = set()
+	for amounts in comp_maps.values():
+		for name in amounts:
+			if name not in seen:
+				seen.add(name)
+				if use_name:
+					comps.append({"name": name, "label": _proper_name(name)})
+				else:
+					comps.append(_comp(name, labels.get(name)))
+	return comps
+
+
+def _month_label(start_date):
+	start = getdate(start_date)
+	return f"{start.strftime('%b')}-{start.strftime('%y')}"
+
+
+def _slip_row(
+	slip,
+	ssa_name,
+	actual_union,
+	earn_union,
+	ded_union,
+	add_earn_union,
+	add_ded_union,
+	earn_maps,
+	ded_maps,
+	add_earn_maps,
+	add_ded_maps,
+):
+	row = {
+		"month_year": _month_label(slip.start_date),
+		"salary_slip": slip.name,
+		"paid_days": flt(slip.payment_days),
+		"total_gross": 0.0,
+		"total_earning": 0.0,
+		"total_additional_salary": 0.0,
+		"total_deductions": 0.0,
+		"total_additional_deduction": 0.0,
+		"net_payable": flt(slip.net_salary),
+		"_is_total": 0,
+	}
+	ssa_amounts = {r.salary_component: flt(r.amount) for r in _ssa_earnings(ssa_name)}
+	gross = 0.0
+	for comp in actual_union:
+		value = flt(ssa_amounts.get(comp["name"]))
+		row[_act_fn(comp["name"])] = value
+		gross += value
+	row["total_gross"] = flt(gross, 2)
+
+	slip_earn = earn_maps.get(slip.name) or {}
+	earn_total = 0.0
+	for comp in earn_union:
+		value = flt(slip_earn.get(comp["name"]))
+		row[_earn_fn(comp["name"])] = value
+		earn_total += value
+	row["total_earning"] = flt(earn_total, 2)
+
+	add_earn = add_earn_maps.get(slip.name) or {}
+	add_earn_total = 0.0
+	for comp in add_earn_union:
+		value = flt(add_earn.get(comp["name"]))
+		row[_add_earn_fn(comp["name"])] = value
+		add_earn_total += value
+	row["total_additional_salary"] = flt(add_earn_total, 2)
+
+	slip_ded = ded_maps.get(slip.name) or {}
+	ded_total = 0.0
+	for comp in ded_union:
+		value = flt(slip_ded.get(comp["name"]))
+		row[_ded_fn(comp["name"])] = value
+		ded_total += value
+	row["total_deductions"] = flt(ded_total, 2)
+
+	add_ded = add_ded_maps.get(slip.name) or {}
+	add_ded_total = 0.0
+	for comp in add_ded_union:
+		value = flt(add_ded.get(comp["name"]))
+		row[_add_ded_fn(comp["name"])] = value
+		add_ded_total += value
+	row["total_additional_deduction"] = flt(add_ded_total, 2)
+	return row
+
+
+def _totals_row(rows, actual_union, earn_union, ded_union, add_earn_union, add_ded_union):
+	total = {
+		"month_year": _("Total"),
+		"paid_days": flt(sum(flt(r.get("paid_days")) for r in rows), 1),
+		"total_gross": flt(sum(flt(r.get("total_gross")) for r in rows), 2),
+		"total_earning": flt(sum(flt(r.get("total_earning")) for r in rows), 2),
+		"total_additional_salary": flt(sum(flt(r.get("total_additional_salary")) for r in rows), 2),
+		"total_deductions": flt(sum(flt(r.get("total_deductions")) for r in rows), 2),
+		"total_additional_deduction": flt(sum(flt(r.get("total_additional_deduction")) for r in rows), 2),
+		"net_payable": flt(sum(flt(r.get("net_payable")) for r in rows), 2),
+		"_is_total": 1,
+	}
+	for comp in actual_union:
+		fn = _act_fn(comp["name"])
+		total[fn] = flt(sum(flt(r.get(fn)) for r in rows), 2)
+	for comp in earn_union:
+		fn = _earn_fn(comp["name"])
+		total[fn] = flt(sum(flt(r.get(fn)) for r in rows), 2)
+	for comp in ded_union:
+		fn = _ded_fn(comp["name"])
+		total[fn] = flt(sum(flt(r.get(fn)) for r in rows), 2)
+	for comp in add_earn_union:
+		fn = _add_earn_fn(comp["name"])
+		total[fn] = flt(sum(flt(r.get(fn)) for r in rows), 2)
+	for comp in add_ded_union:
+		fn = _add_ded_fn(comp["name"])
+		total[fn] = flt(sum(flt(r.get(fn)) for r in rows), 2)
+	return total
+
+
+def _slug(comp):
+	slug = re.sub(r"[^A-Za-z0-9]+", "_", comp or "").strip("_").lower()
+	return slug or "comp"
+
+
+def _act_fn(comp):
+	return f"act_{_slug(comp)}"
+
+
+def _earn_fn(comp):
+	return f"earn_{_slug(comp)}"
+
+
+def _ded_fn(comp):
+	return f"ded_{_slug(comp)}"
+
+
+def _add_earn_fn(comp):
+	return f"add_earn_{_slug(comp)}"
+
+
+def _add_ded_fn(comp):
+	return f"add_ded_{_slug(comp)}"
+
+
+def _col(label, fieldname, fieldtype="Currency", width=110, group=None):
+	column = {
+		"label": _(label),
+		"fieldname": fieldname,
+		"fieldtype": fieldtype,
+		"width": width,
+	}
+	if group:
+		column["esh_group"] = group
+	return column
+
+
+def _columns(actual_comps, earn_comps, ded_comps, add_earn_comps=None, add_ded_comps=None):
+	add_earn_comps = add_earn_comps or []
+	add_ded_comps = add_ded_comps or []
+	columns = [_col("", "month_year", "Data", 130, "Months")]
+	for comp in actual_comps:
+		columns.append(_col(comp["label"], _act_fn(comp["name"]), "Currency", 100, "Actual Earning"))
+	columns.append(_col("Total", "total_gross", "Currency", 110, "Actual Earning"))
+	columns.append(_col("", "paid_days", "Float", 100, "Paid Days"))
+	for comp in earn_comps:
+		columns.append(_col(comp["label"], _earn_fn(comp["name"]), "Currency", 100, "Calculated Earning"))
+	columns.append(_col("Total", "total_earning", "Currency", 110, "Calculated Earning"))
+	for comp in add_earn_comps:
+		columns.append(_col(comp["label"], _add_earn_fn(comp["name"]), "Currency", 140, "Additional Salary"))
+	if add_earn_comps:
+		columns.append(_col("Total", "total_additional_salary", "Currency", 120, "Additional Salary"))
+	for comp in ded_comps:
+		columns.append(_col(comp["label"], _ded_fn(comp["name"]), "Currency", 100, "Deduction"))
+	columns.append(_col("Total", "total_deductions", "Currency", 110, "Deduction"))
+	for comp in add_ded_comps:
+		columns.append(_col(comp["label"], _add_ded_fn(comp["name"]), "Currency", 150, "Additional Deduction"))
+	if add_ded_comps:
+		columns.append(_col("Total", "total_additional_deduction", "Currency", 130, "Additional Deduction"))
+	columns.append(_col("", "net_payable", "Currency", 130, "Net Payable"))
+	slip_col = _col("Salary Slip", "salary_slip", "Data", 0)
+	slip_col["hidden"] = 1
+	columns.append(slip_col)
+	return columns
+
+
+# ─── PDF / Excel (same download path as Monthly Salary Register) ─────────────
+
+ACTUAL_HDR = "#F4A460"
+EARN_HDR = "#90EE90"
+ADD_EARN_HDR = "#93C5FD"
+DED_HDR = "#F08080"
+ADD_DED_HDR = "#D8B4FE"
+PLAIN_HDR = "#F0F0F0"
+
+
+def _require_filters(filters):
+	filters = _normalize_filters(filters)
+	if not filters.company or not filters.employee:
+		frappe.throw(_("Please select Company and Employee."))
+	if _is_period(filters):
+		if not filters.from_date or not filters.to_date:
+			frappe.throw(_("Please select From Date and To Date."))
+		if getdate(filters.from_date) > getdate(filters.to_date):
+			frappe.throw(_("From Date cannot be after To Date."))
+	return filters
+
+
+def _export_meta(filters):
+	employee_name = (
+		frappe.db.get_value("Company Link", filters.employee, "full_name") or filters.employee
+	)
+	if _is_period(filters):
+		start = getdate(filters.from_date).strftime("%d-%b-%Y")
+		end = getdate(filters.to_date).strftime("%d-%b-%Y")
+		period = f"{start} to {end}"
+	else:
+		period = _("Full History")
+	return {
+		"company": filters.company or "",
+		"employee_name": employee_name,
+		"employee": filters.employee,
+		"period": period,
+	}
+
+
+def _group_spans(cols):
+	spans = []
+	for col in cols:
+		name = col.get("esh_group") or ""
+		if spans and spans[-1]["name"] == name:
+			spans[-1]["cols"].append(col)
+		else:
+			spans.append({"name": name, "cols": [col]})
+	return spans
+
+
+def _hdr_color(group):
+	if group == "Actual Earning":
+		return ACTUAL_HDR
+	if group == "Calculated Earning":
+		return EARN_HDR
+	if group == "Additional Salary":
+		return ADD_EARN_HDR
+	if group == "Deduction":
+		return DED_HDR
+	if group == "Additional Deduction":
+		return ADD_DED_HDR
+	return PLAIN_HDR
+
+
+def _excel_fill(group):
+	return PatternFill("solid", fgColor=_hdr_color(group).lstrip("#"))
+
+
+def _export_width(col):
+	"""PDF/Excel widths. The marked groups are tighter than Actual Earning."""
+	fn = col.get("fieldname") or ""
+	label = str(col.get("label") or "")
+	group = col.get("esh_group") or ""
+	if fn == "month_year":
+		return 48
+	if fn == "paid_days":
+		return 34
+	if fn == "net_payable":
+		return 48
+	if group in ("Calculated Earning", "Additional Salary", "Deduction", "Additional Deduction"):
+		if len(label) > 12:
+			return 48
+		if fn.startswith("total_"):
+			return 52
+		return 42
+	if fn.startswith("total_"):
+		return 54
+	if len(label) > 6:
+		return 46
+	return 42
+
+
+def _display_value(col, row):
+	fn = col["fieldname"]
+	val = row.get(fn)
+	if val is None or val == "":
+		return ""
+	if fn == "paid_days":
+		n = flt(val)
+		if abs(n - round(n)) < 1e-9:
+			return str(int(round(n)))
+		return f"{n:.1f}"
+	if col.get("fieldtype") in ("Currency", "Float") and isinstance(val, (int, float)):
+		return f"{flt(val):,.2f}"
+	return str(val)
+
+
+def _has_extra_groups(columns):
+	return any(
+		c.get("esh_group") in ("Additional Salary", "Additional Deduction") for c in columns
+	)
+
+
+@frappe.whitelist()
+def print_report(filters):
+	filters = _require_filters(filters)
+	columns, rows = execute(filters)
+	if not rows:
+		frappe.throw(_("No salary slips found for this employee."))
+	html = _build_html(columns, rows, _export_meta(filters))
+	return _save_pdf(html, "Employee_Salary_History")
+
+
+def _build_html(columns, rows, meta):
+	columns = [c for c in columns if not c.get("hidden")]
+	tight = _has_extra_groups(columns)
+	value_px = "7px" if tight else "8.5px"
+	spans = _group_spans(columns)
+	multi = any(len(group["cols"]) > 1 for group in spans)
+	top = []
+	sub = []
+	for group in spans:
+		color = _hdr_color(group["name"])
+		n = len(group["cols"])
+		style = (
+			f"padding:4px 1px;font-size:8px;background:{color};"
+			"vertical-align:middle;text-align:center;"
+		)
+		if len(group["cols"]) == 1 and group["cols"][0].get("fieldname") == "month_year":
+			style += "white-space:nowrap;word-wrap:normal;"
+		label = frappe.utils.escape_html(group["name"])
+		if n == 1 and multi:
+			top.append(f'<th rowspan="2" style="{style}">{label}</th>')
+		elif n > 1:
+			top.append(f'<th colspan="{n}" style="{style}">{label}</th>')
+			for col in group["cols"]:
+				sub_label = frappe.utils.escape_html(col.get("label") or "")
+				sub.append(f'<th style="{style}">{sub_label}</th>')
+		else:
+			top.append(f'<th style="{style}">{label}</th>')
+
+	header = f"<tr>{''.join(top)}</tr>"
+	if sub:
+		header += f"<tr>{''.join(sub)}</tr>"
+
+	body = ""
+	data_idx = 0
+	for row in rows:
+		is_tot = row.get("_is_total")
+		if not is_tot:
+			data_idx += 1
+		tds = ""
+		for col in columns:
+			fn = col["fieldname"]
+			disp = _display_value(col, row)
+			disp = frappe.utils.escape_html(disp)
+			if is_tot:
+				bg = "#e8e8e8"
+			elif data_idx % 2 == 0:
+				bg = "#f5f5f5"
+			else:
+				bg = "#fff"
+			align = "center"
+			weight = "bold" if is_tot else "normal"
+			row_cls = "tot" if is_tot else "data"
+			if fn == "month_year" and not is_tot:
+				row_cls += " month"
+			tds += (
+				f'<td class="{row_cls}" style="text-align:{align};background:{bg};font-weight:{weight};">{disp}</td>'
+			)
+		body += f"<tr>{tds}</tr>"
+
+	widths = [_export_width(c) for c in columns]
+	total_width = sum(widths) or 1
+	colgroup = "<colgroup>" + "".join(
+		f'<col style="width:{100.0 * w / total_width:.2f}%">' for w in widths
+	) + "</colgroup>"
+	company = frappe.utils.escape_html(meta["company"])
+	employee = frappe.utils.escape_html(f"{meta['employee_name']} ({meta['employee']})")
+	period = frappe.utils.escape_html(str(meta["period"]))
+	return f"""<!DOCTYPE html><html><head><meta charset="UTF-8">
+<style>
+*{{margin:0;padding:0;box-sizing:border-box}}
+body{{font-family:Arial,sans-serif;font-size:7px;color:#000}}
+.hdr{{text-align:center;margin-bottom:6px}}
+.hdr .co{{font-size:18px;font-weight:900}}
+.hdr .ttl{{font-size:15px;font-weight:700;margin-top:2px}}
+.hdr .per{{font-size:13px;margin-top:2px}}
+table{{width:100%;border-collapse:collapse;table-layout:fixed}}
+th,td{{word-wrap:break-word;vertical-align:middle;text-align:center}}
+th{{border:1px solid #000}}
+td.data{{border:1px solid #000;padding:6px 1px;font-size:{value_px};line-height:1;vertical-align:middle;text-align:center}}
+td.data.month{{white-space:nowrap;word-wrap:normal;overflow:hidden}}
+td.tot{{border:1px solid #000;padding:7px 1px;font-size:{value_px};line-height:1;white-space:nowrap;vertical-align:middle;text-align:center;overflow:hidden}}
+</style></head><body>
+<div class="hdr">
+  <div class="co">{company}</div>
+  <div class="ttl">Employee Salary History</div>
+  <div class="per">{employee}<br>For the Period {period}</div>
+</div>
+<table>{colgroup}<thead>{header}</thead><tbody>{body}</tbody></table>
+</body></html>"""
+
+
+def _save_pdf(html, prefix):
+	pdf = get_pdf(
+		html,
+		options={
+			"page-size": "A4",
+			"orientation": "Landscape",
+			"margin-top": "6mm",
+			"margin-right": "4mm",
+			"margin-bottom": "6mm",
+			"margin-left": "4mm",
+			"encoding": "UTF-8",
+			"no-outline": None,
+		},
+	)
+	ts = frappe.utils.now_datetime().strftime("%Y%m%d_%H%M%S")
+	fn = f"{prefix}_{ts}.pdf"
+	with open(frappe.utils.get_files_path(fn, is_private=0), "wb") as fh:
+		fh.write(pdf)
+	doc = frappe.get_doc(
+		{
+			"doctype": "File",
+			"file_name": fn,
+			"is_private": 0,
+			"file_url": f"/files/{fn}",
+		}
+	)
+	doc.insert(ignore_permissions=True)
+	frappe.db.commit()
+	return doc.file_url
+
+
+@frappe.whitelist()
+def excel_report(filters):
+	filters = _require_filters(filters)
+	columns, rows = execute(filters)
+	if not rows:
+		frappe.throw(_("No salary slips found for this employee."))
+	wb = _build_workbook(columns, rows, _export_meta(filters))
+	return _save_excel(wb, "Employee_Salary_History")
+
+
+def _build_workbook(columns, rows, meta):
+	columns = [c for c in columns if not c.get("hidden")]
+	wb = Workbook()
+	ws = wb.active
+	ws.title = "Salary History"
+	thin = Border(
+		left=Side(style="thin", color="000000"),
+		right=Side(style="thin", color="000000"),
+		top=Side(style="thin", color="000000"),
+		bottom=Side(style="thin", color="000000"),
+	)
+	n_cols = max(len(columns), 1)
+	ws.merge_cells(start_row=1, start_column=1, end_row=1, end_column=n_cols)
+	title = ws.cell(1, 1, f"{meta['company']} - Employee Salary History")
+	title.font = Font(name="Arial", size=14, bold=True)
+	title.alignment = Alignment(horizontal="center")
+
+	ws.merge_cells(start_row=2, start_column=1, end_row=2, end_column=n_cols)
+	who = ws.cell(2, 1, f"{meta['employee_name']} ({meta['employee']})")
+	who.font = Font(name="Arial", size=10, bold=True)
+	who.alignment = Alignment(horizontal="center")
+
+	ws.merge_cells(start_row=3, start_column=1, end_row=3, end_column=n_cols)
+	period = ws.cell(3, 1, f"For the Period {meta['period']}")
+	period.font = Font(name="Arial", size=10)
+	period.alignment = Alignment(horizontal="center")
+
+	spans = _group_spans(columns)
+	multi = any(len(group["cols"]) > 1 for group in spans)
+	group_row = 5
+	sub_row = 6 if multi else 5
+	data_start = sub_row + 1
+	col_idx = 1
+	for group in spans:
+		n = len(group["cols"])
+		fill = _excel_fill(group["name"])
+		end_col = col_idx + n - 1
+		if n == 1 and multi:
+			ws.merge_cells(start_row=group_row, start_column=col_idx, end_row=sub_row, end_column=col_idx)
+		elif n > 1:
+			ws.merge_cells(start_row=group_row, start_column=col_idx, end_row=group_row, end_column=end_col)
+		cell = ws.cell(group_row, col_idx, group["name"])
+		cell.font = Font(name="Arial", size=8, bold=True)
+		cell.fill = fill
+		cell.border = thin
+		cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
+		for offset in range(n):
+			covered = ws.cell(group_row, col_idx + offset)
+			covered.fill = fill
+			covered.border = thin
+			if multi and n > 1:
+				sub = ws.cell(sub_row, col_idx + offset, group["cols"][offset].get("label") or "")
+				sub.font = Font(name="Arial", size=8, bold=True)
+				sub.fill = fill
+				sub.border = thin
+				sub.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
+		col_idx += n
+
+	tot_fill = PatternFill("solid", fgColor="E8E8E8")
+	for r_idx, row in enumerate(rows, start=data_start):
+		is_tot = row.get("_is_total")
+		for c_idx, col in enumerate(columns, start=1):
+			fn = col["fieldname"]
+			val = row.get(fn)
+			cell = ws.cell(r_idx, c_idx, None if val in (None, "") else val)
+			cell.font = Font(name="Arial", size=8, bold=bool(is_tot))
+			cell.border = thin
+			if is_tot:
+				cell.fill = tot_fill
+			if fn == "paid_days" and isinstance(val, (int, float)):
+				v = flt(val)
+				if abs(v - round(v)) < 1e-9:
+					cell.value = int(round(v))
+					cell.number_format = "0"
+				else:
+					cell.number_format = "0.0"
+				cell.alignment = Alignment(horizontal="center")
+			elif col.get("fieldtype") in ("Currency", "Float") and isinstance(val, (int, float)):
+				cell.number_format = "#,##0.00"
+				cell.alignment = Alignment(horizontal="right")
+			elif fn == "month_year":
+				cell.alignment = Alignment(horizontal="left")
+
+	for i, col in enumerate(columns, start=1):
+		ws.column_dimensions[get_column_letter(i)].width = _excel_width(col)
+	ws.row_dimensions[group_row].height = 22
+	if multi:
+		ws.row_dimensions[sub_row].height = 30
+	return wb
+
+
+def _excel_width(col):
+	"""Character width so amounts and headings are visible. ###### means the column was too narrow."""
+	fn = col.get("fieldname") or ""
+	label = str(col.get("label") or "")
+	if fn == "month_year":
+		return 14
+	if fn == "paid_days":
+		return 12
+	if col.get("fieldtype") in ("Currency", "Float"):
+		return max(14, min(len(label) + 2, 24))
+	return max(12, min(len(label) + 2, 24))
+
+
+def _save_excel(wb, prefix):
+	buf = io.BytesIO()
+	wb.save(buf)
+	ts = frappe.utils.now_datetime().strftime("%Y%m%d_%H%M%S")
+	fn = f"{prefix}_{ts}.xlsx"
+	with open(frappe.utils.get_files_path(fn, is_private=0), "wb") as fh:
+		fh.write(buf.getvalue())
+	doc = frappe.get_doc(
+		{
+			"doctype": "File",
+			"file_name": fn,
+			"is_private": 0,
+			"file_url": f"/files/{fn}",
+		}
+	)
+	doc.insert(ignore_permissions=True)
+	frappe.db.commit()
+	return doc.file_url
