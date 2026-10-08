@@ -790,10 +790,30 @@ function inject_ep_styles() {
         .ep-ssa-history-link:hover { background:#f0fdf4; }
         .ep-ssa-pop-backdrop { position:fixed; inset:0; background:rgba(15,23,42,.45); z-index:1050; display:flex; align-items:flex-start; justify-content:center; padding:48px 16px; overflow-y:auto; }
         .ep-ssa-pop { width:min(640px, 100%); position:relative; }
+        .ep-ssa-pop.wide { width:min(1100px, 100%); background:#fff; border-radius:8px; padding:12px; }
         .ep-ssa-pop-close { position:absolute; top:-12px; right:-12px; width:28px; height:28px; border:0; border-radius:50%; background:#fff; color:#14532d; font-size:18px; line-height:1; cursor:pointer; box-shadow:0 2px 8px rgba(0,0,0,.15); z-index:2; }
         .ep-ssa-pop .ep-ssa-current-id { font-size:11px; font-weight:600; color:#15803d; background:rgba(255,255,255,0.7); padding:2px 8px; border-radius:10px; }
         .ep-ssa-history-id { display:block; font-size:12px; font-weight:600; }
         .ep-ssa-history-meta { display:block; font-size:10px; font-weight:400; color:#6b7280; margin-top:1px; }
+        .ep-ssa-compare { background:var(--card-bg,#fff); border:1px solid var(--border-color,#e5e7eb); border-radius:8px; overflow:hidden; }
+        .ep-ssa-compare-title { font-size:12px; font-weight:700; color:var(--text-color); padding:10px 12px 0; }
+        .ep-ssa-compare-note { font-size:11px; color:var(--text-muted); padding:2px 12px 8px; }
+        .ep-ssa-compare-scroll { overflow-x:auto; }
+        .ep-ssa-compare-table { border-collapse:collapse; width:max-content; min-width:100%; font-size:11px; }
+        .ep-ssa-compare-table th, .ep-ssa-compare-table td { border:1px solid #e5e7eb; padding:6px 8px; text-align:right; white-space:nowrap; vertical-align:middle; }
+        .ep-ssa-compare-table th { background:#f8fafc; font-weight:700; text-align:center; position:sticky; top:0; }
+        .ep-ssa-compare-table th.earn { background:#ecfdf5; color:#14532d; }
+        .ep-ssa-compare-table th.ded { background:#fef2f2; color:#991b1b; }
+        .ep-ssa-compare-table th.net { background:#eff6ff; color:#1e3a8a; }
+        .ep-ssa-compare-table td.period, .ep-ssa-compare-table th.period { text-align:left; position:sticky; left:0; background:#fff; z-index:1; min-width:168px; }
+        .ep-ssa-compare-table th.period { background:#f8fafc; z-index:2; }
+        .ep-ssa-compare-table tr.current td { background:#f0fdf4; }
+        .ep-ssa-compare-table tr.current td.period { background:#dcfce7; }
+        .ep-ssa-compare-table .ep-ssa-tag { display:inline-block; font-size:9px; font-weight:700; letter-spacing:0.03em; text-transform:uppercase; border-radius:8px; padding:1px 6px; margin-right:6px; }
+        .ep-ssa-compare-table .ep-ssa-tag.current { background:#22c55e; color:#fff; }
+        .ep-ssa-compare-table .ep-ssa-tag.previous { background:#e5e7eb; color:#374151; }
+        .ep-ssa-compare-table td.diff { background:#fef3c7; font-weight:700; }
+        .ep-ssa-compare-table tr.current td.diff { background:#fde68a; }
         .ep-ssa-current-link { font-size:11px; font-weight:600; color:#15803d; text-decoration:none; background:rgba(255,255,255,0.7); padding:2px 8px; border-radius:10px; transition:background 0.15s; }
         .ep-ssa-current-link:hover { background:#fff; text-decoration:none; }
         .ep-ssa-current-body { padding:12px 14px; }
@@ -1265,10 +1285,8 @@ function render_profile($sidebar, $main, d, emp) {
     $main.on("click.epssa", ".ep-ssa-history-btn", function (e) {
         e.preventDefault();
         e.stopPropagation();
-        var $menu = $(this).siblings(".ep-ssa-history-menu");
-        var open = $menu.hasClass("open");
         $main.find(".ep-ssa-history-menu").removeClass("open");
-        if (!open) $menu.addClass("open");
+        open_ssa_compare_popup(ssa_history, latest_ssa);
     });
     $main.on("click.epssa", ".ep-ssa-history-menu", function (e) {
         e.stopPropagation();
@@ -1749,6 +1767,93 @@ function render_timeline_html(timeline) {
 }
 
 // ── SSA Panel ─────────────────────────────────────────────────────────────────
+function ssa_period_label(rec) {
+    var from = rec.from_date ? fmt_date_human(rec.from_date) : "";
+    var to = rec.to_date ? fmt_date_human(rec.to_date) : "Ongoing";
+    if (from) return from + " – " + to;
+    return to;
+}
+
+function ssa_component_names(rows, key) {
+    var names = [];
+    var seen = {};
+    rows.forEach(function (rec) {
+        (rec[key] || []).forEach(function (item) {
+            var name = item.salary_component || "";
+            if (name && !seen[name]) {
+                seen[name] = 1;
+                names.push(name);
+            }
+        });
+    });
+    return names;
+}
+
+function ssa_component_amount(rec, key, name) {
+    var found = null;
+    (rec[key] || []).forEach(function (item) {
+        if (item.salary_component === name) found = Number(item.amount || 0);
+    });
+    return found;
+}
+
+function render_ssa_compare_table(ssa_history, latest_ssa) {
+    var rows = (ssa_history || []).filter(function (rec) {
+        return cint(rec.docstatus) !== 2;
+    });
+    rows.sort(function (a, b) {
+        return String(b.from_date || "").localeCompare(String(a.from_date || ""));
+    });
+    if (latest_ssa && !rows.some(function (rec) { return rec.name === latest_ssa.name; })) {
+        rows.unshift(latest_ssa);
+    }
+    if (!rows.length) return "";
+
+    var earnings = ssa_component_names(rows, "earnings");
+    var deductions = ssa_component_names(rows, "deductions");
+    var html = "<div class='ep-ssa-compare'>";
+    html += "<div class='ep-ssa-compare-title'>Salary Structure Assignment History</div>";
+    html += "<div class='ep-ssa-compare-scroll'><table class='ep-ssa-compare-table'><thead><tr>";
+    html += "<th class='period'>Period</th>";
+    earnings.forEach(function (name) {
+        html += "<th class='earn'>" + frappe.utils.escape_html(name) + "</th>";
+    });
+    deductions.forEach(function (name) {
+        html += "<th class='ded'>" + frappe.utils.escape_html(name) + "</th>";
+    });
+    html += "<th class='net'>Net Payable</th></tr></thead><tbody>";
+
+    rows.forEach(function (rec, idx) {
+        var newer = idx > 0 ? rows[idx - 1] : null;
+        var is_current = latest_ssa && rec.name === latest_ssa.name;
+        var tag = is_current ? "current" : (idx === 1 ? "previous" : "");
+        var tag_label = is_current ? "Current" : (idx === 1 ? "Previous" : "");
+        html += "<tr class='" + (is_current ? "current" : "") + "'>";
+        html += "<td class='period'>";
+        if (tag_label) html += "<span class='ep-ssa-tag " + tag + "'>" + tag_label + "</span>";
+        html += frappe.utils.escape_html(ssa_period_label(rec));
+        html += "</td>";
+        earnings.forEach(function (name) {
+            html += ssa_compare_cell(ssa_component_amount(rec, "earnings", name), newer && ssa_component_amount(newer, "earnings", name), !!newer);
+        });
+        deductions.forEach(function (name) {
+            html += ssa_compare_cell(ssa_component_amount(rec, "deductions", name), newer && ssa_component_amount(newer, "deductions", name), !!newer);
+        });
+        var net = Number(rec.net_salary || 0);
+        var newer_net = newer ? Number(newer.net_salary || 0) : net;
+        html += "<td class='" + (newer && net !== newer_net ? "diff" : "") + "'>&#8377;" + fmt_currency(net) + "</td>";
+        html += "</tr>";
+    });
+    html += "</tbody></table></div></div>";
+    return html;
+}
+
+function ssa_compare_cell(amount, newer_amount, compare) {
+    if (amount === null) return "<td>—</td>";
+    var changed = compare && amount !== newer_amount;
+    return "<td class='" + (changed ? "diff" : "") + "'>&#8377;" + fmt_currency(amount) + "</td>";
+}
+
 function render_ssa_history_menu(ssa_history, latest_ssa) {
     var rows = (ssa_history || []).filter(function (rec) {
         return !(latest_ssa && rec.name === latest_ssa.name);
@@ -1873,6 +1978,29 @@ function render_ssa_panel_html(latest_ssa, cancelled_ssas, company_link, ssa_his
         html += "</div></div>";
     }
     return html;
+}
+
+function open_ssa_compare_popup(ssa_history, latest_ssa) {
+    $(".ep-ssa-pop-backdrop").remove();
+    var $pop = $("<div class='ep-ssa-pop-backdrop'></div>");
+    $pop.html(
+        "<div class='ep-ssa-pop wide'>" +
+        "<button type='button' class='ep-ssa-pop-close' aria-label='Close'>&times;</button>" +
+        render_ssa_compare_table(ssa_history, latest_ssa) +
+        "</div>"
+    );
+    $("body").append($pop);
+    $pop.on("click", function (e) {
+        if ($(e.target).is(".ep-ssa-pop-backdrop") || $(e.target).is(".ep-ssa-pop-close")) {
+            $pop.remove();
+        }
+    });
+    $(document).off("keydown.epssapop").on("keydown.epssapop", function (e) {
+        if (e.key === "Escape") {
+            $(".ep-ssa-pop-backdrop").remove();
+            $(document).off("keydown.epssapop");
+        }
+    });
 }
 
 function open_ssa_detail_popup(ssa, company_link, latest_ssa) {
