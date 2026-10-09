@@ -16,6 +16,7 @@ from frappe.utils.pdf import get_pdf
 from openpyxl import Workbook
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.utils import get_column_letter
+from openpyxl.worksheet.properties import PageSetupProperties
 
 
 def execute(filters=None):
@@ -191,7 +192,7 @@ def _slip_component_maps(slip_names):
 
 def _comp(name, abbr=None):
 	# Short title under the group heading: Basic, DA, PF, ESIC, PT, RET.
-	return {"name": name, "label": _heading(name, abbr)}
+	return {"name": name, "label": _heading(name, abbr), "full_name": _proper_name(name)}
 
 
 def _heading(name, abbr):
@@ -269,7 +270,8 @@ def _extra_union(comp_maps, labels, use_name=False):
 			if name not in seen:
 				seen.add(name)
 				if use_name:
-					comps.append({"name": name, "label": _proper_name(name)})
+					proper = _proper_name(name)
+					comps.append({"name": name, "label": proper, "full_name": proper})
 				else:
 					comps.append(_comp(name, labels.get(name)))
 	return comps
@@ -402,7 +404,7 @@ def _add_ded_fn(comp):
 	return f"add_ded_{_slug(comp)}"
 
 
-def _col(label, fieldname, fieldtype="Currency", width=110, group=None):
+def _col(label, fieldname, fieldtype="Currency", width=110, group=None, full_name=None):
 	column = {
 		"label": _(label),
 		"fieldname": fieldname,
@@ -411,6 +413,8 @@ def _col(label, fieldname, fieldtype="Currency", width=110, group=None):
 	}
 	if group:
 		column["esh_group"] = group
+	if full_name:
+		column["esh_full_name"] = full_name
 	return column
 
 
@@ -419,21 +423,21 @@ def _columns(actual_comps, earn_comps, ded_comps, add_earn_comps=None, add_ded_c
 	add_ded_comps = add_ded_comps or []
 	columns = [_col("", "month_year", "Data", 130, "Months")]
 	for comp in actual_comps:
-		columns.append(_col(comp["label"], _act_fn(comp["name"]), "Currency", 100, "Actual Earning"))
+		columns.append(_col(comp["label"], _act_fn(comp["name"]), "Currency", 100, "Actual Earning", comp.get("full_name")))
 	columns.append(_col("Total", "total_gross", "Currency", 110, "Actual Earning"))
 	columns.append(_col("", "paid_days", "Float", 100, "Paid Days"))
 	for comp in earn_comps:
-		columns.append(_col(comp["label"], _earn_fn(comp["name"]), "Currency", 100, "Calculated Earning"))
+		columns.append(_col(comp["label"], _earn_fn(comp["name"]), "Currency", 100, "Calculated Earning", comp.get("full_name")))
 	columns.append(_col("Total", "total_earning", "Currency", 110, "Calculated Earning"))
 	for comp in add_earn_comps:
-		columns.append(_col(comp["label"], _add_earn_fn(comp["name"]), "Currency", 140, "Additional Salary"))
+		columns.append(_col(comp["label"], _add_earn_fn(comp["name"]), "Currency", 140, "Additional Salary", comp.get("full_name")))
 	if add_earn_comps:
 		columns.append(_col("Total", "total_additional_salary", "Currency", 120, "Additional Salary"))
 	for comp in ded_comps:
-		columns.append(_col(comp["label"], _ded_fn(comp["name"]), "Currency", 100, "Deduction"))
+		columns.append(_col(comp["label"], _ded_fn(comp["name"]), "Currency", 100, "Deduction", comp.get("full_name")))
 	columns.append(_col("Total", "total_deductions", "Currency", 110, "Deduction"))
 	for comp in add_ded_comps:
-		columns.append(_col(comp["label"], _add_ded_fn(comp["name"]), "Currency", 150, "Additional Deduction"))
+		columns.append(_col(comp["label"], _add_ded_fn(comp["name"]), "Currency", 150, "Additional Deduction", comp.get("full_name")))
 	if add_ded_comps:
 		columns.append(_col("Total", "total_additional_deduction", "Currency", 130, "Additional Deduction"))
 	columns.append(_col("", "net_payable", "Currency", 130, "Net Payable"))
@@ -445,12 +449,12 @@ def _columns(actual_comps, earn_comps, ded_comps, add_earn_comps=None, add_ded_c
 
 # ─── PDF / Excel (same download path as Monthly Salary Register) ─────────────
 
-ACTUAL_HDR = "#F4A460"
-EARN_HDR = "#90EE90"
-ADD_EARN_HDR = "#93C5FD"
-DED_HDR = "#F08080"
-ADD_DED_HDR = "#D8B4FE"
-PLAIN_HDR = "#F0F0F0"
+ACTUAL_HDR = "#FDEBD0"
+EARN_HDR = "#E5F6E5"
+ADD_EARN_HDR = "#E7F1FE"
+DED_HDR = "#FDE8E8"
+ADD_DED_HDR = "#F4E9FE"
+PLAIN_HDR = "#F7F7F7"
 
 
 def _require_filters(filters):
@@ -710,21 +714,25 @@ def _build_workbook(columns, rows, meta):
 		top=Side(style="thin", color="000000"),
 		bottom=Side(style="thin", color="000000"),
 	)
+	ws.sheet_format.defaultRowHeight = 24
 	n_cols = max(len(columns), 1)
+	ws.row_dimensions[1].height = 40
+	ws.row_dimensions[2].height = 30
+	ws.row_dimensions[3].height = 24
 	ws.merge_cells(start_row=1, start_column=1, end_row=1, end_column=n_cols)
 	title = ws.cell(1, 1, f"{meta['company']} - Employee Salary History")
-	title.font = Font(name="Arial", size=14, bold=True)
-	title.alignment = Alignment(horizontal="center")
+	title.font = Font(name="Arial", size=22, bold=True, color="000000")
+	title.alignment = Alignment(horizontal="center", vertical="center")
 
 	ws.merge_cells(start_row=2, start_column=1, end_row=2, end_column=n_cols)
 	who = ws.cell(2, 1, f"{meta['employee_name']} ({meta['employee']})")
-	who.font = Font(name="Arial", size=10, bold=True)
-	who.alignment = Alignment(horizontal="center")
+	who.font = Font(name="Arial", size=16, bold=True, color="000000")
+	who.alignment = Alignment(horizontal="center", vertical="center")
 
 	ws.merge_cells(start_row=3, start_column=1, end_row=3, end_column=n_cols)
 	period = ws.cell(3, 1, f"For the Period {meta['period']}")
-	period.font = Font(name="Arial", size=10)
-	period.alignment = Alignment(horizontal="center")
+	period.font = Font(name="Arial", size=14)
+	period.alignment = Alignment(horizontal="center", vertical="center")
 
 	spans = _group_spans(columns)
 	multi = any(len(group["cols"]) > 1 for group in spans)
@@ -741,7 +749,7 @@ def _build_workbook(columns, rows, meta):
 		elif n > 1:
 			ws.merge_cells(start_row=group_row, start_column=col_idx, end_row=group_row, end_column=end_col)
 		cell = ws.cell(group_row, col_idx, group["name"])
-		cell.font = Font(name="Arial", size=8, bold=True)
+		cell.font = Font(name="Arial", size=12, bold=True, color="000000")
 		cell.fill = fill
 		cell.border = thin
 		cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
@@ -751,7 +759,7 @@ def _build_workbook(columns, rows, meta):
 			covered.border = thin
 			if multi and n > 1:
 				sub = ws.cell(sub_row, col_idx + offset, group["cols"][offset].get("label") or "")
-				sub.font = Font(name="Arial", size=8, bold=True)
+				sub.font = Font(name="Arial", size=12, bold=True, color="000000")
 				sub.fill = fill
 				sub.border = thin
 				sub.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
@@ -760,12 +768,14 @@ def _build_workbook(columns, rows, meta):
 	tot_fill = PatternFill("solid", fgColor="E8E8E8")
 	for r_idx, row in enumerate(rows, start=data_start):
 		is_tot = row.get("_is_total")
+		ws.row_dimensions[r_idx].height = 24
 		for c_idx, col in enumerate(columns, start=1):
 			fn = col["fieldname"]
 			val = row.get(fn)
 			cell = ws.cell(r_idx, c_idx, None if val in (None, "") else val)
-			cell.font = Font(name="Arial", size=8, bold=bool(is_tot))
+			cell.font = Font(name="Arial", size=11, bold=bool(is_tot))
 			cell.border = thin
+			cell.alignment = Alignment(horizontal="center", vertical="center")
 			if is_tot:
 				cell.fill = tot_fill
 			if fn == "paid_days" and isinstance(val, (int, float)):
@@ -775,19 +785,110 @@ def _build_workbook(columns, rows, meta):
 					cell.number_format = "0"
 				else:
 					cell.number_format = "0.0"
-				cell.alignment = Alignment(horizontal="center")
+				cell.alignment = Alignment(horizontal="center", vertical="center")
 			elif col.get("fieldtype") in ("Currency", "Float") and isinstance(val, (int, float)):
 				cell.number_format = "#,##0.00"
-				cell.alignment = Alignment(horizontal="right")
+				cell.alignment = Alignment(horizontal="right", vertical="center")
 			elif fn == "month_year":
-				cell.alignment = Alignment(horizontal="left")
+				cell.alignment = Alignment(horizontal="left", vertical="center")
 
 	for i, col in enumerate(columns, start=1):
 		ws.column_dimensions[get_column_letter(i)].width = _excel_width(col)
-	ws.row_dimensions[group_row].height = 22
+	ws.row_dimensions[group_row].height = 32
 	if multi:
-		ws.row_dimensions[sub_row].height = 30
+		ws.row_dimensions[sub_row].height = 36
+	_write_abbreviation_legend(ws, columns, data_start + len(rows) + 3)
+	_prepare_print(ws, group_row, sub_row if multi else group_row)
 	return wb
+
+
+def _prepare_print(ws, header_start, header_end):
+	"""Fit the columns across the page. Leave row height and font at their real size."""
+	ws.page_setup.orientation = "landscape"
+	ws.page_setup.paperSize = ws.PAPERSIZE_A4
+	ws.page_setup.fitToWidth = 1
+	ws.page_setup.fitToHeight = 0
+	ws.sheet_properties.pageSetUpPr = PageSetupProperties(fitToPage=True)
+	ws.page_margins.left = 0.25
+	ws.page_margins.right = 0.25
+	ws.page_margins.top = 0.4
+	ws.page_margins.bottom = 0.4
+	ws.print_title_rows = f"{header_start}:{header_end}"
+	ws.page_setup.horizontalCentered = True
+
+
+# Headings people already read as words. Everything else comes from the component itself.
+_CLEAR_HEADINGS = {"loan", "tds"}
+
+
+def _legend_pair(short, full):
+	"""Short heading and its name, when the heading itself is not already clear."""
+	short = " ".join(str(short or "").split())
+	full = " ".join(str(full or "").split())
+	if not short or not full or short.lower() == full.lower():
+		return None
+	if short.lower() in _CLEAR_HEADINGS:
+		return None
+	return short, full
+
+
+def _write_abbreviation_legend(ws, columns, start_row):
+	"""NOTE table under the sheet: yellow title, then code and full name."""
+	pairs = []
+	seen = set()
+	for col in columns:
+		pair = _legend_pair(col.get("label"), col.get("esh_full_name"))
+		if not pair:
+			continue
+		key = pair[0].lower()
+		if key in seen:
+			continue
+		seen.add(key)
+		pairs.append(pair)
+	if not pairs:
+		return
+	# Code in column A. The name spans the next columns so print does not cut it.
+	name_end = 5
+	thin = Border(
+		left=Side(style="thin", color="000000"),
+		right=Side(style="thin", color="000000"),
+		top=Side(style="thin", color="000000"),
+		bottom=Side(style="thin", color="000000"),
+	)
+	yellow = PatternFill("solid", fgColor="FFFF00")
+	white = PatternFill("solid", fgColor="FFFFFF")
+	ws.merge_cells(start_row=start_row, start_column=1, end_row=start_row, end_column=name_end)
+	ws.row_dimensions[start_row].height = 28
+	for c in range(1, name_end + 1):
+		head = ws.cell(start_row, c)
+		head.fill = yellow
+		head.border = thin
+	title = ws.cell(start_row, 1, "NOTE")
+	title.font = Font(name="Arial", size=12, bold=True, color="000000")
+	title.alignment = Alignment(horizontal="center", vertical="center")
+	title.fill = yellow
+	for offset, (short, full) in enumerate(pairs, start=1):
+		r = start_row + offset
+		ws.row_dimensions[r].height = 24
+		ws.merge_cells(start_row=r, start_column=2, end_row=r, end_column=name_end)
+		code = ws.cell(r, 1, short)
+		code.font = Font(name="Arial", size=11, color="000000")
+		code.alignment = Alignment(horizontal="center", vertical="center")
+		code.fill = white
+		code.border = thin
+		for c in range(2, name_end + 1):
+			box = ws.cell(r, c)
+			box.fill = white
+			box.border = Border(
+				left=Side(style="thin", color="000000") if c == 2 else Side(),
+				right=Side(style="thin", color="000000") if c == name_end else Side(),
+				top=Side(style="thin", color="000000"),
+				bottom=Side(style="thin", color="000000"),
+			)
+		name = ws.cell(r, 2, full)
+		name.font = Font(name="Arial", size=11, color="000000")
+		name.alignment = Alignment(horizontal="left", vertical="center", indent=1)
+		name.fill = white
 
 
 def _excel_width(col):
