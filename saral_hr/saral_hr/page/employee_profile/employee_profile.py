@@ -295,6 +295,23 @@ def get_employee_profile_data(employee):
         except Exception:
             pass
 
+    # Full cards for the History popup. Older submitted assignments stay
+    # docstatus 1, so they are not in cancelled_ssas and would otherwise be hidden.
+    ssa_history_names = frappe.db.get_all(
+        "Salary Structure Assignment",
+        filters={"employee": employee, "docstatus": ["in", [1, 2]]},
+        fields=["name", "docstatus"],
+        order_by="from_date desc",
+    )
+    ssa_history = []
+    for rec in ssa_history_names:
+        try:
+            row = _serialize_ssa(frappe.get_doc("Salary Structure Assignment", rec.name))
+            row["docstatus"] = rec.docstatus
+            ssa_history.append(row)
+        except Exception:
+            pass
+
     # Loan masters removed — ledger rebuilt in a later feature. Keep key for UI compat.
     loan_ledger = []
 
@@ -319,6 +336,7 @@ def get_employee_profile_data(employee):
         "final_reporting_name":      final_reporting_name,
         "latest_ssa":                latest_ssa,
         "cancelled_ssas":            cancelled_ssas,
+        "ssa_history":               ssa_history,
         "loan_ledger":               loan_ledger,
     }
 
