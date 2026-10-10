@@ -329,3 +329,45 @@ class TestBulkPrintPdf(FrappeTestCase):
 		self.assertEqual(frappe.local.response.type, "pdf")
 		self.assertEqual(frappe.local.response.filecontent, b"%PDF-1.4")
 		self.assertEqual(frappe.local.response.filename, "SS-1.pdf")
+
+
+class TestAttendanceRecordPrintContext(FrappeTestCase):
+	def test_pairs_split_days_and_status(self):
+		company = _make_company()
+		employee = _make_employee()
+		cl = _make_company_link(employee, company, "2026-08-01", weekly_off="")
+
+		present = frappe.get_doc(
+			{
+				"doctype": "Attendance",
+				"employee": cl,
+				"attendance_date": "2026-08-01",
+				"status": "Present",
+				"in_time": "2026-08-01 09:15:00",
+				"out_time": "2026-08-01 18:00:00",
+				"working_hours": 8.5,
+			}
+		)
+		present.flags.ignore_validate = True
+		present.flags.ignore_mandatory = True
+		present.insert(ignore_permissions=True)
+		_mark(cl, "2026-08-02", "Weekly Off")
+
+		slip = frappe.new_doc("Salary Slip")
+		slip.employee = cl
+		slip.start_date = "2026-08-01"
+		slip.end_date = "2026-08-31"
+		rec = slip.get_attendance_record_print_context()
+
+		self.assertEqual(len(rec.pairs), 16)
+		self.assertEqual(rec.pairs[0].left.day, "1")
+		self.assertEqual(rec.pairs[0].left.in_time, "09:15")
+		self.assertEqual(rec.pairs[0].left.out_time, "18:00")
+		self.assertEqual(rec.pairs[0].left.status, "")
+		self.assertEqual(rec.pairs[0].left.total_hours, "8.5")
+		self.assertEqual(rec.pairs[0].right.day, "17")
+		self.assertEqual(rec.pairs[1].left.day, "2")
+		self.assertEqual(rec.pairs[1].left.status, "Weekly Off")
+		self.assertEqual(rec.pairs[15].left.day, "16")
+		self.assertEqual(rec.pairs[15].right.day, "TOTAL")
+		self.assertEqual(rec.pairs[15].right.total_hours, "8.5")

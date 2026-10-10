@@ -1,6 +1,6 @@
 import frappe
 from frappe.model.document import Document
-from frappe.utils import getdate, get_last_day, flt
+from frappe.utils import getdate, get_last_day, flt, get_datetime
 from frappe.utils.pdf import get_pdf
 import calendar
 from datetime import timedelta, date as date_type
@@ -95,6 +95,106 @@ class SalarySlip(Document):
 
     def on_cancel(self):
         self._sync_loan_dues(deducted=False)
+
+    def get_attendance_record_print_context(self):
+        """Day 1-16 left, 17-31 right, last right cell TOTAL — for Muster attendance table."""
+        start = getdate(self.start_date) if self.start_date else None
+        end = getdate(self.end_date) if self.end_date else None
+        employee = self.employee
+
+        def _fmt_time(val):
+            if not val:
+                return ""
+            try:
+                return get_datetime(val).strftime("%H:%M")
+            except Exception:
+                return ""
+
+        def _fmt_hrs(val):
+            v = flt(val)
+            if not v:
+                return ""
+            return f"{v:.2f}".rstrip("0").rstrip(".")
+
+        def _cell(day, rec=None):
+            rec = rec or {}
+            status = rec.get("status") or ""
+            show_status = bool(status) and status not in ("Present", "Half Day")
+            return frappe._dict(
+                day=str(day),
+                status=status if show_status else "",
+                in_time="" if show_status else _fmt_time(rec.get("in_time")),
+                out_time="" if show_status else _fmt_time(rec.get("out_time")),
+                overtime=_fmt_hrs(rec.get("overtime")),
+                total_hours=_fmt_hrs(rec.get("total_hours")),
+            )
+
+        by_day = {}
+        tot_ot = 0.0
+        tot_hrs = 0.0
+        if employee and start and end:
+            att_rows = frappe.get_all(
+                "Attendance",
+                filters={
+                    "employee": employee,
+                    "attendance_date": ["between", [start, end]],
+                },
+                fields=["attendance_date", "status", "in_time", "out_time", "working_hours"],
+            )
+            ot_by_day = {}
+            if frappe.db.exists("DocType", "Attendance Daily Rate"):
+                for r in frappe.get_all(
+                    "Attendance Daily Rate",
+                    filters={
+                        "employee": employee,
+                        "attendance_date": ["between", [start, end]],
+                    },
+                    fields=["attendance_date", "ot_hours"],
+                ):
+                    ot_by_day[getdate(r.attendance_date).day] = flt(r.ot_hours)
+
+            for r in att_rows:
+                d = getdate(r.attendance_date).day
+                ot = ot_by_day.get(d, 0.0)
+                hrs = flt(r.working_hours)
+                tot_ot += ot
+                tot_hrs += hrs
+                by_day[d] = {
+                    "status": r.status or "",
+                    "in_time": r.in_time,
+                    "out_time": r.out_time,
+                    "overtime": ot,
+                    "total_hours": hrs,
+                }
+            for d, ot in ot_by_day.items():
+                if d in by_day:
+                    continue
+                tot_ot += ot
+                by_day[d] = {
+                    "status": "",
+                    "in_time": None,
+                    "out_time": None,
+                    "overtime": ot,
+                    "total_hours": 0,
+                }
+
+        pairs = []
+        for i in range(1, 17):
+            left = _cell(i, by_day.get(i))
+            if i == 16:
+                right = frappe._dict(
+                    day="TOTAL",
+                    status="",
+                    in_time="",
+                    out_time="",
+                    overtime=_fmt_hrs(tot_ot),
+                    total_hours=_fmt_hrs(tot_hrs),
+                )
+            else:
+                right = _cell(i + 16, by_day.get(i + 16))
+            pairs.append(frappe._dict(left=left, right=right))
+
+        return frappe._dict(pairs=pairs)
 
     def _sync_loan_dues(self, deducted):
         touched_loans = set()
