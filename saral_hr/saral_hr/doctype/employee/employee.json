@@ -268,6 +268,7 @@
  "modified_by": "Administrator",
  "module": "Saral Hr",
  "name": "Employee",
+ "default_print_format": "Employee Print Format",
  "naming_rule": "By \"Naming Series\" field",
  "owner": "Administrator",
  "permissions": [

@@ -4,6 +4,7 @@
 import frappe
 from frappe.tests.utils import FrappeTestCase
 
+import saral_hr.install as install_mod
 from saral_hr.install import ensure_desk_home_consistent
 
 
@@ -21,7 +22,7 @@ class TestInstall(FrappeTestCase):
 
 	def test_ensure_desk_home_consistent_fixes_setup_wizard_loop_state(self):
 		"""Broken combo: setup complete + home still setup-wizard must be repaired."""
-		if not frappe.is_setup_complete():
+		if not install_mod._is_setup_complete():
 			self.skipTest("Site setup is not complete; cannot assert repair path")
 
 		frappe.db.set_default("desktop:home_page", "setup-wizard")
@@ -35,11 +36,11 @@ class TestInstall(FrappeTestCase):
 	def test_ensure_desk_home_consistent_noop_when_setup_incomplete(self):
 		"""Must not flip home away from setup-wizard while setup is incomplete."""
 		# Force the early-return path without mutating Installed Application rows.
-		original = frappe.is_setup_complete
-		frappe.is_setup_complete = lambda: False
+		original = install_mod._is_setup_complete
+		install_mod._is_setup_complete = lambda: False
 		try:
 			frappe.db.set_default("desktop:home_page", "setup-wizard")
 			ensure_desk_home_consistent()
 			self.assertEqual(frappe.db.get_default("desktop:home_page"), "setup-wizard")
 		finally:
-			frappe.is_setup_complete = original
+			install_mod._is_setup_complete = original

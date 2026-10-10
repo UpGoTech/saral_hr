@@ -1108,6 +1108,7 @@ function render_profile($sidebar, $main, d, emp) {
     if (c.final_reporting_name) sb += info_row("Final Reporting", c.final_reporting_name);
     sb += "<hr class='ep-divider'>";
     sb += "<a href='/app/employee/" + emp + "' class='ep-link-btn'>✏️ Edit Employee</a>";
+    sb += "<a href='/app/print/Employee/" + encodeURIComponent(emp) + "' class='ep-link-btn'>📄 Employee Details</a>";
     if (d.company_link_name)
         sb += "<a href='/app/company-link/" + encodeURIComponent(d.company_link_name) + "' class='ep-link-btn'>🏢 View Company Record</a>";
     sb += "<a href='/app/salary-structure-assignment?employee=" + encodeURIComponent(emp) + "' class='ep-link-btn'>💰 Salary Assignment</a>";
