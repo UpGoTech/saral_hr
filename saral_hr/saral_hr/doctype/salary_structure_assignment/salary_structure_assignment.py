@@ -36,8 +36,7 @@ class SalaryStructureAssignment(Document):
         if self.docstatus == 1:
             return
         self.status = "Draft"
-        # amended_from set hai matlab yeh amend ka draft hai
-        # cancelled original se overlap hoga — sirf submitted check karo
+        # Amend draft would overlap the cancelled original — check submitted SSAs only
         submitted_only = bool(self.amended_from)
         _check_overlap(
             employee=self.employee,
@@ -77,9 +76,8 @@ class SalaryStructureAssignment(Document):
                 )
 
     def on_update_after_submit(self):
-        # amend ke baad submitted doc mein date edit — overlap check nahi karna
-        # (original cancel ho chuka hai, us period pe koi submitted record nahi hoga)
-        # sirf SRR check Python side pe nahi hota — JS check_srr_and_apply_validate_only handle karta hai
+        # After amend, date edits skip overlap (original is already cancelled).
+        # SRR is validated in JS (check_srr_and_apply_validate_only), not here.
         pass
 
     def on_submit(self):
