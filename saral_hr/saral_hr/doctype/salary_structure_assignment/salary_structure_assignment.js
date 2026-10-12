@@ -42,6 +42,7 @@ frappe.ui.form.on("Salary Structure Assignment", {
                 setTimeout(() => {
                     calculate_salary(frm);
                     maybe_render_daily_wage_panel(frm);
+                    lock_vda_if_worker(frm);
                 }, 150);
             } else {
                 // Submitted doc — only render daily wage panel, no recalc
@@ -55,6 +56,15 @@ frappe.ui.form.on("Salary Structure Assignment", {
         frm.set_query("employee", () => ({ filters: { is_active: 1 } }));
         frm.set_query("salary_structure", () => ({
             filters: { company: frm.doc.company || "", is_active: "Yes" }
+        }));
+        frm.set_query("salary_component", "earnings", () => ({
+            filters: { type: "Earning", is_additional_only: 0 }
+        }));
+        frm.set_query("salary_component", "deductions", () => ({
+            filters: { type: "Deduction", is_additional_only: 0 }
+        }));
+        frm.set_query("salary_component", "employer_share", () => ({
+            filters: { type: "Deduction", is_additional_only: 0 }
         }));
     },
 
@@ -133,6 +143,12 @@ frappe.ui.form.on("Salary Details", {
     amount(frm, cdt, cdn) {
         const row = frappe.get_doc(cdt, cdn);
 
+        if (cint(row.percent_on_total_earning) && row.parentfield === "deductions") {
+            // Amount is derived from SSA gross × % — restore computed value
+            _apply_percent_of_total_earning_amounts(frm);
+            return;
+        }
+
         if (frm._locked_vda_row
             && row
             && row.name === frm._locked_vda_row
@@ -165,6 +181,24 @@ frappe.ui.form.on("Salary Details", {
 
         setTimeout(() => calculate_salary(frm), 50);
     },
+    form_render(frm, cdt, cdn) {
+        const row = locals[cdt][cdn];
+        if (!row) return;
+        if (frm.doctype !== "Salary Structure Assignment" && frm.doctype !== "Salary Structure") return;
+        const grid = frm.fields_dict[row.parentfield] && frm.fields_dict[row.parentfield].grid;
+        if (!grid) return;
+        const grid_row = grid.grid_rows_by_docname[cdn];
+        if (!grid_row) return;
+        if (cint(row.percent_on_total_earning)) {
+            grid_row.toggle_editable("amount", false);
+        }
+        if (frm.doctype === "Salary Structure Assignment"
+            && frm._locked_vda_row
+            && row.name === frm._locked_vda_row
+            && row.parentfield === "earnings") {
+            grid_row.toggle_editable("amount", false);
+        }
+    },
     salary_details_remove(frm, cdt, cdn) {
         _calculate_excluding_row(frm, cdn);
     }
@@ -187,6 +221,11 @@ function _bind_live_amount_inputs(frm) {
 
             // Set value directly in frm.doc
             const rowname = $(this).closest("[data-name]").attr("data-name");
+            if (rowname && frm._locked_vda_row && rowname === frm._locked_vda_row) {
+                e.preventDefault();
+                $(this).val(frm._locked_vda_amount || 0);
+                return;
+            }
             const val     = flt($(this).val());
             if (rowname) {
                 const all = [...(frm.doc.earnings||[]), ...(frm.doc.deductions||[]), ...(frm.doc.employer_share||[])];
@@ -211,6 +250,10 @@ function _bind_live_amount_inputs(frm) {
         if (frm._computing_daily_wage) return;
         const rowname     = $(this).closest("[data-name]").attr("data-name");
         if (!rowname) return;
+        if (frm._locked_vda_row && rowname === frm._locked_vda_row) {
+            $(this).val(frm._locked_vda_amount || 0);
+            return;
+        }
         const in_earnings = !!(frm.doc.earnings || []).find(r => r.name === rowname);
         if (!in_earnings) return;
         _debounced_recalc(frm, calculate_salary, 150);
@@ -627,6 +670,52 @@ function toggle_skill_type(frm) {
 //  Only checks if SRR exists for new from_date, no amount apply
 // ─────────────────────────────────────────────────────────────
 
+function _is_vda_earning_row(row) {
+    const comp = (row.salary_component || "").toLowerCase();
+    const abbr = (row.abbr || "").toLowerCase().trim();
+    return comp.includes("dearness") || abbr === "v-da" || abbr === "vda";
+}
+
+function _set_vda_row_locked(frm, row, amount) {
+    frm._locked_vda_row = row.name;
+    frm._locked_vda_amount = flt(amount, 2);
+    const grid = frm.fields_dict.earnings && frm.fields_dict.earnings.grid;
+    const grid_row = grid && grid.grid_rows_by_docname[row.name];
+    if (grid_row) grid_row.toggle_editable("amount", false);
+}
+
+function lock_vda_if_worker(frm) {
+    if (frm.doc.docstatus === 1) return;
+    if (!frm.doc.employee || !frm.doc.from_date) return;
+
+    frappe.db.get_value("Company Link", frm.doc.employee, ["category", "skill_type"], (emp) => {
+        const category   = (emp && emp.category)   || frm.doc.category;
+        const skill_type = (emp && emp.skill_type) || frm.doc.skill_type;
+        if (!category || !skill_type) return;
+
+        frappe.db.get_value("Category", category, "has_subtype", (r) => {
+            if (!r || !r.has_subtype) return;
+
+            frappe.call({
+                method: "saral_hr.saral_hr.doctype.salary_structure_assignment.salary_structure_assignment.get_srr_for_ssa",
+                args: { start_date: frm.doc.from_date, skill_type: skill_type },
+                callback(res) {
+                    if (!res.message) return;
+                    const vda_amount = flt(res.message.vda, 2);
+                    (frm.doc.earnings || []).forEach(row => {
+                        if (!_is_vda_earning_row(row)) return;
+                        _set_vda_row_locked(frm, row, vda_amount);
+                        if (flt(row.amount) !== vda_amount) {
+                            frappe.model.set_value(row.doctype, row.name, "amount", vda_amount);
+                            frappe.model.set_value(row.doctype, row.name, "base_amount", vda_amount);
+                        }
+                    });
+                }
+            });
+        });
+    });
+}
+
 function check_srr_and_apply_validate_only(frm) {
     if (!frm.doc.employee || !frm.doc.from_date) return;
 
@@ -728,7 +817,7 @@ function apply_srr_to_earnings(frm, srr) {
         const comp     = (row.salary_component || "").toLowerCase();
         const abbr     = (row.abbr || "").toLowerCase().trim();
         const is_basic = comp.includes("basic") || abbr === "basic";
-        const is_vda   = comp.includes("dearness") || abbr === "v-da" || abbr === "vda";
+        const is_vda   = _is_vda_earning_row(row);
 
         if (is_basic) {
             frappe.model.set_value(row.doctype, row.name, "amount",      flt(srr.vbasic, 2));
@@ -752,7 +841,10 @@ function apply_srr_to_earnings(frm, srr) {
         });
 
     frm.refresh_field("earnings");
-    if (vda_row_name) frm._locked_vda_row = vda_row_name;
+    if (vda_row_name) {
+        const vda_row = (frm.doc.earnings || []).find(r => r.name === vda_row_name);
+        if (vda_row) _set_vda_row_locked(frm, vda_row, frm._locked_vda_amount);
+    }
     calculate_salary(frm);
 }
 
@@ -877,6 +969,7 @@ function refresh_statutory_rows(frm) {
             pf_type:            frm.doc.pf_applicable       || "",
             is_pt_applicable:   frm.doc.is_pt_applicable   ? 1 : 0,
             is_lwf_applicable:  frm.doc.is_lwf_applicable  ? 1 : 0,
+            employee:           frm.doc.employee           || "",
         },
         callback(r) {
             _statutory_inflight = false;
@@ -1068,6 +1161,7 @@ function _sum_basic_da_excluding(frm, excluded_cdn) {
 
 function _do_calculate(frm, silent) {
     if (frm.doc.docstatus === 1) return;
+    _apply_percent_of_total_earning_amounts(frm);
     const gross       = flt(_sum_earnings(frm), 2);
     let emp_ded       = 0;
     let empr_cont     = 0;
@@ -1112,6 +1206,24 @@ function _sum_earnings(frm) {
     let t = 0;
     (frm.doc.earnings || []).forEach(r => { t += flt(r.amount); });
     return t;
+}
+
+function _apply_percent_of_total_earning_amounts(frm) {
+    const gross = flt(_sum_earnings(frm), 2);
+    let changed = false;
+    (frm.doc.deductions || []).forEach(row => {
+        if (!cint(row.percent_on_total_earning)) return;
+        const pct = flt(row.percent_of_total_earning);
+        const amount = flt(Math.max(gross, 0) * pct / 100, 2);
+        if (flt(row.amount) !== amount) {
+            row.amount = amount;
+            row.base_amount = amount;
+            changed = true;
+        }
+    });
+    if (changed) {
+        frm.refresh_field("deductions");
+    }
 }
 
 function _sum_basic_da(frm) {

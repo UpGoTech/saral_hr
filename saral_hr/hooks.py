@@ -24,11 +24,11 @@ app_license = "mit"
 
 
 # Includes in <head>
-# ------------------g
+# ------------------
 
 # include js, css files in header of desk.html
 # app_include_css = "/assets/saral_hr/css/saral_hr.css"
-# app_include_js = "/assets/saral_hr/js/saral_hr.js"
+app_include_js = "/assets/saral_hr/js/period_picker.js"
 
 # include js, css files in header of web template
 # web_include_css = "/assets/saral_hr/css/saral_hr.css"
@@ -46,6 +46,9 @@ app_license = "mit"
 
 # include js in doctype views
 # doctype_js = {"doctype" : "public/js/doctype.js"}
+doctype_js = {
+	"Data Import": "public/js/data_import_ssa.js",
+}
 # doctype_list_js = {"doctype" : "public/js/doctype_list.js"}
 doctype_list_js = {
     "Biometric machine": "saral_hr/doctype/biometric_machine/biometric_machine.js",
@@ -115,7 +118,8 @@ fixtures = [
             "Variable Pay",
             "Salary Slip Custom",
             "CTC Calculator Statement",
-            "SSA Print Format"
+            "SSA Print Format",
+            "Employee Print Format"
         ]]
     ]
 },
@@ -212,9 +216,9 @@ after_uninstall = "saral_hr.uninstall.after_uninstall"
 # ---------------
 # Override standard doctype classes
 
-# override_doctype_class = {
-# 	"ToDo": "custom_app.overrides.CustomToDo"
-# }
+override_doctype_class = {
+	"Data Import": "saral_hr.overrides.data_import.DataImport",
+}
 
 # Document Events
 # ---------------
@@ -256,11 +260,10 @@ after_uninstall = "saral_hr.uninstall.after_uninstall"
 
 # Overriding Methods
 # ------------------------------
-#
-# override_whitelisted_methods = {
-# 	"frappe.desk.doctype.event.event.get_events": "saral_hr.event.get_events"
-# }
-#
+override_whitelisted_methods = {
+	"frappe.utils.print_format.download_pdf": "saral_hr.utils.pdf.download_pdf",
+}
+
 # each overriding function accepts a `data` argument;
 # generated from the base implementation of the doctype dashboard,
 # along with any modifications made in other Frappe apps

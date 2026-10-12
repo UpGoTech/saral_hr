@@ -23,13 +23,19 @@ frappe.pages["mark-attendance"].on_page_show = function (wrapper) {
     init_mark_attendance($main);
 };
 
-function get_year_options() {
-    var current = new Date().getFullYear();
-    var html = '<option value="">Select Year</option>';
-    for (var y = current - 3; y <= current + 1; y++) {
-        html += '<option value="' + y + '"' + (y === current ? ' selected' : '') + '>' + y + '</option>';
-    }
-    return html;
+function get_default_year() {
+    return new Date().getFullYear();
+}
+
+function clamp_year(value) {
+    return saral_hr.period_picker.clamp_period_year(value);
+}
+
+function get_ma_year_select_html() {
+    return saral_hr.period_picker.get_period_year_options(false).map(function (y) {
+        var sel = parseInt(y, 10) === get_default_year() ? " selected" : "";
+        return '<option value="' + y + '"' + sel + ">" + y + "</option>";
+    }).join("");
 }
 
 function get_ma_html() {
@@ -65,9 +71,7 @@ function get_ma_html() {
             <div class="ma-row2">
                 <div class="ma-r2-year">
                     <label class="ma-label">Year</label>
-                    <select id="ma_year" class="ma-input">
-                        ${get_year_options()}
-                    </select>
+                    <select id="ma_year" class="ma-input">${get_ma_year_select_html()}</select>
                 </div>
                 <div class="ma-r2-month">
                     <label class="ma-label">Month</label>
@@ -926,9 +930,17 @@ function init_mark_attendance($main) {
     // ════════════════════════════════════════════════════════════════════════
     //  DATE HELPERS
     // ════════════════════════════════════════════════════════════════════════
+    function normalizeYearInput() {
+        var clamped = clamp_year(yearSel.value);
+        if (String(clamped) !== String(yearSel.value).trim()) {
+            yearSel.value = clamped;
+        }
+        return clamped;
+    }
+
     function updateDatesFromMonthYear() {
         if (!yearSel.value || monthSel.value === "") return;
-        var year = yearSel.value, month = Number(monthSel.value);
+        var year = normalizeYearInput(), month = Number(monthSel.value);
         var lastDay = new Date(year, month + 1, 0);
         startDateInput.value = year + "-" + String(month + 1).padStart(2, "0") + "-01";
         endDateInput.value   = year + "-" + String(month + 1).padStart(2, "0") + "-" +
@@ -942,6 +954,10 @@ function init_mark_attendance($main) {
         if (emp) loadLeaveBalance(emp);
     }
     yearSel.addEventListener("change",  updateDatesFromMonthYear);
+    yearSel.addEventListener("blur",    function () {
+        normalizeYearInput();
+        updateDatesFromMonthYear();
+    });
     monthSel.addEventListener("change", updateDatesFromMonthYear);
 
     function parseDateLocal(str) {
@@ -1817,10 +1833,11 @@ function init_mark_attendance($main) {
     // ════════════════════════════════════════════════════════════════════════
     function resolveInitialRec(rawStatus, isHoliday, isDefaultWeeklyOff, isOutsideTenure) {
         if (!rawStatus) {
-            if (!isOutsideTenure) {
-                if (isHoliday)          return { mode: "full", status: "Holiday"    };
-                if (isDefaultWeeklyOff) return { mode: "full", status: "Weekly Off" };
-            }
+            // Outside joining/left window: keep row disabled, but treat as Absent
+            // so salary does not see blank unmarked days.
+            if (isOutsideTenure) return { mode: "full", status: "Absent" };
+            if (isHoliday)          return { mode: "full", status: "Holiday"    };
+            if (isDefaultWeeklyOff) return { mode: "full", status: "Weekly Off" };
             return { mode: "full", status: "" };
         }
         if (typeof rawStatus === "object" && rawStatus.mode === "half") return rawStatus;
@@ -1848,55 +1865,66 @@ function init_mark_attendance($main) {
                 holidayDates = {};
                 (holidayRes.message || []).forEach(function (h) { holidayDates[h] = true; });
 
+                function loadAttendanceAndRender() {
+                    frappe.call({
+                        method: "saral_hr.saral_hr.page.mark_attendance.mark_attendance.get_attendance_between_dates",
+                        args: { employee: employee, start_date: startDate, end_date: endDate },
+                        callback: function (res) {
+                            var attendanceMap = res.message || {};
+                            attendanceTableData = {}; originalAttendanceData = {};
+                            dirtyDates.clear(); tbody.innerHTML = "";
+
+                            var current = new Date(startDate);
+                            var end     = new Date(endDate);
+                            var today   = new Date(); today.setHours(0, 0, 0, 0);
+                            var rowIdx  = 0;
+
+                            while (current <= end) {
+                                var cd = new Date(current); cd.setHours(0, 0, 0, 0);
+                                var dayName = cd.toLocaleDateString("en-US", { weekday: "long" });
+                                var dateKey = cd.getFullYear() + "-" +
+                                    String(cd.getMonth() + 1).padStart(2, "0") + "-" +
+                                    String(cd.getDate()).padStart(2, "0");
+
+                                var isDefaultWeeklyOff = weeklyOffDays.includes(dayName.toLowerCase());
+                                var isHoliday          = holidayDates[dateKey] === true;
+                                var isFuture           = cd > today;
+                                var isBeforeJoining    = joiningDate ? (cd < joiningDate) : false;
+                                var isAfterLeft        = leftDate    ? (cd > leftDate)    : false;
+                                var isOutsideTenure    = isBeforeJoining || isAfterLeft;
+
+                                var raw      = attendanceMap[dateKey];
+                                var savedRec = resolveInitialRec(raw, isHoliday, isDefaultWeeklyOff, isOutsideTenure);
+
+                                attendanceTableData[dateKey] = savedRec;
+                                if (raw) originalAttendanceData[dateKey] = JSON.parse(JSON.stringify(savedRec));
+
+                                tbody.appendChild(buildRow(
+                                    dateKey, dayName, cd, savedRec,
+                                    isHoliday, isDefaultWeeklyOff,
+                                    isFuture, isOutsideTenure, rowIdx++
+                                ));
+                                current.setDate(current.getDate() + 1);
+                            }
+
+                            applySubtypeColumnsToBdy();
+                            applyAllocationColumnGating();
+                            hideTableLoading();
+                            updateCounts();
+                            updateScrollHeight();
+                            applyTableLockClass();
+                        },
+                        error: function () { hideTableLoading(); }
+                    });
+                }
+
+                // Persist Absent for past outside-tenure days before rendering
+                // so salary sees recorded attendance (rows stay non-editable).
                 frappe.call({
-                    method: "saral_hr.saral_hr.page.mark_attendance.mark_attendance.get_attendance_between_dates",
+                    method: "saral_hr.saral_hr.page.mark_attendance.mark_attendance.ensure_outside_tenure_absent",
                     args: { employee: employee, start_date: startDate, end_date: endDate },
-                    callback: function (res) {
-                        var attendanceMap = res.message || {};
-                        attendanceTableData = {}; originalAttendanceData = {};
-                        dirtyDates.clear(); tbody.innerHTML = "";
-
-                        var current = new Date(startDate);
-                        var end     = new Date(endDate);
-                        var today   = new Date(); today.setHours(0, 0, 0, 0);
-                        var rowIdx  = 0;
-
-                        while (current <= end) {
-                            var cd = new Date(current); cd.setHours(0, 0, 0, 0);
-                            var dayName = cd.toLocaleDateString("en-US", { weekday: "long" });
-                            var dateKey = cd.getFullYear() + "-" +
-                                String(cd.getMonth() + 1).padStart(2, "0") + "-" +
-                                String(cd.getDate()).padStart(2, "0");
-
-                            var isDefaultWeeklyOff = weeklyOffDays.includes(dayName.toLowerCase());
-                            var isHoliday          = holidayDates[dateKey] === true;
-                            var isFuture           = cd > today;
-                            var isBeforeJoining    = joiningDate ? (cd < joiningDate) : false;
-                            var isAfterLeft        = leftDate    ? (cd > leftDate)    : false;
-                            var isOutsideTenure    = isBeforeJoining || isAfterLeft;
-
-                            var raw      = attendanceMap[dateKey];
-                            var savedRec = resolveInitialRec(raw, isHoliday, isDefaultWeeklyOff, isOutsideTenure);
-
-                            attendanceTableData[dateKey] = savedRec;
-                            if (raw) originalAttendanceData[dateKey] = JSON.parse(JSON.stringify(savedRec));
-
-                            tbody.appendChild(buildRow(
-                                dateKey, dayName, cd, savedRec,
-                                isHoliday, isDefaultWeeklyOff,
-                                isFuture, isOutsideTenure, rowIdx++
-                            ));
-                            current.setDate(current.getDate() + 1);
-                        }
-
-                        applySubtypeColumnsToBdy();
-                        applyAllocationColumnGating();
-                        hideTableLoading();
-                        updateCounts();
-                        updateScrollHeight();
-                        applyTableLockClass();
-                    },
-                    error: function () { hideTableLoading(); }
+                    callback: function () { loadAttendanceAndRender(); },
+                    error: function () { loadAttendanceAndRender(); }
                 });
             },
             error: function () { hideTableLoading(); }
@@ -2087,7 +2115,11 @@ function init_mark_attendance($main) {
         loadYearAttendance();
     }
     function closeCalendarModal() { document.getElementById("ma_cal_modal").classList.remove("show"); }
-    function changeYear(dir) { currentCalendarYear += dir; document.getElementById("ma_cal_year").textContent = currentCalendarYear; loadYearAttendance(); }
+    function changeYear(dir) {
+        currentCalendarYear = saral_hr.period_picker.clamp_period_year(currentCalendarYear + dir);
+        document.getElementById("ma_cal_year").textContent = currentCalendarYear;
+        loadYearAttendance();
+    }
     function loadYearAttendance() {
         var employee = employeeSel.value, company = employeeCompanyMap[employee];
         if (!employee) return;
@@ -2194,7 +2226,7 @@ function init_mark_attendance($main) {
         });
     }
     function selectMonth(monthIndex) {
-        yearSel.value = currentCalendarYear; monthSel.value = monthIndex;
+        yearSel.value = clamp_year(currentCalendarYear); monthSel.value = monthIndex;
         monthSel.dispatchEvent(new Event("change")); closeCalendarModal();
     }
 

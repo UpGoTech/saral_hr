@@ -223,11 +223,10 @@ function get_dwa_html() {
 }
 
 function get_dwa_year_options() {
-    var cur  = new Date().getFullYear();
-    var html = '<option value="">Select Year</option>';
-    for (var y = cur - 1; y <= cur + 1; y++)
-        html += '<option value="' + y + '"' + (y === cur ? ' selected' : '') + '>' + y + '</option>';
-    return html;
+    return saral_hr.period_picker.get_period_year_options(false).map(function (y) {
+        var cur = new Date().getFullYear();
+        return '<option value="' + y + '"' + (parseInt(y, 10) === cur ? " selected" : "") + ">" + y + "</option>";
+    }).join("");
 }
 
 // ════════════════════════════════════════════════════════════════════════════

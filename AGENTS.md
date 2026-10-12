@@ -4,7 +4,9 @@ Saral HR, is a attendance, payroll and employee management app build on Frappe F
 
 ## IMPORTANT
 
-Always load and user frappe-app-dev skills.
+Always load and use frappe-app-dev skills.
+
+When creating or fixing **Desk Pages** (filters, Link autocomplete, breadcrumbs, double-click handlers, mobile layout), also load and follow **desk-page-ui** (`.agents/skills/desk-page-ui/SKILL.md`). Canonical example: Data Cleansing page.
 
 ## Development Details
 

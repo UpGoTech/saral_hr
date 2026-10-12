@@ -1,7 +1,23 @@
 [pre_model_sync]
 # Patches added in this section will be executed before doctypes are migrated
 # Read docs to understand patches: https://frappeframework.com/docs/v14/user/en/database-migrations
+saral_hr.patches.repair_employee_naming_series_setter
 
 [post_model_sync]
 # Patches added in this section will be executed after doctypes are migrated
 saral_hr.patches.set_pdf_options
+saral_hr.patches.backfill_company_employee_counts
+saral_hr.patches.seed_maharashtra_pt_periods
+saral_hr.patches.clear_pt_special_component
+saral_hr.patches.migrate_pt_february_to_slabs
+saral_hr.patches.delete_broken_monthly_salary_register_report
+saral_hr.patches.seed_additional_only_salary_components
+saral_hr.patches.ensure_data_cleansing_workspace_link
+saral_hr.patches.migrate_employee_loan_advance_split
+saral_hr.patches.scrap_legacy_loan_module
+saral_hr.patches.restore_employee_loan_doctypes
+saral_hr.patches.ensure_employee_loan_workspace
+saral_hr.patches.ensure_loan_ledger_workspace_links
+saral_hr.patches.dedupe_employee_loan_dues
+saral_hr.patches.rename_employee_loan_short_ids
+saral_hr.patches.pad_employee_loan_sequence

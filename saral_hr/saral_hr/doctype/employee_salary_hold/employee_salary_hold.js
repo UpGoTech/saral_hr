@@ -6,6 +6,11 @@ frappe.ui.form.on("Employee Salary Hold", {
         }));
     },
 
+    onload(frm) {
+        saral_hr.period_picker.apply_form_year_select(frm);
+        saral_hr.period_picker.reset_year_if_invalid(frm);
+    },
+
     refresh(frm) {
         frm.trigger("set_field_visibility");
         frm.trigger("add_custom_buttons");

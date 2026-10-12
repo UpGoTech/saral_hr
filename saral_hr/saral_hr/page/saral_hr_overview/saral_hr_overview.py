@@ -58,9 +58,13 @@ def _month_range(from_date, to_date):
 
 
 def _active_in_month(company, month_start, month_end, permitted=None):
+    """Employees employed at any point in [month_start, month_end].
+
+    Uses joining/left dates only — not Company Link.is_active — so historical
+    months still include people who have since left.
+    """
     filters = {
         "company":         company,
-        "is_active":       1,
         "date_of_joining": ["<=", month_end]
     }
     if permitted is not None:
@@ -320,9 +324,11 @@ def get_monthly_data(companies, from_date, to_date):
                 "company": company, "start_date": [">=", month_start],
                 "end_date": ["<=", month_end], "docstatus": 1
             }
-            if permitted is not None:
-                slip_filters["employee"] = ["in", permitted]
-            slip_count = frappe.db.count("Salary Slip", filters=slip_filters)
+            if active_names:
+                slip_filters["employee"] = ["in", list(active_names)]
+                slip_count = frappe.db.count("Salary Slip", filters=slip_filters)
+            else:
+                slip_count = 0
 
             hold_filters = {
                 "company": company, "month": month_start.strftime("%B"),

@@ -466,7 +466,7 @@ function render_shell($main) {
     var saved_month = localStorage.getItem('si_month') || cur_month;
     var saved_tab = localStorage.getItem('si_tab') || 'payroll';
 
-    var year_opts = [yr - 2, yr - 1, yr, yr + 1].map(function (y) {
+    var year_opts = saral_hr.period_picker.get_period_year_options(false).map(function (y) {
         return "<option value='" + y + "'" + (String(y) === String(saved_year) ? " selected" : "") + ">" + y + "</option>";
     }).join('');
 

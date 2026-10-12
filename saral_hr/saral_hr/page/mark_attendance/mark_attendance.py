@@ -679,3 +679,98 @@ def get_employee_joining_date(employee):
         "joining_date": str(result.date_of_joining) if result.date_of_joining else None,
         "left_date":    str(result.left_date)        if result.left_date        else None,
     }
+
+
+# ---------------------------------------------------------------------------
+# Outside-tenure Absent (pre-joining / post-left)
+# ---------------------------------------------------------------------------
+
+@frappe.whitelist()
+def ensure_outside_tenure_absent(employee, start_date, end_date):
+    """
+    Persist Absent for past days before date_of_joining or after left_date.
+
+    Mark Attendance keeps those rows non-editable; without a stored status the
+    month has blank days. Recording Absent fills them while still blocking edits.
+    """
+    import datetime
+    from frappe.utils import get_first_day, today
+
+    permitted = _get_permitted_employees()
+    if permitted is not None and employee not in permitted:
+        return {"created": 0}
+
+    if not employee or not start_date or not end_date:
+        return {"created": 0}
+
+    cl = frappe.db.get_value(
+        "Company Link",
+        employee,
+        ["date_of_joining", "left_date"],
+        as_dict=True,
+    )
+    if not cl:
+        return {"created": 0}
+
+    joining = getdate(cl.date_of_joining) if cl.date_of_joining else None
+    left = getdate(cl.left_date) if cl.left_date else None
+    if not joining and not left:
+        return {"created": 0}
+
+    start = getdate(start_date)
+    end = getdate(end_date)
+    today_date = getdate(today())
+    created = 0
+
+    current = start
+    while current <= end:
+        if current > today_date:
+            current += datetime.timedelta(days=1)
+            continue
+
+        outside = (joining and current < joining) or (left and current > left)
+        if not outside:
+            current += datetime.timedelta(days=1)
+            continue
+
+        month_start = str(get_first_day(current))
+        if frappe.db.exists(
+            "Salary Slip",
+            {"employee": employee, "start_date": month_start, "docstatus": 1},
+        ):
+            current += datetime.timedelta(days=1)
+            continue
+
+        existing = frappe.db.get_value(
+            "Attendance",
+            {
+                "employee": employee,
+                "attendance_date": current,
+                "docstatus": ["<", 2],
+            },
+            "name",
+        )
+        if existing:
+            current += datetime.timedelta(days=1)
+            continue
+
+        doc = frappe.get_doc(
+            {
+                "doctype": "Attendance",
+                "employee": employee,
+                "attendance_date": current,
+                "status": "Absent",
+                "custom_first_half": "",
+                "custom_second_half": "",
+            }
+        )
+        doc.flags.ignore_validate = True
+        doc.flags.ignore_mandatory = True
+        doc.insert(ignore_permissions=True)
+        created += 1
+        current += datetime.timedelta(days=1)
+
+    if created:
+        frappe.db.commit()
+
+    return {"created": created}

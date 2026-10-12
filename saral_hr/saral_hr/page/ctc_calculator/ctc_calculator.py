@@ -22,8 +22,6 @@ EPS_RATE       = 8.33  / 100
 EDLI_RATE      = 0.50  / 100
 PF_ADMIN_RATE  = 0.50  / 100
 EMP_PF_RATE    = 12.00 / 100
-PT_NORMAL      = 200.0
-PT_FEBRUARY    = 300.0
 
 STATUTORY_NAMES = {
     "Employee ESIC", "Employer ESIC",
@@ -59,6 +57,27 @@ DEDUCTION_FORMULAS = {
 }
 
 REMAINDER_KEYWORDS = ["other allowance", "others", "other", "oa", "remainder", "balance"]
+
+_MONTH_TO_NUM = {
+    "January": 1, "February": 2, "March": 3, "April": 4,
+    "May": 5, "June": 6, "July": 7, "August": 8,
+    "September": 9, "October": 10, "November": 11, "December": 12,
+}
+
+
+def _company_pt_amount(company, gross, month_name, gender="Male"):
+    """PT from Company slabs; CTC has no employee — default Male."""
+    if not company:
+        return 0.0
+    try:
+        from frappe.utils import getdate
+        from datetime import date
+        comp = frappe.get_doc("Company", company)
+        month_num = _MONTH_TO_NUM.get(month_name or "January", 1)
+        period_date = date(date.today().year, month_num, 1)
+        return flt(comp.calculate_pt(gross, gender, period_date, None))
+    except Exception:
+        return 0.0
 
 
 # ─── 1. Get companies ─────────────────────────────────────────────────────────
@@ -225,7 +244,6 @@ def calculate_ctc_breakdown(company, salary_structure, annual_ctc, month=None,
     annual_ctc  = flt(annual_ctc)
     monthly_ctc = _round2(annual_ctc / 12)
     month_name  = month or "January"
-    is_february = (month_name == "February")
 
     # ── Statutory flags ───────────────────────────────────────────────────────
     company_stat = _get_company_statutory(company)
@@ -298,7 +316,7 @@ def calculate_ctc_breakdown(company, salary_structure, annual_ctc, month=None,
     # ── Employee deductions ───────────────────────────────────────────────────
     emp_pf       = _round2(pf_wage * EMP_PF_RATE)            if is_pf   else 0.0
     esic_emp_amt = _round2(total_gross * esic_emp_pct / 100) if is_esic else 0.0
-    pt_amount    = (PT_FEBRUARY if is_february else PT_NORMAL) if is_pt  else 0.0
+    pt_amount    = _company_pt_amount(company, total_gross, month_name) if is_pt else 0.0
 
     deductions_out = []
 

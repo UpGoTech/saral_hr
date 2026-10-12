@@ -3,6 +3,8 @@ import datetime
 from frappe.model.document import Document
 from frappe import _
 
+from saral_hr.saral_hr.doctype.company.company import update_company_employee_counts
+
 
 class CompanyLink(Document):
 
@@ -96,6 +98,9 @@ class CompanyLink(Document):
         })
         frappe.db.commit()
 
+        # SQL update bypasses Document hooks — recount the previous company
+        update_company_employee_counts(old_record["company"])
+
         frappe.msgprint(
             _("Employee {0} has been transferred from {1} to {2}. "
               "Previous record archived as {3} with leaving date {4}.").format(
@@ -138,12 +143,26 @@ class CompanyLink(Document):
 
     def after_insert(self):
         self._safe_sync()
+        update_company_employee_counts(self.company)
 
     def on_update(self):
         self._safe_sync()
+        self._recount_companies()
 
     def on_trash(self):
         self._safe_sync()
+
+    def after_delete(self):
+        # Count after delete so this row is not still included
+        update_company_employee_counts(self.company)
+
+    def _recount_companies(self):
+        companies = {self.company}
+        before = self.get_doc_before_save()
+        if before and before.company and before.company != self.company:
+            companies.add(before.company)
+        for company in companies:
+            update_company_employee_counts(company)
 
     def _safe_sync(self):
         try:

@@ -1,0 +1,52 @@
+{
+ "actions": [],
+ "creation": "2026-08-04 10:00:00.000000",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "from_date",
+  "to_date",
+  "age_exempt_years",
+  "slabs"
+ ],
+ "fields": [
+  {
+   "fieldname": "from_date",
+   "fieldtype": "Date",
+   "in_list_view": 1,
+   "label": "From Date"
+  },
+  {
+   "fieldname": "to_date",
+   "fieldtype": "Date",
+   "in_list_view": 1,
+   "label": "To Date"
+  },
+  {
+   "default": "65",
+   "fieldname": "age_exempt_years",
+   "fieldtype": "Int",
+   "in_list_view": 1,
+   "label": "Age Exempt Years",
+   "non_negative": 1
+  },
+  {
+   "fieldname": "slabs",
+   "fieldtype": "Small Text",
+   "label": "Slabs (JSON)"
+  }
+ ],
+ "index_web_pages_for_search": 0,
+ "istable": 1,
+ "links": [],
+ "modified": "2026-08-04 10:30:00.000000",
+ "modified_by": "Administrator",
+ "module": "Saral Hr",
+ "name": "Professional Tax Period",
+ "owner": "Administrator",
+ "permissions": [],
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": []
+}

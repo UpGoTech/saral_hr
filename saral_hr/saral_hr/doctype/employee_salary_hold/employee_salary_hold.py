@@ -6,9 +6,16 @@ from frappe.utils import today, getdate
 class EmployeeSalaryHold(Document):
 
     def validate(self):
+        self.validate_period_year()
         self.validate_employee_not_already_on_hold()
         self.validate_release_fields()
         self.fetch_employee_details()
+
+    def validate_period_year(self):
+        from saral_hr.utils.period import validate_period_year
+
+        if self.year:
+            validate_period_year(self.year)
 
     def validate_employee_not_already_on_hold(self):
         if self.status == "On Hold":

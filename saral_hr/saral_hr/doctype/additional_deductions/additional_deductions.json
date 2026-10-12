@@ -53,7 +53,6 @@
    "in_list_view": 1,
    "in_standard_filter": 1,
    "label": "Year",
-   "options": "2022\n2023\n2024\n2025\n2026\n2027",
    "reqd": 1
   },
   {

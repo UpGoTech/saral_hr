@@ -29,12 +29,14 @@ SC_EMPR_LWF   = "Employer Labour Welfare Fund"
 
 class SalaryStructureAssignment(Document):
 
+    def validate(self):
+        self._reject_additional_only_components()
+
     def before_save(self):
         if self.docstatus == 1:
             return
         self.status = "Draft"
-        # amended_from set hai matlab yeh amend ka draft hai
-        # cancelled original se overlap hoga — sirf submitted check karo
+        # Amend draft would overlap the cancelled original — check submitted SSAs only
         submitted_only = bool(self.amended_from)
         _check_overlap(
             employee=self.employee,
@@ -46,10 +48,36 @@ class SalaryStructureAssignment(Document):
             submitted_only=submitted_only,
         )
 
+    def _reject_additional_only_components(self):
+        rows = []
+        for table in ("earnings", "deductions", "employer_share"):
+            for row in self.get(table) or []:
+                if row.salary_component:
+                    rows.append((row.idx, table, row.salary_component))
+        if not rows:
+            return
+        names = list({name for _, _, name in rows})
+        flagged = {
+            r.name
+            for r in frappe.get_all(
+                "Salary Component",
+                filters={"name": ["in", names], "is_additional_only": 1},
+                fields=["name"],
+            )
+        }
+        for idx, table, name in rows:
+            if name in flagged:
+                frappe.throw(
+                    _(
+                        "Row #{0} in {1}: {2} is Additional-Only and cannot be "
+                        "used on Salary Structure Assignment. Use Additional "
+                        "Salary / Additional Deductions instead."
+                    ).format(idx, table.replace("_", " ").title(), frappe.bold(name))
+                )
+
     def on_update_after_submit(self):
-        # amend ke baad submitted doc mein date edit — overlap check nahi karna
-        # (original cancel ho chuka hai, us period pe koi submitted record nahi hoga)
-        # sirf SRR check Python side pe nahi hota — JS check_srr_and_apply_validate_only handle karta hai
+        # After amend, date edits skip overlap (original is already cancelled).
+        # SRR is validated in JS (check_srr_and_apply_validate_only), not here.
         pass
 
     def on_submit(self):
@@ -76,7 +104,7 @@ def get_statutory_components(company, gross_salary, from_date,
                               is_esic_applicable=0, is_pf_applicable=0,
                               pf_type=None, is_pt_applicable=0,
                               is_lwf_applicable=0,
-                              earnings_map=None):
+                              earnings_map=None, employee=None):
     import json as _json
 
     gross_salary       = flt(gross_salary)
@@ -150,10 +178,10 @@ def get_statutory_components(company, gross_salary, from_date,
             if adm_pct:
                 employer_share.append(row(SC_EMPR_PFADM, wage * adm_pct  / 100, employer=1))
 
-    # ── PT ──
-    if is_pt_applicable and from_date:
-        month_name = MONTHS[getdate(from_date).month - 1]
-        pt_amt     = _special_component_amount(SC_PT, month_name)
+    # ── PT (preview from SSA gross + employee gender/DOB) ──
+    if is_pt_applicable and from_date and comp_doc:
+        gender, dob = _employee_gender_dob(employee)
+        pt_amt = flt(comp_doc.calculate_pt(gross_salary, gender, period_date, dob))
         deductions.append(row(SC_PT, pt_amt))
 
     # ── LWF ──
@@ -162,6 +190,31 @@ def get_statutory_components(company, gross_salary, from_date,
         employer_share.append(row(SC_EMPR_LWF, _special_component_constant_amount(SC_EMPR_LWF), employer=1))
 
     return {"deductions": deductions, "employer_share": employer_share}
+
+
+def _employee_gender_dob(employee):
+    gender = None
+    dob = None
+    if not employee:
+        return gender, dob
+    if frappe.db.exists("Employee", employee):
+        row = frappe.db.get_value("Employee", employee, ["gender", "date_of_birth"], as_dict=True)
+        if row:
+            gender, dob = row.gender, row.date_of_birth
+    if (not dob or not gender) and frappe.db.exists("Company Link", employee):
+        link = frappe.db.get_value(
+            "Company Link", employee, ["employee", "date_of_birth"], as_dict=True
+        )
+        if link:
+            dob = dob or link.date_of_birth
+            if link.employee and (not dob or not gender):
+                emp = frappe.db.get_value(
+                    "Employee", link.employee, ["gender", "date_of_birth"], as_dict=True
+                )
+                if emp:
+                    gender = gender or emp.gender
+                    dob = dob or emp.date_of_birth
+    return gender, dob
 
 
 def _sum_components(components, gross_salary, earnings_map):

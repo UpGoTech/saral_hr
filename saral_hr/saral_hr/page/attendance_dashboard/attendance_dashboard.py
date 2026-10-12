@@ -417,3 +417,326 @@ def get_employee_monthly_detail(employee, year, month):
         "year":           int(year),
         "month":          month,
     }
+
+
+# ─── Yearly headcount & marking coverage ──────────────────────────────────────
+
+MONTH_NAMES = [
+	"January", "February", "March", "April", "May", "June",
+	"July", "August", "September", "October", "November", "December",
+]
+
+
+def _apply_cl_scope(filters, department=None, permitted=None):
+	"""Return filters, or None if permitted is empty (no access)."""
+	if permitted is not None and len(permitted) == 0:
+		return None
+	if department:
+		filters["department"] = department
+	if permitted is not None:
+		filters["name"] = ["in", permitted]
+	return filters
+
+
+def _on_rolls_at(company, as_of, department=None, permitted=None):
+	"""Company Links on rolls at end of as_of date (joining set, left after as_of)."""
+	as_of = getdate(as_of)
+	filters = _apply_cl_scope(
+		{"company": company, "date_of_joining": ["<=", as_of]},
+		department,
+		permitted,
+	)
+	if filters is None:
+		return []
+	rows = frappe.db.get_all(
+		"Company Link",
+		filters=filters,
+		fields=["name", "full_name", "department", "designation", "left_date"],
+	)
+	return [
+		r for r in rows
+		if not r.left_date or getdate(r.left_date) > as_of
+	]
+
+
+def _joined_in_month(company, month_start, month_end, department=None, permitted=None):
+	filters = _apply_cl_scope(
+		{
+			"company": company,
+			"date_of_joining": ["between", [month_start, month_end]],
+		},
+		department,
+		permitted,
+	)
+	if filters is None:
+		return []
+	return frappe.db.get_all(
+		"Company Link",
+		filters=filters,
+		fields=["name", "full_name", "department", "designation"],
+	)
+
+
+def _left_in_month(company, month_start, month_end, department=None, permitted=None):
+	filters = _apply_cl_scope(
+		{
+			"company": company,
+			"left_date": ["between", [month_start, month_end]],
+		},
+		department,
+		permitted,
+	)
+	if filters is None:
+		return []
+	return frappe.db.get_all(
+		"Company Link",
+		filters=filters,
+		fields=["name", "full_name", "department", "designation"],
+	)
+
+
+def _past_month_nums(year):
+	"""Completed past months of year (exclude current + future)."""
+	today = date.today()
+	year = int(year)
+	if year > today.year:
+		return []
+	if year < today.year:
+		return list(range(1, 13))
+	return list(range(1, today.month))
+
+
+def _prev_month_end(year, month_num):
+	if month_num == 1:
+		return date(year - 1, 12, 31)
+	return get_last_day(date(year, month_num - 1, 1))
+
+
+def _attendance_day_counts(company, employee_ids, month_start, month_end):
+	"""employee -> count of distinct attendance dates in range."""
+	if not employee_ids:
+		return {}
+	rows = frappe.db.sql(
+		"""
+		SELECT employee, COUNT(DISTINCT attendance_date) AS cnt
+		FROM `tabAttendance`
+		WHERE company = %(company)s
+		  AND employee IN %(employees)s
+		  AND attendance_date BETWEEN %(from_date)s AND %(to_date)s
+		GROUP BY employee
+		""",
+		{
+			"company": company,
+			"employees": list(employee_ids),
+			"from_date": str(month_start),
+			"to_date": str(month_end),
+		},
+		as_dict=True,
+	)
+	return {r.employee: int(r.cnt) for r in rows}
+
+
+def _attendance_dates_map(company, employee_ids, month_start, month_end):
+	"""employee -> set of attendance dates (date objects)."""
+	if not employee_ids:
+		return {}
+	rows = frappe.db.sql(
+		"""
+		SELECT employee, attendance_date
+		FROM `tabAttendance`
+		WHERE company = %(company)s
+		  AND employee IN %(employees)s
+		  AND attendance_date BETWEEN %(from_date)s AND %(to_date)s
+		""",
+		{
+			"company": company,
+			"employees": list(employee_ids),
+			"from_date": str(month_start),
+			"to_date": str(month_end),
+		},
+		as_dict=True,
+	)
+	out = {}
+	for r in rows:
+		out.setdefault(r.employee, set()).add(getdate(r.attendance_date))
+	return out
+
+
+def _emp_row(r):
+	return {
+		"employee": r.name,
+		"name": r.full_name or r.name,
+		"department": r.department or "—",
+		"designation": r.designation or "—",
+	}
+
+
+def _month_headcount(company, year, month_num, department=None, permitted=None):
+	month_start = date(int(year), month_num, 1)
+	month_end = get_last_day(month_start)
+	total_days = calendar.monthrange(int(year), month_num)[1]
+	prev_end = _prev_month_end(int(year), month_num)
+
+	opening_rows = _on_rolls_at(company, prev_end, department, permitted)
+	joined_rows = _joined_in_month(company, month_start, month_end, department, permitted)
+	left_rows = _left_in_month(company, month_start, month_end, department, permitted)
+	closing_rows = _on_rolls_at(company, month_end, department, permitted)
+
+	opening_ids = {r.name for r in opening_rows}
+	joined_ids = {r.name for r in joined_rows}
+	strength_ids = opening_ids | joined_ids
+
+	day_counts = _attendance_day_counts(company, strength_ids, month_start, month_end)
+	marked_ids = {eid for eid in strength_ids if day_counts.get(eid, 0) >= total_days}
+	not_marked_ids = strength_ids - marked_ids
+
+	opening = len(opening_ids)
+	joined = len(joined_ids)
+	left = len(left_rows)
+	# Spec identity; tenure closing set used for drill-down
+	closing = opening + joined - left
+
+	return {
+		"month": MONTH_NAMES[month_num - 1],
+		"month_num": month_num,
+		"year": int(year),
+		"opening": opening,
+		"joined": joined,
+		"left": left,
+		"closing": closing,
+		"total_strength": len(strength_ids),
+		"marked": len(marked_ids),
+		"not_marked": len(not_marked_ids),
+		"total_days": total_days,
+		"_opening_rows": opening_rows,
+		"_joined_rows": joined_rows,
+		"_left_rows": left_rows,
+		"_closing_rows": closing_rows,
+		"_strength_ids": strength_ids,
+		"_marked_ids": marked_ids,
+		"_not_marked_ids": not_marked_ids,
+		"_month_start": month_start,
+		"_month_end": month_end,
+	}
+
+
+@frappe.whitelist()
+def get_yearly_summary(company, year, department=None):
+	if not company:
+		return {"months": [], "cards": {}}
+
+	permitted = _get_permitted_employees()
+	year = int(year)
+	months = []
+
+	for month_num in _past_month_nums(year):
+		m = _month_headcount(company, year, month_num, department or None, permitted)
+		months.append({
+			"month": m["month"],
+			"month_num": m["month_num"],
+			"year": m["year"],
+			"opening": m["opening"],
+			"joined": m["joined"],
+			"left": m["left"],
+			"closing": m["closing"],
+			"total_strength": m["total_strength"],
+			"marked": m["marked"],
+			"not_marked": m["not_marked"],
+		})
+
+	total_joined = sum(m["joined"] for m in months)
+	total_left = sum(m["left"] for m in months)
+	avg_closing = round(sum(m["closing"] for m in months) / len(months), 1) if months else 0
+	sum_strength = sum(m["total_strength"] for m in months)
+	sum_marked = sum(m["marked"] for m in months)
+	coverage = round((sum_marked / sum_strength) * 100, 1) if sum_strength else 0
+
+	return {
+		"year": year,
+		"months": months,
+		"cards": {
+			"joined": total_joined,
+			"left": total_left,
+			"avg_closing": avg_closing,
+			"marked_coverage_pct": coverage,
+		},
+	}
+
+
+@frappe.whitelist()
+def get_yearly_employee_list(company, year, month, list_type, department=None):
+	"""
+	list_type: opening | joined | left | closing | marked | not_marked
+	"""
+	if not company or month not in MONTH_NAMES:
+		return {"employees": []}
+
+	month_num = MONTH_NAMES.index(month) + 1
+	if month_num not in _past_month_nums(int(year)):
+		return {"employees": []}
+
+	permitted = _get_permitted_employees()
+	m = _month_headcount(company, int(year), month_num, department or None, permitted)
+
+	if list_type == "opening":
+		return {"employees": [_emp_row(r) for r in m["_opening_rows"]]}
+	if list_type == "joined":
+		return {"employees": [_emp_row(r) for r in m["_joined_rows"]]}
+	if list_type == "left":
+		return {"employees": [_emp_row(r) for r in m["_left_rows"]]}
+	if list_type == "closing":
+		return {"employees": [_emp_row(r) for r in m["_closing_rows"]]}
+
+	# Build name map for strength employees
+	strength = list(m["_strength_ids"])
+	info = {}
+	if strength:
+		for r in frappe.db.get_all(
+			"Company Link",
+			filters={"name": ["in", strength]},
+			fields=["name", "full_name", "department", "designation"],
+		):
+			info[r.name] = r
+
+	if list_type == "marked":
+		emps = []
+		for eid in sorted(m["_marked_ids"], key=lambda x: (info.get(x) or {}).get("full_name") or x):
+			r = info.get(eid)
+			emps.append({
+				"employee": eid,
+				"name": (r.full_name if r else None) or eid,
+				"department": (r.department if r else None) or "—",
+				"designation": (r.designation if r else None) or "—",
+			})
+		return {"employees": emps}
+
+	if list_type == "not_marked":
+		dates_map = _attendance_dates_map(
+			company, m["_not_marked_ids"], m["_month_start"], m["_month_end"]
+		)
+		all_days = [
+			m["_month_start"] + timedelta(days=i)
+			for i in range(m["total_days"])
+		]
+		emps = []
+		for eid in sorted(m["_not_marked_ids"], key=lambda x: (info.get(x) or {}).get("full_name") or x):
+			have = dates_map.get(eid, set())
+			missing = [d for d in all_days if d not in have]
+			r = info.get(eid)
+			emps.append({
+				"employee": eid,
+				"name": (r.full_name if r else None) or eid,
+				"department": (r.department if r else None) or "—",
+				"designation": (r.designation if r else None) or "—",
+				"missing_count": len(missing),
+				"missing_dates": [str(d) for d in missing],
+			})
+		return {
+			"employees": emps,
+			"mark_attendance_url": "/app/mark-attendance",
+			"month": month,
+			"year": int(year),
+			"company": company,
+		}
+
+	return {"employees": []}

@@ -1,16 +1,19 @@
 frappe.query_reports["Professional Tax Register"] = {
     filters: [
         {
+            fieldname: "company",
+            label: __("Company"),
+            fieldtype: "MultiSelectList",
+            reqd: 1,
+            get_data: txt => frappe.db.get_link_options("Company", txt),
+        },
+        {
             fieldname: "year",
             label: __("Year"),
             fieldtype: "Select",
             reqd: 1,
             default: String(new Date().getFullYear()),
-            options: (function () {
-                const y = new Date().getFullYear(), opts = [""];
-                for (let i = y - 2; i <= y + 2; i++) opts.push(String(i));
-                return opts;
-            })(),
+            options: saral_hr.period_picker.get_period_year_options(),
         },
         {
             fieldname: "month",
@@ -23,13 +26,7 @@ frappe.query_reports["Professional Tax Register"] = {
                 "July", "August", "September", "October", "November", "December"
             ],
         },
-        {
-            fieldname: "company",
-            label: __("Company"),
-            fieldtype: "MultiSelectList",
-            reqd: 1,
-            get_data: txt => frappe.db.get_link_options("Company", txt),
-        },
+        
         {
             fieldname: "category",
             label: __("Category"),
@@ -57,7 +54,7 @@ frappe.query_reports["Professional Tax Register"] = {
             if (!f.year || !f.month || !f.company?.length) {
                 frappe.msgprint({
                     title: __("Missing Filters"),
-                    message: __("Please select Year, Month and Company before printing."),
+                    message: __("Please select Company, Year and Month before printing."),
                     indicator: "orange",
                 });
                 return;
