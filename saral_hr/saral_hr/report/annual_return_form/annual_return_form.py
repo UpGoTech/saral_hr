@@ -57,11 +57,11 @@ SEXES = (("male", "Male"), ("female", "Female"))
 HEADER_FILL = PatternFill("solid", fgColor="1F4E79")
 SUB_FILL = PatternFill("solid", fgColor="D6DCE4")
 TOTAL_FILL = PatternFill("solid", fgColor="E8E8E8")
-TITLE_FONT = Font(name="Calibri", size=14, bold=True, color="1F4E79")
-HEADER_FONT = Font(name="Calibri", size=9, bold=True, color="FFFFFF")
-SUB_FONT = Font(name="Calibri", size=9, bold=True)
-BODY_FONT = Font(name="Calibri", size=9)
-BOLD_FONT = Font(name="Calibri", size=9, bold=True)
+TITLE_FONT = Font(name="Calibri", size=16, bold=True, color="1F4E79")
+HEADER_FONT = Font(name="Calibri", size=11, bold=True, color="FFFFFF")
+SUB_FONT = Font(name="Calibri", size=11, bold=True)
+BODY_FONT = Font(name="Calibri", size=11)
+BOLD_FONT = Font(name="Calibri", size=11, bold=True)
 THIN = Border(
 	left=Side(style="thin", color="000000"),
 	right=Side(style="thin", color="000000"),
@@ -69,7 +69,9 @@ THIN = Border(
 	bottom=Side(style="thin", color="000000"),
 )
 CENTER = Alignment(horizontal="center", vertical="center", wrap_text=True)
+MONTH = Alignment(horizontal="center", vertical="center", wrap_text=False)
 LEFT = Alignment(horizontal="left", vertical="center", wrap_text=True)
+RIGHT = Alignment(horizontal="right", vertical="center", wrap_text=True)
 
 
 def execute(filters=None):
@@ -443,11 +445,11 @@ def _workbook(pack, company, year):
 def _sheet_working(ws, pack, company, year):
 	ws.title = "Working Days"
 	headers = [
-		"SR. NO.",
-		"EMP. CODE",
-		"NAME OF EMPLOYEES",
+		"SR.\nNO.",
+		"EMP.\nCODE",
+		"NAME OF\nEMPLOYEES",
 		"DESIGNATION",
-		"DATE OF JOINING",
+		"DATE OF\nJOINING",
 		*[f"{name[:3]}-{year}" for name in MONTHS],
 		"TOTAL",
 	]
@@ -482,9 +484,10 @@ def _sheet_working(ws, pack, company, year):
 		bold=True,
 		fill=TOTAL_FILL,
 	)
-	widths = [10, 16, 28, 22, 16] + [12] * 12 + [12]
+	widths = [8, 14, 22, 20, 12] + [12] * 12 + [8]
 	_widths(ws, widths)
-	ws.row_dimensions[3].height = 30
+	ws.row_dimensions[3].height = 16
+	ws.row_dimensions[4].height = 16
 	ws.freeze_panes = "A5"
 	ws.auto_filter.ref = f"A4:{get_column_letter(len(headers))}{max(total_row, 4)}"
 	ws.page_setup.orientation = "landscape"
@@ -499,17 +502,17 @@ def _sheet_working(ws, pack, company, year):
 
 def _sheet_leave(ws, pack, company, year):
 	headers = [
-		"Workers' Category",
+		"Workers'\nCategory",
 		"Sex",
-		"Number of workers on duty during the year",
-		"Number of workers eligible for annual leave",
-		"No of workers whose leaves sanctioned",
-		"No of workers suspended",
-		"No of workers Terminated",
-		"No workers left the job",
-		"No of workers retired",
-		"No of workers died while in service",
-		"No of workers to whom payment is made instead of leave",
+		"Number of\nworkers on duty\n(31 Jan Attend. +\nNew Joinees\ntill 31 Dec)",
+		"Number of\nworkers eligible\nfor annual leave",
+		"No of workers\nwhose leaves\nsanctioned",
+		"No of\nworkers\nsuspended",
+		"No of\nworkers\nTerminated",
+		"No workers\nleft the job",
+		"No of\nworkers\nretired",
+		"No of workers\ndied while\nin service",
+		"No of workers\nto whom payment\nis made instead\nof leave",
 	]
 	_title(ws, 1, len(headers), f"{company} — Leave & Wages Details — {year}")
 	note = ws.cell(2, 1, "(Excluding Agriculture Team)")
@@ -530,7 +533,7 @@ def _sheet_leave(ws, pack, company, year):
 				ws,
 				row,
 				[
-					label if sex == "male" else "",
+					_category_label(label) if sex == "male" else "",
 					sex_label,
 					stat["on_duty"],
 					stat["eligible"],
@@ -545,9 +548,10 @@ def _sheet_leave(ws, pack, company, year):
 			)
 			row += 1
 		ws.merge_cells(start_row=start, start_column=1, end_row=start + 1, end_column=1)
-		ws.cell(start, 1).alignment = LEFT
-	_widths(ws, [36, 12, 28, 28, 28, 22, 22, 22, 20, 24, 32])
-	ws.row_dimensions[3].height = 48
+		ws.cell(start, 1).alignment = RIGHT
+	_widths(ws, [15, 8, 18, 14, 14, 12, 12, 12, 12, 14, 16])
+	ws.row_dimensions[3].height = 80
+	ws.row_dimensions[4].height = 16
 	ws.page_setup.orientation = "landscape"
 	ws.page_setup.fitToPage = True
 	ws.page_setup.fitToWidth = 1
@@ -563,9 +567,9 @@ def _sheet_manpower(ws, pack, company, year):
 	top = [
 		(1, "S.N."),
 		(2, "Month"),
-		(3, "Closing Days"),
-		(4, "Total Days"),
-		(5, "Total Working Days"),
+		(3, "Closing\nDays"),
+		(4, "Total\nDays"),
+		(5, "Total\nWorking\nDays"),
 		(6, "No. of Employees"),
 		(9, "Mandays"),
 		(12, "OT"),
@@ -593,6 +597,7 @@ def _sheet_manpower(ws, pack, company, year):
 	for col in (1, 2, 3, 4, 5, 12):
 		ws.cell(4, col).fill = HEADER_FILL
 		ws.cell(4, col).border = THIN
+		ws.cell(4, col).alignment = CENTER
 	totals = Counter()
 	for offset, month in enumerate(pack["manpower"]):
 		values = [
@@ -643,8 +648,9 @@ def _sheet_manpower(ws, pack, company, year):
 		bold=True,
 		fill=TOTAL_FILL,
 	)
-	_widths(ws, [8, 14, 14, 12, 18, 12, 12, 12, 12, 12, 12, 12])
-	ws.row_dimensions[3].height = 22
+	_widths(ws, [6, 12, 10, 10, 11, 8, 9, 8, 10, 10, 10, 8])
+	ws.row_dimensions[3].height = 32
+	ws.row_dimensions[4].height = 16
 	ws.page_setup.orientation = "landscape"
 	ws.page_setup.fitToPage = True
 	ws.page_setup.fitToWidth = 1
@@ -666,24 +672,30 @@ def _sheet_employment(ws, pack, company, year):
 	]
 	for row, serial, label, value, side_label, side_value in facts:
 		ws.cell(row, 1, serial).font = BOLD_FONT
-		ws.cell(row, 2, label).font = BODY_FONT
+		label_cell = ws.cell(row, 2, label)
+		label_cell.font = BODY_FONT
+		label_cell.alignment = LEFT
 		ws.merge_cells(start_row=row, start_column=2, end_row=row, end_column=4)
 		num = ws.cell(row, 5, value)
 		num.font = BOLD_FONT
-		num.alignment = CENTER
-		ws.cell(row, 6, side_label).font = BODY_FONT
+		num.alignment = RIGHT
+		side_label_cell = ws.cell(row, 6, side_label)
+		side_label_cell.font = BODY_FONT
+		side_label_cell.alignment = LEFT
 		side = ws.cell(row, 7, side_value)
 		side.font = BOLD_FONT
-		side.alignment = CENTER
+		side.alignment = RIGHT
+		if len(label) > 40 or len(side_label) > 22:
+			ws.row_dimensions[row].height = 32
 	ws.cell(8, 1, "Number of labors and their details").font = TITLE_FONT
 	headers = [
-		"Category of workers",
+		"Category of\nworkers",
 		"Sex",
-		"No. of Mandays during the year",
-		"Average number of Workers employed per day",
-		"Number of man-hours worked on overtime in a year",
-		"Number of manhours worked including overtime in a year",
-		"Average number of hours worked per week",
+		"No. of\nMandays during\nthe year",
+		"Average number\nof Workers\nemployed\nper day",
+		"Number of\nman-hours\nworked on\novertime\nin a year",
+		"Number of\nmanhours worked\nincluding\novertime\nin a year",
+		"Average number\nof hours\nworked\nper week",
 	]
 	_header_row(ws, 10, headers)
 	for index in range(1, 8):
@@ -702,7 +714,7 @@ def _sheet_employment(ws, pack, company, year):
 				ws,
 				row_no,
 				[
-					label if sex == "male" else "",
+					_category_label(label) if sex == "male" else "",
 					sex_label,
 					_round_day(stat["mandays"]),
 					stat["average_workers"],
@@ -713,8 +725,9 @@ def _sheet_employment(ws, pack, company, year):
 			)
 			row_no += 1
 		ws.merge_cells(start_row=start, start_column=1, end_row=start + 1, end_column=1)
-	_widths(ws, [36, 12, 24, 28, 32, 36, 28])
-	ws.row_dimensions[10].height = 36
+	_widths(ws, [16, 8, 15, 16, 12, 18, 12])
+	ws.row_dimensions[10].height = 90
+	ws.row_dimensions[11].height = 16
 	ws.page_setup.orientation = "landscape"
 	ws.page_setup.fitToPage = True
 	ws.page_setup.fitToWidth = 1
@@ -727,12 +740,12 @@ def _sheet_employment(ws, pack, company, year):
 
 def _sheet_left(ws, pack, company, year):
 	headers = [
-		"SR.NO.",
-		"EMP. CODE",
-		"NAME OF WORKER",
+		"SR.\nNO.",
+		"EMP.\nCODE",
+		"NAME OF\nWORKER",
 		"DESIGNATION",
-		"DATE OF JOINING",
-		"Exit date",
+		"DATE OF\nJOINING",
+		"Exit\ndate",
 		*[f"{name[:3]}-{year}" for name in MONTHS],
 		"Total",
 	]
@@ -761,7 +774,9 @@ def _sheet_left(ws, pack, company, year):
 			],
 			date_cols={5, 6},
 		)
-	_widths(ws, [10, 16, 28, 22, 16, 16] + [12] * 12 + [10])
+	_widths(ws, [8, 14, 22, 20, 12, 12] + [12] * 12 + [8])
+	ws.row_dimensions[3].height = 16
+	ws.row_dimensions[4].height = 16
 	ws.freeze_panes = "A5"
 	ws.page_setup.orientation = "landscape"
 	ws.page_setup.fitToPage = True
@@ -783,12 +798,19 @@ def _title(ws, row, columns, text):
 	ws.row_dimensions[row].height = 22
 
 
+def _category_label(label):
+	return {
+		"Worker of age (15 yrs < 18 yrs)": "Worker of age\n(15 yrs < 18 yrs)",
+		"Child Labor (14 yrs to 15 yrs)": "Child Labor\n(14 yrs to 15 yrs)",
+	}.get(label, label)
+
+
 def _header_row(ws, row, headers):
 	for col, label in enumerate(headers, start=1):
 		cell = ws.cell(row, col, label)
 		cell.font = HEADER_FONT
 		cell.fill = HEADER_FILL
-		cell.alignment = CENTER
+		cell.alignment = MONTH if isinstance(label, str) and len(label) == 8 and label[3] == "-" else CENTER
 		cell.border = THIN
 
 
@@ -797,7 +819,7 @@ def _body_row(ws, row, values, date_cols=(), bold=False, fill=None):
 		cell = ws.cell(row, col, value if value != "" else None)
 		cell.font = BOLD_FONT if bold else BODY_FONT
 		cell.border = THIN
-		cell.alignment = LEFT if col in {2, 3, 4} else CENTER
+		cell.alignment = RIGHT
 		if fill is not None:
 			cell.fill = fill
 		if col in date_cols and isinstance(value, date):
