@@ -418,6 +418,34 @@ def _col(label, fieldname, fieldtype="Currency", width=110, group=None, full_nam
 	return column
 
 
+def _stack_part(comp, fieldname):
+	return {
+		"fieldname": fieldname,
+		"label": comp["label"],
+		"full_name": comp.get("full_name"),
+	}
+
+
+def _paired_component_columns(comps, fn_builder, group):
+	"""Two components share one column: first on the top line, second under it."""
+	columns = []
+	index = 0
+	while index < len(comps):
+		parts = [_stack_part(comps[index], fn_builder(comps[index]["name"]))]
+		if index + 1 < len(comps):
+			nxt = comps[index + 1]
+			parts.append(_stack_part(nxt, fn_builder(nxt["name"])))
+			index += 2
+		else:
+			index += 1
+		label = parts[0]["label"] if len(parts) == 1 else f"{parts[0]['label']}\n{parts[1]['label']}"
+		col = _col(label, parts[0]["fieldname"], "Data", 110, group)
+		col["label"] = label
+		col["esh_stack"] = parts
+		columns.append(col)
+	return columns
+
+
 def _columns(actual_comps, earn_comps, ded_comps, add_earn_comps=None, add_ded_comps=None):
 	add_earn_comps = add_earn_comps or []
 	add_ded_comps = add_ded_comps or []
@@ -445,6 +473,57 @@ def _columns(actual_comps, earn_comps, ded_comps, add_earn_comps=None, add_ded_c
 	slip_col["hidden"] = 1
 	columns.append(slip_col)
 	return columns
+
+
+def _export_part(col):
+	return {
+		"fieldname": col["fieldname"],
+		"label": col.get("label"),
+		"full_name": col.get("esh_full_name"),
+	}
+
+
+def _columns_for_export(columns):
+	"""PDF and Excel only. Screen keeps one component per column."""
+	pair_groups = {"Actual Earning", "Calculated Earning"}
+	skip = {"total_gross", "total_earning"}
+	out = []
+	index = 0
+	while index < len(columns):
+		col = columns[index]
+		if col.get("esh_group") not in pair_groups or col.get("fieldname") in skip:
+			out.append(col)
+			index += 1
+			continue
+		group = col.get("esh_group")
+		batch = []
+		while (
+			index < len(columns)
+			and columns[index].get("esh_group") == group
+			and columns[index].get("fieldname") not in skip
+		):
+			batch.append(columns[index])
+			index += 1
+		step = 0
+		while step < len(batch):
+			parts = [_export_part(batch[step])]
+			if step + 1 < len(batch):
+				parts.append(_export_part(batch[step + 1]))
+				step += 2
+			else:
+				step += 1
+			label = parts[0]["label"] if len(parts) == 1 else f"{parts[0]['label']}\n{parts[1]['label']}"
+			out.append(
+				{
+					"label": label,
+					"fieldname": parts[0]["fieldname"],
+					"fieldtype": "Data",
+					"width": 110,
+					"esh_group": group,
+					"esh_stack": parts,
+				}
+			)
+	return out
 
 
 # ─── PDF / Excel (same download path as Monthly Salary Register) ─────────────
@@ -521,15 +600,15 @@ def _export_width(col):
 	fn = col.get("fieldname") or ""
 	label = str(col.get("label") or "")
 	group = col.get("esh_group") or ""
+	if col.get("esh_stack"):
+		return 52
 	if fn == "month_year":
 		return 48
 	if fn == "paid_days":
-		return 34
+		return 22
 	if fn == "net_payable":
 		return 48
 	if group in ("Calculated Earning", "Additional Salary", "Deduction", "Additional Deduction"):
-		if len(label) > 12:
-			return 48
 		if fn.startswith("total_"):
 			return 52
 		return 42
@@ -550,9 +629,56 @@ def _display_value(col, row):
 		if abs(n - round(n)) < 1e-9:
 			return str(int(round(n)))
 		return f"{n:.1f}"
-	if col.get("fieldtype") in ("Currency", "Float") and isinstance(val, (int, float)):
+	if col.get("fieldtype") == "Currency" and isinstance(val, (int, float)):
+		return f"{flt(val):,.2f}"
+	if col.get("fieldtype") == "Float" and isinstance(val, (int, float)):
 		return f"{flt(val):,.2f}"
 	return str(val)
+
+
+def _wrap_heading(text):
+	"""Long PDF/Excel headings break onto two lines. Short codes stay on one."""
+	text = str(text or "")
+	if "\n" in text:
+		return text
+	words = text.split()
+	text = " ".join(words)
+	if len(words) < 2 or len(text) < 12:
+		return text
+	best_at = 1
+	best_gap = None
+	for index in range(1, len(words)):
+		gap = abs(len(" ".join(words[:index])) - len(" ".join(words[index:])))
+		if best_gap is None or gap < best_gap:
+			best_gap = gap
+			best_at = index
+	return " ".join(words[:best_at]) + "\n" + " ".join(words[best_at:])
+
+
+def _heading_html(text):
+	if text == "Paid Days":
+		return "Paid<br>Days"
+	return "<br>".join(frappe.utils.escape_html(line) for line in _wrap_heading(text).split("\n"))
+
+
+def _header_label_html(col):
+	stack = col.get("esh_stack")
+	if stack:
+		return "<br>".join(frappe.utils.escape_html(part["label"]) for part in stack)
+	return _heading_html(col.get("label") or "")
+
+
+def _cell_html(col, row):
+	stack = col.get("esh_stack")
+	if not stack:
+		return frappe.utils.escape_html(_display_value(col, row))
+	lines = []
+	for part in stack:
+		text = frappe.utils.escape_html(
+			_display_value({"fieldname": part["fieldname"], "fieldtype": "Currency"}, row)
+		)
+		lines.append(f'<div class="ln">{text}</div>')
+	return f'<div class="stk">{"".join(lines)}</div>'
 
 
 def _has_extra_groups(columns):
@@ -567,14 +693,14 @@ def print_report(filters):
 	columns, rows = execute(filters)
 	if not rows:
 		frappe.throw(_("No salary slips found for this employee."))
-	html = _build_html(columns, rows, _export_meta(filters))
+	html = _build_html(_columns_for_export(columns), rows, _export_meta(filters))
 	return _save_pdf(html, "Employee_Salary_History")
 
 
 def _build_html(columns, rows, meta):
 	columns = [c for c in columns if not c.get("hidden")]
 	tight = _has_extra_groups(columns)
-	value_px = "7px" if tight else "8.5px"
+	value_px = "9px" if tight else "10px"
 	spans = _group_spans(columns)
 	multi = any(len(group["cols"]) > 1 for group in spans)
 	top = []
@@ -583,19 +709,18 @@ def _build_html(columns, rows, meta):
 		color = _hdr_color(group["name"])
 		n = len(group["cols"])
 		style = (
-			f"padding:4px 1px;font-size:8px;background:{color};"
+			f"padding:3px 1px;font-size:10px;background:{color};"
 			"vertical-align:middle;text-align:center;"
 		)
 		if len(group["cols"]) == 1 and group["cols"][0].get("fieldname") == "month_year":
 			style += "white-space:nowrap;word-wrap:normal;"
-		label = frappe.utils.escape_html(group["name"])
+		label = _heading_html(group["name"])
 		if n == 1 and multi:
 			top.append(f'<th rowspan="2" style="{style}">{label}</th>')
 		elif n > 1:
 			top.append(f'<th colspan="{n}" style="{style}">{label}</th>')
 			for col in group["cols"]:
-				sub_label = frappe.utils.escape_html(col.get("label") or "")
-				sub.append(f'<th style="{style}">{sub_label}</th>')
+				sub.append(f'<th style="{style}">{_header_label_html(col)}</th>')
 		else:
 			top.append(f'<th style="{style}">{label}</th>')
 
@@ -603,7 +728,7 @@ def _build_html(columns, rows, meta):
 	if sub:
 		header += f"<tr>{''.join(sub)}</tr>"
 
-	body = ""
+	body_rows = []
 	data_idx = 0
 	for row in rows:
 		is_tot = row.get("_is_total")
@@ -612,8 +737,7 @@ def _build_html(columns, rows, meta):
 		tds = ""
 		for col in columns:
 			fn = col["fieldname"]
-			disp = _display_value(col, row)
-			disp = frappe.utils.escape_html(disp)
+			disp = _cell_html(col, row)
 			if is_tot:
 				bg = "#e8e8e8"
 			elif data_idx % 2 == 0:
@@ -628,37 +752,50 @@ def _build_html(columns, rows, meta):
 			tds += (
 				f'<td class="{row_cls}" style="text-align:{align};background:{bg};font-weight:{weight};">{disp}</td>'
 			)
-		body += f"<tr>{tds}</tr>"
+		body_rows.append(f"<tr>{tds}</tr>")
 
 	widths = [_export_width(c) for c in columns]
 	total_width = sum(widths) or 1
 	colgroup = "<colgroup>" + "".join(
 		f'<col style="width:{100.0 * w / total_width:.2f}%">' for w in widths
 	) + "</colgroup>"
+	sheet = (
+		f'<table class="sheet">{colgroup}<thead>{header}</thead>'
+		f'<tbody>{"".join(body_rows)}</tbody></table>'
+	)
 	company = frappe.utils.escape_html(meta["company"])
 	employee = frappe.utils.escape_html(f"{meta['employee_name']} ({meta['employee']})")
 	period = frappe.utils.escape_html(str(meta["period"]))
 	return f"""<!DOCTYPE html><html><head><meta charset="UTF-8">
 <style>
 *{{margin:0;padding:0;box-sizing:border-box}}
-body{{font-family:Arial,sans-serif;font-size:7px;color:#000}}
+body{{font-family:Arial,sans-serif;font-size:8px;color:#000}}
 .hdr{{text-align:center;margin-bottom:6px}}
-.hdr .co{{font-size:18px;font-weight:900}}
-.hdr .ttl{{font-size:15px;font-weight:700;margin-top:2px}}
-.hdr .per{{font-size:13px;margin-top:2px}}
-table{{width:100%;border-collapse:collapse;table-layout:fixed}}
-th,td{{word-wrap:break-word;vertical-align:middle;text-align:center}}
-th{{border:1px solid #000}}
-td.data{{border:1px solid #000;padding:6px 1px;font-size:{value_px};line-height:1;vertical-align:middle;text-align:center}}
+.hdr .co{{font-size:20px;font-weight:900}}
+.hdr .ttl{{font-size:16px;font-weight:700;margin-top:2px}}
+.hdr .per{{font-size:14px;margin-top:2px}}
+table.sheet{{width:100%;border-collapse:collapse;table-layout:fixed;page-break-inside:auto}}
+table.sheet thead{{display:table-header-group}}
+table.sheet tr{{page-break-inside:avoid;page-break-after:auto}}
+table.sheet th,table.sheet td{{word-wrap:break-word;vertical-align:middle;text-align:center}}
+table.sheet th{{border:1px solid #000}}
+td.data{{border:1px solid #000;padding:5px 1px;font-size:{value_px};line-height:1.35;vertical-align:middle;text-align:center;white-space:nowrap}}
 td.data.month{{white-space:nowrap;word-wrap:normal;overflow:hidden}}
-td.tot{{border:1px solid #000;padding:7px 1px;font-size:{value_px};line-height:1;white-space:nowrap;vertical-align:middle;text-align:center;overflow:hidden}}
+td.tot{{border:1px solid #000;padding:5px 1px;font-size:{value_px};line-height:1.35;vertical-align:middle;text-align:center;white-space:nowrap}}
+.stk .ln{{display:block;line-height:1.45;padding:2px 0}}
+table.note{{width:auto;margin-top:16px;border-collapse:collapse;table-layout:auto}}
+table.note th,table.note td{{border:1px solid #000;background:#fff;color:#000;padding:5px 10px;vertical-align:middle}}
+table.note th{{font-size:15px;font-weight:700;text-align:center}}
+table.note td.code{{font-size:14px;font-weight:700;text-align:center}}
+table.note td.name{{font-size:14px;font-weight:400;text-align:left}}
 </style></head><body>
 <div class="hdr">
   <div class="co">{company}</div>
   <div class="ttl">Employee Salary History</div>
   <div class="per">{employee}<br>For the Period {period}</div>
 </div>
-<table>{colgroup}<thead>{header}</thead><tbody>{body}</tbody></table>
+{sheet}
+{_legend_html(columns)}
 </body></html>"""
 
 
@@ -699,7 +836,7 @@ def excel_report(filters):
 	columns, rows = execute(filters)
 	if not rows:
 		frappe.throw(_("No salary slips found for this employee."))
-	wb = _build_workbook(columns, rows, _export_meta(filters))
+	wb = _build_workbook(_columns_for_export(columns), rows, _export_meta(filters))
 	return _save_excel(wb, "Employee_Salary_History")
 
 
@@ -721,17 +858,17 @@ def _build_workbook(columns, rows, meta):
 	ws.row_dimensions[3].height = 24
 	ws.merge_cells(start_row=1, start_column=1, end_row=1, end_column=n_cols)
 	title = ws.cell(1, 1, f"{meta['company']} - Employee Salary History")
-	title.font = Font(name="Arial", size=22, bold=True, color="000000")
+	title.font = Font(name="Arial", size=24, bold=True, color="000000")
 	title.alignment = Alignment(horizontal="center", vertical="center")
 
 	ws.merge_cells(start_row=2, start_column=1, end_row=2, end_column=n_cols)
 	who = ws.cell(2, 1, f"{meta['employee_name']} ({meta['employee']})")
-	who.font = Font(name="Arial", size=16, bold=True, color="000000")
+	who.font = Font(name="Arial", size=18, bold=True, color="000000")
 	who.alignment = Alignment(horizontal="center", vertical="center")
 
 	ws.merge_cells(start_row=3, start_column=1, end_row=3, end_column=n_cols)
 	period = ws.cell(3, 1, f"For the Period {meta['period']}")
-	period.font = Font(name="Arial", size=14)
+	period.font = Font(name="Arial", size=15)
 	period.alignment = Alignment(horizontal="center", vertical="center")
 
 	spans = _group_spans(columns)
@@ -748,8 +885,9 @@ def _build_workbook(columns, rows, meta):
 			ws.merge_cells(start_row=group_row, start_column=col_idx, end_row=sub_row, end_column=col_idx)
 		elif n > 1:
 			ws.merge_cells(start_row=group_row, start_column=col_idx, end_row=group_row, end_column=end_col)
-		cell = ws.cell(group_row, col_idx, group["name"])
-		cell.font = Font(name="Arial", size=12, bold=True, color="000000")
+		header_name = "Paid\nDays" if group["name"] == "Paid Days" else _wrap_heading(group["name"])
+		cell = ws.cell(group_row, col_idx, header_name)
+		cell.font = Font(name="Arial", size=13, bold=True, color="000000")
 		cell.fill = fill
 		cell.border = thin
 		cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
@@ -758,26 +896,37 @@ def _build_workbook(columns, rows, meta):
 			covered.fill = fill
 			covered.border = thin
 			if multi and n > 1:
-				sub = ws.cell(sub_row, col_idx + offset, group["cols"][offset].get("label") or "")
-				sub.font = Font(name="Arial", size=12, bold=True, color="000000")
+				sub = ws.cell(sub_row, col_idx + offset, _wrap_heading(group["cols"][offset].get("label") or ""))
+				sub.font = Font(name="Arial", size=13, bold=True, color="000000")
 				sub.fill = fill
 				sub.border = thin
 				sub.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
 		col_idx += n
 
 	tot_fill = PatternFill("solid", fgColor="E8E8E8")
+	paired = any(col.get("esh_stack") and len(col["esh_stack"]) > 1 for col in columns)
 	for r_idx, row in enumerate(rows, start=data_start):
 		is_tot = row.get("_is_total")
-		ws.row_dimensions[r_idx].height = 24
+		ws.row_dimensions[r_idx].height = 48 if paired else 28
 		for c_idx, col in enumerate(columns, start=1):
 			fn = col["fieldname"]
-			val = row.get(fn)
-			cell = ws.cell(r_idx, c_idx, None if val in (None, "") else val)
-			cell.font = Font(name="Arial", size=11, bold=bool(is_tot))
+			cell = ws.cell(r_idx, c_idx)
+			cell.font = Font(name="Arial", size=14, bold=bool(is_tot))
 			cell.border = thin
 			cell.alignment = Alignment(horizontal="center", vertical="center")
 			if is_tot:
 				cell.fill = tot_fill
+			stack = col.get("esh_stack")
+			if stack:
+				lines = [
+					_display_value({"fieldname": part["fieldname"], "fieldtype": "Currency"}, row)
+					for part in stack
+				]
+				cell.value = "\n".join(lines)
+				cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
+				continue
+			val = row.get(fn)
+			cell.value = None if val in (None, "") else val
 			if fn == "paid_days" and isinstance(val, (int, float)):
 				v = flt(val)
 				if abs(v - round(v)) < 1e-9:
@@ -788,15 +937,20 @@ def _build_workbook(columns, rows, meta):
 				cell.alignment = Alignment(horizontal="center", vertical="center")
 			elif col.get("fieldtype") in ("Currency", "Float") and isinstance(val, (int, float)):
 				cell.number_format = "#,##0.00"
-				cell.alignment = Alignment(horizontal="right", vertical="center")
+				cell.alignment = Alignment(horizontal="right", vertical="center", wrap_text=False)
 			elif fn == "month_year":
 				cell.alignment = Alignment(horizontal="left", vertical="center")
 
 	for i, col in enumerate(columns, start=1):
-		ws.column_dimensions[get_column_letter(i)].width = _excel_width(col)
-	ws.row_dimensions[group_row].height = 32
+		ws.column_dimensions[get_column_letter(i)].width = _excel_width(col, rows)
+	ws.row_dimensions[group_row].height = 40
 	if multi:
-		ws.row_dimensions[sub_row].height = 36
+		ws.row_dimensions[sub_row].height = 44
+	data_end = data_start + len(rows) - 1
+	if data_end >= group_row:
+		for r in range(group_row, data_end + 1):
+			for c in range(1, n_cols + 1):
+				ws.cell(r, c).border = thin
 	_write_abbreviation_legend(ws, columns, data_start + len(rows) + 3)
 	_prepare_print(ws, group_row, sub_row if multi else group_row)
 	return wb
@@ -832,19 +986,43 @@ def _legend_pair(short, full):
 	return short, full
 
 
-def _write_abbreviation_legend(ws, columns, start_row):
-	"""NOTE table under the sheet: yellow title, then code and full name."""
+def _legend_pairs(columns):
 	pairs = []
 	seen = set()
 	for col in columns:
-		pair = _legend_pair(col.get("label"), col.get("esh_full_name"))
-		if not pair:
-			continue
-		key = pair[0].lower()
-		if key in seen:
-			continue
-		seen.add(key)
-		pairs.append(pair)
+		sources = col.get("esh_stack") or [
+			{"label": col.get("label"), "full_name": col.get("esh_full_name")}
+		]
+		for source in sources:
+			pair = _legend_pair(source.get("label"), source.get("full_name"))
+			if not pair:
+				continue
+			key = pair[0].lower()
+			if key in seen:
+				continue
+			seen.add(key)
+			pairs.append(pair)
+	return pairs
+
+
+def _legend_html(columns):
+	pairs = _legend_pairs(columns)
+	if not pairs:
+		return ""
+	rows = []
+	for short, full in pairs:
+		code = frappe.utils.escape_html(short)
+		name = frappe.utils.escape_html(full)
+		rows.append(f'<tr><td class="code">{code}</td><td class="name">{name}</td></tr>')
+	return (
+		'<table class="note"><thead><tr><th colspan="2">NOTE</th></tr></thead>'
+		f"<tbody>{''.join(rows)}</tbody></table>"
+	)
+
+
+def _write_abbreviation_legend(ws, columns, start_row):
+	"""NOTE table under the sheet: yellow title, then code and full name."""
+	pairs = _legend_pairs(columns)
 	if not pairs:
 		return
 	# Code in column A. The name spans the next columns so print does not cut it.
@@ -864,7 +1042,7 @@ def _write_abbreviation_legend(ws, columns, start_row):
 		head.fill = yellow
 		head.border = thin
 	title = ws.cell(start_row, 1, "NOTE")
-	title.font = Font(name="Arial", size=12, bold=True, color="000000")
+	title.font = Font(name="Arial", size=13, bold=True, color="000000")
 	title.alignment = Alignment(horizontal="center", vertical="center")
 	title.fill = yellow
 	for offset, (short, full) in enumerate(pairs, start=1):
@@ -872,7 +1050,7 @@ def _write_abbreviation_legend(ws, columns, start_row):
 		ws.row_dimensions[r].height = 24
 		ws.merge_cells(start_row=r, start_column=2, end_row=r, end_column=name_end)
 		code = ws.cell(r, 1, short)
-		code.font = Font(name="Arial", size=11, color="000000")
+		code.font = Font(name="Arial", size=12, color="000000")
 		code.alignment = Alignment(horizontal="center", vertical="center")
 		code.fill = white
 		code.border = thin
@@ -886,22 +1064,41 @@ def _write_abbreviation_legend(ws, columns, start_row):
 				bottom=Side(style="thin", color="000000"),
 			)
 		name = ws.cell(r, 2, full)
-		name.font = Font(name="Arial", size=11, color="000000")
+		name.font = Font(name="Arial", size=12, color="000000")
 		name.alignment = Alignment(horizontal="left", vertical="center", indent=1)
 		name.fill = white
 
 
-def _excel_width(col):
-	"""Character width so amounts and headings are visible. ###### means the column was too narrow."""
+def _excel_amount_chars(col, rows):
+	widest = 0
+	for row in rows or []:
+		stack = col.get("esh_stack")
+		if stack:
+			for part in stack:
+				text = _display_value({"fieldname": part["fieldname"], "fieldtype": "Currency"}, row)
+				widest = max(widest, len(text))
+		elif (col.get("fieldname") or "") == "paid_days" or col.get("fieldtype") in ("Currency", "Float"):
+			widest = max(widest, len(_display_value(col, row)))
+	return widest
+
+
+def _excel_width(col, rows=None):
+	"""Character width so Total-row amounts are not shown as ######."""
 	fn = col.get("fieldname") or ""
-	label = str(col.get("label") or "")
+	needed = _longest_heading_word(*_heading_texts(col)) + 3
+	amount = _excel_amount_chars(col, rows)
+	if amount:
+		# Arial 14 vs Excel's default width unit — too narrow becomes ######.
+		needed = max(needed, amount * 1.5 + 2)
+	if col.get("esh_stack"):
+		return max(16, needed)
 	if fn == "month_year":
-		return 14
+		return max(14, needed)
 	if fn == "paid_days":
-		return 12
+		return max(10, needed)
 	if col.get("fieldtype") in ("Currency", "Float"):
-		return max(14, min(len(label) + 2, 24))
-	return max(12, min(len(label) + 2, 24))
+		return max(14, needed)
+	return max(12, min(needed, 24))
 
 
 def _save_excel(wb, prefix):
