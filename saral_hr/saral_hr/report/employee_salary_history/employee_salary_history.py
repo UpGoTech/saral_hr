@@ -907,11 +907,11 @@ def _build_workbook(columns, rows, meta):
 	paired = any(col.get("esh_stack") and len(col["esh_stack"]) > 1 for col in columns)
 	for r_idx, row in enumerate(rows, start=data_start):
 		is_tot = row.get("_is_total")
-		ws.row_dimensions[r_idx].height = 48 if paired else 28
+		ws.row_dimensions[r_idx].height = 44 if paired else 26
 		for c_idx, col in enumerate(columns, start=1):
 			fn = col["fieldname"]
 			cell = ws.cell(r_idx, c_idx)
-			cell.font = Font(name="Arial", size=14, bold=bool(is_tot))
+			cell.font = Font(name="Arial", size=12, bold=bool(is_tot))
 			cell.border = thin
 			cell.alignment = Alignment(horizontal="center", vertical="center")
 			if is_tot:
@@ -942,15 +942,12 @@ def _build_workbook(columns, rows, meta):
 				cell.alignment = Alignment(horizontal="left", vertical="center")
 
 	for i, col in enumerate(columns, start=1):
-		ws.column_dimensions[get_column_letter(i)].width = _excel_width(col, rows)
+		ws.column_dimensions[get_column_letter(i)].width = _excel_width_for_values(
+			ws, i, group_row, sub_row if multi else group_row, data_start, data_start + len(rows) - 1
+		)
 	ws.row_dimensions[group_row].height = 40
 	if multi:
 		ws.row_dimensions[sub_row].height = 44
-	data_end = data_start + len(rows) - 1
-	if data_end >= group_row:
-		for r in range(group_row, data_end + 1):
-			for c in range(1, n_cols + 1):
-				ws.cell(r, c).border = thin
 	_write_abbreviation_legend(ws, columns, data_start + len(rows) + 3)
 	_prepare_print(ws, group_row, sub_row if multi else group_row)
 	return wb
@@ -1069,36 +1066,37 @@ def _write_abbreviation_legend(ws, columns, start_row):
 		name.fill = white
 
 
-def _excel_amount_chars(col, rows):
-	widest = 0
-	for row in rows or []:
-		stack = col.get("esh_stack")
-		if stack:
-			for part in stack:
-				text = _display_value({"fieldname": part["fieldname"], "fieldtype": "Currency"}, row)
-				widest = max(widest, len(text))
-		elif (col.get("fieldname") or "") == "paid_days" or col.get("fieldtype") in ("Currency", "Float"):
-			widest = max(widest, len(_display_value(col, row)))
-	return widest
+def _excel_text_width(value, number_format):
+	if value is None or value == "":
+		return 0
+	if isinstance(value, str):
+		return max((len(line) for line in value.split("\n")), default=0)
+	if isinstance(value, (int, float)) and not isinstance(value, bool):
+		fmt = number_format or ""
+		if fmt == "0":
+			text = str(int(round(value)))
+		elif fmt == "0.0":
+			text = f"{float(value):.1f}"
+		elif "0.00" in fmt:
+			text = f"{float(value):,.2f}"
+		else:
+			text = str(value)
+		return len(text)
+	return len(str(value))
 
 
-def _excel_width(col, rows=None):
-	"""Character width so Total-row amounts are not shown as ######."""
-	fn = col.get("fieldname") or ""
-	needed = _longest_heading_word(*_heading_texts(col)) + 3
-	amount = _excel_amount_chars(col, rows)
-	if amount:
-		# Arial 14 vs Excel's default width unit — too narrow becomes ######.
-		needed = max(needed, amount * 1.5 + 2)
-	if col.get("esh_stack"):
-		return max(16, needed)
-	if fn == "month_year":
-		return max(14, needed)
-	if fn == "paid_days":
-		return max(10, needed)
-	if col.get("fieldtype") in ("Currency", "Float"):
-		return max(14, needed)
-	return max(12, min(needed, 24))
+def _excel_width_for_values(ws, col_idx, group_row, sub_row, data_start, data_end):
+	"""Wide enough for the largest amount in the column. A short amount stays narrow."""
+	longest = 0
+	for row_idx in range(data_start, data_end + 1):
+		cell = ws.cell(row_idx, col_idx)
+		longest = max(longest, _excel_text_width(cell.value, cell.number_format))
+	label_cell = ws.cell(sub_row, col_idx)
+	if not label_cell.value:
+		label_cell = ws.cell(group_row, col_idx)
+	longest = max(longest, _excel_text_width(label_cell.value, label_cell.number_format))
+	# Arial 12 is wider than Excel's width unit, so ###### does not hide 10 lakh.
+	return min(max(longest * 1.25 + 2, 6), 28)
 
 
 def _save_excel(wb, prefix):
