@@ -693,8 +693,9 @@ def print_report(filters):
 	columns, rows = execute(filters)
 	if not rows:
 		frappe.throw(_("No salary slips found for this employee."))
-	html = _build_html(_columns_for_export(columns), rows, _export_meta(filters))
-	return _save_pdf(html, "Employee_Salary_History")
+	export_columns = _columns_for_export(columns)
+	html = _build_html(export_columns, rows, _export_meta(filters))
+	return _save_pdf(html, "Employee_Salary_History", _legend_footer_text(export_columns))
 
 
 def _build_html(columns, rows, meta):
@@ -744,10 +745,10 @@ def _build_html(columns, rows, meta):
 				bg = "#f5f5f5"
 			else:
 				bg = "#fff"
-			align = "center"
+			align = "left" if fn == "month_year" else "right"
 			weight = "bold" if is_tot else "normal"
 			row_cls = "tot" if is_tot else "data"
-			if fn == "month_year" and not is_tot:
+			if fn == "month_year":
 				row_cls += " month"
 			tds += (
 				f'<td class="{row_cls}" style="text-align:{align};background:{bg};font-weight:{weight};">{disp}</td>'
@@ -766,6 +767,20 @@ def _build_html(columns, rows, meta):
 	company = frappe.utils.escape_html(meta["company"])
 	employee = frappe.utils.escape_html(f"{meta['employee_name']} ({meta['employee']})")
 	period = frappe.utils.escape_html(str(meta["period"]))
+	pdf_note = _legend_pdf_note_html(columns)
+	footer_html = ""
+	if pdf_note:
+		footer_html = (
+			'<div id="footer-html">'
+			'<div class="letter-head-footer">'
+			'<table style="width:100%;border-collapse:collapse;'
+			'font-family:Arial,sans-serif;font-size:7pt;color:#000">'
+			"<tr>"
+			f'<td style="text-align:center">{pdf_note}</td>'
+			'<td style="width:72px;text-align:right;white-space:nowrap">'
+			'Page <span class="page"></span> of <span class="topage"></span></td>'
+			"</tr></table></div></div>"
+		)
 	return f"""<!DOCTYPE html><html><head><meta charset="UTF-8">
 <style>
 *{{margin:0;padding:0;box-sizing:border-box}}
@@ -777,17 +792,13 @@ body{{font-family:Arial,sans-serif;font-size:8px;color:#000}}
 table.sheet{{width:100%;border-collapse:collapse;table-layout:fixed;page-break-inside:auto}}
 table.sheet thead{{display:table-header-group}}
 table.sheet tr{{page-break-inside:avoid;page-break-after:auto}}
-table.sheet th,table.sheet td{{word-wrap:break-word;vertical-align:middle;text-align:center}}
-table.sheet th{{border:1px solid #000}}
-td.data{{border:1px solid #000;padding:5px 1px;font-size:{value_px};line-height:1.35;vertical-align:middle;text-align:center;white-space:nowrap}}
-td.data.month{{white-space:nowrap;word-wrap:normal;overflow:hidden}}
-td.tot{{border:1px solid #000;padding:5px 1px;font-size:{value_px};line-height:1.35;vertical-align:middle;text-align:center;white-space:nowrap}}
-.stk .ln{{display:block;line-height:1.45;padding:2px 0}}
-table.note{{width:auto;margin-top:16px;border-collapse:collapse;table-layout:auto}}
-table.note th,table.note td{{border:1px solid #000;background:#fff;color:#000;padding:5px 10px;vertical-align:middle}}
-table.note th{{font-size:15px;font-weight:700;text-align:center}}
-table.note td.code{{font-size:14px;font-weight:700;text-align:center}}
-table.note td.name{{font-size:14px;font-weight:400;text-align:left}}
+table.sheet th,table.sheet td{{word-wrap:break-word;vertical-align:middle}}
+table.sheet th{{border:1px solid #000;text-align:center}}
+td.data{{border:1px solid #000;padding:5px 6px;font-size:{value_px};line-height:1.35;vertical-align:middle;text-align:right;white-space:nowrap}}
+td.data.month{{white-space:nowrap;word-wrap:normal;overflow:hidden;text-align:left}}
+td.tot{{border:1px solid #000;padding:5px 6px;font-size:{value_px};line-height:1.35;vertical-align:middle;text-align:right;white-space:nowrap}}
+td.tot.month{{text-align:left}}
+.stk .ln{{display:block;line-height:1.45;padding:2px 0;text-align:right}}
 </style></head><body>
 <div class="hdr">
   <div class="co">{company}</div>
@@ -795,23 +806,29 @@ table.note td.name{{font-size:14px;font-weight:400;text-align:left}}
   <div class="per">{employee}<br>For the Period {period}</div>
 </div>
 {sheet}
-{_legend_html(columns)}
+{footer_html}
 </body></html>"""
 
 
-def _save_pdf(html, prefix):
+def _save_pdf(html, prefix, footer=""):
+	options = {
+		"page-size": "A4",
+		"orientation": "Landscape",
+		"margin-top": "6mm",
+		"margin-right": "4mm",
+		"margin-bottom": "14mm" if footer else "10mm",
+		"margin-left": "4mm",
+		"encoding": "UTF-8",
+		"no-outline": None,
+		"footer-spacing": "2",
+	}
+	if not footer:
+		options["footer-right"] = "Page [page] of [topage]"
+		options["footer-font-name"] = "Arial"
+		options["footer-font-size"] = "7"
 	pdf = get_pdf(
 		html,
-		options={
-			"page-size": "A4",
-			"orientation": "Landscape",
-			"margin-top": "6mm",
-			"margin-right": "4mm",
-			"margin-bottom": "6mm",
-			"margin-left": "4mm",
-			"encoding": "UTF-8",
-			"no-outline": None,
-		},
+		options=options,
 	)
 	ts = frappe.utils.now_datetime().strftime("%Y%m%d_%H%M%S")
 	fn = f"{prefix}_{ts}.pdf"
@@ -838,6 +855,15 @@ def excel_report(filters):
 		frappe.throw(_("No salary slips found for this employee."))
 	wb = _build_workbook(_columns_for_export(columns), rows, _export_meta(filters))
 	return _save_excel(wb, "Employee_Salary_History")
+
+
+# One Excel indent unit so values sit off the cell border without looking padded.
+_EXCEL_VALUE_INDENT = 1
+_EXCEL_NOTE_FONT_SIZE = 12
+_EXCEL_FOOTER_FONT_SIZE = 10
+_EXCEL_FOOTER_NOTE_FONT_SIZE = 15
+# One full print-footer line at this font, just under Excel's ~155-char self-wrap.
+_EXCEL_FOOTER_LINE_CHARS = max(80, int(145 * 15 / _EXCEL_FOOTER_NOTE_FONT_SIZE))
 
 
 def _build_workbook(columns, rows, meta):
@@ -913,7 +939,9 @@ def _build_workbook(columns, rows, meta):
 			cell = ws.cell(r_idx, c_idx)
 			cell.font = Font(name="Arial", size=12, bold=bool(is_tot))
 			cell.border = thin
-			cell.alignment = Alignment(horizontal="center", vertical="center")
+			cell.alignment = Alignment(
+				horizontal="right", vertical="center", indent=_EXCEL_VALUE_INDENT
+			)
 			if is_tot:
 				cell.fill = tot_fill
 			stack = col.get("esh_stack")
@@ -923,7 +951,12 @@ def _build_workbook(columns, rows, meta):
 					for part in stack
 				]
 				cell.value = "\n".join(lines)
-				cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
+				cell.alignment = Alignment(
+					horizontal="right",
+					vertical="center",
+					wrap_text=True,
+					indent=_EXCEL_VALUE_INDENT,
+				)
 				continue
 			val = row.get(fn)
 			cell.value = None if val in (None, "") else val
@@ -934,12 +967,21 @@ def _build_workbook(columns, rows, meta):
 					cell.number_format = "0"
 				else:
 					cell.number_format = "0.0"
-				cell.alignment = Alignment(horizontal="center", vertical="center")
+				cell.alignment = Alignment(
+					horizontal="right", vertical="center", indent=_EXCEL_VALUE_INDENT
+				)
 			elif col.get("fieldtype") in ("Currency", "Float") and isinstance(val, (int, float)):
 				cell.number_format = "#,##0.00"
-				cell.alignment = Alignment(horizontal="right", vertical="center", wrap_text=False)
+				cell.alignment = Alignment(
+					horizontal="right",
+					vertical="center",
+					wrap_text=False,
+					indent=_EXCEL_VALUE_INDENT,
+				)
 			elif fn == "month_year":
-				cell.alignment = Alignment(horizontal="left", vertical="center")
+				cell.alignment = Alignment(
+					horizontal="left", vertical="center", indent=_EXCEL_VALUE_INDENT
+				)
 
 	for i, col in enumerate(columns, start=1):
 		ws.column_dimensions[get_column_letter(i)].width = _excel_width_for_values(
@@ -948,12 +990,14 @@ def _build_workbook(columns, rows, meta):
 	ws.row_dimensions[group_row].height = 40
 	if multi:
 		ws.row_dimensions[sub_row].height = 44
-	_write_abbreviation_legend(ws, columns, data_start + len(rows) + 3)
-	_prepare_print(ws, group_row, sub_row if multi else group_row)
+	note = _legend_footer_text(columns)
+	last_data_row = data_start + len(rows) - 1
+	_write_legend_row(ws, note, last_data_row + 3, n_cols)
+	_prepare_print(ws, group_row, sub_row if multi else group_row, note, last_data_row, n_cols)
 	return wb
 
 
-def _prepare_print(ws, header_start, header_end):
+def _prepare_print(ws, header_start, header_end, footer="", last_data_row=None, n_cols=None):
 	"""Fit the columns across the page. Leave row height and font at their real size."""
 	ws.page_setup.orientation = "landscape"
 	ws.page_setup.paperSize = ws.PAPERSIZE_A4
@@ -963,9 +1007,23 @@ def _prepare_print(ws, header_start, header_end):
 	ws.page_margins.left = 0.25
 	ws.page_margins.right = 0.25
 	ws.page_margins.top = 0.4
-	ws.page_margins.bottom = 0.4
+	footer_lines = _hang_footer_note_lines(
+		_wrap_note_at_width(footer, _EXCEL_FOOTER_LINE_CHARS)
+	) if footer else []
+	ws.page_margins.bottom = 0.55 + 0.22 * max(len(footer_lines), 1) if footer else 0.5
 	ws.print_title_rows = f"{header_start}:{header_end}"
 	ws.page_setup.horizontalCentered = True
+	if last_data_row and n_cols:
+		# Grid NOTE stays in the file; print area stops at the table so footer is not duplicated.
+		ws.print_area = f"A1:{get_column_letter(n_cols)}{last_data_row}"
+	for section in (ws.oddFooter, ws.evenFooter):
+		section.right.text = "Page &P of &N"
+		section.right.size = _EXCEL_FOOTER_FONT_SIZE
+		section.right.font = "Arial"
+		if footer_lines:
+			section.left.text = "\n".join(footer_lines).replace("&", "&&")
+			section.left.size = _EXCEL_FOOTER_NOTE_FONT_SIZE
+			section.left.font = "Arial"
 
 
 # Headings people already read as words. Everything else comes from the component itself.
@@ -1002,68 +1060,92 @@ def _legend_pairs(columns):
 	return pairs
 
 
-def _legend_html(columns):
+def _legend_footer_text(columns):
+	"""One horizontal NOTE line for every printed PDF/Excel page footer."""
 	pairs = _legend_pairs(columns)
 	if not pairs:
 		return ""
-	rows = []
+	return "NOTE: " + " | ".join(f"{short} - {full}" for short, full in pairs)
+
+
+_NOTE_LABEL = "NOTE: "
+
+
+def _hang_footer_note_lines(lines):
+	"""Print-footer wrap: continuation starts under DA, not under NOTE:."""
+	if not lines:
+		return []
+	hang = " " * len(_NOTE_LABEL)
+	return [lines[0]] + [hang + line.lstrip() for line in lines[1:]]
+
+
+def _wrap_note_at_width(note, max_chars):
+	"""Fill one line with whole 'short - full' pairs. Wrap only at ' | '."""
+	if not note:
+		return []
+	max_chars = max(int(max_chars or 0), 8)
+	lines = []
+	current = ""
+	for chunk in note.split(" | "):
+		if not current:
+			current = chunk
+			continue
+		joined = f"{current} | {chunk}"
+		if len(joined) <= max_chars:
+			current = joined
+			continue
+		lines.append(current)
+		current = chunk
+	if current:
+		lines.append(current)
+	return lines
+
+
+def _excel_note_chars_per_line(ws, n_cols, font_size):
+	total = 0.0
+	for i in range(1, n_cols + 1):
+		dim = ws.column_dimensions[get_column_letter(i)]
+		total += dim.width if dim.width else 8
+	return max(24, int(total * 11 / max(font_size, 1)) - 4)
+
+
+def _legend_pdf_note_html(columns):
+	"""PDF footer: bold NOTE: and short codes; full names stay regular."""
+	pairs = _legend_pairs(columns)
+	if not pairs:
+		return ""
+	bits = []
 	for short, full in pairs:
 		code = frappe.utils.escape_html(short)
 		name = frappe.utils.escape_html(full)
-		rows.append(f'<tr><td class="code">{code}</td><td class="name">{name}</td></tr>')
-	return (
-		'<table class="note"><thead><tr><th colspan="2">NOTE</th></tr></thead>'
-		f"<tbody>{''.join(rows)}</tbody></table>"
-	)
+		bits.append(f"<b>{code}</b> - {name}")
+	return "<b>NOTE:</b> " + " | ".join(bits)
 
 
-def _write_abbreviation_legend(ws, columns, start_row):
-	"""NOTE table under the sheet: yellow title, then code and full name."""
-	pairs = _legend_pairs(columns)
-	if not pairs:
+def _write_legend_row(ws, note, start_row, n_cols):
+	"""Visible NOTE under the sheet, wrapping onto the next line instead of clipping."""
+	if not note:
 		return
-	# Code in column A. The name spans the next columns so print does not cut it.
-	name_end = 5
+	n_cols = max(n_cols, 1)
 	thin = Border(
 		left=Side(style="thin", color="000000"),
 		right=Side(style="thin", color="000000"),
 		top=Side(style="thin", color="000000"),
 		bottom=Side(style="thin", color="000000"),
 	)
-	yellow = PatternFill("solid", fgColor="FFFF00")
-	white = PatternFill("solid", fgColor="FFFFFF")
-	ws.merge_cells(start_row=start_row, start_column=1, end_row=start_row, end_column=name_end)
-	ws.row_dimensions[start_row].height = 28
-	for c in range(1, name_end + 1):
-		head = ws.cell(start_row, c)
-		head.fill = yellow
-		head.border = thin
-	title = ws.cell(start_row, 1, "NOTE")
-	title.font = Font(name="Arial", size=13, bold=True, color="000000")
-	title.alignment = Alignment(horizontal="center", vertical="center")
-	title.fill = yellow
-	for offset, (short, full) in enumerate(pairs, start=1):
-		r = start_row + offset
-		ws.row_dimensions[r].height = 24
-		ws.merge_cells(start_row=r, start_column=2, end_row=r, end_column=name_end)
-		code = ws.cell(r, 1, short)
-		code.font = Font(name="Arial", size=12, color="000000")
-		code.alignment = Alignment(horizontal="center", vertical="center")
-		code.fill = white
-		code.border = thin
-		for c in range(2, name_end + 1):
-			box = ws.cell(r, c)
-			box.fill = white
-			box.border = Border(
-				left=Side(style="thin", color="000000") if c == 2 else Side(),
-				right=Side(style="thin", color="000000") if c == name_end else Side(),
-				top=Side(style="thin", color="000000"),
-				bottom=Side(style="thin", color="000000"),
-			)
-		name = ws.cell(r, 2, full)
-		name.font = Font(name="Arial", size=12, color="000000")
-		name.alignment = Alignment(horizontal="left", vertical="center", indent=1)
-		name.fill = white
+	if n_cols > 1:
+		ws.merge_cells(start_row=start_row, start_column=1, end_row=start_row, end_column=n_cols)
+	for col in range(1, n_cols + 1):
+		box = ws.cell(start_row, col)
+		box.border = thin
+	width = _excel_note_chars_per_line(ws, n_cols, _EXCEL_NOTE_FONT_SIZE)
+	display = "\n".join(_wrap_note_at_width(note, width))
+	cell = ws.cell(start_row, 1, display)
+	cell.font = Font(name="Arial", size=_EXCEL_NOTE_FONT_SIZE)
+	cell.alignment = Alignment(
+		horizontal="left", vertical="center", wrap_text=True, indent=1
+	)
+	ws.row_dimensions[start_row].height = 16 * max(display.count("\n") + 1, 1) + 10
 
 
 def _excel_text_width(value, number_format):
@@ -1096,7 +1178,8 @@ def _excel_width_for_values(ws, col_idx, group_row, sub_row, data_start, data_en
 		label_cell = ws.cell(group_row, col_idx)
 	longest = max(longest, _excel_text_width(label_cell.value, label_cell.number_format))
 	# Arial 12 is wider than Excel's width unit, so ###### does not hide 10 lakh.
-	return min(max(longest * 1.25 + 2, 6), 28)
+	# Extra unit keeps indent=1 values off the grid line.
+	return min(max(longest * 1.25 + 2 + _EXCEL_VALUE_INDENT, 6), 28)
 
 
 def _save_excel(wb, prefix):
