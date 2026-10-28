@@ -163,7 +163,8 @@ before_install = "saral_hr.setup.before_install"
 # add methods and filters to jinja environment
 jinja = {
     "methods": [
-        "saral_hr.utils.jinja_methods.parse_json"
+        "saral_hr.utils.jinja_methods.parse_json",
+        "saral_hr.utils.jinja_methods.wrap_establishment_address",
     ]
 }
 # Installation

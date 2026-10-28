@@ -790,7 +790,7 @@ function inject_ep_styles() {
         .ep-ssa-history-link:hover { background:#f0fdf4; }
         .ep-ssa-pop-backdrop { position:fixed; inset:0; background:rgba(15,23,42,.45); z-index:1050; display:flex; align-items:flex-start; justify-content:center; padding:48px 16px; overflow-y:auto; }
         .ep-ssa-pop { width:min(640px, 100%); position:relative; }
-        .ep-ssa-pop.wide { width:min(1100px, 100%); background:#fff; border-radius:8px; padding:12px; }
+        .ep-ssa-pop.wide { width:min(1200px, calc(100vw - 32px)); background:#fff; border-radius:8px; padding:12px; }
         .ep-ssa-pop-close { position:absolute; top:-12px; right:-12px; width:28px; height:28px; border:0; border-radius:50%; background:#fff; color:#14532d; font-size:18px; line-height:1; cursor:pointer; box-shadow:0 2px 8px rgba(0,0,0,.15); z-index:2; }
         .ep-ssa-pop .ep-ssa-current-id { font-size:11px; font-weight:600; color:#15803d; background:rgba(255,255,255,0.7); padding:2px 8px; border-radius:10px; }
         .ep-ssa-history-id { display:block; font-size:12px; font-weight:600; }
@@ -798,15 +798,16 @@ function inject_ep_styles() {
         .ep-ssa-compare { background:var(--card-bg,#fff); border:1px solid var(--border-color,#e5e7eb); border-radius:8px; overflow:hidden; }
         .ep-ssa-compare-title { font-size:12px; font-weight:700; color:var(--text-color); padding:10px 12px 0; }
         .ep-ssa-compare-note { font-size:11px; color:var(--text-muted); padding:2px 12px 8px; }
-        .ep-ssa-compare-scroll { overflow-x:auto; }
-        .ep-ssa-compare-table { border-collapse:collapse; width:max-content; min-width:100%; font-size:11px; }
-        .ep-ssa-compare-table th, .ep-ssa-compare-table td { border:1px solid #e5e7eb; padding:6px 8px; text-align:right; white-space:nowrap; vertical-align:middle; }
-        .ep-ssa-compare-table th { background:#f8fafc; font-weight:700; text-align:center; position:sticky; top:0; }
+        .ep-ssa-compare-scroll { overflow:hidden; }
+        .ep-ssa-compare-table { border-collapse:collapse; width:100%; table-layout:fixed; font-size:11px; }
+        .ep-ssa-compare-table th, .ep-ssa-compare-table td { border:1px solid #e5e7eb; padding:6px 4px; text-align:center; vertical-align:middle; }
+        .ep-ssa-compare-table th { background:#f8fafc; font-weight:700; white-space:normal; line-height:1.25; overflow-wrap:break-word; }
         .ep-ssa-compare-table th.earn { background:#ecfdf5; color:#14532d; }
         .ep-ssa-compare-table th.ded { background:#fef2f2; color:#991b1b; }
         .ep-ssa-compare-table th.net { background:#eff6ff; color:#1e3a8a; }
-        .ep-ssa-compare-table td.period, .ep-ssa-compare-table th.period { text-align:left; position:sticky; left:0; background:#fff; z-index:1; min-width:168px; }
-        .ep-ssa-compare-table th.period { background:#f8fafc; z-index:2; }
+        .ep-ssa-compare-table td { white-space:nowrap; overflow:hidden; }
+        .ep-ssa-compare-table td.period, .ep-ssa-compare-table th.period { text-align:left; white-space:normal; overflow:visible; background:#fff; }
+        .ep-ssa-compare-table th.period { background:#f8fafc; }
         .ep-ssa-compare-table tr.current td { background:#f0fdf4; }
         .ep-ssa-compare-table tr.current td.period { background:#dcfce7; }
         .ep-ssa-compare-table .ep-ssa-tag { display:inline-block; font-size:9px; font-weight:700; letter-spacing:0.03em; text-transform:uppercase; border-radius:8px; padding:1px 6px; margin-right:6px; }
@@ -1798,6 +1799,20 @@ function ssa_component_amount(rec, key, name) {
     return found;
 }
 
+function ssa_compare_layout(amountCols) {
+    var popup = Math.min(window.innerWidth - 32, Math.max(1200, 180 + amountCols * 92));
+    var inner = Math.max(280, popup - 24);
+    var periodWeight = amountCols <= 8 ? 1.9 : amountCols <= 12 ? 1.5 : amountCols <= 18 ? 1.25 : 1.05;
+    var share = inner / (periodWeight + amountCols);
+    var font = 11;
+    while (font > 8 && share < font * 0.6 * 9 + 6) font -= 1;
+    return {
+        font: font,
+        periodPct: (100 * periodWeight / (periodWeight + amountCols)).toFixed(2),
+        popup: Math.round(popup),
+    };
+}
+
 function render_ssa_compare_table(ssa_history, latest_ssa) {
     var rows = (ssa_history || []).filter(function (rec) {
         return cint(rec.docstatus) !== 2;
@@ -1808,13 +1823,18 @@ function render_ssa_compare_table(ssa_history, latest_ssa) {
     if (latest_ssa && !rows.some(function (rec) { return rec.name === latest_ssa.name; })) {
         rows.unshift(latest_ssa);
     }
-    if (!rows.length) return "";
+    if (!rows.length) return { html: "", popup: 640 };
 
     var earnings = ssa_component_names(rows, "earnings");
     var deductions = ssa_component_names(rows, "deductions");
+    var amountCols = earnings.length + deductions.length + 1;
+    var layout = ssa_compare_layout(amountCols);
     var html = "<div class='ep-ssa-compare'>";
     html += "<div class='ep-ssa-compare-title'>Salary Structure Assignment History</div>";
-    html += "<div class='ep-ssa-compare-scroll'><table class='ep-ssa-compare-table'><thead><tr>";
+    html += "<div class='ep-ssa-compare-scroll'><table class='ep-ssa-compare-table' style='font-size:" + layout.font + "px'>";
+    html += "<colgroup><col style='width:" + layout.periodPct + "%'>";
+    for (var col = 0; col < amountCols; col++) html += "<col>";
+    html += "</colgroup><thead><tr>";
     html += "<th class='period'>Period</th>";
     earnings.forEach(function (name) {
         html += "<th class='earn'>" + frappe.utils.escape_html(name) + "</th>";
@@ -1846,7 +1866,7 @@ function render_ssa_compare_table(ssa_history, latest_ssa) {
         html += "</tr>";
     });
     html += "</tbody></table></div></div>";
-    return html;
+    return { html: html, popup: layout.popup };
 }
 
 function ssa_compare_cell(amount, newer_amount, compare) {
@@ -1984,10 +2004,11 @@ function render_ssa_panel_html(latest_ssa, cancelled_ssas, company_link, ssa_his
 function open_ssa_compare_popup(ssa_history, latest_ssa) {
     $(".ep-ssa-pop-backdrop").remove();
     var $pop = $("<div class='ep-ssa-pop-backdrop'></div>");
+    var view = render_ssa_compare_table(ssa_history, latest_ssa);
     $pop.html(
-        "<div class='ep-ssa-pop wide'>" +
+        "<div class='ep-ssa-pop wide' style='width:min(" + view.popup + "px, calc(100vw - 32px))'>" +
         "<button type='button' class='ep-ssa-pop-close' aria-label='Close'>&times;</button>" +
-        render_ssa_compare_table(ssa_history, latest_ssa) +
+        view.html +
         "</div>"
     );
     $("body").append($pop);
