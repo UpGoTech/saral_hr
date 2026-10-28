@@ -59,6 +59,11 @@ frappe.query_reports["Employee Salary History"] = {
 
 	formatter(value, row, column, data, default_formatter) {
 		if (!data) return default_formatter(value, row, column, data);
+		if (column.fieldtype === "Currency" && value !== null && value !== undefined && value !== "") {
+			const shown = format_number(value, null, 2);
+			const html = `<div style="text-align: right">₹ ${shown}</div>`;
+			return data._is_total ? `<strong>${html}</strong>` : html;
+		}
 		const formatted = default_formatter(value, row, column, data);
 		if (data._is_total) return `<strong>${formatted}</strong>`;
 		if (column.fieldname === "month_year" && data.salary_slip) {
