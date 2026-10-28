@@ -119,6 +119,7 @@ fixtures = [
             "Salary Slip Custom",
             "CTC Calculator Statement",
             "SSA Print Format",
+            "Muster Cum Wages Slip",
             "Employee Print Format"
         ]]
     ]
