@@ -241,7 +241,7 @@ frappe.pages["salary-statistics"].on_page_load = function (wrapper) {
 
 		/* Right panel */
 		.ss-detail-right { flex: 1; overflow-y: auto; padding: 0; background: var(--bg-color); }
-		.ss-right-inner { padding: 24px 28px 40px; max-width: 900px; }
+		.ss-right-inner { padding: 24px 28px 40px; max-width: 900px; container-type: inline-size; }
 
 		.ss-month-heading {
 			display: flex; align-items: center; justify-content: space-between; gap: 12px;
@@ -380,8 +380,21 @@ frappe.pages["salary-statistics"].on_page_load = function (wrapper) {
 		.ss-acc-table tfoot td { padding: 8px 16px; font-weight: 700; font-size: 12px; border-top: 2px solid var(--border-color); background: var(--subtle-fg); }
 		.ss-acc-table tfoot td:last-child { text-align: right; }
 
+		.ss-att-split {
+			display: grid;
+			grid-template-columns: minmax(0, 1fr) minmax(220px, 320px);
+			gap: 16px;
+			align-items: start;
+			margin-top: 24px;
+		}
+		.ss-att-cards, .ss-att-map { min-width: 0; }
+		.ss-att-split .ss-sec-heading { margin-top: 0; }
+		@container (max-width: 640px) {
+			.ss-att-split { grid-template-columns: minmax(0, 1fr); }
+		}
+
 		/* Attendance chips */
-		.ss-att-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(90px, 1fr)); gap: 8px; }
+		.ss-att-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(76px, 1fr)); gap: 8px; }
 		.ss-att-chip { background: var(--card-bg); border: 1px solid var(--border-color); border-radius: 8px; padding: 10px 8px; text-align: center; }
 		.ss-att-chip.ss-chip-muted { opacity: .4; }
 		.ss-att-chip.ss-chip-green  { border-color: #bbf7d0; background: #f0fdf4; }
@@ -398,12 +411,12 @@ frappe.pages["salary-statistics"].on_page_load = function (wrapper) {
 		.ss-att-chip-label { font-size: 10px; color: var(--text-muted); margin-top: 4px; font-weight: 600; line-height: 1.2; }
 
 		/* Heatmap */
-		.ss-heatmap-wrap { overflow-x: auto; }
-		.ss-heatmap-grid { display: grid; grid-template-columns: repeat(7, 38px); gap: 5px; min-width: max-content; }
-		.ss-hm-day-lbl { width: 38px; text-align: center; font-size: 10px; font-weight: 700; color: var(--text-muted); padding: 2px 0; }
-		.ss-hm-empty { width: 38px; height: 38px; }
+		.ss-heatmap-wrap { min-width: 0; overflow: hidden; }
+		.ss-heatmap-grid { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 4px; width: 100%; }
+		.ss-hm-day-lbl { text-align: center; font-size: 10px; font-weight: 700; color: var(--text-muted); padding: 2px 0; }
+		.ss-hm-empty { aspect-ratio: 1; }
 		.ss-hm-cell {
-			width: 38px; height: 38px; border-radius: 6px;
+			aspect-ratio: 1; width: 100%; border-radius: 6px;
 			display: flex; align-items: center; justify-content: center;
 			font-size: 11px; font-weight: 700; color: #fff;
 			cursor: default; position: relative; transition: transform .1s;
@@ -434,6 +447,7 @@ frappe.pages["salary-statistics"].on_page_load = function (wrapper) {
 		.ss-ed-grid-2 { grid-template-columns: repeat(2, 1fr); }
 		.ss-ed-grid-1 { grid-template-columns: 1fr; }
 		.ss-ed-col {
+			display: flex; flex-direction: column;
 			border: 1px solid var(--border-color);
 			border-radius: 8px;
 			overflow: hidden;
@@ -442,10 +456,8 @@ frappe.pages["salary-statistics"].on_page_load = function (wrapper) {
 		}
 		.ss-ed-col-header {
 			display: flex; flex-direction: column; gap: 6px;
-			padding: 10px 12px; cursor: pointer; transition: background .1s;
-			user-select: none;
+			padding: 10px 12px;
 		}
-		.ss-ed-col-header:hover { background: var(--highlight-color); }
 		.ss-ed-col-header-top {
 			display: flex; align-items: center; gap: 6px;
 		}
@@ -453,6 +465,13 @@ frappe.pages["salary-statistics"].on_page_load = function (wrapper) {
 			display: flex; align-items: center; justify-content: space-between;
 		}
 		.ss-ed-col-body { border-top: 1px solid var(--border-color); }
+		.ss-ed-col-foot {
+			margin-top: auto;
+			display: flex; align-items: center; justify-content: space-between;
+			padding: 8px 16px; font-weight: 700; font-size: 12px;
+			border-top: 2px solid var(--border-color);
+			background: var(--subtle-fg);
+		}
 
 		/* Custom Tooltip */
 		.ss-tooltip {
@@ -650,7 +669,7 @@ frappe.pages["salary-statistics"].on_page_load = function (wrapper) {
 			state.company = deepCompany;
 			frappe.call({
 				method: "saral_hr.saral_hr.page.salary_statistics.salary_statistics.get_employees_for_company",
-				args: { company: deepCompany, year: state.year, month: state.month },
+				args: { company: deepCompany, year: state.year, month: state.month, employee: deepEmpId },
 				callback(r) {
 					var employees = r.message || [];
 					state.employees = employees;
@@ -840,14 +859,25 @@ frappe.pages["salary-statistics"].on_page_load = function (wrapper) {
 		$ys.find(".ss-yr-prev").on("click", () => shiftYear(-1));
 		$ys.find(".ss-yr-next").on("click", () => shiftYear(+1));
 
-		function loadYearData(resetMonth) {
+		function loadYearData(resetMonth, allowYearJump) {
 			$monthList.html(`<div style="padding:16px;text-align:center;color:var(--text-muted);font-size:12px;"><div class="spinner-border spinner-border-sm"></div></div>`);
 			frappe.call({
 				method: "saral_hr.saral_hr.page.salary_statistics.salary_statistics.get_employees_for_company",
-				args: { company: state.company, year: state.year, month: state.month },
+				args: { company: state.company, year: state.year, month: state.month, employee: emp.employee },
 				callback(r) {
-					const found = (r.message||[]).find(e => e.employee === emp.employee);
+					state.employees = r.message || [];
+					const found = state.employees.find(e => e.employee === emp.employee);
 					monthlyNetCache = found ? found.monthly_net : {};
+					if (allowYearJump && found && found.latest_slip_year
+						&& String(found.latest_slip_year) !== String(state.year)) {
+						const ny = saral_hr.period_picker.clamp_period_year(found.latest_slip_year);
+						if (String(ny) !== String(state.year)) {
+							state.year = String(ny);
+							$ys.find(".ss-year-val").text(state.year);
+							loadYearData(true, false);
+							return;
+						}
+					}
 					if (resetMonth) {
 						activeMonth = (state.year === String(CUR_YEAR)) ? MONTHS[CUR_MONTH_IDX] : "January";
 					}
@@ -889,7 +919,7 @@ frappe.pages["salary-statistics"].on_page_load = function (wrapper) {
 			});
 		}
 
-		loadYearData(false);
+		loadYearData(false, true);
 	}
 
 	// ─────────────────────────────────────────────────────────────────────────
@@ -962,7 +992,7 @@ frappe.pages["salary-statistics"].on_page_load = function (wrapper) {
 						const $item = $(`<div class="ss-hdr-switch-item">
 							<div class="ss-hdr-switch-item-avatar">${initials}</div>
 							<div class="ss-hdr-switch-item-body">
-								<div class="ss-hdr-switch-item-name">${e.employee_name}</div>
+								<div class="ss-hdr-switch-item-name">${e.employee_name}${e.is_active ? "" : " · Left"}</div>
 								<div class="ss-hdr-switch-item-id">${e.employee}</div>
 							</div>
 						</div>`);
@@ -1022,16 +1052,12 @@ frappe.pages["salary-statistics"].on_page_load = function (wrapper) {
 				renderSalaryCards($inner, detailData.salary);
 			}
 
-			// Attendance summary chips (always shown if attendance exists)
-			renderAttendanceSummary($inner, detailData, month);
-
-			// Earnings & Deductions accordions (only if slip exists)
+			// Earnings & Deductions (only if slip exists)
 			if (detailData && detailData.salary) {
 				renderEarningsAccordions($inner, detailData.salary);
 			}
 
-			// Attendance heatmap (always shown)
-			renderAttendanceHeatmap($inner, detailData, month);
+			renderAttendanceBlock($inner, detailData, month);
 
 			$right.html("").append($inner);
 		}
@@ -1069,16 +1095,15 @@ frappe.pages["salary-statistics"].on_page_load = function (wrapper) {
 	}
 
 	// ─────────────────────────────────────────────────────────────────────────
-	// 2. ATTENDANCE SUMMARY CHIPS  (always live from attendance records)
+	// 2. ATTENDANCE — summary cards beside the heatmap
 	// ─────────────────────────────────────────────────────────────────────────
-	function renderAttendanceSummary($inner, data, month) {
-		const heatmap  = (data && data.heatmap) ? data.heatmap : [];
+	function renderAttendanceBlock($inner, data, month) {
+		const heatmap = (data && data.heatmap) ? data.heatmap : [];
 		const attCount = heatmap.filter(c => c.status !== "No Record").length;
-		const la       = (data && data.live_attendance) ? data.live_attendance : null;
-
-		$inner.append(`<div class="ss-sec-heading" style="margin-top:24px;">Attendance</div>`);
+		const la = (data && data.live_attendance) ? data.live_attendance : null;
 
 		if (attCount === 0 || !la) {
+			$inner.append(`<div class="ss-sec-heading" style="margin-top:24px;">Attendance</div>`);
 			$inner.append(`<div class="ss-no-att">
 				<div style="font-size:26px;margin-bottom:8px;">📭</div>
 				No attendance records found for <strong>${month} ${state.year}</strong>.
@@ -1086,7 +1111,19 @@ frappe.pages["salary-statistics"].on_page_load = function (wrapper) {
 			return;
 		}
 
-		// Show calc method as a small note
+		const $split = $(`<div class="ss-att-split"></div>`).appendTo($inner);
+		renderAttendanceSummary($(`<div class="ss-att-cards"></div>`).appendTo($split), data, month);
+		renderAttendanceHeatmap($(`<div class="ss-att-map"></div>`).appendTo($split), data, month);
+	}
+
+	// ─────────────────────────────────────────────────────────────────────────
+	// 2. ATTENDANCE SUMMARY CHIPS  (always live from attendance records)
+	// ─────────────────────────────────────────────────────────────────────────
+	function renderAttendanceSummary($inner, data, month) {
+		const la = data.live_attendance;
+
+		$inner.append(`<div class="ss-sec-heading">Attendance</div>`);
+
 		if (la.calc_method) {
 			$inner.append(`<div style="font-size:11px;color:var(--text-muted);margin-bottom:8px;">
 				Calculation: <strong>${la.calc_method}</strong>
@@ -1146,40 +1183,29 @@ frappe.pages["salary-statistics"].on_page_load = function (wrapper) {
 		function buildCol(a) {
 			const rows  = a.rows || [];
 			const total = rows.reduce((sum, r) => sum + (parseFloat(r.amount)||0), 0);
-			const $col  = $(`<div class="ss-ed-col"></div>`);
+			const $col = $(`<div class="ss-ed-col"></div>`);
 
-			// Header
-			const $hdr = $(`<div class="ss-ed-col-header">
+			$(`<div class="ss-ed-col-header">
 				<div class="ss-ed-col-header-top">
 					<span class="ss-acc-dot" style="background:${a.color};flex-shrink:0;"></span>
 					<span class="ss-acc-title" style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${a.title}</span>
 				</div>
 				<div class="ss-ed-col-header-bot">
 					<span class="ss-acc-count" style="flex-shrink:0;">${rows.length} item${rows.length!==1?"s":""}</span>
-					<div style="display:flex;align-items:center;gap:6px;flex-shrink:0;">
-						<span class="ss-acc-total">₹${fmtNum(total)}</span>
-						<span class="ss-acc-arrow">▼</span>
-					</div>
 				</div>
 			</div>`).appendTo($col);
 
-			// Body (hidden by default)
-			const $body = $(`<div class="ss-ed-col-body" style="display:none;">
+			$(`<div class="ss-ed-col-body">
 				<table class="ss-acc-table">
 					<thead><tr><th>Component</th><th>Amount</th></tr></thead>
 					<tbody>${rows.map((r,i) => `<tr style="${i%2===1?"background:var(--subtle-fg)":""}">
 						<td>${r.salary_component||r.component_type||""}</td>
 						<td>₹${fmtNum(parseFloat(r.amount)||0)}</td>
 					</tr>`).join("")}</tbody>
-					<tfoot><tr><td>Total</td><td>₹${fmtNum(total)}</td></tr></tfoot>
 				</table>
 			</div>`).appendTo($col);
 
-			$hdr.on("click", () => {
-				const open = $body.is(":visible");
-				$body.slideToggle(180);
-				$hdr.find(".ss-acc-arrow").css("transform", open ? "" : "rotate(180deg)");
-			});
+			$(`<div class="ss-ed-col-foot"><span>Total</span><span>₹${fmtNum(total)}</span></div>`).appendTo($col);
 
 			return $col;
 		}
@@ -1199,11 +1225,8 @@ frappe.pages["salary-statistics"].on_page_load = function (wrapper) {
 	// 4. ATTENDANCE HEATMAP
 	// ─────────────────────────────────────────────────────────────────────────
 	function renderAttendanceHeatmap($inner, data, month) {
-		const heatmap  = (data && data.heatmap) ? data.heatmap : [];
-		const attCount = heatmap.filter(c => c.status !== "No Record").length;
-		if (attCount === 0) return; // already shown "no records" in summary
-
-		$inner.append(`<div class="ss-sec-heading" style="margin-top:24px;">Attendance Heatmap</div>`);
+		const heatmap = data.heatmap || [];
+		$inner.append(`<div class="ss-sec-heading">Attendance Heatmap</div>`);
 		const SC = {
 			"Present":"#22c55e","Earned Leave":"#3b82f6","Casual Leave":"#8b5cf6",
 			"Half Day":"#f59e0b","Absent":"#ef4444","LWP":"#dc2626",

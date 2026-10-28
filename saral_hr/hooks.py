@@ -24,7 +24,7 @@ app_license = "mit"
 
 
 # Includes in <head>
-# ------------------g
+# ------------------
 
 # include js, css files in header of desk.html
 # app_include_css = "/assets/saral_hr/css/saral_hr.css"
@@ -46,6 +46,9 @@ app_include_js = "/assets/saral_hr/js/period_picker.js"
 
 # include js in doctype views
 # doctype_js = {"doctype" : "public/js/doctype.js"}
+doctype_js = {
+	"Data Import": "public/js/data_import_ssa.js",
+}
 # doctype_list_js = {"doctype" : "public/js/doctype_list.js"}
 doctype_list_js = {
     "Biometric machine": "saral_hr/doctype/biometric_machine/biometric_machine.js",
@@ -116,7 +119,8 @@ fixtures = [
             "Salary Slip Custom",
             "CTC Calculator Statement",
             "SSA Print Format",
-            "Muster Cum Wages Slip"
+            "Muster Cum Wages Slip",
+            "Employee Print Format"
         ]]
     ]
 },
@@ -213,9 +217,9 @@ after_uninstall = "saral_hr.uninstall.after_uninstall"
 # ---------------
 # Override standard doctype classes
 
-# override_doctype_class = {
-# 	"ToDo": "custom_app.overrides.CustomToDo"
-# }
+override_doctype_class = {
+	"Data Import": "saral_hr.overrides.data_import.DataImport",
+}
 
 # Document Events
 # ---------------
