@@ -74,7 +74,8 @@ frappe.query_reports["Employee Salary History"] = {
 		if (column.fieldname === "paid_days" && value !== null && value !== undefined && value !== "") {
 			const n = flt(value);
 			const shown = Math.abs(n - Math.round(n)) < 1e-9 ? String(Math.round(n)) : String(flt(n, 1));
-			return shown;
+			const html = `<div style="text-align: right">${shown}</div>`;
+			return data._is_total ? `<strong>${html}</strong>` : html;
 		}
 		return formatted;
 	},
@@ -142,6 +143,8 @@ function _ensure_group_header_styles() {
 			text-align: center;
 			font-weight: 700;
 			font-size: 12px;
+			overflow-wrap: normal;
+			word-break: normal;
 		}
 		.esh-plain { background: #f8fafc; }
 		.esh-actual { background: #fff7ed; }

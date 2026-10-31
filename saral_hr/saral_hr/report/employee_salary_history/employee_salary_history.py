@@ -8,6 +8,7 @@ from __future__ import annotations
 import io
 import json
 import re
+import zipfile
 
 import frappe
 from frappe import _
@@ -485,8 +486,20 @@ def _export_part(col):
 
 def _columns_for_export(columns):
 	"""PDF and Excel only. Screen keeps one component per column."""
-	pair_groups = {"Actual Earning", "Calculated Earning"}
-	skip = {"total_gross", "total_earning"}
+	pair_groups = {
+		"Actual Earning",
+		"Calculated Earning",
+		"Additional Salary",
+		"Deduction",
+		"Additional Deduction",
+	}
+	skip = {
+		"total_gross",
+		"total_earning",
+		"total_additional_salary",
+		"total_deductions",
+		"total_additional_deduction",
+	}
 	out = []
 	index = 0
 	while index < len(columns):
@@ -605,7 +618,8 @@ def _export_width(col):
 	if fn == "month_year":
 		return 48
 	if fn == "paid_days":
-		return 22
+		# Floor so "Paid" / "Days" stay whole words when extra groups shrink % widths.
+		return 36
 	if fn == "net_payable":
 		return 48
 	if group in ("Calculated Earning", "Additional Salary", "Deduction", "Additional Deduction"):
@@ -663,9 +677,11 @@ def _heading_html(text):
 
 def _header_label_html(col):
 	stack = col.get("esh_stack")
-	if stack:
-		return "<br>".join(frappe.utils.escape_html(part["label"]) for part in stack)
-	return _heading_html(col.get("label") or "")
+	if not stack:
+		return _heading_html(col.get("label") or "")
+	if len(stack) == 1:
+		return _heading_html(stack[0].get("label") or "")
+	return "<br>".join(frappe.utils.escape_html(part["label"]) for part in stack)
 
 
 def _cell_html(col, row):
@@ -713,8 +729,12 @@ def _build_html(columns, rows, meta):
 			f"padding:3px 1px;font-size:10px;background:{color};"
 			"vertical-align:middle;text-align:center;"
 		)
-		if len(group["cols"]) == 1 and group["cols"][0].get("fieldname") == "month_year":
-			style += "white-space:nowrap;word-wrap:normal;"
+		if n == 1 and group["cols"][0].get("fieldname") in (
+			"month_year",
+			"paid_days",
+			"net_payable",
+		):
+			style += "white-space:nowrap;word-wrap:normal;overflow-wrap:normal;"
 		label = _heading_html(group["name"])
 		if n == 1 and multi:
 			top.append(f'<th rowspan="2" style="{style}">{label}</th>')
@@ -792,8 +812,8 @@ body{{font-family:Arial,sans-serif;font-size:8px;color:#000}}
 table.sheet{{width:100%;border-collapse:collapse;table-layout:fixed;page-break-inside:auto}}
 table.sheet thead{{display:table-header-group}}
 table.sheet tr{{page-break-inside:avoid;page-break-after:auto}}
-table.sheet th,table.sheet td{{word-wrap:break-word;vertical-align:middle}}
-table.sheet th{{border:1px solid #000;text-align:center}}
+table.sheet th,table.sheet td{{vertical-align:middle}}
+table.sheet th{{border:1px solid #000;text-align:center;word-wrap:normal;overflow-wrap:normal;word-break:normal;hyphens:none}}
 td.data{{border:1px solid #000;padding:5px 6px;font-size:{value_px};line-height:1.35;vertical-align:middle;text-align:right;white-space:nowrap}}
 td.data.month{{white-space:nowrap;word-wrap:normal;overflow:hidden;text-align:left}}
 td.tot{{border:1px solid #000;padding:5px 6px;font-size:{value_px};line-height:1.35;vertical-align:middle;text-align:right;white-space:nowrap}}
@@ -921,12 +941,20 @@ def _build_workbook(columns, rows, meta):
 			covered = ws.cell(group_row, col_idx + offset)
 			covered.fill = fill
 			covered.border = thin
-			if multi and n > 1:
+			if not multi:
+				continue
+			if n > 1:
 				sub = ws.cell(sub_row, col_idx + offset, _wrap_heading(group["cols"][offset].get("label") or ""))
 				sub.font = Font(name="Arial", size=13, bold=True, color="000000")
 				sub.fill = fill
 				sub.border = thin
 				sub.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
+			else:
+				# Excel draws a merged box from every cell. Row 6 had no border,
+				# so Months / Net Payable looked cut on the outer edges.
+				bottom = ws.cell(sub_row, col_idx)
+				bottom.fill = fill
+				bottom.border = thin
 		col_idx += n
 
 	tot_fill = PatternFill("solid", fgColor="E8E8E8")
@@ -946,17 +974,7 @@ def _build_workbook(columns, rows, meta):
 				cell.fill = tot_fill
 			stack = col.get("esh_stack")
 			if stack:
-				lines = [
-					_display_value({"fieldname": part["fieldname"], "fieldtype": "Currency"}, row)
-					for part in stack
-				]
-				cell.value = "\n".join(lines)
-				cell.alignment = Alignment(
-					horizontal="right",
-					vertical="center",
-					wrap_text=True,
-					indent=_EXCEL_VALUE_INDENT,
-				)
+				_write_excel_stack_cell(cell, stack, row)
 				continue
 			val = row.get(fn)
 			cell.value = None if val in (None, "") else val
@@ -1179,16 +1197,59 @@ def _excel_width_for_values(ws, col_idx, group_row, sub_row, data_start, data_en
 	longest = max(longest, _excel_text_width(label_cell.value, label_cell.number_format))
 	# Arial 12 is wider than Excel's width unit, so ###### does not hide 10 lakh.
 	# Extra unit keeps indent=1 values off the grid line.
-	return min(max(longest * 1.25 + 2 + _EXCEL_VALUE_INDENT, 6), 28)
+	# Floor keeps "Paid" / "Days" as whole words when print-fit shrinks columns.
+	return min(max(longest * 1.25 + 2 + _EXCEL_VALUE_INDENT, 10), 28)
+
+
+def _write_excel_stack_cell(cell, stack, row):
+	"""Keep paired amounts on two lines. A leftover single component stays a number."""
+	if len(stack) == 1:
+		val = row.get(stack[0]["fieldname"])
+		if isinstance(val, (int, float)):
+			cell.value = flt(val)
+			cell.number_format = "#,##0.00"
+		else:
+			cell.value = None if val in (None, "") else val
+		return
+	lines = [
+		_display_value({"fieldname": part["fieldname"], "fieldtype": "Currency"}, row)
+		for part in stack
+	]
+	cell.value = "\n".join(lines)
+	cell.alignment = Alignment(
+		horizontal="right",
+		vertical="center",
+		wrap_text=True,
+		indent=_EXCEL_VALUE_INDENT,
+	)
+
+
+def _silence_number_stored_as_text(xlsx_bytes):
+	"""Drop Excel's green triangle on stacked amount cells. Layout stays text."""
+	src = io.BytesIO(xlsx_bytes)
+	out = io.BytesIO()
+	snippet = (
+		b"<ignoredErrors>"
+		b'<ignoredError sqref="A1:ZZ9999" numberStoredAsText="1"/>'
+		b"</ignoredErrors>"
+	)
+	with zipfile.ZipFile(src, "r") as zin, zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED) as zout:
+		for item in zin.infolist():
+			data = zin.read(item.filename)
+			if item.filename.startswith("xl/worksheets/sheet") and b"<ignoredErrors" not in data:
+				data = data.replace(b"</worksheet>", snippet + b"</worksheet>", 1)
+			zout.writestr(item, data)
+	return out.getvalue()
 
 
 def _save_excel(wb, prefix):
 	buf = io.BytesIO()
 	wb.save(buf)
+	content = _silence_number_stored_as_text(buf.getvalue())
 	ts = frappe.utils.now_datetime().strftime("%Y%m%d_%H%M%S")
 	fn = f"{prefix}_{ts}.xlsx"
 	with open(frappe.utils.get_files_path(fn, is_private=0), "wb") as fh:
-		fh.write(buf.getvalue())
+		fh.write(content)
 	doc = frappe.get_doc(
 		{
 			"doctype": "File",
