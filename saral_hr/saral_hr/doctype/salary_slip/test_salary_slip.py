@@ -329,6 +329,85 @@ class TestBulkPrintPdf(FrappeTestCase):
 		self.assertEqual(frappe.local.response.type, "pdf")
 		self.assertEqual(frappe.local.response.filecontent, b"%PDF-1.4")
 		self.assertEqual(frappe.local.response.filename, "SS-1.pdf")
+		self.assertNotIn(".vert-label", passed_html)
+		self.assertNotIn("width:1%!important", passed_html)
+		self.assertIsNone((get_pdf.call_args[1].get("options") or {}).get("zoom"))
+
+	def test_offline_print_html_muster_injects_layout_and_wraps_headers(self):
+		from saral_hr.utils.pdf import MUSTER_CUM_WAGES_SLIP, offline_print_html
+
+		html = (
+			"<html><head>"
+			'<link rel="stylesheet" href="https://example.com/print.bundle.css">'
+			"</head><body>"
+			'<div class="action-banner print-hide">Print Get PDF</div>'
+			'<div class="print-block"><div class="card">'
+			'<th class="col-vert">In time</th>'
+			'<th class="col-vert col-ot">Overtime</th>'
+			'</div><div class="sign-row">Signature</div></div>'
+			"</body></html>"
+		)
+		out = offline_print_html(html, print_format=MUSTER_CUM_WAGES_SLIP)
+		self.assertNotIn("print.bundle.css", out)
+		self.assertNotIn("<link", out.lower())
+		self.assertIn(".print-hide,.action-banner{display:none!important}", out)
+		self.assertIn("display:table-cell!important", out)
+		self.assertIn("width:1%!important", out)
+		self.assertIn("width:99%!important", out)
+		self.assertIn("margin-left:20mm", out)
+		self.assertIn("margin-right:8mm", out)
+		self.assertIn("padding:8px 2mm 0!important", out)
+		self.assertIn("overflow:hidden!important", out)
+		self.assertIn("border-collapse:collapse!important", out)
+		self.assertNotIn("border-collapse:separate!important", out)
+		self.assertIn("card-frame", out)
+		self.assertIn("min-height:7.5mm!important", out)
+		self.assertIn(".fline .fl.stack{", out)
+		self.assertNotIn("white-space:normal!important", out)
+		self.assertIn('class="vert-label"', out)
+		self.assertIn('<span class="vert-label">In time</span>', out)
+		self.assertIn('<span class="vert-label">Overtime</span>', out)
+
+	def test_offline_print_html_custom_skips_muster_layout(self):
+		from saral_hr.utils.pdf import offline_print_html
+
+		html = (
+			"<html><head><style>.payslip{}</style></head>"
+			'<body><th class="col-vert">In time</th></body></html>'
+		)
+		out = offline_print_html(html, print_format="Salary Slip Custom")
+		self.assertIn(".payslip", out)
+		self.assertNotIn("vert-label", out)
+		self.assertNotIn("width:1%!important", out)
+		self.assertNotIn(".print-hide,.action-banner", out)
+
+	def test_form_download_pdf_muster_injects_layout_and_zoom(self):
+		from unittest.mock import MagicMock, patch
+
+		from saral_hr.utils.pdf import MUSTER_CUM_WAGES_SLIP, download_pdf
+
+		html = (
+			'<html><head><link rel="stylesheet" href="https://hrms.fabrixcel.com/assets/print.bundle.css">'
+			"</head><body>"
+			'<th class="col-vert">Out time</th>'
+			"</body></html>"
+		)
+		with (
+			patch("frappe.get_doc", return_value=MagicMock()),
+			patch("saral_hr.utils.pdf.validate_print_permission"),
+			patch("frappe.get_print", return_value=html),
+			patch("saral_hr.utils.pdf.get_pdf", return_value=b"%PDF-1.4") as get_pdf,
+		):
+			download_pdf("Salary Slip", "SS-1", format=MUSTER_CUM_WAGES_SLIP)
+
+		passed_html = get_pdf.call_args[0][0]
+		options = get_pdf.call_args[1]["options"]
+		self.assertNotIn("print.bundle.css", passed_html)
+		self.assertIn(".print-hide,.action-banner{display:none!important}", passed_html)
+		self.assertIn("display:table-cell!important", passed_html)
+		self.assertIn('<span class="vert-label">Out time</span>', passed_html)
+		self.assertEqual(options.get("zoom"), "0.9")
+		self.assertEqual(frappe.local.response.type, "pdf")
 
 
 class TestAttendanceRecordPrintContext(FrappeTestCase):
