@@ -217,7 +217,7 @@ def assemble(employees, attendance, daily_rate, year):
 		leave_taken = False
 		ot_total = 0.0
 		for day, slot in marks.get(code, {}).items():
-			months[day.month - 1] += slot["weight"]
+			months[day.month - 1] += slot["weight"] 
 			month_mandays[(day.month, sex)] += slot["weight"]
 			month_ot[day.month] += slot["ot"]
 			ot_total += slot["ot"]

@@ -312,10 +312,10 @@ function ep_fix_breadcrumbs(emp_name) {
 
 // ─── Styles ───────────────────────────────────────────────────────────────────
 function inject_ep_styles() {
-    $("#ep-styles, #ep-styles-v1, #ep-styles-v2").remove();
-    if (document.getElementById("ep-styles-v3")) return;
+    $("#ep-styles, #ep-styles-v1, #ep-styles-v2, #ep-styles-v3, #ep-styles-v4").remove();
+    if (document.getElementById("ep-styles-v5")) return;
     var style = document.createElement("style");
-    style.id = "ep-styles-v3";
+    style.id = "ep-styles-v5";
     style.innerHTML = `
         @keyframes ep-pulse { 0%,100%{opacity:1} 50%{opacity:0.4} }
 
@@ -807,10 +807,12 @@ function inject_ep_styles() {
         .ep-ssa-compare-table th.net { background:#eff6ff; color:#1e3a8a; }
         .ep-ssa-compare-table td { white-space:nowrap; overflow:hidden; }
         .ep-ssa-compare-table td.period, .ep-ssa-compare-table th.period { text-align:left; white-space:normal; overflow:visible; background:#fff; }
+        .ep-ssa-compare-table td.period { vertical-align:top; }
         .ep-ssa-compare-table th.period { background:#f8fafc; }
         .ep-ssa-compare-table tr.current td { background:#f0fdf4; }
         .ep-ssa-compare-table tr.current td.period { background:#dcfce7; }
-        .ep-ssa-compare-table .ep-ssa-tag { display:inline-block; font-size:9px; font-weight:700; letter-spacing:0.03em; text-transform:uppercase; border-radius:8px; padding:1px 6px; margin-right:6px; }
+        .ep-ssa-compare-table .ep-ssa-tag { display:block; width:fit-content; font-size:9px; font-weight:700; letter-spacing:0.03em; text-transform:uppercase; border-radius:8px; padding:1px 6px; margin:0 0 4px 0; }
+        .ep-ssa-compare-table .ep-ssa-period-dates { display:block; white-space:nowrap; line-height:1.35; }
         .ep-ssa-compare-table .ep-ssa-tag.current { background:#22c55e; color:#fff; }
         .ep-ssa-compare-table .ep-ssa-tag.previous { background:#e5e7eb; color:#374151; }
         .ep-ssa-compare-table td.diff { background:#fef3c7; font-weight:700; }
@@ -845,7 +847,7 @@ function inject_ep_styles() {
         .ep-sal-prog-arrow { font-size:14px; color:#d1d5db; padding:0 4px; margin-top:2px; }
         .ep-sal-prog-hike-chip { display:inline-block; font-size:10px; font-weight:700; background:#f0fdf4; color:#166534; border:1px solid #86efac; border-radius:10px; padding:1px 7px; margin-top:3px; }
 
-        .ep-comp-toggle-wrap { margin-top:10px; }
+        .ep-comp-toggle-wrap { margin-top:10px; overflow-x:auto; }
         .ep-comp-cols { display:grid; grid-template-columns:1fr 1fr 1fr; gap:8px; }
         .ep-comp-toggle-btn {
             width:100%; display:flex; justify-content:space-between; align-items:center;
@@ -868,8 +870,22 @@ function inject_ep_styles() {
         .ep-comp-toggle-btn.employer-btn   .ep-comp-btn-count { background:#bfdbfe; color:#1e3a8a; }
         .ep-comp-chevron { font-size:9px; transition:transform 0.2s; }
         .ep-comp-chevron.open { transform:rotate(180deg); }
-        .ep-comp-list { display:none; border:1px solid var(--border-color,#e5e7eb); border-top:none; border-radius:0 0 6px 6px; overflow:hidden; }
+        .ep-comp-section:has(.ep-comp-list.open) .ep-comp-toggle-btn { border-radius:6px 6px 0 0; }
+        .ep-comp-list { display:none; overflow:hidden; }
         .ep-comp-list.open { display:block; }
+        .ep-comp-table { width:100%; border-collapse:collapse; font-size:12px; background:#fff; }
+        .ep-comp-table th, .ep-comp-table td { border:1px solid #d1d5db; padding:5px 6px; vertical-align:middle; }
+        .ep-comp-table th.group { font-size:11px; font-weight:700; text-align:center; text-transform:uppercase; letter-spacing:0.04em; }
+        .ep-comp-table th.group.earn { color:#15803d; background:#f0fdf4; }
+        .ep-comp-table th.group.deduct { color:#b91c1c; background:#fff5f5; }
+        .ep-comp-table th.group.employer { color:#1d4ed8; background:#eff6ff; }
+        .ep-comp-table th.group .ep-comp-btn-count { margin-left:6px; }
+        .ep-comp-table th.group.earn .ep-comp-btn-count { background:#bbf7d0; color:#14532d; }
+        .ep-comp-table th.group.deduct .ep-comp-btn-count { background:#fecaca; color:#7f1d1d; }
+        .ep-comp-table th.group.employer .ep-comp-btn-count { background:#bfdbfe; color:#1e3a8a; }
+        .ep-comp-table th.sub { font-size:11px; font-weight:700; text-align:center; background:#fff; color:#111827; }
+        .ep-comp-table td.name { text-align:left; }
+        .ep-comp-table td.amt { text-align:right; white-space:nowrap; }
         .ep-comp-row { display:flex; justify-content:space-between; align-items:center; font-size:12px; padding:5px 10px; border-bottom:1px solid var(--border-color,#f3f4f6); }
         .ep-comp-row:last-child { border-bottom:none; }
         .ep-comp-row:nth-child(even) { background:var(--control-bg,#f9fafb); }
@@ -1109,7 +1125,7 @@ function render_profile($sidebar, $main, d, emp) {
     if (c.final_reporting_name) sb += info_row("Final Reporting", c.final_reporting_name);
     sb += "<hr class='ep-divider'>";
     sb += "<a href='/app/employee/" + emp + "' class='ep-link-btn'>✏️ Edit Employee</a>";
-    sb += "<a href='/app/print/Employee/" + encodeURIComponent(emp) + "' class='ep-link-btn'>📄 Employee Details</a>";
+    sb += "<a href='/app/print/Employee/" + encodeURIComponent(emp) + "' class='ep-link-btn'>📄 Print Employee Details</a>";
     if (d.company_link_name)
         sb += "<a href='/app/company-link/" + encodeURIComponent(d.company_link_name) + "' class='ep-link-btn'>🏢 View Company Record</a>";
     sb += "<a href='/app/salary-structure-assignment?employee=" + encodeURIComponent(emp) + "' class='ep-link-btn'>💰 Salary Assignment</a>";
@@ -1802,7 +1818,7 @@ function ssa_component_amount(rec, key, name) {
 function ssa_compare_layout(amountCols) {
     var popup = Math.min(window.innerWidth - 32, Math.max(1200, 180 + amountCols * 92));
     var inner = Math.max(280, popup - 24);
-    var periodWeight = amountCols <= 8 ? 1.9 : amountCols <= 12 ? 1.5 : amountCols <= 18 ? 1.25 : 1.05;
+    var periodWeight = amountCols <= 8 ? 2.2 : amountCols <= 12 ? 2.2 : amountCols <= 18 ? 1.8 : 1.5;
     var share = inner / (periodWeight + amountCols);
     var font = 11;
     while (font > 8 && share < font * 0.6 * 9 + 6) font -= 1;
@@ -1852,7 +1868,7 @@ function render_ssa_compare_table(ssa_history, latest_ssa) {
         html += "<tr class='" + (is_current ? "current" : "") + "'>";
         html += "<td class='period'>";
         if (tag_label) html += "<span class='ep-ssa-tag " + tag + "'>" + tag_label + "</span>";
-        html += frappe.utils.escape_html(ssa_period_label(rec));
+        html += "<span class='ep-ssa-period-dates'>" + frappe.utils.escape_html(ssa_period_label(rec)) + "</span>";
         html += "</td>";
         earnings.forEach(function (name) {
             html += ssa_compare_cell(ssa_component_amount(rec, "earnings", name), newer && ssa_component_amount(newer, "earnings", name), !!newer);
@@ -1929,7 +1945,7 @@ function render_ssa_panel_html(latest_ssa, cancelled_ssas, company_link, ssa_his
         html += ssa_breakdown_item("Total Deductions", latest_ssa.total_deductions);
         html += ssa_breakdown_item("Employer Contrib", latest_ssa.total_employer_contribution);
         html += "</div>";
-        html += render_comp_toggles(latest_ssa.earnings || [], latest_ssa.deductions || [], latest_ssa.employer_share || []);
+        html += render_comp_toggles(latest_ssa.earnings || [], latest_ssa.deductions || [], latest_ssa.employer_share || [], true);
         var dp = [];
         if (latest_ssa.from_date) dp.push("From: " + fmt_date_human(latest_ssa.from_date));
         dp.push(latest_ssa.to_date ? "To: " + fmt_date_human(latest_ssa.to_date) : "Ongoing");
@@ -2097,38 +2113,37 @@ function render_ssa_detail_box(ssa, company_link, latest_ssa) {
     return html;
 }
 
-function render_comp_toggles(earnings, deductions, employer_share, expanded) {
+function render_comp_toggles(earnings, deductions, employer_share) {
     if (!earnings.length && !deductions.length && !employer_share.length) return "";
-    var open = expanded ? " open" : "";
-    var html = "<div class='ep-comp-toggle-wrap'><div class='ep-comp-cols'>";
-    html += "<div class='ep-comp-section'>";
-    if (earnings.length) {
-        html += "<button class='ep-comp-toggle-btn earnings-btn'><span class='ep-comp-btn-left'>Earnings <span class='ep-comp-btn-count'>" + earnings.length + "</span></span><span class='ep-comp-chevron" + open + "'>&#9660;</span></button>";
-        html += "<div class='ep-comp-list" + open + "'>";
-        earnings.forEach(function (row) {
-            html += "<div class='ep-comp-row'><span class='ep-comp-name'>" + (row.salary_component || "") + "</span><span class='ep-comp-amt earn'>&#8377;" + fmt_currency(row.amount) + "</span></div>";
-        });
-        html += "</div>";
+    var groups = [
+        { rows: earnings, cls: "earn", label: "Earnings", amt: "earn" },
+        { rows: deductions, cls: "deduct", label: "Deductions", amt: "deduct" },
+        { rows: employer_share, cls: "employer", label: "Employer Share", amt: "employer" },
+    ].filter(function (group) { return group.rows.length; });
+    var rows = Math.max.apply(null, groups.map(function (group) { return group.rows.length; }));
+    function pair(row, amtClass) {
+        if (!row) return "<td class='name'></td><td class='amt'></td>";
+        return "<td class='name'>" + frappe.utils.escape_html(row.salary_component || "") + "</td>" +
+            "<td class='amt ep-comp-amt " + amtClass + "'>&#8377;" + fmt_currency(row.amount) + "</td>";
     }
-    html += "</div><div class='ep-comp-section'>";
-    if (deductions.length) {
-        html += "<button class='ep-comp-toggle-btn deductions-btn'><span class='ep-comp-btn-left'>Deductions <span class='ep-comp-btn-count'>" + deductions.length + "</span></span><span class='ep-comp-chevron" + open + "'>&#9660;</span></button>";
-        html += "<div class='ep-comp-list" + open + "'>";
-        deductions.forEach(function (row) {
-            html += "<div class='ep-comp-row'><span class='ep-comp-name'>" + (row.salary_component || "") + "</span><span class='ep-comp-amt deduct'>&#8377;" + fmt_currency(row.amount) + "</span></div>";
+    var html = "<div class='ep-comp-toggle-wrap'><table class='ep-comp-table'><thead><tr>";
+    groups.forEach(function (group) {
+        html += "<th class='group " + group.cls + "' colspan='2'>" + group.label +
+            " <span class='ep-comp-btn-count'>" + group.rows.length + "</span></th>";
+    });
+    html += "</tr><tr>";
+    groups.forEach(function () {
+        html += "<th class='sub'>Component</th><th class='sub'>Amount</th>";
+    });
+    html += "</tr></thead><tbody>";
+    for (var i = 0; i < rows; i++) {
+        html += "<tr>";
+        groups.forEach(function (group) {
+            html += pair(group.rows[i], group.amt);
         });
-        html += "</div>";
+        html += "</tr>";
     }
-    html += "</div><div class='ep-comp-section'>";
-    if (employer_share.length) {
-        html += "<button class='ep-comp-toggle-btn employer-btn'><span class='ep-comp-btn-left'>Employer Share <span class='ep-comp-btn-count'>" + employer_share.length + "</span></span><span class='ep-comp-chevron" + open + "'>&#9660;</span></button>";
-        html += "<div class='ep-comp-list" + open + "'>";
-        employer_share.forEach(function (row) {
-            html += "<div class='ep-comp-row'><span class='ep-comp-name'>" + (row.salary_component || "") + "</span><span class='ep-comp-amt employer'>&#8377;" + fmt_currency(row.amount) + "</span></div>";
-        });
-        html += "</div>";
-    }
-    html += "</div></div></div>";
+    html += "</tbody></table></div>";
     return html;
 }
 

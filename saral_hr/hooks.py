@@ -28,7 +28,10 @@ app_license = "mit"
 
 # include js, css files in header of desk.html
 # app_include_css = "/assets/saral_hr/css/saral_hr.css"
-app_include_js = "/assets/saral_hr/js/period_picker.js"
+app_include_js = [
+	"/assets/saral_hr/js/period_picker.js",
+	"/assets/saral_hr/js/print_open.js",
+]
 
 # include js, css files in header of web template
 # web_include_css = "/assets/saral_hr/css/saral_hr.css"

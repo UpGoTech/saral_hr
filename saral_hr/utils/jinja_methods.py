@@ -16,7 +16,7 @@ _ADDR_WIDTH = {
     "O": 11.41, "P": 9.78, "Q": 11.41, "R": 10.59, "S": 9.78, "T": 8.95, "U": 10.59,
     "V": 9.78, "W": 13.84, "X": 9.78, "Y": 9.78, "Z": 8.95,
 }
-_ADDR_LINE_LIMIT = 590
+_ADDR_LINE_LIMIT = 560
 
 
 def _addr_width(text):

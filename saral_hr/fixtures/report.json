@@ -1,10 +1,95 @@
 [
  {
-  "add_total_row": 0,
+  "add_total_row": 1,
+  "add_translate_data": 0,
   "columns": [],
+  "disable_prepared_report_automation": 0,
   "disabled": 0,
   "docstatus": 0,
   "doctype": "Report",
+  "doctype_to_sync": [],
+  "filters": [],
+  "is_standard": "Yes",
+  "javascript": null,
+  "json": null,
+  "letter_head": "",
+  "modified": "2026-07-20 00:00:00",
+  "module": "Saral Hr",
+  "name": "Register of wages report",
+  "prepared_report": 0,
+  "query": null,
+  "ref_doctype": "Salary Slip",
+  "reference_report": null,
+  "report_name": "Register of wages report",
+  "report_script": null,
+  "report_type": "Script Report",
+  "roles": [
+   {
+    "parent": "Register of wages report",
+    "parentfield": "roles",
+    "parenttype": "Report",
+    "role": "Saral HR Manager"
+   },
+   {
+    "parent": "Register of wages report",
+    "parentfield": "roles",
+    "parenttype": "Report",
+    "role": "Saral HR User"
+   }
+  ],
+  "snapshot_report": 0,
+  "timeout": 0
+ },
+ {
+  "add_total_row": 0,
+  "add_translate_data": 0,
+  "columns": [],
+  "disable_prepared_report_automation": 0,
+  "disabled": 0,
+  "docstatus": 0,
+  "doctype": "Report",
+  "doctype_to_sync": [],
+  "filters": [],
+  "is_standard": "Yes",
+  "javascript": null,
+  "json": null,
+  "letter_head": null,
+  "modified": "2026-08-06 13:30:00",
+  "module": "Saral Hr",
+  "name": "Monthly Salary Register Old Format Net Payable",
+  "prepared_report": 0,
+  "query": null,
+  "ref_doctype": "Salary Slip",
+  "reference_report": null,
+  "report_name": "Monthly Salary Register Old Format Net Payable",
+  "report_script": null,
+  "report_type": "Script Report",
+  "roles": [
+   {
+    "parent": "Monthly Salary Register Old Format Net Payable",
+    "parentfield": "roles",
+    "parenttype": "Report",
+    "role": "Saral HR Manager"
+   },
+   {
+    "parent": "Monthly Salary Register Old Format Net Payable",
+    "parentfield": "roles",
+    "parenttype": "Report",
+    "role": "Saral HR User"
+   }
+  ],
+  "snapshot_report": 0,
+  "timeout": 0
+ },
+ {
+  "add_total_row": 0,
+  "add_translate_data": 0,
+  "columns": [],
+  "disable_prepared_report_automation": 0,
+  "disabled": 0,
+  "docstatus": 0,
+  "doctype": "Report",
+  "doctype_to_sync": [],
   "filters": [],
   "is_standard": "Yes",
   "javascript": null,
@@ -34,14 +119,18 @@
     "role": "Saral HR User"
    }
   ],
+  "snapshot_report": 0,
   "timeout": 0
  },
  {
   "add_total_row": 0,
+  "add_translate_data": 0,
   "columns": [],
+  "disable_prepared_report_automation": 0,
   "disabled": 0,
   "docstatus": 0,
   "doctype": "Report",
+  "doctype_to_sync": [],
   "filters": [],
   "is_standard": "Yes",
   "javascript": null,
@@ -71,14 +160,18 @@
     "role": "Saral HR User"
    }
   ],
+  "snapshot_report": 0,
   "timeout": 0
  },
  {
   "add_total_row": 0,
+  "add_translate_data": 0,
   "columns": [],
+  "disable_prepared_report_automation": 0,
   "disabled": 0,
   "docstatus": 0,
   "doctype": "Report",
+  "doctype_to_sync": [],
   "filters": [],
   "is_standard": "Yes",
   "javascript": null,
@@ -108,14 +201,18 @@
     "role": "Saral HR User"
    }
   ],
+  "snapshot_report": 0,
   "timeout": 0
  },
  {
   "add_total_row": 0,
+  "add_translate_data": 0,
   "columns": [],
+  "disable_prepared_report_automation": 0,
   "disabled": 0,
   "docstatus": 0,
   "doctype": "Report",
+  "doctype_to_sync": [],
   "filters": [],
   "is_standard": "Yes",
   "javascript": null,
@@ -145,14 +242,18 @@
     "role": "Saral HR User"
    }
   ],
+  "snapshot_report": 0,
   "timeout": 0
  },
  {
   "add_total_row": 0,
+  "add_translate_data": 0,
   "columns": [],
+  "disable_prepared_report_automation": 0,
   "disabled": 0,
   "docstatus": 0,
   "doctype": "Report",
+  "doctype_to_sync": [],
   "filters": [],
   "is_standard": "Yes",
   "javascript": null,
@@ -182,14 +283,18 @@
     "role": "Saral HR User"
    }
   ],
+  "snapshot_report": 0,
   "timeout": 0
  },
  {
   "add_total_row": 0,
+  "add_translate_data": 0,
   "columns": [],
+  "disable_prepared_report_automation": 0,
   "disabled": 0,
   "docstatus": 0,
   "doctype": "Report",
+  "doctype_to_sync": [],
   "filters": [],
   "is_standard": "Yes",
   "javascript": null,
@@ -219,14 +324,18 @@
     "role": "Saral HR User"
    }
   ],
+  "snapshot_report": 0,
   "timeout": 0
  },
  {
   "add_total_row": 0,
+  "add_translate_data": 0,
   "columns": [],
+  "disable_prepared_report_automation": 0,
   "disabled": 0,
   "docstatus": 0,
   "doctype": "Report",
+  "doctype_to_sync": [],
   "filters": [],
   "is_standard": "Yes",
   "javascript": null,
@@ -256,14 +365,18 @@
     "role": "Saral HR User"
    }
   ],
+  "snapshot_report": 0,
   "timeout": 0
  },
  {
   "add_total_row": 0,
+  "add_translate_data": 0,
   "columns": [],
+  "disable_prepared_report_automation": 0,
   "disabled": 0,
   "docstatus": 0,
   "doctype": "Report",
+  "doctype_to_sync": [],
   "filters": [],
   "is_standard": "Yes",
   "javascript": null,
@@ -293,14 +406,18 @@
     "role": "Saral HR User"
    }
   ],
+  "snapshot_report": 0,
   "timeout": 0
  },
  {
   "add_total_row": 0,
+  "add_translate_data": 0,
   "columns": [],
+  "disable_prepared_report_automation": 0,
   "disabled": 0,
   "docstatus": 0,
   "doctype": "Report",
+  "doctype_to_sync": [],
   "filters": [],
   "is_standard": "Yes",
   "javascript": null,
@@ -330,14 +447,18 @@
     "role": "Saral HR User"
    }
   ],
+  "snapshot_report": 0,
   "timeout": 0
  },
  {
   "add_total_row": 0,
+  "add_translate_data": 0,
   "columns": [],
+  "disable_prepared_report_automation": 0,
   "disabled": 0,
   "docstatus": 0,
   "doctype": "Report",
+  "doctype_to_sync": [],
   "filters": [],
   "is_standard": "Yes",
   "javascript": null,
@@ -367,14 +488,18 @@
     "role": "Saral HR User"
    }
   ],
+  "snapshot_report": 0,
   "timeout": 0
  },
  {
   "add_total_row": 0,
+  "add_translate_data": 0,
   "columns": [],
+  "disable_prepared_report_automation": 0,
   "disabled": 0,
   "docstatus": 0,
   "doctype": "Report",
+  "doctype_to_sync": [],
   "filters": [],
   "is_standard": "Yes",
   "javascript": null,
@@ -404,14 +529,18 @@
     "role": "Saral HR User"
    }
   ],
+  "snapshot_report": 0,
   "timeout": 0
  },
  {
   "add_total_row": 0,
+  "add_translate_data": 0,
   "columns": [],
+  "disable_prepared_report_automation": 0,
   "disabled": 0,
   "docstatus": 0,
   "doctype": "Report",
+  "doctype_to_sync": [],
   "filters": [],
   "is_standard": "Yes",
   "javascript": null,
@@ -441,14 +570,18 @@
     "role": "Saral HR User"
    }
   ],
+  "snapshot_report": 0,
   "timeout": 0
  },
  {
   "add_total_row": 0,
+  "add_translate_data": 0,
   "columns": [],
+  "disable_prepared_report_automation": 0,
   "disabled": 0,
   "docstatus": 0,
   "doctype": "Report",
+  "doctype_to_sync": [],
   "filters": [],
   "is_standard": "Yes",
   "javascript": null,
@@ -478,14 +611,18 @@
     "role": "Saral HR User"
    }
   ],
+  "snapshot_report": 0,
   "timeout": 0
  },
  {
   "add_total_row": 0,
+  "add_translate_data": 0,
   "columns": [],
+  "disable_prepared_report_automation": 0,
   "disabled": 0,
   "docstatus": 0,
   "doctype": "Report",
+  "doctype_to_sync": [],
   "filters": [],
   "is_standard": "Yes",
   "javascript": null,
@@ -515,14 +652,18 @@
     "role": "Saral HR User"
    }
   ],
+  "snapshot_report": 0,
   "timeout": 0
  },
  {
   "add_total_row": 0,
+  "add_translate_data": 0,
   "columns": [],
+  "disable_prepared_report_automation": 0,
   "disabled": 0,
   "docstatus": 0,
   "doctype": "Report",
+  "doctype_to_sync": [],
   "filters": [],
   "is_standard": "Yes",
   "javascript": null,
@@ -552,14 +693,18 @@
     "role": "Saral HR User"
    }
   ],
+  "snapshot_report": 0,
   "timeout": 0
  },
  {
   "add_total_row": 0,
+  "add_translate_data": 0,
   "columns": [],
+  "disable_prepared_report_automation": 0,
   "disabled": 0,
   "docstatus": 0,
   "doctype": "Report",
+  "doctype_to_sync": [],
   "filters": [],
   "is_standard": "Yes",
   "javascript": null,
@@ -589,14 +734,18 @@
     "role": "Saral HR User"
    }
   ],
+  "snapshot_report": 0,
   "timeout": 0
  },
  {
   "add_total_row": 0,
+  "add_translate_data": 0,
   "columns": [],
+  "disable_prepared_report_automation": 0,
   "disabled": 0,
   "docstatus": 0,
   "doctype": "Report",
+  "doctype_to_sync": [],
   "filters": [],
   "is_standard": "Yes",
   "javascript": null,
@@ -626,14 +775,18 @@
     "role": "Saral HR User"
    }
   ],
+  "snapshot_report": 0,
   "timeout": 0
  },
  {
   "add_total_row": 0,
+  "add_translate_data": 0,
   "columns": [],
+  "disable_prepared_report_automation": 0,
   "disabled": 0,
   "docstatus": 0,
   "doctype": "Report",
+  "doctype_to_sync": [],
   "filters": [],
   "is_standard": "Yes",
   "javascript": null,
@@ -663,14 +816,18 @@
     "role": "Saral HR User"
    }
   ],
+  "snapshot_report": 0,
   "timeout": 0
  },
  {
   "add_total_row": 0,
+  "add_translate_data": 0,
   "columns": [],
+  "disable_prepared_report_automation": 0,
   "disabled": 0,
   "docstatus": 0,
   "doctype": "Report",
+  "doctype_to_sync": [],
   "filters": [],
   "is_standard": "Yes",
   "javascript": null,
@@ -700,14 +857,18 @@
     "role": "Saral HR User"
    }
   ],
+  "snapshot_report": 0,
   "timeout": 0
  },
  {
   "add_total_row": 0,
+  "add_translate_data": 0,
   "columns": [],
+  "disable_prepared_report_automation": 0,
   "disabled": 0,
   "docstatus": 0,
   "doctype": "Report",
+  "doctype_to_sync": [],
   "filters": [],
   "is_standard": "Yes",
   "javascript": null,
@@ -737,14 +898,18 @@
     "role": "Saral HR User"
    }
   ],
+  "snapshot_report": 0,
   "timeout": 0
  },
  {
   "add_total_row": 0,
+  "add_translate_data": 0,
   "columns": [],
+  "disable_prepared_report_automation": 0,
   "disabled": 0,
   "docstatus": 0,
   "doctype": "Report",
+  "doctype_to_sync": [],
   "filters": [],
   "is_standard": "Yes",
   "javascript": null,
@@ -774,20 +939,24 @@
     "role": "Saral HR User"
    }
   ],
+  "snapshot_report": 0,
   "timeout": 0
  },
  {
   "add_total_row": 0,
+  "add_translate_data": 0,
   "columns": [],
+  "disable_prepared_report_automation": 0,
   "disabled": 0,
   "docstatus": 0,
   "doctype": "Report",
+  "doctype_to_sync": [],
   "filters": [],
   "is_standard": "Yes",
   "javascript": null,
   "json": null,
   "letter_head": null,
-  "modified": "2026-10-05 12:45:00.000000",
+  "modified": "2026-10-05 12:45:00",
   "module": "Saral Hr",
   "name": "Annual Return Form",
   "prepared_report": 0,
@@ -817,20 +986,24 @@
     "role": "System Manager"
    }
   ],
+  "snapshot_report": 0,
   "timeout": 0
  },
  {
   "add_total_row": 0,
+  "add_translate_data": 0,
   "columns": [],
+  "disable_prepared_report_automation": 0,
   "disabled": 0,
   "docstatus": 0,
   "doctype": "Report",
+  "doctype_to_sync": [],
   "filters": [],
   "is_standard": "Yes",
   "javascript": null,
   "json": null,
   "letter_head": null,
-  "modified": "2026-09-28 15:20:00.000000",
+  "modified": "2026-09-28 15:20:00",
   "module": "Saral Hr",
   "name": "Employee Salary History",
   "prepared_report": 0,
@@ -860,6 +1033,7 @@
     "role": "System Manager"
    }
   ],
+  "snapshot_report": 0,
   "timeout": 0
  }
 ]
