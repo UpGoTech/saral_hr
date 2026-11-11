@@ -13,7 +13,8 @@ from datetime import date, datetime
 
 import frappe
 from frappe import _
-from frappe.utils import cint, flt, getdate
+from frappe.utils import cint, flt, formatdate, getdate
+from frappe.utils.pdf import get_pdf
 from openpyxl import Workbook
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.utils import get_column_letter
@@ -70,9 +71,10 @@ THIN = Border(
 )
 CENTER = Alignment(horizontal="center", vertical="center", wrap_text=True)
 MONTH = Alignment(horizontal="center", vertical="center", wrap_text=False)
-LEFT = Alignment(horizontal="left", vertical="center", wrap_text=True)
+LEFT = Alignment(horizontal="left", vertical="center", wrap_text=True, indent=1)
 RIGHT = Alignment(horizontal="right", vertical="center", wrap_text=False, indent=1)
 BODY_LEFT = Alignment(horizontal="left", vertical="center", wrap_text=False, indent=1)
+DATE_RIGHT = Alignment(horizontal="right", vertical="center", wrap_text=False, indent=1)
 
 
 def execute(filters=None):
@@ -95,6 +97,19 @@ def excel_report(filters):
 		frappe.throw(_("No employees found for this company and year."))
 	wb = _workbook(pack, filters.company, year)
 	return _save_excel(wb, "Annual_Return_Form")
+
+
+@frappe.whitelist()
+def print_report(filters):
+	filters = _normalize_filters(filters)
+	year = _year(filters)
+	if not filters.get("company") or not year:
+		frappe.throw(_("Please select Company and Year."))
+	pack = _load(filters.company, year)
+	if not pack["working"]:
+		frappe.throw(_("No employees found for this company and year."))
+	html = _build_print_html(pack, filters.company, year)
+	return _save_pdf(html, "Annual_Return_Form")
 
 
 def worked_weight(status):
@@ -337,7 +352,7 @@ def _working_columns(year):
 	columns = [
 		{"label": _("Sr"), "fieldname": "sr_no", "fieldtype": "Int", "width": 50},
 		{"label": _("Emp. Code"), "fieldname": "employee", "fieldtype": "Link", "options": "Company Link", "width": 120},
-		{"label": _("Name of Employees"), "fieldname": "employee_name", "fieldtype": "Data", "width": 180},
+		{"label": _("Name of Employees"), "fieldname": "employee_name", "fieldtype": "Data", "width": 145},
 		{"label": _("Designation"), "fieldname": "designation", "fieldtype": "Data", "width": 140},
 		{"label": _("Date of Joining"), "fieldname": "date_of_joining", "fieldtype": "Date", "width": 120},
 	]
@@ -451,7 +466,7 @@ def _sheet_working(ws, pack, company, year):
 		"NAME OF\nEMPLOYEES",
 		"DESIGNATION",
 		"DATE OF\nJOINING",
-		*[f"{name[:3]}-{year}" for name in MONTHS],
+		*[f"{name[:3]}\n{year}" for name in MONTHS],
 		"TOTAL",
 	]
 	_title(ws, 1, len(headers), f"{company} — Annual Return Form — Working Days — {year}")
@@ -485,7 +500,7 @@ def _sheet_working(ws, pack, company, year):
 		bold=True,
 		fill=TOTAL_FILL,
 	)
-	widths = [8, 17, 26, 25, 15] + [12] * 12 + [11]
+	widths = [8, 16, 26, 17, 13] + [9.5] * 12 + [10]
 	_widths(ws, widths)
 	ws.row_dimensions[3].height = 16
 	ws.row_dimensions[4].height = 16
@@ -549,7 +564,9 @@ def _sheet_leave(ws, pack, company, year):
 			)
 			row += 1
 		ws.merge_cells(start_row=start, start_column=1, end_row=start + 1, end_column=1)
-		ws.cell(start, 1).alignment = LEFT
+		cat = ws.cell(start, 1)
+		cat.alignment = LEFT
+		cat.font = BODY_FONT
 	_widths(ws, [18, 11, 18, 14, 14, 12, 12, 12, 12, 14, 16])
 	ws.row_dimensions[3].height = 80
 	ws.row_dimensions[4].height = 16
@@ -726,6 +743,9 @@ def _sheet_employment(ws, pack, company, year):
 			)
 			row_no += 1
 		ws.merge_cells(start_row=start, start_column=1, end_row=start + 1, end_column=1)
+		cat = ws.cell(start, 1)
+		cat.alignment = LEFT
+		cat.font = BODY_FONT
 	_widths(ws, [18, 11, 15, 16, 12, 18, 12])
 	ws.row_dimensions[10].height = 90
 	ws.row_dimensions[11].height = 16
@@ -747,7 +767,7 @@ def _sheet_left(ws, pack, company, year):
 		"DESIGNATION",
 		"DATE OF\nJOINING",
 		"Exit\ndate",
-		*[f"{name[:3]}-{year}" for name in MONTHS],
+		*[f"{name[:3]}\n{year}" for name in MONTHS],
 		"Total",
 	]
 	_title(ws, 1, len(headers), f"{company} — Left Workers — {year}")
@@ -775,7 +795,7 @@ def _sheet_left(ws, pack, company, year):
 			],
 			date_cols={5, 6},
 		)
-	_widths(ws, [8, 17, 26, 25, 15, 15] + [12] * 12 + [11])
+	_widths(ws, [8, 16, 26, 17, 13, 13] + [9.5] * 12 + [10])
 	ws.row_dimensions[3].height = 16
 	ws.row_dimensions[4].height = 16
 	ws.freeze_panes = "A5"
@@ -811,7 +831,13 @@ def _header_row(ws, row, headers):
 		cell = ws.cell(row, col, label)
 		cell.font = HEADER_FONT
 		cell.fill = HEADER_FILL
-		cell.alignment = MONTH if isinstance(label, str) and len(label) == 8 and label[3] == "-" else CENTER
+		# Month headers are "Jan\n2025" — keep them centered and wrapped.
+		if isinstance(label, str) and "\n" in label and len(label.split("\n")[0]) == 3:
+			cell.alignment = CENTER
+		elif isinstance(label, str) and len(label) == 8 and label[3] == "-":
+			cell.alignment = MONTH
+		else:
+			cell.alignment = CENTER
 		cell.border = THIN
 
 
@@ -820,7 +846,11 @@ def _body_row(ws, row, values, date_cols=(), bold=False, fill=None):
 		cell = ws.cell(row, col, value if value != "" else None)
 		cell.font = BOLD_FONT if bold else BODY_FONT
 		cell.border = THIN
-		if isinstance(value, (int, float)) and not isinstance(value, bool):
+		if col in date_cols:
+			cell.alignment = DATE_RIGHT
+			if isinstance(value, date):
+				cell.number_format = "DD-MM-YYYY"
+		elif isinstance(value, (int, float)) and not isinstance(value, bool):
 			cell.alignment = RIGHT
 		elif isinstance(value, str) and "\n" in value:
 			cell.alignment = LEFT
@@ -828,15 +858,329 @@ def _body_row(ws, row, values, date_cols=(), bold=False, fill=None):
 			cell.alignment = BODY_LEFT
 		if fill is not None:
 			cell.fill = fill
-		if col in date_cols and isinstance(value, date):
-			cell.number_format = "DD-MM-YYYY"
-		elif isinstance(value, float):
+		if isinstance(value, float) and col not in date_cols:
 			cell.number_format = "0.0"
 
 
 def _widths(ws, widths):
 	for index, width in enumerate(widths, start=1):
 		ws.column_dimensions[get_column_letter(index)].width = width
+
+
+def _esc(value):
+	return frappe.utils.escape_html("" if value is None else str(value))
+
+
+def _fmt_date(value):
+	if not value:
+		return ""
+	return formatdate(_as_date(value), "dd-mm-yyyy")
+
+
+def _fmt_num(value):
+	if value is None or value == "":
+		return ""
+	return _esc(_round_day(value))
+
+
+def _build_print_html(pack, company, year):
+	sections = [
+		_html_working(pack, company, year),
+		_html_leave(pack, company, year),
+		_html_manpower(pack, company, year),
+		_html_employment(pack, company, year),
+		_html_left(pack, company, year),
+	]
+	body = "".join(f'<div class="sheet">{section}</div>' for section in sections)
+	return f"""<!DOCTYPE html>
+<html><head><meta charset="utf-8">
+<style>
+body{{font-family:Arial,Helvetica,sans-serif;font-size:11px;color:#000;margin:0}}
+.sheet{{page-break-after:always}}
+.sheet:last-child{{page-break-after:auto}}
+h2{{font-size:14px;margin:0 0 8px;color:#1F4E79}}
+table{{border-collapse:collapse;width:100%;table-layout:fixed}}
+th,td{{border:1px solid #000;padding:4px 5px;vertical-align:middle;word-wrap:break-word}}
+th{{background:#d6e4f0;color:#111;font-size:10px;text-align:center;line-height:1.15;font-weight:700}}
+th.month{{font-size:9px;padding:3px 1px}}
+td.num,td.date{{text-align:right;white-space:nowrap}}
+td.name{{text-align:left;padding-left:8px;font-size:11px;word-break:normal;overflow-wrap:anywhere}}
+td.code{{text-align:left;padding-left:8px;white-space:nowrap;font-size:10px}}
+td.left{{text-align:left;padding-left:8px}}
+td.center{{text-align:center}}
+td.cat{{text-align:left;padding-left:8px;vertical-align:middle}}
+tr.total td{{font-weight:700;background:#e8e8e8}}
+.note{{font-weight:700;margin:0 0 6px}}
+.work col.c-sr{{width:3%}}
+.work col.c-code{{width:8%}}
+.work col.c-name{{width:12%}}
+.work col.c-desig{{width:8%}}
+.work col.c-date{{width:7%}}
+.work col.c-m{{width:4.5%}}
+.work col.c-tot{{width:5%}}
+</style></head><body>{body}</body></html>"""
+
+
+def _month_heads(year):
+	return "".join(f'<th class="month">{name[:3]}<br>{year}</th>' for name in MONTHS)
+
+
+def _html_working(pack, company, year):
+	rows = []
+	totals = [0.0] * 12
+	grand = 0.0
+	for index, emp in enumerate(pack["working"], start=1):
+		cells = [
+			f'<td class="center">{index}</td>',
+			f'<td class="code">{_esc(emp["employee"])}</td>',
+			f'<td class="name">{_esc(emp["employee_name"])}</td>',
+			f'<td class="left">{_esc(emp["designation"])}</td>',
+			f'<td class="date">{_esc(_fmt_date(emp["date_of_joining"]))}</td>',
+		]
+		for month_index, value in enumerate(emp["months"]):
+			cells.append(f'<td class="num">{_fmt_num(value)}</td>')
+			totals[month_index] += value
+		cells.append(f'<td class="num">{_fmt_num(emp["total"])}</td>')
+		grand += emp["total"]
+		rows.append(f"<tr>{''.join(cells)}</tr>")
+	total_cells = [
+		'<td></td><td></td><td class="name">Total</td><td></td><td></td>',
+		*[f'<td class="num">{_fmt_num(value)}</td>' for value in totals],
+		f'<td class="num">{_fmt_num(grand)}</td>',
+	]
+	rows.append(f'<tr class="total">{"".join(total_cells)}</tr>')
+	cols = (
+		'<colgroup>'
+		'<col class="c-sr"><col class="c-code"><col class="c-name">'
+		'<col class="c-desig"><col class="c-date">'
+		+ "".join('<col class="c-m">' for _ in MONTHS)
+		+ '<col class="c-tot"></colgroup>'
+	)
+	return (
+		f"<h2>{_esc(company)} — Annual Return Form — Working Days — {year}</h2>"
+		f'<table class="work">{cols}<thead><tr>'
+		"<th>SR.<br>NO.</th><th>EMP.<br>CODE</th><th>NAME OF EMPLOYEES</th>"
+		"<th>DESIGNATION</th><th>DATE OF<br>JOINING</th>"
+		f"{_month_heads(year)}<th>TOTAL</th></tr></thead>"
+		f"<tbody>{''.join(rows)}</tbody></table>"
+	)
+
+
+def _html_leave(pack, company, year):
+	headers = [
+		"Workers' Category",
+		"Sex",
+		"Number of workers on duty",
+		"Number of workers eligible for annual leave",
+		"No of workers whose leaves sanctioned",
+		"No of workers suspended",
+		"No of workers Terminated",
+		"No workers left the job",
+		"No of workers retired",
+		"No of workers died while in service",
+		"No of workers to whom payment is made instead of leave",
+	]
+	head = "".join(f"<th>{_esc(label)}</th>" for label in headers)
+	rows = []
+	for band, label in BANDS:
+		cat = _esc(_category_label(label)).replace("\n", "<br>")
+		for index, (sex, sex_label) in enumerate(SEXES):
+			stat = pack["groups"][(band, sex)]
+			cat_cell = (
+				f'<td class="cat" rowspan="2">{cat}</td>' if index == 0 else ""
+			)
+			rows.append(
+				"<tr>"
+				f"{cat_cell}"
+				f'<td class="left">{_esc(sex_label)}</td>'
+				f'<td class="num">{_fmt_num(stat["on_duty"])}</td>'
+				f'<td class="num">{_fmt_num(stat["eligible"])}</td>'
+				f'<td class="num">{_fmt_num(stat["sanctioned"])}</td>'
+				'<td class="num">0</td><td class="num">0</td>'
+				f'<td class="num">{_fmt_num(stat["left"])}</td>'
+				'<td class="num">0</td><td class="num">0</td><td class="num">0</td>'
+				"</tr>"
+			)
+	return (
+		f"<h2>{_esc(company)} — Leave &amp; Wages Details — {year}</h2>"
+		'<div class="note">(Excluding Agriculture Team)</div>'
+		f"<table><thead><tr>{head}</tr></thead><tbody>{''.join(rows)}</tbody></table>"
+	)
+
+
+def _html_manpower(pack, company, year):
+	rows = []
+	totals = Counter()
+	for offset, month in enumerate(pack["manpower"]):
+		rows.append(
+			"<tr>"
+			f'<td class="center">{offset + 1}</td>'
+			f'<td class="left">{_esc(month["month_name"][:3])}-{year}</td>'
+			f'<td class="num">{_fmt_num(month["closing_days"])}</td>'
+			f'<td class="num">{_fmt_num(month["total_days"])}</td>'
+			f'<td class="num">{_fmt_num(month["working_days"])}</td>'
+			f'<td class="num">{_fmt_num(month["male"])}</td>'
+			f'<td class="num">{_fmt_num(month["female"])}</td>'
+			f'<td class="num">{_fmt_num(month["employees"])}</td>'
+			f'<td class="num">{_fmt_num(month["male_mandays"])}</td>'
+			f'<td class="num">{_fmt_num(month["female_mandays"])}</td>'
+			f'<td class="num">{_fmt_num(month["mandays"])}</td>'
+			f'<td class="num">{_fmt_num(month["ot"])}</td>'
+			"</tr>"
+		)
+		for key in (
+			"closing_days",
+			"total_days",
+			"working_days",
+			"male",
+			"female",
+			"employees",
+			"male_mandays",
+			"female_mandays",
+			"mandays",
+			"ot",
+		):
+			totals[key] += month[key]
+	rows.append(
+		'<tr class="total"><td></td><td class="left">Total</td>'
+		f'<td class="num">{_fmt_num(totals["closing_days"])}</td>'
+		f'<td class="num">{_fmt_num(totals["total_days"])}</td>'
+		f'<td class="num">{_fmt_num(totals["working_days"])}</td>'
+		f'<td class="num">{_fmt_num(totals["male"])}</td>'
+		f'<td class="num">{_fmt_num(totals["female"])}</td>'
+		f'<td class="num">{_fmt_num(totals["employees"])}</td>'
+		f'<td class="num">{_fmt_num(totals["male_mandays"])}</td>'
+		f'<td class="num">{_fmt_num(totals["female_mandays"])}</td>'
+		f'<td class="num">{_fmt_num(totals["mandays"])}</td>'
+		f'<td class="num">{_fmt_num(totals["ot"])}</td></tr>'
+	)
+	return (
+		f"<h2>{_esc(company)} — Total Manpower — {year}</h2>"
+		"<table><thead>"
+		"<tr>"
+		'<th rowspan="2">S.N.</th><th rowspan="2">Month</th>'
+		'<th rowspan="2">Closing Days</th><th rowspan="2">Total Days</th>'
+		'<th rowspan="2">Total Working Days</th>'
+		'<th colspan="3">No. of Employees</th><th colspan="3">Mandays</th>'
+		'<th rowspan="2">OT</th></tr>'
+		"<tr><th>Male</th><th>Female</th><th>Total</th>"
+		"<th>Male</th><th>Female</th><th>Total</th></tr>"
+		f"</thead><tbody>{''.join(rows)}</tbody></table>"
+	)
+
+
+def _html_employment(pack, company, year):
+	plant = pack["plant"]
+	facts = (
+		f'<table><tbody>'
+		f'<tr><td class="center">1</td><td class="left">No of days plant was in operation</td>'
+		f'<td class="num">{_fmt_num(plant["operation_days"])}</td>'
+		f'<td class="left">Total days of year</td><td class="num">{_fmt_num(plant["year_days"])}</td></tr>'
+		f'<tr><td class="center">2</td><td class="left">No of weeks plant was in operation</td>'
+		f'<td class="num">{_fmt_num(plant["weeks"])}</td>'
+		f'<td class="left">Total W. Off</td><td class="num">{_fmt_num(plant["weekly_offs"])}</td></tr>'
+		f'<tr><td class="center">3</td><td class="left">Total hours per day workers working (excluding overtime)</td>'
+		f'<td class="num">{_fmt_num(plant["hours_per_day"])}</td>'
+		f'<td class="left">Total Holidays</td><td class="num">{_fmt_num(plant["holidays"])}</td></tr>'
+		f"</tbody></table>"
+	)
+	by_key = {(row["band"], row["sex"]): row for row in pack["employment"]}
+	rows = []
+	for band, label in BANDS:
+		cat = _esc(_category_label(label)).replace("\n", "<br>")
+		for index, (sex, sex_label) in enumerate(SEXES):
+			stat = by_key[(band, sex)]
+			cat_cell = f'<td class="cat" rowspan="2">{cat}</td>' if index == 0 else ""
+			rows.append(
+				"<tr>"
+				f"{cat_cell}"
+				f'<td class="left">{_esc(sex_label)}</td>'
+				f'<td class="num">{_fmt_num(stat["mandays"])}</td>'
+				f'<td class="num">{_fmt_num(stat["average_workers"])}</td>'
+				f'<td class="num">{_fmt_num(stat["ot_hours"])}</td>'
+				f'<td class="num">{_fmt_num(stat["man_hours"])}</td>'
+				f'<td class="num">{_fmt_num(stat["hours_per_week"])}</td>'
+				"</tr>"
+			)
+	return (
+		f"<h2>{_esc(company)} — Employment Information — {year}</h2>{facts}"
+		'<div class="note">Number of labors and their details</div>'
+		"<table><thead><tr>"
+		"<th>Category of workers</th><th>Sex</th><th>No. of Mandays during the year</th>"
+		"<th>Average number of Workers employed per day</th>"
+		"<th>Number of man-hours worked on overtime in a year</th>"
+		"<th>Number of manhours worked including overtime in a year</th>"
+		"<th>Average number of hours worked per week</th>"
+		f"</tr></thead><tbody>{''.join(rows)}</tbody></table>"
+	)
+
+
+def _html_left(pack, company, year):
+	if not pack["left"]:
+		body = '<tr><td colspan="19" class="left">No workers left in this year</td></tr>'
+	else:
+		rows = []
+		for index, emp in enumerate(pack["left"], start=1):
+			month_cells = "".join(
+				f'<td class="num">{1 if month == emp["month"] else 0}</td>' for month in range(1, 13)
+			)
+			rows.append(
+				"<tr>"
+				f'<td class="center">{index}</td>'
+				f'<td class="code">{_esc(emp["employee"])}</td>'
+				f'<td class="name">{_esc(emp["employee_name"])}</td>'
+				f'<td class="left">{_esc(emp["designation"])}</td>'
+				f'<td class="date">{_esc(_fmt_date(emp["date_of_joining"]))}</td>'
+				f'<td class="date">{_esc(_fmt_date(emp["left_date"]))}</td>'
+				f'{month_cells}<td class="num">1</td>'
+				"</tr>"
+			)
+		body = "".join(rows)
+	cols = (
+		'<colgroup>'
+		'<col class="c-sr"><col class="c-code"><col class="c-name">'
+		'<col class="c-desig"><col class="c-date"><col class="c-date">'
+		+ "".join('<col class="c-m">' for _ in MONTHS)
+		+ '<col class="c-tot"></colgroup>'
+	)
+	return (
+		f"<h2>{_esc(company)} — Left Workers — {year}</h2>"
+		f'<table class="work">{cols}<thead><tr>'
+		"<th>SR.<br>NO.</th><th>EMP.<br>CODE</th><th>NAME OF WORKER</th>"
+		"<th>DESIGNATION</th><th>DATE OF<br>JOINING</th><th>Exit<br>date</th>"
+		f"{_month_heads(year)}<th>Total</th></tr></thead><tbody>{body}</tbody></table>"
+	)
+
+
+def _save_pdf(html, prefix):
+	pdf = get_pdf(
+		html,
+		options={
+			"page-size": "A4",
+			"orientation": "Landscape",
+			"margin-top": "8mm",
+			"margin-right": "6mm",
+			"margin-bottom": "8mm",
+			"margin-left": "6mm",
+			"encoding": "UTF-8",
+			"no-outline": None,
+		},
+	)
+	stamp = frappe.utils.now_datetime().strftime("%Y%m%d_%H%M%S")
+	fn = f"{prefix}_{stamp}.pdf"
+	with open(frappe.utils.get_files_path(fn, is_private=0), "wb") as handle:
+		handle.write(pdf)
+	doc = frappe.get_doc(
+		{
+			"doctype": "File",
+			"file_name": fn,
+			"is_private": 0,
+			"file_url": f"/files/{fn}",
+		}
+	)
+	doc.insert(ignore_permissions=True)
+	frappe.db.commit()
+	return doc.file_url
 
 
 def _save_excel(wb, prefix):

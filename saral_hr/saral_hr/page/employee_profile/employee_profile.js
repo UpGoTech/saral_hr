@@ -312,10 +312,10 @@ function ep_fix_breadcrumbs(emp_name) {
 
 // ─── Styles ───────────────────────────────────────────────────────────────────
 function inject_ep_styles() {
-    $("#ep-styles, #ep-styles-v1, #ep-styles-v2, #ep-styles-v3, #ep-styles-v4").remove();
-    if (document.getElementById("ep-styles-v5")) return;
+    $("#ep-styles, #ep-styles-v1, #ep-styles-v2, #ep-styles-v3, #ep-styles-v4, #ep-styles-v5, #ep-styles-v6, #ep-styles-v7, #ep-styles-v8, #ep-styles-v9").remove();
+    if (document.getElementById("ep-styles-v10")) return;
     var style = document.createElement("style");
-    style.id = "ep-styles-v5";
+    style.id = "ep-styles-v10";
     style.innerHTML = `
         @keyframes ep-pulse { 0%,100%{opacity:1} 50%{opacity:0.4} }
 
@@ -847,7 +847,7 @@ function inject_ep_styles() {
         .ep-sal-prog-arrow { font-size:14px; color:#d1d5db; padding:0 4px; margin-top:2px; }
         .ep-sal-prog-hike-chip { display:inline-block; font-size:10px; font-weight:700; background:#f0fdf4; color:#166534; border:1px solid #86efac; border-radius:10px; padding:1px 7px; margin-top:3px; }
 
-        .ep-comp-toggle-wrap { margin-top:10px; overflow-x:auto; }
+        .ep-comp-toggle-wrap { margin-top:10px; }
         .ep-comp-cols { display:grid; grid-template-columns:1fr 1fr 1fr; gap:8px; }
         .ep-comp-toggle-btn {
             width:100%; display:flex; justify-content:space-between; align-items:center;
@@ -886,11 +886,20 @@ function inject_ep_styles() {
         .ep-comp-table th.sub { font-size:11px; font-weight:700; text-align:center; background:#fff; color:#111827; }
         .ep-comp-table td.name { text-align:left; }
         .ep-comp-table td.amt { text-align:right; white-space:nowrap; }
-        .ep-comp-row { display:flex; justify-content:space-between; align-items:center; font-size:12px; padding:5px 10px; border-bottom:1px solid var(--border-color,#f3f4f6); }
+        .ep-comp-row {
+            display:flex; justify-content:space-between; align-items:center; gap:8px;
+            font-size:12px; line-height:1.25; height:32px; box-sizing:border-box;
+            padding:0 10px; border-bottom:1px solid #e5e7eb;
+            background:#f3f4f6;
+        }
         .ep-comp-row:last-child { border-bottom:none; }
-        .ep-comp-row:nth-child(even) { background:var(--control-bg,#f9fafb); }
-        .ep-comp-name { color:var(--text-color); }
-        .ep-comp-amt        { font-weight:600; }
+        .ep-comp-row.is-empty .ep-comp-name,
+        .ep-comp-row.is-empty .ep-comp-amt { visibility:hidden; }
+        .ep-comp-name {
+            color:var(--text-color); min-width:0; flex:1 1 auto;
+            white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+        }
+        .ep-comp-amt { font-weight:600; flex:0 0 auto; white-space:nowrap; }
         .ep-comp-amt.earn   { color:#16a34a; }
         .ep-comp-amt.deduct { color:#ef4444; }
         .ep-comp-amt.employer { color:#1d4ed8; }
@@ -2113,37 +2122,42 @@ function render_ssa_detail_box(ssa, company_link, latest_ssa) {
     return html;
 }
 
-function render_comp_toggles(earnings, deductions, employer_share) {
+function render_comp_toggles(earnings, deductions, employer_share, expanded) {
     if (!earnings.length && !deductions.length && !employer_share.length) return "";
-    var groups = [
-        { rows: earnings, cls: "earn", label: "Earnings", amt: "earn" },
-        { rows: deductions, cls: "deduct", label: "Deductions", amt: "deduct" },
-        { rows: employer_share, cls: "employer", label: "Employer Share", amt: "employer" },
-    ].filter(function (group) { return group.rows.length; });
-    var rows = Math.max.apply(null, groups.map(function (group) { return group.rows.length; }));
-    function pair(row, amtClass) {
-        if (!row) return "<td class='name'></td><td class='amt'></td>";
-        return "<td class='name'>" + frappe.utils.escape_html(row.salary_component || "") + "</td>" +
-            "<td class='amt ep-comp-amt " + amtClass + "'>&#8377;" + fmt_currency(row.amount) + "</td>";
+    var open = expanded ? " open" : "";
+    var max_rows = Math.max(earnings.length, deductions.length, employer_share.length);
+    function render_rows(rows, amtClass) {
+        var out = "";
+        for (var i = 0; i < max_rows; i++) {
+            var row = rows[i];
+            if (row) {
+                out += "<div class='ep-comp-row'><span class='ep-comp-name'>" +
+                    frappe.utils.escape_html(row.salary_component || "") +
+                    "</span><span class='ep-comp-amt " + amtClass + "'>&#8377;" +
+                    fmt_currency(row.amount) + "</span></div>";
+            } else {
+                out += "<div class='ep-comp-row is-empty'><span class='ep-comp-name'>&nbsp;</span><span class='ep-comp-amt'>&nbsp;</span></div>";
+            }
+        }
+        return out;
     }
-    var html = "<div class='ep-comp-toggle-wrap'><table class='ep-comp-table'><thead><tr>";
-    groups.forEach(function (group) {
-        html += "<th class='group " + group.cls + "' colspan='2'>" + group.label +
-            " <span class='ep-comp-btn-count'>" + group.rows.length + "</span></th>";
-    });
-    html += "</tr><tr>";
-    groups.forEach(function () {
-        html += "<th class='sub'>Component</th><th class='sub'>Amount</th>";
-    });
-    html += "</tr></thead><tbody>";
-    for (var i = 0; i < rows; i++) {
-        html += "<tr>";
-        groups.forEach(function (group) {
-            html += pair(group.rows[i], group.amt);
-        });
-        html += "</tr>";
+    var html = "<div class='ep-comp-toggle-wrap'><div class='ep-comp-cols'>";
+    html += "<div class='ep-comp-section'>";
+    if (earnings.length) {
+        html += "<button class='ep-comp-toggle-btn earnings-btn'><span class='ep-comp-btn-left'>Earnings <span class='ep-comp-btn-count'>" + earnings.length + "</span></span><span class='ep-comp-chevron" + open + "'>&#9660;</span></button>";
+        html += "<div class='ep-comp-list" + open + "'>" + render_rows(earnings, "earn") + "</div>";
     }
-    html += "</tbody></table></div>";
+    html += "</div><div class='ep-comp-section'>";
+    if (deductions.length) {
+        html += "<button class='ep-comp-toggle-btn deductions-btn'><span class='ep-comp-btn-left'>Deductions <span class='ep-comp-btn-count'>" + deductions.length + "</span></span><span class='ep-comp-chevron" + open + "'>&#9660;</span></button>";
+        html += "<div class='ep-comp-list" + open + "'>" + render_rows(deductions, "deduct") + "</div>";
+    }
+    html += "</div><div class='ep-comp-section'>";
+    if (employer_share.length) {
+        html += "<button class='ep-comp-toggle-btn employer-btn'><span class='ep-comp-btn-left'>Employer Share <span class='ep-comp-btn-count'>" + employer_share.length + "</span></span><span class='ep-comp-chevron" + open + "'>&#9660;</span></button>";
+        html += "<div class='ep-comp-list" + open + "'>" + render_rows(employer_share, "employer") + "</div>";
+    }
+    html += "</div></div></div>";
     return html;
 }
 

@@ -168,6 +168,7 @@ jinja = {
     "methods": [
         "saral_hr.utils.jinja_methods.parse_json",
         "saral_hr.utils.jinja_methods.wrap_establishment_address",
+        "saral_hr.utils.jinja_methods.employee_print_font_faces",
     ]
 }
 # Installation
