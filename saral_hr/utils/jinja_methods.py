@@ -2,33 +2,33 @@ import base64
 import json
 from pathlib import Path
 
-# Bold 11pt widths for Carlito/Calibri. Same metrics so local and production
-# wrap at the same word when the print format embeds Carlito from the app.
+# Bold 11pt Carlito advance widths (px @ 96dpi), from Carlito-Bold.ttf.
+# Same metrics local and production when the print format embeds Carlito.
 _ADDR_WIDTH = {
-	" ": 4.08, ",": 4.08, ".": 4.08, "/": 4.08, "-": 4.89, "–": 8.16, "—": 14.66,
-	"(": 4.89, ")": 4.89, "&": 10.59, "'": 3.5, ":": 4.89, ";": 4.89, "+": 8.56,
-	"0": 8.16, "1": 8.16, "2": 8.16, "3": 8.16, "4": 8.16, "5": 8.16, "6": 8.16,
-	"7": 8.16, "8": 8.16, "9": 8.16,
-	"a": 8.16, "b": 8.95, "c": 8.16, "d": 8.95, "e": 8.16, "f": 4.89, "g": 8.95,
-	"h": 8.95, "i": 4.08, "j": 4.08, "k": 8.16, "l": 4.08, "m": 13.05, "n": 8.95,
-	"o": 8.95, "p": 8.95, "q": 8.95, "r": 5.72, "s": 8.16, "t": 4.89, "u": 8.95,
-	"v": 8.16, "w": 11.41, "x": 8.16, "y": 8.16, "z": 7.33,
-	"A": 10.59, "B": 10.59, "C": 10.59, "D": 10.59, "E": 9.78, "F": 8.95, "G": 11.41,
-	"H": 10.59, "I": 4.08, "J": 8.16, "K": 10.59, "L": 8.95, "M": 12.22, "N": 10.59,
-	"O": 11.41, "P": 9.78, "Q": 11.41, "R": 10.59, "S": 9.78, "T": 8.95, "U": 10.59,
-	"V": 9.78, "W": 13.84, "X": 9.78, "Y": 9.78, "Z": 8.95,
+	" ": 3.32, ",": 3.78, ".": 3.92, "/": 6.3, "-": 4.49, "–": 7.3, "—": 13.28,
+	"(": 4.57, ")": 4.57, "&": 10.33, "'": 3.42, ":": 4.05, ";": 4.05, "+": 7.3,
+	"0": 7.43, "1": 7.43, "2": 7.43, "3": 7.43, "4": 7.43, "5": 7.43, "6": 7.43,
+	"7": 7.43, "8": 7.43, "9": 7.43,
+	"a": 7.24, "b": 7.87, "c": 6.14, "d": 7.87, "e": 7.38, "f": 4.64, "g": 6.95,
+	"h": 7.87, "i": 3.6, "j": 3.75, "k": 7.04, "l": 3.6, "m": 11.93, "n": 7.87,
+	"o": 7.88, "p": 7.87, "q": 7.87, "r": 5.21, "s": 5.85, "t": 5.08, "u": 7.87,
+	"v": 6.94, "w": 10.93, "x": 6.74, "y": 6.95, "z": 5.83,
+	"A": 8.89, "B": 8.22, "C": 7.76, "D": 9.25, "E": 7.15, "F": 6.73, "G": 9.35,
+	"H": 9.25, "I": 3.91, "J": 4.86, "K": 8.02, "L": 6.2, "M": 12.82, "N": 9.66,
+	"O": 9.92, "P": 7.81, "Q": 10.06, "R": 8.26, "S": 6.93, "T": 7.26, "U": 9.57,
+	"V": 8.67, "W": 13.29, "X": 8.08, "Y": 7.62, "Z": 7.01,
 }
-# Tuned for the employee register value line with equal top/right/bottom page
-# margins. Word wrap only — never split mid-word.
-_ADDR_LINE_LIMIT = 520
+# Value cell beside the establishment label (~430px after 76px left + 90% width).
+# Pack line 1 first; word wrap only — never split mid-word.
+_ADDR_LINE_LIMIT = 420
 
 
 def _addr_width(text):
-	return sum(_ADDR_WIDTH.get(char, 8.95) for char in text)
+	return sum(_ADDR_WIDTH.get(char, 7.9) for char in text)
 
 
 def wrap_establishment_address(text):
-	"""Split an establishment address across the two register lines."""
+	"""Fill line 1 first; move to line 2 only when the next word no longer fits."""
 	text = " ".join(str(text or "").split())
 	if not text:
 		return ["", ""]
@@ -36,9 +36,10 @@ def wrap_establishment_address(text):
 	used = 0
 	for index, word in enumerate(words):
 		gap = _ADDR_WIDTH[" "] if index else 0
-		if index and used + gap + _addr_width(word) > _ADDR_LINE_LIMIT:
+		next_width = used + gap + _addr_width(word)
+		if index and next_width > _ADDR_LINE_LIMIT:
 			return [" ".join(words[:index]), " ".join(words[index:])]
-		used += gap + _addr_width(word)
+		used = next_width
 	return [text, ""]
 
 
